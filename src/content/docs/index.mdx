@@ -1,36 +1,46 @@
 ---
-title: Welcome to Starlight
-description: Get started building your docs site with Starlight.
-template: splash
-hero:
-  tagline: Congrats on setting up a new Starlight project!
-  image:
-    file: ../../assets/houston.webp
-  actions:
-    - text: Example Guide
-      link: /guides/example/
-      icon: right-arrow
-    - text: Read the Starlight docs
-      link: https://starlight.astro.build
-      icon: external
-      variant: minimal
+title: インタラクティブなデモ
+description: MDXでReactコンポーネントを埋め込むデモです。
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { useState } from 'react';
+import DemoButton from '../../components/DemoButton';
 
-## Next steps
+# ボタンを押してみよう！
 
-<CardGrid stagger>
-	<Card title="Update content" icon="pencil">
-		Edit `src/content/docs/index.mdx` to see this page change.
-	</Card>
-	<Card title="Add new content" icon="add-document">
-		Add Markdown or MDX files to `src/content/docs` to create new pages.
-	</Card>
-	<Card title="Configure your site" icon="setting">
-		Edit your `sidebar` and other config in `astro.config.mjs`.
-	</Card>
-	<Card title="Read the docs" icon="open-book">
-		Learn more in [the Starlight Docs](https://starlight.astro.build/).
-	</Card>
-</CardGrid>
+これは、MDXファイル内に直接記述されたReactコンポーネントのデモです。
+
+<DemoButton client:load />
+
+## コンポーネントのソースコード
+
+このページで使われている `DemoButton` コンポーネントのコードは以下の通りです。
+
+```jsx
+// src/components/DemoButton.jsx
+
+import { useState } from 'react';
+
+const DemoButton = () => {
+  const [count, setCount] = useState(0);
+
+  return (
+    <button
+      onClick={() => setCount(count + 1)}
+      style={{
+        padding: '10px 20px',
+        fontSize: '16px',
+        cursor: 'pointer',
+        border: '2px solid #333',
+        borderRadius: '5px',
+        backgroundColor: '#fff',
+        color: '#333'
+      }}
+    >
+      ボタンが押された回数: {count}
+    </button>
+  );
+};
+
+export default DemoButton;
+```
