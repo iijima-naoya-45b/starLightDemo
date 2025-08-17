@@ -1,49 +1,98 @@
-# Starlight Starter Kit: Basics
+# 🌟 StarLight Demo
 
-[![Built with Starlight](https://astro.badg.es/v2/built-with-starlight/tiny.svg)](https://starlight.astro.build)
+**StarLight Demo** は **Astro + Starlight テンプレート** を使用したドキュメントサイトのデモプロジェクトです。  
+美しく、アクセシブルで高性能なドキュメント Web サイトの構築方法を実演します。  
 
+---
+
+## 🚀 特徴
+
+- ⚡️ **高速**: Astro の静的サイト生成による最適なパフォーマンス  
+- 📱 **レスポンシブ**: モバイルファーストなデザイン  
+- 🔍 **検索機能**: 内蔵の全文検索機能  
+- 🌙 **ダークモード**: 自動的なダークモード切り替え  
+- ♿ **アクセシビリティ**: WCAG 準拠のアクセシブルなデザイン  
+- 🎨 **カスタマイズ可能**: テーマとスタイルの柔軟なカスタマイズ  
+
+---
+
+## 📁 プロジェクト構造
+
+
+---
+
+## 🛠 技術スタック
+
+| カテゴリー       | 技術              |
+|------------------|-------------------|
+| フレームワーク   | Astro             |
+| ドキュメントテーマ | Starlight        |
+| 言語             | TypeScript, JavaScript |
+| スタイリング     | CSS, Tailwind CSS |
+| マークダウン     | MDX               |
+| パッケージ管理   | npm               |
+
+---
+
+## 📋 必要な環境
+
+- **Node.js**: 18.14.1 以上  
+- **npm**: 9.0.0 以上  
+
+---
+
+## ⚙️ セットアップ
+
+```bash
+# 1. リポジトリのクローン
+git clone https://github.com/iijima-naoya-45b/starLightDemo.git
+cd starLightDemo
+
+# 2. 依存関係のインストール
+npm install
+
+# 3. 開発サーバーの起動
+npm run dev
 ```
-npm create astro@latest -- --template starlight
+
+## 📖 ドキュメントの追加方法
+
+src/content/docs/ ディレクトリに .md または .mdx ファイルを追加
+
+ファイル名がそのままルートとして公開される
+
+frontmatter でタイトルや説明を設定
+
+例: src/content/docs/new-page.md
+```javascript
+---
+title: 新しいページ
+description: このページの説明
+---
+
+# 新しいページ
+
+ここにコンテンツを記述します。
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+## 🎨 カスタマイズ
+サイト設定
 
-## 🚀 Project Structure
+astro.config.mjs でサイトの基本設定を変更できます：
 
-Inside of your Astro + Starlight project, you'll see the following folders and files:
-
+```javascript
+export default defineConfig({
+  integrations: [
+    starlight({
+      title: 'My Docs',
+      social: {
+        github: 'https://github.com/yourusername/your-repo',
+      },
+      sidebar: [
+        // サイドバー設定
+      ],
+    }),
+  ],
+});
 ```
-.
-├── public/
-├── src/
-│   ├── assets/
-│   ├── content/
-│   │   └── docs/
-│   └── content.config.ts
-├── astro.config.mjs
-├── package.json
-└── tsconfig.json
-```
 
-Starlight looks for `.md` or `.mdx` files in the `src/content/docs/` directory. Each file is exposed as a route based on its file name.
-
-Images can be added to `src/assets/` and embedded in Markdown with a relative link.
-
-Static assets, like favicons, can be placed in the `public/` directory.
-
-## 🧞 Commands
-
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro documentation](https://docs.astro.build), or jump into the [Astro Discord server](https://astro.build/chat).
