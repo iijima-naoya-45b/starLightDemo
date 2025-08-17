@@ -3,26 +3,43 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import react from '@astrojs/react';
 
-// https://astro.build/config
+
 export default defineConfig({
-	integrations: [
-		starlight({
-			title: 'My Docs',
-			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/withastro/starlight' }],
-			sidebar: [
-				{
-					label: 'Guides',
-					items: [
-						// Each item here is one entry in the navigation menu.
-						{ label: 'Example Guide', slug: 'guides/example' },
-					],
-				},
-				{
-					label: 'Reference',
-					autogenerate: { directory: 'reference' },
-				},
-			],
-		}),
-		react(),
-	],
+    integrations: [
+        starlight({
+            title: '言語別ドキュメント',
+            social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/iijima-naoya-45b' }],
+            sidebar: [
+                {
+                    label: 'Elixir',
+                    autogenerate: { directory: 'elixirガイド' },
+                },
+                {
+                    label: 'FastAPI',
+                    autogenerate: { directory: 'fastapiガイド' },
+                },
+                {
+                    label: 'Flutter',
+                    autogenerate: { directory: 'flutterガイド' },
+                },
+                {
+                    label: 'Next.js',
+                    autogenerate: { directory: 'nextjsガイド' },
+                },
+                {
+                    label: 'Node.js',
+                    autogenerate: { directory: 'nodejsガイド' },
+                },
+                {
+                    label: 'Playwright',
+                    autogenerate: { directory: 'playwrightガイド' },
+                },
+                {
+                    label: 'Rails',
+                    autogenerate: { directory: 'railsガイド' },
+                },
+            ],
+        }),
+        react(),
+    ],
 });

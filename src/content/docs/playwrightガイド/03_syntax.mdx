@@ -1,0 +1,25 @@
+---
+title: Playwrightの構文
+sidebar:
+    label: 構文
+---
+
+# Playwrightの構文
+
+Playwrightを使用してブラウザを自動化するための基本的な構文を紹介します。
+
+## 基本的な使用例
+
+```javascript
+const { chromium } = require('playwright');
+
+(async () => {
+  const browser = await chromium.launch();
+  const page = await browser.newPage();
+  await page.goto('https://example.com');
+  await page.screenshot({ path: 'example.png' });
+  await browser.close();
+})();
+```
+
+この例では、Chromiumブラウザを起動し、指定されたURLにアクセスしてスクリーンショットを撮影しています。

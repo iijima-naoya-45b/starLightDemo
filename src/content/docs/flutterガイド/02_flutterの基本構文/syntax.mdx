@@ -1,0 +1,67 @@
+---
+title: 基本構文
+sidebar:
+    label: 基本構文
+---
+
+# Flutterの基本的なウィジェットの例
+
+以下は、Flutterでの基本的なウィジェットの使用例です。
+
+```dart
+import "package:flutter/material.dart";
+
+void main() => runApp(MyApp());
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: Scaffold(
+        appBar: AppBar(title: Text("Flutter Demo")),
+        body: Center(child: Text("Hello, Flutter!")),
+      ),
+    );
+  }
+}
+```
+
+## 構文の使用例
+
+```dart
+void main() {
+  print('Hello, Flutter!');
+}
+
+for (int i = 0; i < 5; i++) {
+  print(i);
+}
+```
+
+## 制御構文
+
+```dart
+if (isActive) {
+  print('Active');
+} else {
+  print('Inactive');
+}
+
+switch (value) {
+  case 1:
+    print('One');
+    break;
+  default:
+    print('Other');
+}
+```
+
+## 関数の定義
+
+```dart
+void greet(String name) {
+  print('Hello, $name!');
+}
+
+greet('Flutter');
+```

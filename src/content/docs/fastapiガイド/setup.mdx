@@ -1,0 +1,38 @@
+---
+title: FastAPIの環境構築
+sidebar:
+    label: 環境構築
+---
+
+# FastAPIの環境構築
+
+FastAPIをインストールするには、以下の手順を実行します。
+
+## インストール
+
+```bash
+pip install fastapi uvicorn
+```
+
+このコマンドを実行することで、FastAPIとUvicornがインストールされます。
+
+# 基本構文
+
+FastAPIの基本的な構文を紹介します。
+
+## エンドポイントの定義
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/")
+async def read_root():
+    return {"Hello": "World"}
+
+@app.get("/items/{item_id}")
+async def read_item(item_id: int, q: str = None):
+    return {"item_id": item_id, "q": q}
+```
+

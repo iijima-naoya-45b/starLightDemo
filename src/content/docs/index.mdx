@@ -1,46 +1,7 @@
 ---
-title: インタラクティブなデモ
-description: MDXでReactコンポーネントを埋め込むデモです。
+title: 言語別Doc
+description: この記事の紹介
+sidebar: {}
 ---
 
-import { useState } from 'react';
-import DemoButton from '../../components/DemoButton';
 
-# ボタンを押してみよう！
-
-これは、MDXファイル内に直接記述されたReactコンポーネントのデモです。
-
-<DemoButton client:load />
-
-## コンポーネントのソースコード
-
-このページで使われている `DemoButton` コンポーネントのコードは以下の通りです。
-
-```jsx
-// src/components/DemoButton.jsx
-
-import { useState } from 'react';
-
-const DemoButton = () => {
-  const [count, setCount] = useState(0);
-
-  return (
-    <button
-      onClick={() => setCount(count + 1)}
-      style={{
-        padding: '10px 20px',
-        fontSize: '16px',
-        cursor: 'pointer',
-        border: '2px solid #333',
-        borderRadius: '5px',
-        backgroundColor: '#fff',
-        color: '#333'
-      }}
-    >
-      ボタンが押された回数: {count}
-    </button>
-  );
-};
-
-export default DemoButton;
-```

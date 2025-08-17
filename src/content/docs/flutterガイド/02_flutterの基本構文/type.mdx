@@ -1,0 +1,46 @@
+---
+title: 型定義
+sidebar:
+    label: 型定義
+---
+
+# 型定義
+
+Flutterで使用される型定義の概要を以下に示します。
+
+## よく使う型
+- `int`: 整数型
+- `double`: 浮動小数点数型
+- `String`: 文字列型
+- `bool`: 真偽値型
+- `List<T>`: ジェネリックリスト型
+
+## 型の使用例
+
+```dart
+int count = 0;
+double price = 19.99;
+String name = 'Flutter';
+bool isActive = true;
+List<String> items = ['Item1', 'Item2'];
+```
+
+## 型の変換
+
+```dart
+String numberString = '123';
+int number = int.parse(numberString);
+```
+
+## カスタム型
+
+```dart
+class Person {
+  String name;
+  int age;
+
+  Person(this.name, this.age);
+}
+
+Person person = Person('Alice', 30);
+```
