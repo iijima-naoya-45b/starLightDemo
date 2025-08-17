@@ -1,0 +1,144 @@
+---
+title: フォルダ構成
+sidebar:
+    label: フォルダ構成
+---
+___
+## 主要フォルダの役割
+
+### **lib フォルダ**
+メインのDartコードを書く場所です。
+- `main.dart` - アプリのエントリーポイント
+- `screens/` - 各画面のUI
+- `widgets/` - 再利用可能なウィジェット
+- `models/` - データモデル
+- `services/` - API通信やデータベース処理
+- `utils/` - ユーティリティ関数
+- `route/` - ルーティング関連のファイル
+  - `routes.dart` - アプリケーションのルーティングを管理
+### **android フォルダ**
+Android固有の設定やネイティブコードを管理します：
+- `app/build.gradle` - Android依存関係とビルド設定
+- `app/src/main/AndroidManifest.xml` - アプリの権限、アクティビティ設定
+- `app/src/main/kotlin/` - Android用のネイティブコード（必要な場合）
+- `app/src/main/res/` - アイコン、スプラッシュ画面などのリソース
+**具体的な用途：**
+- 権限設定（カメラ、位置情報など）
+- アプリアイコンの設定
+- Firebase設定ファイル（google-services.json）
+- プッシュ通知の設定
+
+```xml
+<!-- android/app/src/main/AndroidManifest.xml -->
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"> <!-- よく使う権限 --> <uses-permission android:name="android.permission.INTERNET" /> <uses-permission android:name="android.permission.CAMERA" /> <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" /> <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" /> <application android:label="your_app_name" android:name="${applicationName}" android:icon="@mipmap/ic_launcher"> <!-- アプリの基本設定 --> </application> </manifest>
+```
+
+```gradle
+dependencies { // Firebase使う場合 implementation platform('com.google.firebase:firebase-bom:32.2.3') implementation 'com.google.firebase:firebase-analytics' }
+```
+### **ios フォルダ**
+iOS固有の設定やネイティブコードを管理します：
+
+- `Runner.xcodeproj` - Xcodeプロジェクト設定
+- `Runner/Info.plist` - iOS権限、設定情報
+- `Runner/Assets.xcassets` - アプリアイコン、画像リソース
+- `ios/Runner/` - iOS用のネイティブコード（Swift/Objective-C）
+**具体的な用途：**
+- iOS権限設定（カメラ、位置情報など）
+- アプリアイコンとスプラッシュ画面
+- Firebase設定ファイル（GoogleService-Info.plist）
+- App Store Connect設定
+```xml
+<!-- ios/Runner/Info.plist -->
+
+<dict> <!-- カメラ権限 --> <key>NSCameraUsageDescription</key> <string>写真を撮影するためにカメラを使用します</string> <!-- 位置情報権限 --> <key>NSLocationWhenInUseUsageDescription</key> <string>現在地を取得するために位置情報を使用します</string> <!-- 写真ライブラリ権限 --> <key>NSPhotoLibraryUsageDescription</key> <string>写真を選択するためにフォトライブラリにアクセスします</string> </dict>
+```
+
+## ルーティングの設定
+
+### `routes.dart` の内容
+`routes.dart` ファイルは、アプリケーションの画面遷移を管理するためのルーティングを定義します。以下は基本的な構造の例です。
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_router/flutter_router.dart';
+
+class AppRouter {
+  static final router = Router(
+    routes: [
+      // Define your routes here
+    ],
+  );
+}
+```
+
+### `main.dart` での呼び出し方法
+`main.dart` ファイルでは、`routes.dart` で定義したルーティングを使用してアプリケーションを起動します。
+
+```dart
+import 'package:flutter/material.dart';
+import 'route/routes.dart';
+
+void main() {
+  runApp(MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp.router(
+      routerDelegate: AppRouter.router.routerDelegate,
+      routeInformationParser: AppRouter.router.routeInformationParser,
+    );
+  }
+}
+
+## その他の重要フォルダ
+### **assets フォルダ**
+画像、フォント、設定ファイルなどの静的リソース：
+```
+
+```bash
+assets/
+  images/
+    logo.png
+    background.jpg
+  fonts/
+    custom_font.ttf
+  config/
+    app_config.json
+```
+
+### **test フォルダ**
+
+ユニットテストとウィジェットテスト：
+- `widget_test.dart` - UIテスト
+- `unit_test.dart` - ロジックテスト
+
+### **web フォルダ**
+Web版アプリ用の設定：
+
+- `index.html` - Webアプリのメインページ
+- `manifest.json` - PWA設定
+
+## 実際の開発での使い分け
+
+**日常的に触るもの：**
+- `lib/` - 99%の開発作業
+- `pubspec.yaml` - 依存関係管理
+- `assets/` - 画像やリソース追加時
+
+**たまに触るもの：**
+- `android/app/build.gradle` - Android依存関係追加時
+- `android/app/src/main/AndroidManifest.xml` - 権限追加時
+- `ios/Runner/Info.plist` - iOS権限追加時
+
+**滅多に触らないもの：**
+
+- プラットフォーム固有のネイティブコード
+- ビルド設定の詳細
+
+基本的には`lib`フォルダでの開発がメインで、プラットフォーム固有の機能や設定が必要になった時だけ`android`や`ios`フォルダを触る感じ。
+
+
