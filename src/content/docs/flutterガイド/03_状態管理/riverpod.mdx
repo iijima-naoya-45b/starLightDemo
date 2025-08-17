@@ -1,0 +1,62 @@
+---
+title: Riverpodによる状態管理
+sidebar:
+    label: Riverpod
+---
+
+# Riverpodの概要
+
+Riverpodは、Flutterアプリケーションでの状態管理を簡素化するためのライブラリです。Providerの進化版として、より柔軟で安全な状態管理を提供します。
+
+## なぜRiverpodを使うのか
+
+- **型安全**: 型安全な状態管理が可能です。
+- **ホットリロード対応**: 状態を保持したままホットリロードが可能です。
+
+# Riverpodのインストール
+
+Riverpodをプロジェクトに追加するには、以下のコマンドを実行します。
+
+```dart
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^1.0.0 // ここに追加
+```
+
+```bash
+flutter pub add flutter_riverpod
+```
+
+このコマンドを実行することで、Riverpodがプロジェクトに追加され、状態管理を簡単に行うことができます。
+
+# 基本的な使い方
+
+## プロバイダの定義
+
+```dart
+final counterProvider = StateProvider((ref) => 0);
+```
+
+## コンシューマの使用例
+
+```dart
+Consumer(
+  builder: (context, watch, child) {
+    final count = watch(counterProvider).state;
+    return Text('$count');
+  },
+)
+```
+
+# 状態管理の例
+
+## カウンターアプリの例
+
+```dart
+void increment(WidgetRef ref) {
+  ref.read(counterProvider).state++;
+}
+```
+
+このように、Riverpodを使うことで、簡潔かつ安全に状態管理を行うことができます。

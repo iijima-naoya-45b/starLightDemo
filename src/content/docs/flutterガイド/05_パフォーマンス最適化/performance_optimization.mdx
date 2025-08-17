@@ -1,0 +1,35 @@
+---
+title: パフォーマンス最適化
+sidebar:
+    label: パフォーマンス最適化
+---
+
+# アニメーション
+
+効率的なアニメーションを実装することで、アプリのパフォーマンスを向上させることができます。
+
+## アニメーションの基本
+
+```dart
+AnimationController _controller = AnimationController(
+  duration: const Duration(seconds: 2),
+  vsync: this,
+);
+```
+
+# リストの最適化
+
+`ListView`や`GridView`を使用する際に、パフォーマンスを向上させるテクニックを紹介します。
+
+## ListViewの例
+
+```dart
+ListView.builder(
+  itemCount: 1000,
+  itemBuilder: (context, index) {
+    return ListTile(
+      title: Text('Item $index'),
+    );
+  },
+)
+```

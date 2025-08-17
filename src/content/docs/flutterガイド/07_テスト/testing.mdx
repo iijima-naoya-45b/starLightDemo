@@ -1,0 +1,39 @@
+---
+title: テスト
+sidebar:
+    label: テスト
+---
+
+# ユニットテスト
+
+Flutterでのユニットテストの基本を紹介します。
+
+## ユニットテストの例
+
+```dart
+test('Counter increments smoke test', () {
+  final counter = Counter();
+
+  counter.increment();
+
+  expect(counter.value, 1);
+});
+```
+
+# ウィジェットテスト
+
+UIのテスト方法を紹介します。
+
+## ウィジェットテストの例
+
+```dart
+testWidgets('MyWidget has a title and message', (WidgetTester tester) async {
+  await tester.pumpWidget(MyWidget());
+
+  final titleFinder = find.text('T');
+  final messageFinder = find.text('M');
+
+  expect(titleFinder, findsOneWidget);
+  expect(messageFinder, findsOneWidget);
+});
+```

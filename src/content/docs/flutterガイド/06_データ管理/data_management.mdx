@@ -1,0 +1,88 @@
+---
+title: データ管理
+sidebar:
+    label: データ管理
+---
+
+# ローカルデータベース
+
+Flutterでローカルデータベースを使用する方法を紹介します。
+
+## sqfliteの使用例
+
+```dart
+import 'package:sqflite/sqflite.dart';
+
+Future<void> insertData(Database db) async {
+  await db.insert(
+    'table_name',
+    {'column_name': 'value'},
+  );
+}
+```
+
+# ネットワーク通信
+
+`http`パッケージを使ってAPI通信を行う方法を紹介します。
+
+## HTTPリクエストの例
+
+```dart
+import 'package:http/http.dart' as http;
+
+Future<void> fetchData() async {
+  final response = await http.get(Uri.parse('https://api.example.com/data'));
+  if (response.statusCode == 200) {
+    print('Data fetched successfully');
+  }
+}
+```
+
+# APIとの疎通
+
+FlutterでAPIと通信する方法を紹介します。
+
+## HTTPパッケージを使用した通信
+
+`http`パッケージを使って、RESTful APIと通信することができます。
+
+### GETリクエストの例
+
+```dart
+import 'package:http/http.dart' as http;
+
+Future<void> fetchData() async {
+  final response = await http.get(Uri.parse('https://api.example.com/data'));
+  if (response.statusCode == 200) {
+    print('Data fetched successfully');
+  } else {
+    print('Failed to fetch data');
+  }
+}
+```
+
+### POSTリクエストの例
+
+```dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+Future<void> postData() async {
+  final response = await http.post(
+    Uri.parse('https://api.example.com/data'),
+    headers: <String, String>{
+      'Content-Type': 'application/json; charset=UTF-8',
+    },
+    body: jsonEncode(<String, String>{
+      'key': 'value',
+    }),
+  );
+  if (response.statusCode == 201) {
+    print('Data posted successfully');
+  } else {
+    print('Failed to post data');
+  }
+}
+```
+
+これらの方法を使って、FlutterアプリケーションからAPIと通信することができます。

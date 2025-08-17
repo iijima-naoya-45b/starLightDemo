@@ -1,0 +1,94 @@
+---
+title: API通信
+sidebar:
+    label: API通信
+---
+
+# API通信の概要
+
+FlutterでのAPI通信は、`http`パッケージを使用して簡単に行うことができます。ここでは、GETリクエストとPOSTリクエストの基本的な使い方を紹介します。
+
+## GETリクエスト
+
+GETリクエストを使用して、サーバーからデータを取得します。
+
+```dart
+import 'package:http/http.dart' as http;
+
+Future<void> fetchData() async {
+  final response = await http.get(Uri.parse('https://api.example.com/data'));
+  if (response.statusCode == 200) {
+    print('Data fetched successfully');
+  } else {
+    print('Failed to fetch data');
+  }
+}
+```
+
+## POSTリクエスト
+
+POSTリクエストを使用して、サーバーにデータを送信します。
+
+```dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+Future<void> postData() async {
+  final response = await http.post(
+    Uri.parse('https://api.example.com/data'),
+    headers: <String, String>{
+      'Content-Type': 'application/json; charset=UTF-8',
+    },
+    body: jsonEncode(<String, String>{
+      'key': 'value',
+    }),
+  );
+  if (response.statusCode == 201) {
+    print('Data posted successfully');
+  } else {
+    print('Failed to post data');
+  }
+}
+```
+
+## PUTリクエスト
+
+PUTリクエストを使用して、サーバー上のデータを更新します。
+
+```dart
+Future<void> updateData() async {
+  final response = await http.put(
+    Uri.parse('https://api.example.com/data/1'),
+    headers: <String, String>{
+      'Content-Type': 'application/json; charset=UTF-8',
+    },
+    body: jsonEncode(<String, String>{
+      'key': 'newValue',
+    }),
+  );
+  if (response.statusCode == 200) {
+    print('Data updated successfully');
+  } else {
+    print('Failed to update data');
+  }
+}
+```
+
+## DELETEリクエスト
+
+DELETEリクエストを使用して、サーバー上のデータを削除します。
+
+```dart
+Future<void> deleteData() async {
+  final response = await http.delete(
+    Uri.parse('https://api.example.com/data/1'),
+  );
+  if (response.statusCode == 200) {
+    print('Data deleted successfully');
+  } else {
+    print('Failed to delete data');
+  }
+}
+```
+
+これらの方法を使って、FlutterアプリケーションからAPIと通信し、データの更新や削除を行うことができます。

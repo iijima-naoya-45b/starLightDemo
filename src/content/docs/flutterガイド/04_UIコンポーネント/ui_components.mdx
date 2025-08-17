@@ -1,0 +1,44 @@
+---
+title: UIコンポーネント
+sidebar:
+    label: UIコンポーネント
+---
+
+# ウィジェットのカスタマイズ
+
+Flutterでは、カスタムウィジェットを作成してアプリのUIを柔軟にデザインできます。
+
+## カスタムウィジェットの作成
+
+```dart
+class CustomButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onPressed;
+
+  CustomButton({required this.label, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton(
+      onPressed: onPressed,
+      child: Text(label),
+    );
+  }
+}
+```
+
+# レイアウト
+
+`Row`や`Column`、`Stack`を使って複雑なレイアウトを構築できます。
+
+## RowとColumnの例
+
+```dart
+Row(
+  children: <Widget>[
+    Icon(Icons.star),
+    Icon(Icons.star),
+    Icon(Icons.star),
+  ],
+)
+```
