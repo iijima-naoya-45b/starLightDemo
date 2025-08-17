@@ -3,6 +3,9 @@
 **StarLight Demo** は **Astro + Starlight テンプレート** を使用したドキュメントサイトのデモプロジェクトです。  
 美しく、アクセシブルで高性能なドキュメント Web サイトの構築方法を実演します。  
 
+## 公開リンク
+https://star-light-demo.vercel.app/
+
 ---
 
 ## 🚀 特徴
