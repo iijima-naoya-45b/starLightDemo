@@ -1,0 +1,20 @@
+# FastAPIの基本構文
+
+FastAPIでの基本的な構文とエンドポイントの定義方法を以下に示します。
+
+## エンドポイントの定義
+
+FastAPIを使用して、エンドポイントを定義します。
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/items/{item_id}")
+async def read_item(item_id: int, q: str = None):
+    return {"item_id": item_id, "q": q}
+```
+
+- **`@app.get`**: GETリクエストを処理するエンドポイントを定義します。
+- **`async def`**: 非同期関数としてエンドポイントを定義します。
