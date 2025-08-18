@@ -4,22 +4,23 @@ sidebar:
     label: 構文
 ---
 
-# Playwrightの構文
+# Playwrightの基本構文
 
-Playwrightを使用してブラウザを自動化するための基本的な構文を紹介します。
+Playwrightでの基本的な構文を以下に示します。
 
-## 基本的な使用例
+## テストの作成
+
+Playwrightを使用して、テストを作成します。
 
 ```javascript
-const { chromium } = require('playwright');
+const { test, expect } = require('@playwright/test');
 
-(async () => {
-  const browser = await chromium.launch();
-  const page = await browser.newPage();
+test('basic test', async ({ page }) => {
   await page.goto('https://example.com');
-  await page.screenshot({ path: 'example.png' });
-  await browser.close();
-})();
+  const title = await page.title();
+  expect(title).toBe('Example Domain');
+});
 ```
 
-この例では、Chromiumブラウザを起動し、指定されたURLにアクセスしてスクリーンショットを撮影しています。
+- **`test`**: テストケースを定義します。
+- **`expect`**: アサーションを行います。

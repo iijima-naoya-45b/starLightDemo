@@ -1,0 +1,23 @@
+# テストの実装方法の詳細
+
+Elixirでのテストの実装方法をさらに詳しく解説します。
+
+## Mockingを使用したテスト
+
+Elixirでは、Mockingを使用して依存関係を模擬することができます。
+
+```elixir
+defmodule MyApp.MyModuleTest do
+  use ExUnit.Case, async: true
+  import Mox
+
+  setup :verify_on_exit!
+
+  test "example test" do
+    MyApp.MyModule.Mock
+    |> expect(:my_function, fn -> :ok end)
+
+    assert MyApp.MyModule.my_function() == :ok
+  end
+end
+```

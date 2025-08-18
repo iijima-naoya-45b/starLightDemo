@@ -1,0 +1,31 @@
+# デプロイメントの詳細
+
+Elixirアプリケーションのデプロイメント方法をさらに詳しく解説します。
+
+## Kubernetesを使用したデプロイメント
+
+Kubernetesを使用して、Elixirアプリケーションをデプロイします。
+
+### デプロイメントの設定
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: myapp
+        image: myapp:latest
+        ports:
+        - containerPort: 4000
+```

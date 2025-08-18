@@ -1,0 +1,14 @@
+# パフォーマンス最適化の詳細
+
+Elixirアプリケーションのパフォーマンス最適化方法をさらに詳しく解説します。
+
+## キャッシュの使用
+
+キャッシュを使用して、アプリケーションのパフォーマンスを向上させます。
+
+```elixir
+# 使用例
+:ets.new(:my_cache, [:set, :public, :named_table])
+:ets.insert(:my_cache, {:key, "value"})
+:ets.lookup(:my_cache, :key)
+```
