@@ -14,6 +14,14 @@ export default defineConfig({
             ],
             sidebar: [
                 {
+                    label: 'Astro',
+                    autogenerate: { directory: 'astroガイド' },
+                },
+                {
+                    label: 'Django',
+                    autogenerate: { directory: 'djangoガイド' },
+                },
+                {
                     label: 'Elixir',
                     autogenerate: { directory: 'elixirガイド' },
                 },
@@ -31,7 +39,7 @@ export default defineConfig({
                 },
                 {
                     label: 'Node.js',
-                    autogenerate: { directory: 'nodejsガイド' },
+                    autogenerate: { directory: 'node.jsガイド' },
                 },
                 {
                     label: 'Playwright',

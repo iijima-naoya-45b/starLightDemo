@@ -1,0 +1,28 @@
+---
+title: "Railsのテスト"
+label: "Railsのテスト"
+---
+
+RailsはRSpecを使用して、テストを自動化します。
+
+## RSpecのインストール
+
+```bash
+gem install rspec
+```
+
+## テストの作成
+
+```ruby
+require 'rails_helper'
+
+RSpec.describe Book, type: :model do
+  it 'is valid with valid attributes' do
+    book = Book.new(title: 'Sample Book', author: 'Author Name')
+    expect(book).to be_valid
+  end
+end
+```
+
+- **`RSpec.describe`**: テスト対象を指定
+- **`expect`**: 期待する結果を定義

@@ -1,0 +1,18 @@
+---
+title: "Rails ORM"
+label: "Rails ORM"
+---
+
+RailsはActiveRecordというORMを使用して、データベース操作を簡素化します。
+
+## モデルの定義
+
+```ruby
+class Book < ApplicationRecord
+  validates :title, presence: true
+  validates :author, presence: true
+end
+```
+
+- **`ApplicationRecord`**: すべてのモデルの基底クラス
+- **`validates`**: データのバリデーションを定義

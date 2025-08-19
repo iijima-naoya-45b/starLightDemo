@@ -1,0 +1,16 @@
+---
+title: "バリデーション"
+label: "バリデーション"
+---
+
+Railsでは、モデルにバリデーションを追加することで、データの整合性を保つことができます。以下に、基本的なバリデーションの例を示します。
+
+```ruby
+class User < ApplicationRecord
+  validates :name, presence: true
+  validates :email, uniqueness: true
+end
+```
+
+- **`presence: true`**: 値が存在することを確認します。
+- **`uniqueness: true`**: 値が一意であることを確認します。

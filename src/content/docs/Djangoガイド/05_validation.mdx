@@ -1,0 +1,21 @@
+---
+title: "バリデーション"
+label: "バリデーション"
+---
+
+Djangoでは、モデルにバリデーションを追加することで、データの整合性を保つことができます。以下に、基本的なバリデーションの例を示します。
+
+```python
+from django.db import models
+
+class User(models.Model):
+    name = models.CharField(max_length=100)
+    email = models.EmailField(unique=True)
+
+    def clean(self):
+        if not self.name:
+            raise ValidationError('Name cannot be empty')
+```
+
+- **`CharField`**: 文字列フィールドを定義します。
+- **`EmailField`**: メールアドレスフィールドを定義し、一意性を確認します。
