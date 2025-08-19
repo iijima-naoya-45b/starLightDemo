@@ -1,0 +1,50 @@
+---
+title: "パフォーマンスチューニング"
+label: "パフォーマンスチューニング"
+---
+
+Node.jsのパフォーマンスチューニング方法を以下に示します。
+
+## 非同期処理の最適化
+
+Node.jsでは、非同期処理を適切に管理することでパフォーマンスを向上させることができます。
+
+```javascript
+const fs = require('fs').promises;
+
+async function readFile() {
+  try {
+    const data = await fs.readFile('/path/to/file', 'utf8');
+    console.log(data);
+  } catch (err) {
+    console.error('Error reading file:', err);
+  }
+}
+
+readFile();
+```
+
+## クラスターの利用
+
+Node.jsの`cluster`モジュールを使用して、マルチプロセスでアプリケーションを実行します。
+
+```javascript
+const cluster = require('cluster');
+const http = require('http');
+const numCPUs = require('os').cpus().length;
+
+if (cluster.isMaster) {
+  for (let i = 0; i < numCPUs; i++) {
+    cluster.fork();
+  }
+
+  cluster.on('exit', (worker, code, signal) => {
+    console.log(`worker ${worker.process.pid} died`);
+  });
+} else {
+  http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end('hello world\n');
+  }).listen(8000);
+}
+```

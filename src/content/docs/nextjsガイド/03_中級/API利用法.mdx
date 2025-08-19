@@ -1,0 +1,17 @@
+---
+title: "API利用法"
+label: "API利用法"
+---
+
+Next.jsのAPI利用法を以下に示します。
+
+## APIルート
+
+Next.jsでは、`pages/api`ディレクトリにAPIルートを作成できます。
+
+```javascript
+// pages/api/hello.js
+export default function handler(req, res) {
+  res.status(200).json({ text: 'Hello' });
+}
+```

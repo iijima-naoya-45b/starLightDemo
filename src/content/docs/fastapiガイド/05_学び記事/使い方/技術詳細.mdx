@@ -1,0 +1,24 @@
+---
+title: "技術詳細"
+label: "技術詳細"
+---
+
+FastAPIの技術詳細を以下に示します。
+
+## エラーハンドリング
+
+FastAPIは、カスタムエラーハンドラーをサポートしています。これにより、特定のエラーに対してカスタムレスポンスを返すことができます。
+
+```python
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.exception_handler(HTTPException)
+async def custom_http_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"message": f"Oops! {exc.detail}"},
+    )
+```

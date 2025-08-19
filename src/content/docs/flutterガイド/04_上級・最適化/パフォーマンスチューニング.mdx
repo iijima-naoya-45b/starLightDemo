@@ -1,0 +1,29 @@
+---
+title: "パフォーマンスチューニング"
+label: "パフォーマンスチューニング"
+---
+
+Flutterのパフォーマンスチューニング方法を以下に示します。
+
+## Widgetの再構築を最小限に抑える
+
+`const`コンストラクタを使用して、Widgetの再構築を最小限に抑えます。
+
+```dart
+const Text('Hello Flutter');
+```
+
+## リストのパフォーマンス最適化
+
+`ListView.builder`を使用して、大量のデータを効率的に表示します。
+
+```dart
+ListView.builder(
+  itemCount: 1000,
+  itemBuilder: (context, index) {
+    return ListTile(
+      title: Text('Item $index'),
+    );
+  },
+);
+```

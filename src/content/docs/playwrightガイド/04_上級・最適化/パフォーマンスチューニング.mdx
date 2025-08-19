@@ -1,0 +1,36 @@
+---
+title: "パフォーマンスチューニング"
+label: "パフォーマンスチューニング"
+---
+
+Playwrightのパフォーマンスチューニング方法を以下に示します。
+
+## 並列テストの実行
+
+Playwrightでは、並列にテストを実行することで、テストスイートの実行時間を短縮できます。
+
+```javascript
+// playwright.config.js
+module.exports = {
+  projects: [
+    { name: 'firefox', use: { browserName: 'firefox' } },
+    { name: 'webkit', use: { browserName: 'webkit' } },
+    { name: 'chromium', use: { browserName: 'chromium' } },
+  ],
+};
+```
+
+## ヘッドレスモード
+
+ヘッドレスモードでテストを実行することで、リソースの消費を抑えることができます。
+
+```javascript
+const { chromium } = require('playwright');
+
+(async () => {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+  await page.goto('https://example.com');
+  await browser.close();
+})();
+```

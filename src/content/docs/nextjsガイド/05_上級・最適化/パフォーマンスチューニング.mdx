@@ -1,0 +1,45 @@
+---
+title: "パフォーマンスチューニング"
+label: "パフォーマンスチューニング"
+---
+
+Next.jsのパフォーマンスチューニング方法を以下に示します。
+
+## 画像最適化
+
+Next.jsの`next/image`コンポーネントを使用して、画像を最適化します。
+
+```javascript
+import Image from 'next/image';
+
+const MyImage = () => (
+  <Image
+    src="/me.png"
+    alt="Picture of the author"
+    width={500}
+    height={500}
+  />
+);
+```
+
+## 静的ファイルのキャッシュ
+
+`next.config.js`でキャッシュヘッダーを設定します。
+
+```javascript
+module.exports = {
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+    ];
+  },
+};
+```

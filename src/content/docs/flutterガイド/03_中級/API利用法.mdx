@@ -1,0 +1,23 @@
+---
+title: "API利用法"
+label: "API利用法"
+---
+
+FlutterのAPI利用法を以下に示します。
+
+## HTTPリクエスト
+
+Flutterでは、`http`パッケージを使用してHTTPリクエストを送信できます。
+
+```dart
+import 'package:http/http.dart' as http;
+
+Future<void> fetchData() async {
+  final response = await http.get(Uri.parse('https://api.example.com/data'));
+  if (response.statusCode == 200) {
+    print('Data: ${response.body}');
+  } else {
+    throw Exception('Failed to load data');
+  }
+}
+```
