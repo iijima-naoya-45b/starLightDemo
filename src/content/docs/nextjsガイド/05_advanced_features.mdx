@@ -1,0 +1,140 @@
+---
+title: "Next.jsの高度な機能"
+label: "Next.jsの高度な機能"
+---
+
+Next.jsは、さまざまな高度な機能を提供しています。以下に、いくつかの例を示します。
+
+## 静的サイト生成 (SSG)
+
+Next.jsは、ビルド時に静的ページを生成することができます。
+
+```javascript
+// /pages/posts/[id].js
+export async function getStaticPaths() {
+  return {
+    paths: [
+      { params: { id: '1' } },
+      { params: { id: '2' } },
+    ],
+    fallback: false,
+  };
+}
+
+export async function getStaticProps({ params }) {
+  return {
+    props: { postId: params.id },
+  };
+}
+
+const Post = ({ postId }) => {
+  return <p>Post ID: {postId}</p>;
+};
+
+export default Post;
+```
+
+## サーバーサイドレンダリング (SSR)
+
+サーバーサイドでページをレンダリングすることも可能です。
+
+```javascript
+// /pages/index.js
+export async function getServerSideProps() {
+  return {
+    props: { message: 'Hello from SSR' },
+  };
+}
+
+const Home = ({ message }) => {
+  return <p>{message}</p>;
+};
+
+export default Home;
+```
+
+## Incremental Static Regeneration (ISR)
+
+ISRを使用すると、静的ページをビルド後に再生成できます。これにより、最新のデータを反映しつつ、静的サイトのパフォーマンスを維持できます。
+
+```javascript
+// /pages/posts/[id].js
+export async function getStaticProps({ params }) {
+  const post = await fetchPost(params.id);
+  return {
+    props: { post },
+    revalidate: 10, // 10秒ごとに再生成
+  };
+}
+```
+
+## Image Optimization
+
+`next/image`コンポーネントを使用すると、画像の自動最適化が可能です。これにより、ページの読み込み速度が向上します。
+
+```javascript
+import Image from 'next/image';
+
+const MyImage = () => (
+  <Image
+    src="/me.png"
+    alt="Picture of the author"
+    width={500}
+    height={500}
+  />
+);
+```
+
+## Internationalization (i18n)
+
+Next.jsのi18n機能を使用して、多言語対応のアプリケーションを構築できます。
+
+```javascript
+// next.config.js
+module.exports = {
+  i18n: {
+    locales: ['en', 'fr', 'ja'],
+    defaultLocale: 'en',
+  },
+};
+```
+
+## Custom Server
+
+カスタムサーバーを設定することで、Next.jsアプリケーションのリクエスト処理をカスタマイズできます。
+
+```javascript
+const express = require('express');
+const next = require('next');
+
+const app = next({ dev: process.env.NODE_ENV !== 'production' });
+const handle = app.getRequestHandler();
+
+app.prepare().then(() => {
+  const server = express();
+
+  server.get('/custom', (req, res) => {
+    return app.render(req, res, '/custom', req.query);
+  });
+
+  server.all('*', (req, res) => {
+    return handle(req, res);
+  });
+
+  server.listen(3000, (err) => {
+    if (err) throw err;
+    console.log('> Ready on http://localhost:3000');
+  });
+});
+```
+
+## Middleware
+
+ミドルウェアを使用して、リクエストの前処理や後処理を行うことができます。
+
+```javascript
+// middleware.js
+export function middleware(req, ev) {
+  // リクエストの前処理
+}
+```

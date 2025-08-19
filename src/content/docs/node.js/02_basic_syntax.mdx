@@ -1,0 +1,17 @@
+---
+title: "基本的な構文"
+label: "基本的な構文"
+---
+
+Node.jsはJavaScriptを使用してサーバーサイドのアプリケーションを構築します。以下に、基本的な構文を示します。
+
+```javascript
+// モジュールのインポート
+const fs = require('fs');
+
+// 非同期処理
+async function readFileAsync(path) {
+  const data = await fs.promises.readFile(path, 'utf8');
+  console.log(data);
+}
+```

@@ -1,8 +1,13 @@
-# APIモード専用
+---
+title: "APIモード専用"
+label: "APIモード専用"
+---
 
-Elixirを使用してAPIを開発する際には、Phoenixフレームワークが非常に便利です。以下に、Phoenixを使用したAPI開発の基本的な手順を紹介します。
+Elixirを使用してAPIを開発する際には、Phoenixフレームワークが非常に便利です。Phoenixは、Elixirの強力な並行処理機能を活用して、高性能なWebアプリケーションを構築するためのフレームワークです。
 
 ## Phoenixのインストール
+
+Elixirを使用してAPIを開発する際には、Phoenixフレームワークが非常に便利です。Phoenixは、Elixirの強力な並行処理機能を活用して、高性能なWebアプリケーションを構築するためのフレームワークです。
 
 まず、Phoenixをインストールするために、以下のコマンドを実行します。
 
@@ -12,7 +17,7 @@ mix archive.install hex phx_new
 
 このコマンドにより、Phoenixプロジェクトを新規作成するためのテンプレートがインストールされます。
 
-## 新規プロジェクトの作成
+### 新規プロジェクトの作成
 
 Phoenixプロジェクトを作成するには、以下のコマンドを実行します。
 
@@ -20,9 +25,9 @@ Phoenixプロジェクトを作成するには、以下のコマンドを実行�
 mix phx.new my_api --no-html --no-webpack
 ```
 
-`--no-html`と`--no-webpack`オプションを指定することで、API専用のプロジェクトを作成できます。
+`--no-html`と`--no-webpack`オプションを指定することで、API専用のプロジェクトを作成できます。これにより、フロントエンドの機能を含まない、バックエンド専用のAPIを構築することができます。
 
-## サーバーの起動
+### サーバーの起動
 
 プロジェクトディレクトリに移動し、サーバーを起動します。
 
@@ -31,4 +36,43 @@ cd my_api
 mix phx.server
 ```
 
-これで、APIサーバーが起動し、`http://localhost:4000`でアクセス可能になります。
+これで、APIサーバーが起動し、`http://localhost:4000`でアクセス可能になります。Phoenixを使用することで、スケーラブルで高性能なAPIを迅速に開発することができます。
+
+## 高度な並行処理
+
+Elixirの並行処理機能を活用することで、スケーラブルで高性能なアプリケーションを構築できます。以下に、GenServerを使用した並行処理の例を示します。
+
+```elixir
+defmodule Counter do
+  use GenServer
+
+  # クライアントAPI
+  def start_link(initial_value) do
+    GenServer.start_link(__MODULE__, initial_value, name: __MODULE__)
+  end
+
+  def increment do
+    GenServer.call(__MODULE__, :increment)
+  end
+
+  # サーバーコールバック
+  def init(initial_value) do
+    {:ok, initial_value}
+  end
+
+  def handle_call(:increment, _from, state) do
+    {:reply, state + 1, state + 1}
+  end
+end
+
+# 使用例
+{:ok, _pid} = Counter.start_link(0)
+IO.puts(Counter.increment()) # 1
+IO.puts(Counter.increment()) # 2
+```
+
+- **`GenServer`**: 並行処理を管理するためのビルトインモジュールです。
+
+### 使用例
+
+この例では、GenServerを使用してカウンターを管理します。並行処理を簡単に実装でき、スケーラブルなアプリケーションを構築するのに役立ちます。

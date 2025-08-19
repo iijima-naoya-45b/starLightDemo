@@ -1,10 +1,13 @@
-# FastAPIのセキュリティ強化
+---
+title: "FastAPIのセキュリティ強化"
+label: "FastAPIのセキュリティ強化"
+---
 
 FastAPIでのセキュリティ強化方法を以下に示します。
 
 ## OAuth2による認証
 
-FastAPIは、OAuth2を使用した認証をサポートしています。
+FastAPIは、OAuth2を使用した認証をサポートしています。これにより、トークンベースの認証を簡単に実装することができます。以下に、OAuth2PasswordBearerを使用した認証の例を示します。
 
 ```python
 from fastapi import FastAPI, Depends
@@ -18,4 +21,8 @@ async def read_items(token: str = Depends(oauth2_scheme)):
     return {"token": token}
 ```
 
-- **`OAuth2PasswordBearer`**: OAuth2のパスワードフローを使用してトークンを取得します。
+- **`OAuth2PasswordBearer`**: OAuth2のパスワードフローを使用してトークンを取得します。これにより、ユーザーはトークンを使用して認証を行うことができます。
+
+### 使用例
+
+この設定により、クライアントはトークンを取得し、それを使用して保護されたリソースにアクセスすることができます。例えば、`/items/`エンドポイントにアクセスする際に、トークンをヘッダーに含めることで、認証が行われます。

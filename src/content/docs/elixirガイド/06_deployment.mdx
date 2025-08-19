@@ -1,12 +1,17 @@
-# デプロイメントの詳細
+---
+title: "デプロイメントの詳細"
+label: "デプロイメントの詳細"
+---
 
 Elixirアプリケーションのデプロイメント方法をさらに詳しく解説します。
 
 ## Kubernetesを使用したデプロイメント
 
-Kubernetesを使用して、Elixirアプリケーションをデプロイします。
+Kubernetesを使用して、Elixirアプリケーションをデプロイします。Kubernetesは、コンテナ化されたアプリケーションのデプロイ、スケーリング、管理を行うためのオープンソースプラットフォームです。
 
 ### デプロイメントの設定
+
+以下に、Kubernetesでのデプロイメント設定の例を示します。
 
 ```yaml
 apiVersion: apps/v1
@@ -29,3 +34,46 @@ spec:
         ports:
         - containerPort: 4000
 ```
+
+- **`replicas: 3`**: アプリケーションのインスタンスを3つ作成します。
+- **`image: myapp:latest`**: 使用するDockerイメージを指定します。
+
+### 使用例
+
+この設定により、Kubernetesは3つのインスタンスを作成し、負荷分散を行います。これにより、アプリケーションの可用性とスケーラビリティが向上します。
+
+## 高度なデプロイメント
+
+Elixirアプリケーションのデプロイメントを自動化するために、CI/CDパイプラインを構築します。以下に、GitHub Actionsを使用したCI/CDパイプラインの例を示します。
+
+```yaml
+name: Elixir CI
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Elixir
+      uses: actions/setup-elixir@v1
+      with:
+        elixir-version: '1.11'
+    - name: Install dependencies
+      run: mix deps.get
+    - name: Run tests
+      run: mix test
+    - name: Build release
+      run: mix release
+```
+
+- **`GitHub Actions`**: CI/CDパイプラインを構築して、デプロイメントを自動化します。
+
+### 使用例
+
+この設定により、コードがプッシュされるたびに自動的にテストが実行され、リリースがビルドされます。CI/CDパイプラインを使用することで、デプロイメントプロセスを効率化し、エラーを減らすことができます。
