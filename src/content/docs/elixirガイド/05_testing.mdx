@@ -1,10 +1,15 @@
-# テストの実装方法の詳細
+---
+title: "テストの実装方法の詳細"
+label: "テストの実装方法の詳細"
+---
 
 Elixirでのテストの実装方法をさらに詳しく解説します。
 
 ## Mockingを使用したテスト
 
-Elixirでは、Mockingを使用して依存関係を模擬することができます。
+Elixirでは、Mockingを使用して依存関係を模擬することができます。これにより、外部サービスやデータベースに依存せずに、ユニットテストを実行することができます。
+
+以下に、Mockingを使用したテストの例を示します。
 
 ```elixir
 defmodule MyApp.MyModuleTest do
@@ -21,3 +26,11 @@ defmodule MyApp.MyModuleTest do
   end
 end
 ```
+
+- **`use ExUnit.Case, async: true`**: 非同期でテストを実行します。
+- **`import Mox`**: Moxライブラリをインポートして、Mockingをサポートします。
+- **`setup :verify_on_exit!`**: テスト終了時にMockの期待を検証します。
+
+### 使用例
+
+このテストでは、`MyApp.MyModule.my_function/0`が`:ok`を返すことを期待しています。Mockingを使用することで、テストの信頼性を高め、外部依存を排除することができます。

@@ -24,3 +24,71 @@ test('basic test', async ({ page }) => {
 
 - **`test`**: テストケースを定義します。
 - **`expect`**: アサーションを行います。
+
+## 高度なテストシナリオ
+
+複雑なユーザーインタラクションや状態管理を含むテストシナリオを追加します。
+
+```javascript
+test('complex user interaction', async ({ page }) => {
+  await page.goto('https://example.com');
+  await page.click('#start-button');
+  await page.fill('#username', 'testuser');
+  await page.fill('#password', 'password');
+  await page.click('#login-button');
+  const welcomeMessage = await page.textContent('#welcome');
+  expect(welcomeMessage).toContain('Welcome, testuser');
+});
+```
+
+## CI/CD統合
+
+GitHub Actionsを使用したCI/CDパイプラインへのPlaywrightの統合方法を追加します。
+
+```yaml
+name: Playwright Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Setup Node.js
+      uses: actions/setup-node@v2
+      with:
+        node-version: '14'
+    - run: npm install
+    - run: npx playwright install
+    - run: npm test
+```
+
+## デバッグとトラブルシューティング
+
+Playwrightのデバッグ機能や一般的なトラブルシューティングの手法を追加します。
+
+```javascript
+test('debugging test', async ({ page }) => {
+  await page.goto('https://example.com');
+  await page.pause(); // テストを一時停止してデバッグ
+});
+```
+
+## パフォーマンス最適化
+
+テストのパフォーマンスを向上させるための最適化手法を追加します。
+
+// ヒント: 並列テスト実行やキャッシュの利用など。
+
+## セキュリティテスト
+
+Playwrightを使用したセキュリティテストの実施方法を追加します。
+
+```javascript
+test('security test', async ({ page }) => {
+  await page.goto('https://example.com');
+  const response = await page.request.get('https://example.com/api/secure-data');
+  expect(response.status()).toBe(200);
+});
+```

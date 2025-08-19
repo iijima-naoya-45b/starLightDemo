@@ -1,0 +1,22 @@
+---
+title: "テストの自動化"
+label: "テストの自動化"
+---
+
+Mochaを使用して、テストを自動化します。
+
+```bash
+# Mochaのインストール
+npm install --save-dev mocha
+```
+
+```javascript
+// テストの例
+const assert = require('assert');
+describe('Array', () => {
+  describe('#indexOf()', () => {
+    it('should return -1 when the value is not present', () => {
+      assert.strictEqual([1, 2, 3].indexOf(4), -1);
+    });
+  });
+});

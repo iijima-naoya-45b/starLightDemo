@@ -1,10 +1,13 @@
-# FastAPIのドキュメントのカスタマイズ
+---
+title: "FastAPIのドキュメントのカスタマイズ"
+label: "FastAPIのドキュメントのカスタマイズ"
+---
 
 FastAPIでのドキュメントのカスタマイズ方法を以下に示します。
 
 ## OpenAPIのカスタマイズ
 
-FastAPIは、OpenAPIのカスタマイズをサポートしています。
+FastAPIは、OpenAPIのカスタマイズをサポートしています。これにより、APIの仕様を詳細に定義し、ドキュメントを自動生成することができます。以下に、カスタムOpenAPIスキーマを定義する方法を示します。
 
 ```python
 from fastapi import FastAPI
@@ -27,4 +30,10 @@ def custom_openapi():
 app.openapi = custom_openapi
 ```
 
-- **`get_openapi`**: OpenAPIスキーマをカスタマイズします。
+- **`get_openapi`**: OpenAPIスキーマをカスタマイズします。これにより、APIのタイトル、バージョン、説明を自由に設定できます。
+
+### 使用例
+
+このカスタマイズにより、APIドキュメントに独自のブランドや詳細な説明を追加することができます。例えば、APIのバージョンを明示することで、開発者が異なるバージョンのAPIを簡単に識別できるようになります。
+
+```

@@ -1,0 +1,16 @@
+---
+title: "デプロイメント"
+label: "デプロイメント"
+---
+
+Herokuを使用して、Node.jsアプリケーションをデプロイします。
+
+```bash
+# Heroku CLIのインストール
+curl https://cli-assets.heroku.com/install.sh | sh
+
+# アプリケーションのデプロイ
+heroku create
+heroku git:remote -a your-app-name
+git push heroku main
+```
