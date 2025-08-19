@@ -1,0 +1,20 @@
+---
+title: "API利用法"
+label: "API利用法"
+---
+
+FastAPIのAPI利用法を以下に示します。
+
+## エンドポイントの定義
+
+FastAPIを使用して、エンドポイントを定義します。非同期処理を活用することで、リクエストの処理を効率化し、サーバーのパフォーマンスを向上させることができます。
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/items/{item_id}")
+async def read_item(item_id: int, q: str = None):
+    return {"item_id": item_id, "q": q}
+```

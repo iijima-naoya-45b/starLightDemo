@@ -1,0 +1,21 @@
+---
+title: "実践で得た教訓"
+label: "実践で得た教訓"
+---
+
+Djangoの実践で得た教訓を以下に示します。
+
+## バリデーション
+
+Djangoのバリデーション機能を活用することで、データの整合性を保つことができます。
+
+```python
+from django.core.exceptions import ValidationError
+
+class MyModel(models.Model):
+    name = models.CharField(max_length=100)
+
+    def clean(self):
+        if not self.name:
+            raise ValidationError('Name cannot be empty')
+```

@@ -1,0 +1,29 @@
+---
+title: "技術詳細"
+label: "技術詳細"
+---
+
+Elixirの技術詳細を以下に示します。
+
+## モジュール
+
+Elixirでは、モジュールを使用して、関連する関数をグループ化します。
+
+```elixir
+defmodule Greeter do
+  def hello(name) do
+    "Hello, #{name}!"
+  end
+end
+
+IO.puts(Greeter.hello("World"))
+```
+
+## パターンマッチング
+
+Elixirの強力な機能の一つにパターンマッチングがあります。これにより、データの構造を簡単に分解できます。
+
+```elixir
+{status, result} = {:ok, 42}
+IO.puts(result) # 42
+```

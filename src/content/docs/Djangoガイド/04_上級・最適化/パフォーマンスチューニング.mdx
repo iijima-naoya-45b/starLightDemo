@@ -1,0 +1,21 @@
+---
+title: "パフォーマンスチューニング"
+label: "パフォーマンスチューニング"
+---
+
+Djangoのパフォーマンスチューニング方法を以下に示します。
+
+## MVCアーキテクチャ
+
+DjangoのMVCアーキテクチャを理解し、パフォーマンスを最適化します。
+
+## データベースの最適化
+
+データベースのインデックスを適切に設定することで、クエリのパフォーマンスを向上させることができます。
+
+```python
+from django.db import models
+
+class MyModel(models.Model):
+    name = models.CharField(max_length=100, db_index=True)
+```

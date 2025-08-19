@@ -1,0 +1,20 @@
+---
+title: "FastAPIの基本概念"
+label: "FastAPIの基本概念"
+---
+
+FastAPIの基本的な概念を以下に示します。
+
+## エンドポイントの定義
+
+FastAPIを使用して、エンドポイントを定義します。非同期処理を活用することで、リクエストの処理を効率化し、サーバーのパフォーマンスを向上させることができます。
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/items/{item_id}")
+async def read_item(item_id: int, q: str = None):
+    return {"item_id": item_id, "q": q}
+```

@@ -1,0 +1,28 @@
+---
+title: "パフォーマンスチューニング"
+label: "パフォーマンスチューニング"
+---
+
+Astroのパフォーマンスチューニング方法を以下に示します。
+
+## 画像最適化
+
+Astroでは、画像を最適化するために`astro-imagetools`を使用できます。
+
+```bash
+npm install astro-imagetools
+```
+
+## コード分割
+
+Astroは、ページごとにコードを分割して、パフォーマンスを向上させます。
+
+```javascript
+// astro.config.mjs
+export default {
+  buildOptions: {
+    site: 'https://example.com',
+    sitemap: true,
+  },
+};
+```

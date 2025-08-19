@@ -1,0 +1,24 @@
+---
+title: "パフォーマンスチューニング"
+label: "パフォーマンスチューニング"
+---
+
+Railsのパフォーマンスチューニング方法を以下に示します。
+
+## キャッシュの利用
+
+Railsでは、キャッシュを利用することでパフォーマンスを向上させることができます。
+
+```ruby
+class ProductsController < ApplicationController
+  caches_page :index
+end
+```
+
+## データベースの最適化
+
+データベースのインデックスを適切に設定することで、クエリのパフォーマンスを向上させることができます。
+
+```ruby
+add_index :users, :email
+```
