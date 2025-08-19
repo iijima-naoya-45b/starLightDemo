@@ -1,0 +1,25 @@
+---
+title: "FastAPI ORM"
+label: "FastAPI ORM"
+---
+
+FastAPIはSQLAlchemyを使用して、データベース操作を簡素化します。
+
+## モデルの定義
+
+```python
+from sqlalchemy import Column, Integer, String
+from sqlalchemy.ext.declarative import declarative_base
+
+Base = declarative_base()
+
+class Book(Base):
+    __tablename__ = 'books'
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True)
+    author = Column(String, index=True)
+```
+
+- **`declarative_base`**: モデルの基底クラスを作成
+- **`Column`**: データベースのカラムを定義

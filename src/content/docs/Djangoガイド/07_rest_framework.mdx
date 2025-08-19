@@ -1,0 +1,25 @@
+---
+title: "Django REST Framework"
+label: "Django REST Framework"
+---
+
+Django REST Frameworkは、DjangoでRESTful APIを構築するための強力なツールです。
+
+## インストール
+
+```bash
+pip install djangorestframework
+```
+
+## シリアライザーの作成
+
+```python
+from rest_framework import serializers
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'name', 'email']
+```
+
+- **`ModelSerializer`**: モデルインスタンスをJSONに変換します。
