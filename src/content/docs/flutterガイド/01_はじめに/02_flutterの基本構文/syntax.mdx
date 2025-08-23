@@ -4,44 +4,66 @@ sidebar:
     label: 基本構文
 ---
 
-# Flutterの基本的なウィジェットの例
+## 1. MyApp ウィジェットの詳細解説
+MyAppは、Flutterアプリの**「顔」**となる、最も基本的なウィジェットです。アプリ全体の骨組みとテーマを定義する重要な役割を担っています。
 
-Flutterでは、ウィジェットがアプリケーションのUIを構成する基本単位です。以下に、いくつかの基本的なウィジェットを紹介します。
+```dart
+import 'package:flutter/material.dart';
 
-## `MyApp` ウィジェットの詳細解説
+void main() {
+  runApp(const MyApp());
+}
 
-`MyApp` ウィジェットは、Flutterアプリケーションの**「顔」**となる、最も基本的なウィジェットです。アプリ全体の骨組みとテーマを定義する重要な役割を担っています。
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
-## `Scaffold` ウィジェット
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Flutter Demo',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
+      ),
+      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+    );
+  }
+}
+```
 
-`Scaffold`は、マテリアルデザインの基本的なレイアウト構造を提供するウィジェットです。以下に例を示します。
+- **runApp()**: アプリケーションを起動し、指定されたウィジェット（通常はMyApp）を画面に表示します。
+- **MaterialApp**: アプリのルートウィジェットとして使われます。titleやthemeといったアプリ全体の情報を設定し、マテリアルデザインのウィジェットを使えるようにします。
+- **home**: アプリの最初の画面を定義します。
+
+## 2. Scaffold ウィジェット
+Scaffoldは、マテリアルデザインの基本的なレイアウト構造を提供するウィジェットです。
 
 ```dart
 Scaffold(
   appBar: AppBar(
-    title: Text('タイトル'),
+    title: const Text('タイトル'),
   ),
-  body: Center(
+  body: const Center(
     child: Text('Hello, Flutter!'),
   ),
   floatingActionButton: FloatingActionButton(
     onPressed: () {},
-    child: Icon(Icons.add),
+    child: const Icon(Icons.add),
   ),
 )
 ```
 
-- **`appBar`**: アプリの上部に表示されるバーで、タイトルやアクションを配置できます。
-- **`body`**: メインコンテンツを配置する領域です。
-- **`floatingActionButton`**: 画面の右下に表示されるボタンで、主なアクションを提供します。
+- **appBar**: アプリの上部に表示されるバーです。タイトルやアクションを配置できます。
+- **body**: メインコンテンツを配置する領域です。
+- **floatingActionButton**: 画面の右下に表示されるアクションボタンです。
 
-## `Column`と`Row` ウィジェット
-
-`Column`と`Row`は、ウィジェットを縦または横に並べるためのウィジェットです。
+## 3. ColumnとRow ウィジェット
+ColumnとRowは、ウィジェットを縦または横に並べるための最も基本的なレイアウトウィジェットです。
 
 ```dart
 Column(
-  children: <Widget>[
+  mainAxisAlignment: MainAxisAlignment.center, // 垂直方向の中央揃え
+  children: const <Widget>[
     Text('First'),
     Text('Second'),
     Text('Third'),
@@ -49,23 +71,210 @@ Column(
 )
 ```
 
-- **`Column`**: ウィジェットを縦に並べます。
-- **`Row`**: ウィジェットを横に並べます。
+- **Column**: ウィジェットを縦に並べます。
+- **Row**: ウィジェットを横に並べます。
 
 これらのウィジェットを組み合わせることで、複雑なレイアウトを構築できます。
 
-# 実践的なアドバイス
+## 実践的なアドバイスと教訓 💡
 
-Flutterを使用する際のベストプラクティスや、よくある問題の解決策を以下に示します。
+### 状態管理は最初に決めておくべし 🧠
+プロジェクトを始める前に、状態管理の方法を決めておかないと、後で大変なことになります。
 
-## ベストプラクティス
+- **小規模なアプリならProvider**から始めるのがおすすめです。学習コストが低く、シンプルに扱えます。
+- 大規模アプリやチーム開発では、RiverpodやBlocといった、より厳密な状態管理が可能なライブラリを検討すべきです。これらのライブラリは、コードの予測可能性とテスト容易性を高めてくれます。
 
-- **状態管理**: Flutterでは、状態管理が重要です。`Provider`や`Riverpod`、`Bloc`などのパッケージを使用して、状態を効率的に管理しましょう。
-- **レスポンシブデザイン**: さまざまなデバイスサイズに対応するために、`MediaQuery`や`LayoutBuilder`を使用してレスポンシブなUIを構築します。
-- **コードの再利用**: ウィジェットを小さく分割し、再利用可能なコンポーネントとして設計することで、コードのメンテナンス性を向上させます。
+### StatelessWidgetとStatefulWidgetの使い分けを理解する 🤔
+Flutterのウィジェットは、状態を持つか持たないかで2種類に分けられます。
 
-## よくある問題の解決策
+- **StatelessWidget**: 状態を持たないウィジェットです。一度描画されたら、再描画されることはありません。ボタンやアイコンなど、変化しないUI要素に使います。
+- **StatefulWidget**: 状態を持つウィジェットです。ユーザーの操作などによって状態が変化し、再描画されます。テキスト入力フォームやチェックボックスなど、状態が変わるUI要素に使います。
 
-- **依存関係の競合**: `pubspec.yaml`で依存関係を管理する際に、バージョンの競合が発生することがあります。`flutter pub outdated`コマンドを使用して、依存関係のバージョンを確認し、適切に更新しましょう。
-- **パフォーマンスの最適化**: `Flutter DevTools`を使用して、アプリのパフォーマンスを分析し、ボトルネックを特定して最適化します。
-- **ビルドエラーの解決**: ビルドエラーが発生した場合は、エラーメッセージをよく読み、必要に応じて`flutter clean`コマンドを実行してキャッシュをクリアします。
+最初のうちはStatefulWidgetばかり使ってしまいがちですが、可能な限りStatelessWidgetを使うことで、アプリのパフォーマンスとメンテナンス性が向上します。
+
+### レスポンシブデザインの工夫 📐
+モバイルアプリは、様々な画面サイズで使われます。
+
+画面サイズに応じてレイアウトを調整するために、**MediaQueryやLayoutBuilder**を積極的に使いましょう。LayoutBuilderは、親ウィジェットが提供する制約（幅や高さ）に基づいてUIを構築できるため、特に柔軟なUIを組むのに便利です。
+
+### 依存関係の競合とpubコマンド 🐛
+パッケージを大量に追加すると、バージョンの競合が頻繁に起こります。
+
+- **flutter pub outdated**: どのパッケージに新しいバージョンがあるかを確認できます。
+- **flutter pub get**: 依存関係を最新の状態に更新します。
+- **flutter pub upgrade**: pubspec.yamlに指定されたバージョン範囲内で、パッケージを最新のものにアップグレードします。
+- **flutter clean**: どうにもならなくなったときは、まずこのコマンドを試してみましょう。ビルドキャッシュをクリアし、依存関係を再構築してくれます。
+
+## 複雑なウィジェットの組み合わせ例 🧩
+これらの基本ウィジェットを組み合わせることで、より複雑なUIを構築できます。
+
+```dart
+Scaffold(
+  appBar: AppBar(
+    title: const Text('ウィジェットの組み合わせ'),
+  ),
+  body: SingleChildScrollView( // 画面がスクロールできるようにする
+    child: Column(
+      children: [
+        const Text('縦に並ぶウィジェット'),
+        Row( // 横に並ぶウィジェット
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: const [
+            Icon(Icons.star, color: Colors.yellow),
+            Icon(Icons.star, color: Colors.yellow),
+            Icon(Icons.star, color: Colors.yellow),
+          ],
+        ),
+        Container(
+          height: 150,
+          color: Colors.blue,
+          child: const Center(
+            child: Text('コンテナ'),
+          ),
+        ),
+      ],
+    ),
+  ),
+);
+```
+
+この例では、SingleChildScrollView、Column、Row、Containerといったウィジェットを組み合わせて、より豊かなレイアウトを実現しています。
+
+## 1. Container ウィジェット 📦
+Containerは、Flutterで最も汎用的なウィジェットの一つです。パディング、マージン、色、ボーダー、角丸などの装飾を施したり、サイズを指定したりするのに使われます。
+
+```dart
+Container(
+  margin: const EdgeInsets.all(16), // 外側の余白（マージン）
+  padding: const EdgeInsets.all(16), // 内側の余白（パディング）
+  height: 100, // 高さを指定
+  width: 100, // 幅を指定
+  decoration: BoxDecoration( // コンテナの装飾
+    color: Colors.blue,
+    borderRadius: BorderRadius.circular(12), // 角を丸くする
+    border: Border.all(color: Colors.red, width: 2), // ボーダー
+    boxShadow: const [ // 影をつける
+      BoxShadow(
+        color: Colors.black26,
+        blurRadius: 10,
+        offset: Offset(0, 5),
+      ),
+    ],
+  ),
+  child: const Center(
+    child: Text('コンテナ'),
+  ),
+)
+```
+
+## 2. Expanded と Flexible ウィジェット
+RowやColumnの子ウィジェットを、利用可能なスペースに合わせて拡張または調整するために使われます。レスポンシブなレイアウトを構築する上で非常に重要です。
+
+- **Expanded**: 親ウィジェットの残りのスペースをすべて占有します。flexプロパティを使って、複数のExpandedウィジェット間でスペースを分配できます。
+
+```dart
+Row(
+  children: <Widget>[
+    Container(width: 50, color: Colors.red),
+    Expanded( // 残りのスペースをすべて占有
+      child: Container(color: Colors.green),
+    ),
+    Container(width: 50, color: Colors.blue),
+  ],
+)
+```
+
+- **Flexible**: 親ウィジェットの残りのスペースを、子ウィジェットのコンテンツサイズに合わせて柔軟に調整します。fitプロパティでフィット方法を制御できます。ExpandedはFlexibleの特殊なケース（fit: FlexFit.tight）です。
+
+```dart
+Row(
+  children: <Widget>[
+    Flexible( // コンテンツサイズに合わせてスペースを調整
+      child: Text('長いテキストを折り返す'),
+    ),
+    Flexible(
+      child: Container(color: Colors.orange, height: 50),
+    ),
+  ],
+)
+```
+
+## 3. Stack ウィジェット 🎭
+Stackウィジェットは、複数のウィジェットを重ねて配置するために使われます。ウィジェットをz軸方向（手前/奥）に重ねたい場合に便利です。
+
+```dart
+Stack(
+  alignment: Alignment.center, // 子ウィジェットを中央に配置
+  children: <Widget>[
+    Container(
+      width: 200,
+      height: 200,
+      color: Colors.red,
+    ),
+    Container(
+      width: 150,
+      height: 150,
+      color: Colors.blue,
+    ),
+    Positioned( // 特定の位置に子ウィジェットを配置
+      bottom: 10,
+      right: 10,
+      child: Icon(Icons.star, size: 50, color: Colors.yellow),
+    ),
+  ],
+)
+```
+
+PositionedウィジェットをStackの子として使うことで、上、下、左、右からの距離を指定してウィジェットを正確に配置できます。
+
+## 1. SizedBox ウィジェット 📏
+SizedBoxは、特定のサイズの空きスペースや、子ウィジェットのサイズを固定したいときに使う、非常にシンプルなウィジェットです。widthとheightプロパティを使って、簡単にサイズを調整できます。特に、RowやColumnの中で、ウィジェット間に一定のスペースを空けるのに便利です。
+
+```dart
+Row(
+  children: const <Widget>[
+    Text('商品名'),
+    SizedBox(width: 8), // 8ピクセルの横の余白
+    Text('¥1,200'),
+    SizedBox(width: 16), // 16ピクセルの横の余白
+    Text('在庫あり'),
+  ],
+)
+```
+
+## 2. Padding ウィジェット 🛡️
+Paddingは、子ウィジェットの外側に一定の余白（パディング）を追加するウィジェットです。これにより、ウィジェット間の見栄えを整えることができます。EdgeInsetsを使って、上下左右のパディングを細かく設定できます。
+
+```dart
+Padding(
+  padding: const EdgeInsets.all(16), // 上下左右に16ピクセルのパディング
+  child: Container(
+    color: Colors.blue,
+    child: const Text('パディング付きのコンテナ'),
+  ),
+)
+```
+
+- **EdgeInsets.all(double)**: 全方向に同じパディングを適用します。
+- **EdgeInsets.symmetric(horizontal: double, vertical: double)**: 垂直方向と水平方向のパディングを個別に設定します。
+- **EdgeInsets.fromLTRB(left, top, right, bottom)**: 上下左右のパディングをすべて個別に設定します。
+
+## 3. FlexibleとExpandedの応用 📐
+FlexibleとExpandedは、RowやColumn内でのウィジェットのサイズを動的に調整するのに不可欠です。特に、flexプロパティを使うことで、子ウィジェット間のスペース配分をより細かく制御できます。
+
+```dart
+Column(
+  children: <Widget>[
+    Flexible(
+      flex: 1, // 1/3のスペースを占有
+      child: Container(color: Colors.red),
+    ),
+    Flexible(
+      flex: 2, // 2/3のスペースを占有
+      child: Container(color: Colors.blue),
+    ),
+  ],
+)
+```
+
+この例では、Columnの利用可能なスペース全体を3つの部分に分け、赤いコンテナが1つの部分を、青いコンテナが2つの部分を占めるようにしています。

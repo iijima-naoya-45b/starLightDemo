@@ -1,0 +1,93 @@
+---
+title: "コンポーネントの作成"
+---
+
+## Astroコンポーネントの基本
+Astroコンポーネントは、ウェブサイトのUIを再利用可能な部品に分割して構築します。HTML、CSS、JavaScriptを一つのファイルにまとめられるのが特徴です。これにより、コードの再利用性が向上し、保守が容易になります。
+
+### ユースケース：静的なブログカード
+ブログ記事の一覧ページを考えてみましょう。各記事のタイトルや概要を表示するカードは、すべての記事で同じデザインと構造になります。このような場合に、`BlogCard.astro`コンポーネントを作成すれば、コードを何度も書く必要がなくなります。
+
+#### src/components/BlogCard.astro
+
+```astro
+---
+// 親から title と description を受け取ります
+const { title, description } = Astro.props;
+---
+<div class="card">
+  <h2>{title}</h2>
+  <p>{description}</p>
+</div>
+
+<style>
+  .card {
+    border: 1px solid #ccc;
+    padding: 1rem;
+    border-radius: 8px;
+  }
+</style>
+```
+
+このコンポーネントを、複数の記事で再利用できます。
+
+#### src/pages/index.astro
+
+```astro
+---
+import BlogCard from '../components/BlogCard.astro';
+---
+<h1>最新記事</h1>
+<BlogCard title="Astro入門" description="Astroの基本を学びましょう。" />
+<BlogCard title="コンポーネントの作成" description="コンポーネントの作り方を紹介します。" />
+```
+
+この方法では、JavaScriptはサーバー側で実行され、最終的なHTMLのみがブラウザに送られます。これにより、ページの表示が高速になります。
+
+### UIフレームワークとの統合とJavaScriptの適用
+Astroの強みは、UIフレームワークのコンポーネントを静的なHTMLに埋め込むことができる点です。しかし、クリックイベントなどのユーザーインタラクションが必要なコンポーネントは、クライアントサイドでJavaScriptを有効にする必要があります。
+
+#### ユースケース：インタラクティブなカウンター
+ユーザーがボタンをクリックするたびに数字が増えるカウンターを考えてみましょう。これは、JavaScriptなしでは実現できません。ここでは、Reactコンポーネントを使ってみます。
+
+##### Reactの追加
+まず、`@astrojs/react`インテグレーションを追加します。
+
+```bash
+npx astro add react
+```
+
+##### Reactコンポーネントの作成
+`src/components/Counter.jsx`というファイルに、Reactでカウンターコンポーネントを作成します。
+
+```javascript
+import { useState } from 'react';
+
+export default function Counter() {
+  const [count, setCount] = useState(0);
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(count + 1)}>Increment</button>
+    </div>
+  );
+}
+```
+
+##### Astroページでの利用
+作成した`Counter.jsx`をAstroページにインポートし、`client:load`ディレクティブを追加します。これにより、ページが読み込まれた後にJavaScriptが有効になり、インタラクティブな機能が使えるようになります。
+
+#### src/pages/counter-page.astro
+
+```astro
+---
+import Counter from '../components/Counter.jsx';
+---
+<body>
+  <h1>カウンターページ</h1>
+  <Counter client:load />
+</body>
+```
+
+このように、Astroは静的な部分と動的な部分を分離し、必要な部分にだけJavaScriptを適用することで、パフォーマンスを最適化します。`client:load`以外にも、コンポーネントが画面に入ったときにロードする`client:visible`など、複数のディレクティブがあり、ユースケースに応じて使い分けることができます。

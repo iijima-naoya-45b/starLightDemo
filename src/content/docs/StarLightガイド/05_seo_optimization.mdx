@@ -1,0 +1,125 @@
+---
+title: "SEO対策"
+label: "SEO対策"
+---
+
+## AstroサイトのSEO完全ガイド
+Astroは、デフォルトで超高速なサイトを生成するため、SEO（検索エンジン最適化）において非常に有利です。ここでは、Astroプロジェクトの検索エンジン順位をさらに向上させるための具体的な設定方法を詳しく解説します。
+
+### 1. 基本的なメタタグの設定
+メタタグは、ページの内容を検索エンジンやSNSに伝えるための重要な情報です。これらを一元管理するために、再利用可能な`SEO.astro`コンポーネントを作成するのが最も効率的です。
+
+#### SEOコンポーネントの作成
+`src/components/SEO.astro` に以下のファイルを作成します。
+
+```astro
+---
+import type { GetImageResult } from 'astro:assets';
+
+interface Props {
+  title: string;
+  description: string;
+  image?: GetImageResult;
+}
+
+const { title, description, image } = Astro.props;
+const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
+---
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>{title}</title>
+<meta name="description" content={description} />
+<link rel="canonical" href={canonicalUrl} />
+
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+<meta property="og:url" content={canonicalUrl} />
+<meta property="og:type" content="website" />
+{image && <meta property="og:image" content={new URL(image.src, Astro.site)} />}
+
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={title} />
+<meta name="twitter:description" content={description} />
+{image && <meta name="twitter:image" content={new URL(image.src, Astro.site)} />}
+```
+
+#### SEOコンポーネントの利用
+作成したコンポーネントを、各ページの`<head>`内で呼び出します。
+
+```astro
+---
+import SEO from '../components/SEO.astro';
+---
+<html lang="ja">
+  <head>
+    <SEO
+      title="私のAstroサイト | トップページ"
+      description="Astroで作ったサイトのトップページです。SEO対策をしています。"
+    />
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>
+```
+
+### 2. サイトマップとrobots.txt
+サイトマップは、サイト内の全ページのリストを検索エンジンに伝え、クロール（情報収集）を効率化させるためのファイルです。`robots.txt`は、どのページをクロールしてよいかを指示します。
+
+#### サイトマップの自動生成
+Astroでは、`@astrojs/sitemap`インテグレーションを使って簡単にサイトマップを自動生成できます。
+
+- **インストール**: `npx astro add sitemap`を実行します。
+- **設定**: `astro.config.mjs`にサイトの公開ドメインを設定します。
+
+```javascript
+// astro.config.mjs
+import { defineConfig } from 'astro/config';
+import sitemap from '@astrojs/sitemap';
+
+export default defineConfig({
+  site: 'https://www.example.com',
+  integrations: [sitemap()],
+});
+```
+
+#### robots.txtの設置
+`public/`ディレクトリに`robots.txt`というファイルを作成し、サイトマップの場所を通知します。
+
+```plaintext
+User-agent: *
+Allow: /
+
+Sitemap: https://www.example.com/sitemap-index.xml
+```
+
+### 3. コアウェブバイタルの最適化
+Googleは、ユーザー体験を測る指標であるコアウェブバイタルをSEOランキングの要因としています。Astroはデフォルトで高速ですが、これらの指標を意識することで、さらに有利になります。
+
+- **LCP (Largest Contentful Paint)**: ページの主要なコンテンツが読み込まれるまでの時間。
+  - **対策**: `<Image />`コンポーネントで画像を最適化し、ヒーロー画像にはプリロードを検討します。
+
+- **FID (First Input Delay)**: 最初のユーザー入力に対する応答時間。
+  - **対策**: `client:load`ではなく、`client:visible`や`client:idle`ディレクティブを使い、JavaScriptのロードを遅延させることで、初期の応答性を高めます。
+
+- **CLS (Cumulative Layout Shift)**: ページの読み込み中に予期せぬレイアウトのずれがないか。
+  - **対策**: 画像や広告には必ず`width`と`height`を指定し、スペースを確保します。
+
+### 4. 構造化データとコンテンツ戦略
+テクニカルな設定だけでなく、コンテンツそのものも重要です。
+
+- **構造化データ (JSON-LD)**: ページの内容をより詳細に検索エンジンに伝え、リッチリザルト（検索結果に星マークや価格などが表示される）を期待できます。
+  - **対策**: ブログ記事や商品ページなど、コンテンツタイプに応じた`<script type="application/ld+json">`をページの`<head>`に追加します。
+
+- **内部リンク**: サイト内のページ同士を関連性の高いアンカーテキストで結びつけ、クローラーが効率的に巡回できるようにします。
+
+- **パンくずリスト**: ナビゲーションを分かりやすくすることで、ユーザー体験が向上し、検索エンジンにもサイトの階層構造を伝えることができます。
+
+### 5. SEOの監視と分析
+設定が完了したら、その効果を測定し、改善を繰り返すことが不可欠です。
+
+- **Google Search Console**: サイトマップの提出、クローラーのエラーチェック、検索キーワードの分析など、SEOの状況を把握するための必須ツールです。
+
+- **Google Analytics**: ユーザーの行動を分析し、コンテンツの改善に役立てます。
+
+- **ページスピードインサイト**: コアウェブバイタルやパフォーマンスに関する具体的な改善点を指摘してくれます。

@@ -1,0 +1,89 @@
+---
+title: "Rails ORM"
+label: "Rails ORM"
+---
+
+Rails ORM
+RailsにおけるORM（Object-Relational Mapping）は、Active Recordというライブラリを指します。Active Recordは、データベースのテーブルをRubyのクラスとして扱い、SQLを直接書かずにデータベース操作を可能にするフレームワークです。これにより、開発者はオブジェクト指向的なアプローチでデータと向き合うことができ、コードの可読性と保守性が向上します。
+
+Active Recordの主な機能
+1. データベースとの連携
+Active Recordは、モデルクラスとデータベーステーブルを自動でマッピングします。例えば、usersという名前のテーブルがあれば、Userというモデルクラスを定義するだけで、テーブルの各カラムがモデルの属性（attribute）として利用可能になります。
+
+例：データの取得
+Userクラスを使って、データベースからデータを取得できます。
+
+Ruby
+
+# 全ユーザーを取得
+users = User.all
+
+# IDが1のユーザーを取得
+user = User.find(1)
+
+# メールアドレスでユーザーを検索
+user = User.find_by(email: "test@example.com")
+2. データの作成・更新・削除
+Active Recordは、データのCRUD（Create, Read, Update, Delete）操作をメソッドとして提供します。
+
+例：データの作成
+Ruby
+
+# 新しいユーザーインスタンスを作成し、データベースに保存
+user = User.create(name: "Alice", email: "alice@example.com")
+例：データの更新
+Ruby
+
+# 既存ユーザーの情報を更新
+user.update(email: "new_email@example.com")
+例：データの削除
+Ruby
+
+# ユーザーをデータベースから削除
+user.destroy
+3. バリデーションとコールバック
+Active Recordは、データの整合性を保つための機能も提供します。
+
+例：バリデーション
+validatesメソッドを使って、データ保存前の検証ルールを定義できます。
+
+Ruby
+
+class User < ApplicationRecord
+  validates :name, presence: true # 名前が必須であることを検証
+  validates :email, uniqueness: true # メールアドレスが一意であることを検証
+end
+例：コールバック
+データの保存や削除といった特定のイベントが発生したときに、自動で実行されるメソッドを定義できます。
+
+Ruby
+
+class Post < ApplicationRecord
+  before_save :set_slug
+
+  private
+  def set_slug
+    # タイトルからスラグを自動生成
+    self.slug = self.title.parameterize
+  end
+end
+4. 関連付け（Association）
+複数のモデル間の関係性を定義することで、関連するデータを簡単に操作できます。
+
+例：1対多の関係
+has_many：Userは多数のPostを持つ。
+
+belongs_to：Postは1つのUserに属する。
+
+Ruby
+
+class User < ApplicationRecord
+  has_many :posts
+end
+
+class Post < ApplicationRecord
+  belongs_to :user
+end
+この関連付けを定義することで、user.postsでそのユーザーの投稿一覧を、post.userでその投稿の作成者を取得できます。
+
+Active Recordは、これらの機能を通じてデータベース操作を抽象化し、Rails開発の生産性を大幅に向上させます。

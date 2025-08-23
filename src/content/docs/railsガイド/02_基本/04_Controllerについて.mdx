@@ -1,0 +1,73 @@
+---
+title: "Controllerとは"
+label: "Controllerとは"
+---
+
+## Rails における Controller の詳細
+Rails における Controller は、ユーザーからのリクエストを処理し、Model と View を連携させる司令塔の役割を担います。
+
+### 1. Controller の役割
+Controller は、ユーザーがブラウザで URL にアクセスしたり、フォームを送信したりした際に、そのリクエストを受け取って以下のような処理を行います。
+
+#### ① ルーティングとの連携
+Rails のルーターは、受け取ったリクエストをどの Controller のどのメソッド（アクション）で処理するかを決定します。たとえば、`GET /users` というリクエストは、`UsersController` の `index` アクションに対応づけられます。
+
+#### ② Model との連携
+Controller は、リクエストに応じて Model からデータを取得したり、新しいデータを保存したりします。
+
+#### ③ View との連携
+Controller は、Model から取得したデータを View に渡し、HTML を生成してユーザーに返します。
+
+### 2. Controller のファイル構成
+Controller のファイルは、`app/controllers` ディレクトリに配置されます。慣習として、ファイル名はクラス名を複数形かつスネークケースにしたものになります（例：`UsersController` は `app/controllers/users_controller.rb`）。
+
+### 3. Controller のアクション
+Controller クラス内にあるメソッドを アクション と呼びます。各アクションは、特定のリクエストを処理する役割を持ちます。
+
+#### 例：UsersController のアクション
+
+```ruby
+class UsersController < ApplicationController
+  # GET /users
+  def index
+    # ユーザーの一覧を取得し、@users に格納
+    @users = User.all
+    # index.html.erb テンプレートをレンダリング
+  end
+
+  # GET /users/:id
+  def show
+    # 特定のユーザーを ID で検索し、@user に格納
+    @user = User.find(params[:id])
+    # show.html.erb テンプレートをレンダリング
+  end
+
+  # GET /users/new
+  def new
+    # 新しいユーザーインスタンスを生成
+    @user = User.new
+  end
+
+  # POST /users
+  def create
+    # 新しいユーザーを生成し、保存を試みる
+    @user = User.new(user_params)
+    if @user.save
+      redirect_to @user, notice: 'ユーザーを作成しました。'
+    else
+      render :new
+    end
+  end
+
+  private
+
+  # Strong Parameters: セキュリティのために、受け取って良いパラメータを許可
+  def user_params
+    params.require(:user).permit(:name, :email)
+  end
+end
+```
+この例では、`index`, `show`, `new`, `create` という4つのアクションが定義されています。
+
+### 4. まとめ
+Rails の Controller は、リクエストを受け取り、Model を介してデータ操作を行い、その結果を View に渡して表示するという、MVC パターンの中核的な役割を担います。これにより、ビジネスロジックと表示ロジックが分離され、保守性の高いアプリケーション開発が可能になります。

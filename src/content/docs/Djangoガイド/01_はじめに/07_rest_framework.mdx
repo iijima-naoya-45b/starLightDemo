@@ -3,18 +3,36 @@ title: "Django REST Framework"
 label: "Django REST Framework"
 ---
 
-Django REST Frameworkは、DjangoでRESTful APIを構築するための強力なツールです。
+## Django REST Framework (DRF) の概要
+**Django REST Framework（DRF）**は、DjangoでRESTful APIを迅速に構築するためのフレームワークです。APIの構築に必要な多くの機能を標準で提供しており、シリアライゼーション、ビュー、ルーティング、認証、パーミッションなどを簡単に実装できます。DRFはDjangoの哲学である「バッテリー付属」に準拠しており、多くの一般的なAPI開発タスクを簡素化します。
 
-## インストール
+### 1. インストールと設定
+まず、`pip`コマンドでDRFをインストールします。
 
 ```bash
 pip install djangorestframework
 ```
 
-## シリアライザーの作成
+次に、プロジェクトの**`settings.py`**ファイルに`'rest_framework'`を`INSTALLED_APPS`に追加します。
+
+```python
+# settings.py
+INSTALLED_APPS = [
+    ...
+    'rest_framework',
+]
+```
+
+これで、DRFをプロジェクトで利用する準備が整いました。
+
+### 2. シリアライザーの作成
+シリアライザーは、Djangoモデルのインスタンス（Pythonオブジェクト）を、JSONやXMLのようなAPIで扱えるデータ形式に変換（シリアライズ）する役割を担います。また、その逆の変換（デシリアライズ）も行い、受信したデータを検証し、データベースに保存可能な形式に変換します。
+
+- **`serializers.ModelSerializer`**: 最もよく使われるシリアライザーです。モデルのフィールドからシリアライザーフィールドを自動的に生成し、バリデーションも自動で行います。提供された例のように、`Meta`クラスで変換対象の`model`と`fields`を指定するだけで簡単に利用できます。
 
 ```python
 from rest_framework import serializers
+from myapp.models import User
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -22,4 +40,43 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'email']
 ```
 
-- **`ModelSerializer`**: モデルインスタンスをJSONに変換します。
+このシリアライザーは、`User`モデルのインスタンスを、`id`, `name`, `email`というキーを持つJSONデータに変換します。
+
+### 3. ビューの作成
+シリアライザーを定義したら、次にビューを作成します。ビューは、APIリクエストを処理し、シリアライザーを使ってレスポンスを生成する役割を担います。DRFは、一般的なAPI操作を簡素化するために、いくつかの汎用ビューを提供しています。
+
+- **`generics.ListCreateAPIView`**: データのリスト表示と新規作成を一つのビューで処理します。
+- **`generics.RetrieveUpdateDestroyAPIView`**: 特定のデータ取得、更新、削除を処理します。
+
+```python
+# myapp/views.py
+from rest_framework import generics
+from .models import User
+from .serializers import UserSerializer
+
+class UserListCreate(generics.ListCreateAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+
+class UserRetrieveUpdateDestroy(generics.RetrieveUpdateDestroyAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+```
+
+これらのビューは、`queryset`で対象のモデルのデータセットを、`serializer_class`でデータ変換に使うシリアライザーを指定するだけで機能します。
+
+### 4. URLルーティングの設定
+最後に、作成したビューにアクセスするためのURLを設定します。
+
+```python
+# myproject/urls.py
+from django.urls import path
+from myapp.views import UserListCreate, UserRetrieveUpdateDestroy
+
+urlpatterns = [
+    path('users/', UserListCreate.as_view(), name='user-list'),
+    path('users/<int:pk>/', UserRetrieveUpdateDestroy.as_view(), name='user-detail'),
+]
+```
+
+これで、`http://localhost:8000/users/`にアクセスするとユーザー一覧を取得でき、`http://localhost:8000/users/1/`にアクセスするとIDが1のユーザー情報を取得できるようになります。

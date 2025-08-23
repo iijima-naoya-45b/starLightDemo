@@ -3,19 +3,18 @@ title: "Jestのインストール"
 label: "Jestのインストール"
 ---
 
-JestはJavaScriptのテストフレームワークで、特にReactアプリケーションのテストに広く使用されています。このガイドでは、Jestのインストール方法と基本的なセットアップについて説明します。
+## Jestのインストールとセットアップ
+Jestは、特にReact環境で広く使われるJavaScriptのテストフレームワークです。ViteやNext.jsなどの環境では、トランスパイル設定が異なるため、それぞれの環境に合わせた追加設定が必要です。
 
-## Jestのインストール
-
-Jestをインストールするには、以下のコマンドを使用します。
+### 1. Jestのコアライブラリをインストールする 📦
+まず、jestと、テスト中にDOMをシミュレートするためのjsdomを開発用依存関係としてインストールします。
 
 ```bash
-npm install --save-dev jest
+npm install --save-dev jest jest-environment-jsdom
 ```
 
-## 初期設定
-
-Jestを使用するための基本的な設定を行います。`package.json`に以下のスクリプトを追加します。
+### 2. package.jsonにテストスクリプトを追加する ⚙️
+テストを簡単に実行できるように、package.jsonファイルに"test"スクリプトを追加します。
 
 ```json
 "scripts": {
@@ -23,5 +22,107 @@ Jestを使用するための基本的な設定を行います。`package.json`�
 }
 ```
 
-これで、`npm test`コマンドを使用してテストを実行できるようになります。
+これで、ターミナルで`npm test`と入力するだけでJestを実行できます。
 
+## ViteでのJestセットアップ
+ViteはESモジュール（ESM）をネイティブにサポートしていますが、Jestは通常CommonJS環境で動作します。そのため、JestにESMを扱えるように設定する必要があります。
+
+### 1. 依存ライブラリのインストール 🧩
+ESMとJSX（React）をサポートするために、以下のライブラリをインストールします。
+
+```bash
+npm install --save-dev @babel/core @babel/preset-env @babel/preset-react
+```
+
+- **@babel/core**: JavaScriptのトランスパイルに必要です。
+- **@babel/preset-env**: 最新のJavaScript構文をJestが理解できる古い構文に変換します。
+- **@babel/preset-react**: JSXをJavaScriptに変換します。
+
+### 2. Babelの設定ファイルを作成する 📝
+プロジェクトのルートに`.babelrc`ファイルを作成し、先ほどインストールしたプリセットを設定します。これにより、JestはReactコンポーネントを正しく処理できるようになります。
+
+```json
+// .babelrc
+{
+  "presets": ["@babel/preset-env", "@babel/preset-react"]
+}
+```
+
+### 3. Jestの設定ファイルを更新する 🛠️
+`jest.config.js`ファイルを作成し、テストファイルがどこにあるか、どのような環境で実行するかなどを設定します。Vite環境では、特にESMをトランスパイルする設定が重要です。
+
+```javascript
+// jest.config.js
+module.exports = {
+  // テスト環境をjsdomに設定
+  testEnvironment: 'jest-environment-jsdom',
+  // テストファイルの検索パターン
+  testMatch: ["**/__tests__/**/*.js?(x)", "**/?(*.)+(spec|test).js?(x)"],
+  // ESモジュールをCommonJSに変換
+  transform: {
+    "^.+\\.(js|jsx)$": "babel-jest",
+  },
+  // テスト対象外のディレクトリ
+  transformIgnorePatterns: [
+    "/node_modules/",
+  ],
+  // モジュール解決エイリアスの設定（Viteの設定と一致させる）
+  moduleNameMapper: {
+    '^@/(.*)$': '<rootDir>/src/$1',
+  },
+};
+```
+
+これで、ViteプロジェクトでJestが動作するようになります。
+
+## Next.jsでのJestセットアップ
+Next.jsには、組み込みのBabel設定があるため、Jestの設定が比較的シンプルです。`next/jest`パッケージがJestとNext.jsの連携を自動的に処理してくれます。
+
+### 1. 依存ライブラリのインストール 🧩
+Next.js環境でJestを動かすために、以下のライブラリをインストールします。
+
+```bash
+npm install --save-dev jest jest-environment-jsdom @testing-library/react @testing-library/jest-dom
+```
+
+- **@testing-library/react**: コンポーネントのテストをより簡単にします。
+- **@testing-library/jest-dom**: Jestに便利なDOMマッチャーを追加します。
+
+### 2. Jest設定ファイルを生成する 📝
+Next.jsプロジェクトのルートで以下のコマンドを実行します。これにより、Jestの設定ファイルが自動的に生成されます。
+
+```bash
+npx jest --init
+```
+
+### 3. 設定ファイルを調整する 🛠️
+生成された`jest.config.js`を編集し、`next/jest`パッケージを使ってNext.jsの機能をJestで有効にします。
+
+```javascript
+// jest.config.js
+const nextJest = require('next/jest');
+
+// next.config.jsから設定を読み込む
+const createJestConfig = nextJest({
+  dir: './',
+});
+
+// Jestの設定を追加
+const customJestConfig = {
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  moduleDirectories: ['node_modules', '<rootDir>/'],
+  testEnvironment: 'jest-environment-jsdom',
+};
+
+module.exports = createJestConfig(customJestConfig);
+```
+
+### 4. jest.setup.jsファイルを作成する 📄
+`@testing-library/jest-dom`の機能を有効にするために、ルートに`jest.setup.js`ファイルを作成します。
+
+```javascript
+// jest.setup.js
+import '@testing-library/jest-dom/extend-expect';
+```
+
+これにより、JestはNext.jsの環境でシームレスに動作し、Reactコンポーネントを簡単にテストできるようになります。

@@ -1,0 +1,460 @@
+---
+title: "Django ORM"
+label: "Django ORM"
+---
+
+## Django ORMの概要
+Django ORMは、Pythonのコードを使ってデータベースを操作するための強力なツールです。生のSQLクエリを書くことなく、オブジェクト指向の考え方でデータを扱うことが可能になります。
+
+### Django ORMの概要とメリット
+ORM（Object-Relational Mapper：オブジェクト関係マッパー）は、データベースのテーブルを行と列で管理するリレーショナルデータベースと、Pythonのようなオブジェクト指向プログラミング言語の間の橋渡しをします。
+
+- **直感的で安全**: 生のSQLを書く代わりに、Pythonのクラスとメソッドを使ってデータを操作できるため、コードが直感的で理解しやすくなります。また、SQLインジェクションのようなセキュリティ上の脆弱性を防ぐことができます。
+
+- **移植性**: データベースの種類（PostgreSQL、MySQL、SQLiteなど）が異なっていても、同じPythonコードでデータベースを操作できます。データベースを変更する際も、設定ファイルを少し変更するだけで済みます。
+
+- **簡潔なコード**: データの取得、フィルタリング、更新といった一般的な操作を、短いコードで簡単に実行できます。
+
+### モデルの定義
+Django ORMを使うには、まず`django.db.models.Model`を継承したクラスを作成します。このクラスが、データベースのテーブルに対応するモデルとなります。
+
+```python
+from django.db import models
+
+class Book(models.Model):
+    title = models.CharField(max_length=200)
+    author = models.CharField(max_length=100)
+    published_date = models.DateField()
+```
+
+- **`models.Model`**: このクラスを継承することで、Django ORMの機能を利用できるようになります。
+- **フィールド**: クラス内の変数は、データベースの列（カラム）に対応します。`CharField`や`DateField`のようなフィールドタイプは、その列にどのような種類のデータが格納されるかを定義します。
+
+### モデル操作の基本
+モデルを定義したら、`manage.py`を使ってデータベースのマイグレーション（スキーマの変更を適用すること）を行い、Pythonのシェルやビューからデータを操作できます。
+
+#### データの取得（クエリ）
+`objects`マネージャを使って、データを取得します。
+
+- **全件取得**: `all()`メソッドでテーブルの全データを取得します。
+
+  ```python
+  books = Book.objects.all()
+  # 取得したデータはクエリセット（リストのようなオブジェクト）になる
+  ```
+
+- **フィルタリング**: `filter()`メソッドを使って、特定の条件に一致するデータを抽出します。
+
+  ```python
+  # 2023年以降に出版された本を検索
+  recent_books = Book.objects.filter(published_date__year__gte=2023)
+  # タイトルに'Django'を含む本を検索（__icontainsは部分一致で大文字小文字を区別しない）
+  django_books = Book.objects.filter(title__icontains='Django')
+  ```
+
+- **単一のデータ取得**: `get()`メソッドで、条件に一致する単一のオブジェクトを取得します。
+
+  ```python
+  book = Book.objects.get(title='Django for Beginners')
+  ```
+
+#### データの作成と更新
+新しいデータを作成したり、既存のデータを更新したりすることも簡単です。
+
+- **新規作成**: オブジェクトをインスタンス化し、`save()`メソッドで保存します。
+
+  ```python
+  new_book = Book(title='ORM Essentials', author='Jane Doe', published_date='2024-01-01')
+  new_book.save()
+  ```
+
+- **更新**: 既存のオブジェクトを取得し、フィールドの値を変更してから`save()`メソッドを呼び出します。
+
+  ```python
+  book = Book.objects.get(title='ORM Essentials')
+  book.author = 'John Smith'
+  book.save()
+  ```
+
+Django ORMを使うことで、これらの操作を簡潔かつ安全に行うことができます。
+
+### 高度なクエリと関連モデルの操作
+Django ORMの真価は、複数のテーブルにまたがる複雑なクエリを、Pythonのコードで簡潔に記述できる点にあります。
+
+#### リレーションシップ
+Djangoは、モデル間のリレーションシップ（一対多、多対多、一対一）を簡単に定義できます。これにより、関連するデータを効率的に取得・操作できます。
+
+- **一対多リレーションシップ**: `ForeignKey`フィールドを使って定義します。例えば、一人の著者が複数の本を執筆する場合、`Book`モデルに`Author`モデルへの外部キーを追加します。
+
+  ```python
+  # models.py
+  from django.db import models
+
+  class Author(models.Model):
+      name = models.CharField(max_length=100)
+
+  class Book(models.Model):
+      title = models.CharField(max_length=200)
+      author = models.ForeignKey(Author, on_delete=models.CASCADE)
+  ```
+
+- **関連データの操作**: 関連モデルのデータは、`.`（ドット）を使ってアクセスできます。
+
+  ```python
+  # 著者名を使って本を検索
+  books_by_jane = Book.objects.filter(author__name='Jane Doe')
+
+  # 特定の本の著者の名前を取得
+  book = Book.objects.get(title='ORM Essentials')
+  author_name = book.author.name
+  ```
+
+また、`related_name`オプションを使うと、逆方向のリレーションシップを分かりやすい名前でアクセスできます。
+
+```python
+# Authorモデルにrelated_nameを追加
+class Book(models.Model):
+    author = models.ForeignKey(Author, on_delete=models.CASCADE, related_name='books')
+
+# 著者オブジェクトからその著者の全本を取得
+jane = Author.objects.get(name='Jane Doe')
+all_books_by_jane = jane.books.all()
+```
+
+#### アノテーションとアグリゲーション
+Django ORMは、SQLの集計関数（COUNT, SUM, AVGなど）をPythonで実行するための機能を提供します。
+
+- **アグリゲーション（集計）**: `aggregate()`を使って、クエリセット全体に対して集計を行います。
+
+  ```python
+  from django.db.models import Count, Avg
+
+  # 全本の数を数える
+  total_books = Book.objects.count()
+  # または
+  total_books = Book.objects.aggregate(total=Count('id'))
+
+  # 各著者が書いた本の数をカウント
+  author_book_counts = Author.objects.annotate(num_books=Count('books'))
+  ```
+
+- **アノテーション（注釈）**: `annotate()`を使って、クエリセットの各オブジェクトに新しい集計フィールドを追加します。これはグループ化（GROUP BY）の操作を伴う場合に特に役立ちます。
+
+#### データのバルク操作
+個々のオブジェクトをループして`save()`を呼び出すのではなく、複数のオブジェクトを一括で作成、更新、削除するためのバルク操作メソッドもあります。
+
+- **一括作成**: `bulk_create()`メソッドで、複数のオブジェクトを一つのクエリで作成できます。これは、大量のデータをデータベースに投入する際にパフォーマンスを大幅に向上させます。
+
+  ```python
+  Book.objects.bulk_create([
+      Book(title='Book 1', author=jane),
+      Book(title='Book 2', author=jane)
+  ])
+  ```
+
+- **一括更新**: `update()`メソッドで、フィルタリングされたすべてのオブジェクトを一括で更新できます。
+
+  ```python
+  # 2023年以前に出版された本の著者を変更
+  Book.objects.filter(published_date__year__lt=2023).update(author=new_author)
+  ```
+
+#### クエリセットの遅延評価 (Lazy Evaluation)
+Django ORMのクエリセットは、すぐにデータベースを操作するわけではありません。クエリセットは遅延評価されます。これは、`filter()`や`all()`のようなメソッドを呼び出しても、実際にデータが必要になるまでデータベースクエリが実行されないことを意味します。これにより、不要なデータベースアクセスを防ぎ、パフォーマンスが向上します。
+
+- **具体例**
+
+  ```python
+  # この時点ではデータベースクエリは実行されない
+  recent_books = Book.objects.filter(published_date__year__gte=2023)
+
+  # この時点で初めてクエリが実行される
+  for book in recent_books:
+      print(book.title)
+  ```
+
+この例では、`filter()`メソッドが呼び出されただけではデータベースアクセスは発生せず、`for`ループでデータを反復処理する際に初めてデータベースクエリが実行されます。この特性を理解することで、クエリを効率的にチェーン（連結）して記述できます。
+
+#### サブクエリ
+Django ORMでは、サブクエリを簡潔に記述できます。これにより、より複雑な条件に基づいてデータをフィルタリングしたり、アノテーションを付けたりできます。
+
+- **OuterRef と Subquery**: `OuterRef`は外側のクエリセットのフィールドを参照するために使い、`Subquery`はサブクエリを埋め込むために使います。
+
+  ```python
+  from django.db.models import OuterRef, Subquery
+
+  # 各著者が書いた最新の本を取得するサブクエリ
+  latest_books = Book.objects.filter(
+      author=OuterRef('pk')
+  ).order_by('-published_date')
+
+  # 各著者に最新の本のタイトルをアノテーションする
+  authors_with_latest_book = Author.objects.annotate(
+      latest_book_title=Subquery(latest_books.values('title')[:1])
+  )
+  ```
+
+この例は、各著者オブジェクトに、その著者が書いた最新の本のタイトルをアノテーションとして追加しています。これにより、関連テーブルのデータを効率的に取得できます。
+
+#### 生のSQLの実行
+ほとんどのユースケースではDjango ORMで十分ですが、ORMでは表現が難しい複雑なクエリや、パフォーマンスが重要なクエリの場合は、生のSQLを実行することも可能です。
+
+- **`raw()`**: モデルのクエリセットを使って、生のSQLクエリを実行し、結果をモデルのインスタンスとして受け取ります。
+
+  ```python
+  # 生のSQLクエリを実行
+  for book in Book.objects.raw('SELECT * FROM myapp_book WHERE author_id = %s', [1]):
+      print(book.title)
+  ```
+
+- **`connection`**: `django.db.connection`オブジェクトを使って、より低レベルでSQLクエリを直接実行できます。
+
+  ```python
+  from django.db import connection
+
+  with connection.cursor() as cursor:
+      cursor.execute("SELECT COUNT(*) FROM myapp_book")
+      row = cursor.fetchone()
+      print(f'Total books: {row[0]}')
+  ```
+
+生のSQLを使用する場合、ORMの利点（データベース移植性、セキュリティ）の一部が失われるため、注意が必要です。しかし、パフォーマンスがクリティカルな場合に強力な選択肢となります。
+
+#### トランザクション管理
+データベース操作の完全な実行（コミット）または完全な取り消し（ロールバック）を保証するトランザクションは、データの整合性を維持するために重要です。Django ORMは、このトランザクションを簡単に管理するための機能を提供しています。
+
+1. **自動コミット**
+   Djangoでは、デフォルトで各データベース操作が単一のトランザクションとして自動的にコミットされます。これは、シンプルな操作には便利ですが、複数の操作を一つのまとまりとして扱いたい場合には適していません。
+
+2. **手動トランザクション管理**
+   複数のデータベース操作を一つのアトミックな（不可分な）トランザクションとして実行したい場合は、`atomic()`デコレータまたはコンテキストマネージャを使用します。これにより、途中でエラーが発生した場合、すべての操作がロールバックされ、データの一貫性が保たれます。
+
+   - **例: 複数の書籍情報を一度に保存するトランザクション**
+
+     ```python
+     from django.db import transaction
+
+     # @transaction.atomic
+     # def save_multiple_books():
+     #     # 複数のデータベース操作
+     #     ...
+
+     with transaction.atomic():
+         Book.objects.create(title='Book A', author=jane, published_date='2024-01-01')
+         Book.objects.create(title='Book B', author=jane, published_date='2024-01-02')
+         # 何らかのエラーが発生した場合、両方の操作がロールバックされる
+     ```
+
+このコードブロック内のすべての操作は、ブロックの最後にエラーなく到達した場合にのみコミットされます。
+
+#### パフォーマンス最適化：select_related と prefetch_related
+関連モデルのデータを取得する際、Django ORMはデフォルトで、関連オブジェクトが必要になるたびに新しいデータベースクエリを実行します。これは「N+1クエリ問題」として知られ、パフォーマンスのボトルネックとなります。この問題を解決するために、`select_related`と`prefetch_related`が用意されています。
+
+1. **`select_related()` (一対一、一対多)**
+   `select_related()`は、単一のデータベースクエリで、指定された関連オブジェクトのデータを取得します。これにより、追加のクエリが不要になります。このメソッドは、外部キーや一対一の関係に最適です。
+
+   - **例: すべての書籍とその著者を一つのクエリで取得する**
+
+     ```python
+     # 通常のアクセス：N+1クエリが発生
+     books = Book.objects.all()
+     for book in books:
+         print(book.author.name) # ループごとに新しいクエリが発生
+
+     # select_relatedを使用：単一のクエリに結合される
+     books = Book.objects.select_related('author').all()
+     for book in books:
+         print(book.author.name) # データベースアクセスなし
+     ```
+
+   この場合、`select_related('author')`はBookとAuthorのテーブルを**SQLのJOIN**で結合し、効率的にデータを取得します。
+
+2. **`prefetch_related()` (多対多、リバースフォワードキー)**
+   `prefetch_related()`は、関連するオブジェクトのデータを別のクエリで取得し、Pythonのメモリ内で関連付けを行います。これは、多対多や、ForeignKeyの逆方向の関係など、より複雑な関係に最適です。
+
+   - **例: 各著者が書いた本を効率的に取得する**
+
+     ```python
+     # related_name='books'が定義されているAuthorモデル
+     # N+1クエリが発生
+     authors = Author.objects.all()
+     for author in authors:
+         print(author.books.all()) # ループごとに新しいクエリが発生
+
+     # prefetch_relatedを使用：2つのクエリで処理される
+     authors = Author.objects.prefetch_related('books').all()
+     for author in authors:
+         print(author.books.all()) # データベースアクセスなし
+     ```
+
+   `prefetch_related('books')`は、まずAuthorのクエリを実行し、次にすべての関連するBookのクエリを一つで実行します。その後、Python側で各著者にその本を紐付けます。
+
+これらの機能は、Djangoアプリケーションのパフォーマンスを大きく左右するため、大規模なデータセットを扱う際には不可欠な知識となります。
+
+#### カスタムマネージャとクエリセットメソッド
+Djangoのマネージャ（`objects`など）は、データベース操作のためのインターフェースです。独自のカスタムマネージャを作成することで、特定のモデルに特化した再利用可能なクエリメソッドを追加できます。これにより、コードの重複を減らし、より簡潔なコードを記述できます。
+
+- **カスタムマネージャの作成**
+  - `models.Manager`を継承したクラスを作成します。
+  - そのクラスをモデルにアタッチ（関連付け）します。
+
+  - **例: `published`というカスタムマネージャを作成し、公開済みの記事を簡単に取得できるようにする**
+
+    ```python
+    # myapp/managers.py
+    from django.db import models
+
+    class PublishedArticleManager(models.Manager):
+        def get_queryset(self):
+            # 親クラスのクエリセットをオーバーライド
+            return super().get_queryset().filter(is_published=True)
+
+    # myapp/models.py
+    from django.db import models
+    from .managers import PublishedArticleManager
+
+    class Article(models.Model):
+        title = models.CharField(max_length=200)
+        content = models.TextField()
+        is_published = models.BooleanField(default=False)
+        
+        # カスタムマネージャをアタッチ
+        objects = models.Manager() # デフォルトのマネージャ
+        published = PublishedArticleManager() # カスタムマネージャ
+    ```
+
+  これで、`Article.published.all()`のように呼び出すだけで、公開済みの記事のみを取得できます。
+
+- **カスタムクエリセットメソッド**
+  カスタムマネージャをさらに拡張して、カスタムクエリセットクラスを作成することもできます。これにより、チェーン可能な新しいメソッドをクエリセットに追加できます。
+
+  - **例: `with_authors()`というメソッドを追加し、著者の情報も一緒に取得できるようにする**
+
+    ```python
+    # myapp/models.py
+    from django.db import models
+
+    class ArticleQuerySet(models.QuerySet):
+        def with_authors(self):
+            # select_relatedを使って著者の情報をプリフェッチ
+            return self.select_related('author')
+
+    class Article(models.Model):
+        ...
+        # カスタムクエリセットをマネージャにアタッチ
+        objects = models.Manager.from_queryset(ArticleQuerySet)()
+    ```
+
+  この設定後、`Article.objects.with_authors().filter(is_published=True)`のように、他のメソッドと組み合わせて使うことができます。
+
+#### マイグレーションの高度な管理
+`makemigrations`と`migrate`は、Django ORMの変更をデータベースに適用する基本的なコマンドですが、より複雑なシナリオに対応するための高度な機能も持っています。
+
+1. **データマイグレーション**
+   モデルのスキーマ変更だけでなく、データ自体を変更するマイグレーションを作成することもできます。これは、既存のデータを新しいスキーマに合わせて変換する場合に便利です。`migrations.RunPython`を使って、Pythonコードでデータの移行ロジックを記述できます。
+
+   - **例: 既存のユーザーの`first_name`と`last_name`を`full_name`フィールドに結合する**
+
+     ```python
+     # 0002_user_full_name.py (マイグレーションファイル)
+     from django.db import migrations, models
+
+     def combine_names(apps, schema_editor):
+         User = apps.get_model('myapp', 'User')
+         for user in User.objects.all():
+             user.full_name = f'{user.first_name} {user.last_name}'
+             user.save()
+
+     class Migration(migrations.Migration):
+         dependencies = [
+             ('myapp', '0001_initial'),
+         ]
+
+         operations = [
+             migrations.AddField(
+                 model_name='user',
+                 name='full_name',
+                 field=models.CharField(max_length=200, null=True),
+             ),
+             migrations.RunPython(combine_names),
+         ]
+     ```
+
+2. **マイグレーションの管理**
+   - `--empty`: 何も変更せずに空のマイグレーションファイルを作成します。データマイグレーションのロジックを手動で追加する際に使います。
+   - `--name`: マイグレーションファイルに分かりやすい名前を付けられます。
+   - `squashmigrations`: 複数のマイグレーションファイルを一つにまとめることで、プロジェクトの履歴を整理できます。
+   - `showmigrations`: マイグレーションの適用状況を確認できます。
+
+#### モデル継承
+Django ORMでは、Pythonのクラス継承の仕組みを利用して、モデル間で共通のフィールドやメソッドを共有できます。これにより、コードの重複を減らし、メンテナンス性を向上させられます。
+
+1. **抽象基底クラス (Abstract Base Classes)**
+   抽象基底クラスは、それ自体がデータベーステーブルを作成せず、その子モデルにフィールドを継承させるためのモデルです。これは、複数のモデルで共通のフィールド（例：作成日時、更新日時）を持たせたい場合に最適です。
+
+   - `abstract=True` を`Meta`クラスで設定します。
+
+     ```python
+     # models.py
+     from django.db import models
+
+     class CommonInfo(models.Model):
+         name = models.CharField(max_length=100)
+         created_at = models.DateTimeField(auto_now_add=True)
+
+         class Meta:
+             abstract = True
+
+     class Student(CommonInfo):
+         age = models.IntegerField()
+
+     class Teacher(CommonInfo):
+         subject = models.CharField(max_length=50)
+     ```
+
+   この例では、`Student`と`Teacher`モデルが`name`と`created_at`フィールドを継承し、それぞれ独自のフィールド（`age`と`subject`）を持っています。
+
+2. **多重テーブル継承 (Multi-table Inheritance)**
+   多重テーブル継承は、子モデルが親モデルのフィールドを継承し、独自のデータベーステーブルを持つ形式です。各モデルが独自のテーブルを持つため、親モデルと子モデルの間で一対一の関係が自動的に構築されます。
+
+   ```python
+   class Place(models.Model):
+       name = models.CharField(max_length=100)
+
+   class Restaurant(Place):
+       serves_pizza = models.BooleanField(default=False)
+   ```
+
+   `Restaurant`オブジェクトを保存すると、`Place`テーブルと`Restaurant`テーブルの両方にデータが保存されます。
+
+3. **プロキシモデル (Proxy Models)**
+   プロキシモデルは、既存のモデルの振る舞いを変更するために使用されますが、独自のデータベーステーブルは作成しません。これは、元のモデルの列（カラム）やテーブル構造を変更せずに、新しいメソッドやデフォルトのマネージャを追加したい場合に非常に役立ちます。
+
+   - `proxy=True` を`Meta`クラスで設定します。
+
+     ```python
+     # models.py
+     from django.db import models
+
+     class Article(models.Model):
+         title = models.CharField(max_length=200)
+         is_published = models.BooleanField(default=False)
+         
+     class PublishedArticleManager(models.Manager):
+         def get_queryset(self):
+             return super().get_queryset().filter(is_published=True)
+
+     class PublishedArticle(Article):
+         objects = PublishedArticleManager() # カスタムマネージャを追加
+
+         class Meta:
+             proxy = True
+
+         def publish_now(self):
+             self.is_published = True
+             self.save()
+     ```
+
+   `PublishedArticle`モデルは、`Article`モデルのプロキシとして機能します。これは、`Article`テーブルのデータをそのまま使用しつつ、`is_published=True`のオブジェクトのみを扱うカスタムマネージャや、`publish_now`のような新しいメソッドを追加できます。
+
+これらの高度な機能は、より複雑なアプリケーションを設計し、管理する際に、コードの整理と再利用を強力にサポートします。

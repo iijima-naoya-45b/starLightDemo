@@ -13,8 +13,8 @@ export default defineConfig({
             ],
             sidebar: [
                 {
-                    label: 'Astro',
-                    autogenerate: { directory: 'astroガイド' },
+                    label: 'StarLightガイド',
+                    autogenerate: { directory: 'StarLightガイド' },
                 },
                 {
                     label: 'Django',

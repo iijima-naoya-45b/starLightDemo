@@ -1,0 +1,69 @@
+---
+title: "Modelとは"
+label: "Modelとは"
+---
+
+ユーザーから提供されたコンテンツに続いて、Rails の Model についてより詳細に解説します。
+
+## RailsにおけるModelの詳細
+RailsにおけるModelは、アプリケーションのデータとビジネスロジックを扱う中心的な役割を担います。Active RecordというORM（オブジェクト関係マッピング）ライブラリを介してデータベースとやり取りし、データのCRUD（作成・読み取り・更新・削除）操作を行います。
+
+### 1. Active Recordとは
+Active Recordは、データベースのテーブルをRubyのクラスとして扱うことを可能にする仕組みです。これにより、SQL文を直接書く代わりに、Rubyのオブジェクト指向的なメソッドを使ってデータベースを操作できます。
+
+たとえば、`users`というテーブルがある場合、Railsでは`User`というModelクラスを作成します。このクラスのインスタンス（`User.new`）は、データベースの1つのレコード（行）に対応します。
+
+### 2. Modelの役割
+RailsのModelは、データとのやり取りだけでなく、以下のような重要な役割も担っています。
+
+#### ① バリデーション（Validation）
+データベースにデータを保存する前に、データの整合性や有効性を検証します。これにより、無効なデータがデータベースに保存されるのを防ぎます。
+
+```ruby
+class User < ApplicationRecord
+  validates :name, presence: true
+  validates :email, uniqueness: true
+end
+```
+上記のコードは、`name`が空でないこと、`email`が一意であることを検証します。
+
+#### ② 関連付け（Association）
+複数のModel間の関係性を定義します。これにより、関連するデータを簡単に取得できます。
+
+- `has_many`: 1対多の関係（例：Userは多くのPostを持つ）
+- `belongs_to`: 多対1の関係（例：Postは1つのUserに属する）
+- `has_one`: 1対1の関係
+- `has_and_belongs_to_many` / `has_many, through`: 多対多の関係
+
+```ruby
+class User < ApplicationRecord
+  has_many :posts
+end
+
+class Post < ApplicationRecord
+  belongs_to :user
+end
+```
+このように関連付けを定義することで、`user.posts`でそのユーザーが作成したすべての投稿を取得できるようになります。
+
+#### ③ コールバック（Callback）
+特定のライフサイクルイベント（データの保存前、削除後など）で実行される処理を定義します。
+
+```ruby
+class Post < ApplicationRecord
+  before_save :set_default_title
+
+  private
+
+  def set_default_title
+    self.title = "Untitled" if self.title.blank?
+  end
+end
+```
+この例では、`before_save`コールバックを使って、タイトルが空の場合にデフォルトの値を設定しています。
+
+### 3. Modelのファイル構成
+RailsのModelファイルは、通常`app/models`ディレクトリに配置されます。慣習として、ファイル名はクラス名を単数形かつスネークケースにしたものになります（例：Userクラスは`app/models/user.rb`）。
+
+### 4. まとめ
+RailsのModelは単なるデータベースのインターフェースではなく、アプリケーションのデータとビジネスロジックをカプセル化する強力なツールです。Active Recordの機能を使うことで、開発者は複雑なデータベース操作から解放され、より本質的なアプリケーションのロジック開発に集中できます。
