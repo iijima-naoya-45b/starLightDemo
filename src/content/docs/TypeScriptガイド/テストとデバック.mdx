@@ -1,0 +1,130 @@
+---
+title: "テストとデバック"
+label: "テストとデバック"
+---
+
+## 1. テスティングフレームワークのセットアップ 🧪
+
+TypeScriptでテストを書く場合、型安全性を活かすために、TypeScriptをネイティブでサポートしているテスティングフレームワークを選択するのが一般的です。
+
+### Jest
+
+Jestは、Facebookが開発した広く使われているテスティングフレームワークです。設定が簡単で、モック、スパイ、カバレッジレポートなどの機能が組み込まれています。
+
+#### インストール:
+
+プロジェクトにJestとTypeScriptの型定義ファイルをインストールします。
+
+```bash
+npm install --save-dev jest @types/jest ts-jest
+```
+
+`ts-jest`は、TypeScriptファイルをJestが理解できるJavaScriptに変換するために必要です。
+
+#### 設定:
+
+`jest.config.js`ファイルを作成し、`ts-jest`をトランスフォーマーとして設定します。
+
+```javascript
+// jest.config.js
+module.exports = {
+  preset: 'ts-jest',
+  testEnvironment: 'node',
+};
+```
+
+#### テストコードの作成:
+
+`.test.ts`または`.spec.ts`という拡張子のファイルを作成し、テストを記述します。
+
+```typescript
+// math.ts
+export function add(a: number, b: number): number {
+  return a + b;
+}
+
+// math.test.ts
+import { add } from './math';
+
+test('add function should return the sum of two numbers', () => {
+  expect(add(1, 2)).toBe(3);
+});
+```
+
+型チェックが行われるため、例えば`add('1', 2)`のような間違いはコンパイル時に検出されます。
+
+## 2. E2Eテストとの連携 🔗
+
+E2Eテストでは、ブラウザ操作の型定義が重要になります。PlaywrightとTypeScriptの組み合わせが、この点で非常に優れています。
+
+### Playwright
+
+Playwrightは、クロスブラウザのE2Eテストフレームワークで、型安全なAPIを提供しています。
+
+#### インストール:
+
+```bash
+npm install --save-dev playwright @playwright/test
+```
+
+#### テストコードの作成:
+
+Playwrightの`test`フィクスチャは、引数として`page`オブジェクトを型付きで提供します。これにより、IDEのオートコンプリートが効き、コードのミスを防げます。
+
+```typescript
+import { test, expect } from '@playwright/test';
+
+test('ログインページをテストする', async ({ page }) => {
+  await page.goto('https://example.com/login');
+
+  // 型安全なロケーターの使用
+  const usernameInput = page.getByLabel('Username');
+  const passwordInput = page.getByLabel('Password');
+  const loginButton = page.getByRole('button', { name: 'Log in' });
+
+  // 正しい型を持つpageメソッド
+  await usernameInput.fill('testuser');
+  await passwordInput.fill('password123');
+  await loginButton.click();
+});
+```
+
+## 3. デバッグ 🐞
+
+TypeScriptプロジェクトのデバッグは、VS Codeのような統合開発環境（IDE）を使うことで非常に効率的に行えます。
+
+### VS Codeでのデバッグ設定
+
+`launch.json`ファイルを設定することで、VS CodeのデバッガをTypeScriptコードに直接アタッチできます。
+
+#### launch.jsonの作成:
+
+VS Codeのサイドバーで「実行とデバッグ」をクリックし、「launch.json ファイルを作成します」を選択します。Node.js環境の場合は「Node.js」を選びます。
+
+#### 設定の調整:
+
+生成された設定ファイルを、TypeScriptプロジェクトに合わせて調整します。
+
+```json
+// .vscode/launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Launch Program",
+      "skipFiles": ["<node_internals>/**"],
+      "program": "${workspaceFolder}/src/index.ts",
+      "preLaunchTask": "tsc: build - tsconfig.json", // コンパイルタスクを実行
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"] // コンパイルされたJSファイルを指定
+    }
+  ]
+}
+```
+
+これにより、デバッグ実行前にTypeScriptコードが自動でコンパイルされ、`src/index.ts`に設定したブレークポイントで実行が停止します。
+
+## 4. まとめ
+
+TypeScriptプロジェクトでは、JestやPlaywrightといった型安全なテストフレームワークを導入することで、早期にバグを発見し、コードの品質を高めることができます。また、VS Codeのデバッガを適切に設定することで、開発プロセス全体をスムーズに進められます。これらのツールを使いこなすことで、より堅牢でメンテナンスしやすいアプリケーションを構築できます。

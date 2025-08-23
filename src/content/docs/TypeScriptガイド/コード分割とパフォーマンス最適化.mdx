@@ -1,0 +1,90 @@
+---
+title: "コード分割とパフォーマンス最適化"
+label: "コード分割とパフォーマンス最適化"
+---
+
+## コード分割とパフォーマンス最適化 ⚡️
+
+TypeScriptを使用する大規模なフロントエンドアプリケーションでは、バンドルサイズとパフォーマンスが重要な課題となります。コード分割は、この課題を解決するための主要なテクニックです。
+
+### 1. コード分割の概念
+
+コード分割は、アプリケーションのJavaScriptコードを複数の小さなチャンク（塊）に分割し、ユーザーが必要とするタイミングで動的にロードする手法です。これにより、初回ロード時にダウンロードされるファイルサイズを大幅に削減し、初期表示速度を向上させることができます。
+
+分割されたコードは、以下の状況でロードされます。
+
+- **ページの遷移時**: ユーザーが新しいページに移動したとき。
+- **特定のコンポーネントの表示時**: モーダルウィンドウやドロップダウンメニューが表示されたとき。
+- **ユーザー操作時**: ボタンのクリックなど、特定のイベントが発生したとき。
+
+### 2. 動的インポート（Dynamic Imports）
+
+動的インポートは、コード分割を実装するための最も一般的な方法です。静的な`import`文とは異なり、`import()`関数はモジュールを非同期的にロードし、`Promise`を返します。
+
+#### 構文
+
+```typescript
+const module = await import('./my-module');
+```
+
+#### 実装例
+
+以下の例では、ユーザーがボタンをクリックしたときにのみ、大きなデータ処理モジュールがロードされます。
+
+```typescript
+// button.ts
+import { heavyComputation } from './heavy-computation';
+
+document.getElementById('my-button').addEventListener('click', async () => {
+  // ボタンがクリックされたときにのみ、このコードが実行される
+  // WebpackやViteなどのバンドラーが、'./heavy-computation'を別チャンクに分割する
+  const { heavyComputation } = await import('./heavy-computation');
+  const result = heavyComputation(1000);
+  console.log(result);
+});
+```
+
+このアプローチにより、`heavy-computation`モジュールは、アプリケーションの初期ロード時にはダウンロードされません。
+
+### 3. ツリーシェイキング（Tree Shaking）
+
+ツリーシェイキングは、アプリケーションの最終的なバンドルから使用されていないコードを削除するプロセスです。これにより、バンドルサイズをさらに最適化できます。
+
+#### 仕組み
+
+ツリーシェイキングは、ESモジュールの静的な性質（`import`と`export`）を利用して、どのコードが実際に使用されているかをビルド時に分析します。
+
+#### 例:
+
+```typescript
+// utils.ts
+export function usedFunction() {
+  console.log('This function is used.');
+}
+
+export function unusedFunction() {
+  console.log('This function is not used.');
+}
+
+// app.ts
+import { usedFunction } from './utils';
+
+usedFunction();
+```
+
+この場合、`unusedFunction`は`app.ts`から呼び出されていないため、ツリーシェイキングによって最終的なバンドルから削除されます。
+
+#### 設定
+
+ツリーシェイキングを最大限に活用するためには、`tsconfig.json`の`module`オプションを**`esnext`や`es2020`**などのESモジュールをサポートする値に設定することが重要です。
+
+```json
+{
+  "compilerOptions": {
+    "module": "esnext",
+    "target": "esnext"
+  }
+}
+```
+
+これらの最適化テクニックは、特に大規模なTypeScriptアプリケーションにおいて、ユーザーエクスペリエンスを向上させるために不可欠です。

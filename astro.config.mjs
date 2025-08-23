@@ -52,6 +52,10 @@ export default defineConfig({
                     label: 'Rails',
                     autogenerate: { directory: 'railsガイド' },
                 },
+                {
+                    label: 'TypeScript',
+                    autogenerate: { directory: 'TypeScriptガイド' },
+                },
             ],
         }),
         react(),

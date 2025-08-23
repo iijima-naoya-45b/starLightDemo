@@ -1,0 +1,61 @@
+---
+title: "tsconfig.json の詳細な設定"
+label: "tsconfig.json の詳細な設定"
+---
+
+## tsconfig.json の主要な設定項目 ⚙️
+
+`tsconfig.json`ファイルは、TypeScriptコンパイラにどのようなファイルをコンパイルするか、そしてどのようにコンパイルするかを指示するものです。プロジェクトのルートディレクトリに配置することで、`tsc`コマンドやエディタが自動で設定を読み込みます。
+
+### 1. コンパイラオプション (`compilerOptions`)
+
+このセクションは、コンパイルの振る舞いを制御する最も重要な部分です。
+
+- `target`: 出力されるJavaScriptのECMAScriptバージョンを指定します。新しい言語機能（例：`async/await`）は、指定されたターゲットに合わせてトランスパイルされます。
+  - `"es5"`: 広くサポートされているバージョン。古いブラウザや環境向け。
+  - `"es2020"`: 最新の機能を含むモダンな環境向け。
+
+- `module`: 出力されるJavaScriptコードで使用するモジュールシステムを指定します。
+  - `"commonjs"`: Node.js環境で一般的に使用されます。
+  - `"esnext"`: ブラウザや最新のNode.js環境で使われるESモジュール。
+
+- `outDir`: コンパイルされたJavaScriptファイルが出力されるディレクトリです。通常は、`dist`や`build`などの名前が使われます。
+
+- `rootDir`: ソースコードのルートディレクトリを指定します。`outDir`と組み合わせて使うことで、元のディレクトリ構造を保ったまま出力できます。
+
+- `esModuleInterop`: ESモジュールとCommonJSモジュールの間で相互運用性を確保するための設定です。これを`true`にすることで、`import * as React from 'react'`のような記述が`import React from 'react'`のようにシンプルになります。
+
+### 2. 厳格性 (Strictness) 🛡️
+
+`strict`モードは、潜在的なバグを早期に発見するために、TypeScriptが提供する最も強力な機能の一つです。
+
+- `"strict": true`: この一つを設定するだけで、以下のすべての厳格なオプションが有効になります。
+  - `"noImplicitAny"`: 型注釈がないまま、コンパイラが`any`型と推論するのを禁止します。
+  - `"strictNullChecks"`: `null`や`undefined`を厳密にチェックします。これにより、予期せぬ実行時エラーを防ぐことができます。
+  - `"strictFunctionTypes"`: 関数の引数の型チェックをより厳密にします。
+  - `"strictPropertyInitialization"`: クラスのプロパティがコンストラクタで初期化されているかをチェックします。
+
+### 3. パス解決とエイリアス (paths) 🗺️
+
+大規模なプロジェクトでは、深いディレクトリ階層を持つことがあります。`paths`オプションを使用することで、長い相対パスを短く、分かりやすいエイリアスに変換できます。
+
+```json
+// tsconfig.json
+{
+  "compilerOptions": {
+    // baseUrl は paths オプションを使用するために必須
+    "baseUrl": ".",
+    "paths": {
+      // @/components を src/components にマッピング
+      "@/components/*": ["src/components/*"],
+      // @/utils を src/utils/index.ts にマッピング
+      "@/utils": ["src/utils/index.ts"]
+    }
+  }
+}
+```
+
+利用例:
+../../../../components/Buttonという記述を、**@/components/Button**という簡潔な記述に置き換えることができます。これにより、コードの可読性が大幅に向上し、リファクタリングも容易になります。
+
+注意: この設定を有効にするには、Node.jsのモジュール解決ツール（例：Webpack, Jest）にも同様の設定が必要です。

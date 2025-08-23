@@ -1,0 +1,350 @@
+---
+title: 型定義
+sidebar:
+    label: 型定義
+---
+
+## 1. プリミティブ型と基本型 🧱
+
+TypeScriptの型定義の基本となるものです。
+
+- `string`: 文字列型です。"hello"や"world"などのテキストデータに使用します。
+- `number`: 数値型です。100や3.14などの整数、浮動小数点数に使用します。
+- `boolean`: 真偽値型です。`true`または`false`のどちらかです。
+- `null` と `undefined`: それぞれ、`null`と`undefined`を表します。
+- `any`: どのような型でも受け入れます。型チェックを無効にするため、できるだけ使用を避けるべきです。
+- `void`: 関数の戻り値がないことを示します。
+
+## 2. 配列とオブジェクト 📦
+
+複数の値を扱うための型定義です。
+
+### 配列
+
+要素の型を角括弧 `[]` で指定します。
+
+- `string[]`: 文字列の配列。例: `['a', 'b', 'c']`
+- `number[]`: 数値の配列。例: `[1, 2, 3]`
+
+### オブジェクト
+
+オブジェクトの各プロパティに型を定義します。
+
+```typescript
+type User = {
+  id: number;
+  name: string;
+  isLogin: boolean;
+};
+
+const user: User = {
+  id: 1,
+  name: 'Alice',
+  isLogin: true,
+};
+```
+
+- `?` (オプショナルプロパティ): プロパティ名の後ろに`?`を付けると、そのプロパティはあってもなくてもよくなります。
+
+```typescript
+type OptionalUser = {
+  id: number;
+  name?: string; // 名前は任意
+};
+```
+
+## 3. 関数 🤖
+
+関数の引数と戻り値に型を定義します。
+
+- **引数**: 引数名の後に `: 型` を指定します。
+- **戻り値**: 引数リストの後に `: 型` を指定します。
+
+```typescript
+function add(x: number, y: number): number {
+  return x + y;
+}
+
+const result = add(1, 2); // result は number 型
+```
+
+## 4. 複合型と高度な型 🧠
+
+複数の型を組み合わせたり、より柔軟な型を定義したりする方法です。
+
+### ユニオン型 (`|`)
+
+複数の型のいずれかであることを示します。
+
+```typescript
+let value: string | number;
+value = 'hello'; // OK
+value = 123;     // OK
+```
+
+### インターセクション型 (`&`)
+
+複数の型のすべてのプロパティを結合します。
+
+```typescript
+type Admin = { role: string };
+type Employee = { id: number };
+
+type AdminEmployee = Admin & Employee;
+
+const admin: AdminEmployee = {
+  role: 'admin',
+  id: 1,
+};
+```
+
+### 型エイリアス (`type`)
+
+既存の型に新しい名前を付けます。繰り返し使う複雑な型を簡潔に記述できます。
+
+### インターフェース (`interface`)
+
+主にオブジェクトの構造を定義するために使用します。型エイリアスと似ていますが、拡張（`extends`）や実装（`implements`）など、オブジェクト指向的な使い方ができます。
+
+```typescript
+// 型エイリアス
+type Point = { x: number; y: number };
+
+// インターフェース
+interface Shape {
+  width: number;
+  height: number;
+}
+```
+
+## 5. ジェネリクス (Generics) 🤖
+
+ジェネリクスは、再利用可能なコンポーネントを作成するための強力なツールです。特定の型に縛られることなく、複数の型に対応できる関数やクラスを定義できます。これにより、コードの柔軟性と型安全性の両方を高めることができます。
+
+ジェネリクスは、通常、山括弧 `< >` を使って定義し、型を表すために大文字のアルファベット（例：`T`）を使用します。
+
+### 例：ジェネリクス関数
+
+以下の関数は、引数として受け取った値をそのまま返す関数ですが、ジェネリクスを使うことで、入力と出力の型を動的に設定できます。
+
+```typescript
+function identity<T>(arg: T): T {
+  return arg;
+}
+
+// string 型として推論される
+let output1 = identity<string>("myString");
+
+// number 型として推論される
+let output2 = identity<number>(100);
+```
+
+## 6. ユーティリティ型 (Utility Types) 🛠️
+
+TypeScriptが標準で提供するユーティリティ型は、既存の型を変換して新しい型を生成するのに役立ちます。
+
+- `Partial<T>`: `T`のすべてのプロパティをオプショナル（任意）にします。
+- `Required<T>`: `T`のすべてのプロパティを必須にします。
+- `Readonly<T>`: `T`のすべてのプロパティを読み取り専用にします。
+- `Pick<T, K>`: `T`のプロパティから、指定した`K`のプロパティだけを抜き取って新しい型を作成します。
+
+### 例：Pickの使用
+
+`User`型から`id`と`name`だけを抜き取って`UserInfo`型を定義します。
+
+```typescript
+type User = {
+  id: number;
+  name: string;
+  age: number;
+};
+
+// User型からidとnameプロパティを抜き取る
+type UserInfo = Pick<User, 'id' | 'name'>;
+
+const userInfo: UserInfo = {
+  id: 1,
+  name: 'Alice',
+};
+```
+
+## 7. 型推論 (Type Inference) と型アサーション (Type Assertion) 🧠
+
+### 型推論
+
+TypeScriptは、変数の初期値から自動的に型を推論します。
+
+```typescript
+let message = "Hello"; // string 型と推論される
+let count = 100;      // number 型と推論される
+```
+
+明示的な型定義をしなくても、型安全性が保たれるため、コーディングの効率が向上します。
+
+### 型アサーション
+
+開発者がコンパイラよりも型の情報を持っている場合に、`as`キーワードを使って型を上書きします。ただし、型安全性を損なう可能性があるため、慎重に使用すべきです。
+
+```typescript
+const element = document.getElementById('my-element') as HTMLInputElement;
+// この時点でelementはHTMLInputElement型として扱われる
+element.value = "newValue";
+```
+
+## 8. enumとリテラル型 🔖
+
+これらの型は、特定の値を厳密に制限したい場合に役立ちます。
+
+### enum (列挙型)
+
+関連する定数をまとめて定義します。`enum`を使用すると、マジックナンバーや文字列リテラルを避けることができ、コードの可読性を向上させます。
+
+```typescript
+enum Direction {
+  Up,
+  Down,
+  Left,
+  Right,
+}
+
+const direction = Direction.Up; // directionは `0` になる
+```
+
+`enum`のメンバーには、デフォルトで数値が割り当てられますが、文字列を割り当てることもできます。
+
+### リテラル型
+
+厳密に特定の文字列、数値、または真偽値のみを受け入れるようにします。
+
+```typescript
+type Status = "pending" | "success" | "error";
+
+let currentStatus: Status = "pending";
+currentStatus = "success"; // OK
+currentStatus = "failure"; // エラー: '"failure"' 型は 'Status' 型に割り当てられません。
+```
+
+これは、ユニオン型の一種で、特定の文字列の集合だけを許可したい場合に非常に便利です。
+
+## 9. 構造的部分型 (Structural Subtyping) 🦢
+
+TypeScriptの型システムは、構造的部分型に基づいています。これは、オブジェクトが特定の型として認識されるために、その構造が一致していればよいという概念です。
+
+例えば、`Point`というインターフェースがあるとします。
+
+```typescript
+interface Point {
+  x: number;
+  y: number;
+}
+```
+
+そして、`Vector`というオブジェクトがあります。
+
+```typescript
+const vector = { x: 10, y: 20, z: 30 };
+```
+
+`Vector`には`z`プロパティがありますが、`Point`インターフェースが持つ`x`と`y`のプロパティも持っているため、`Vector`は**`Point`型として扱えます**。
+
+```typescript
+function printPoint(p: Point) {
+  console.log(p.x, p.y);
+}
+
+printPoint(vector); // エラーにならない
+```
+
+この柔軟な型チェックは、TypeScriptの大きな特徴であり、JavaScriptとの互換性を保つ上で重要な役割を果たします。
+
+## 10. unknownと型ガード 🛡️
+
+`any`型は型チェックを完全に無効にしますが、`unknown`型はより安全な代替手段を提供します。
+
+### unknown
+
+`unknown`型の変数は、型を特定しない限り、プロパティへのアクセスや操作ができません。これにより、型安全性を強制します。
+
+```typescript
+let value: unknown;
+value = 'hello';
+
+// エラー: 'value' は unknown です。
+// value.toUpperCase(); 
+
+if (typeof value === 'string') {
+  // ここでは value は string 型として認識される
+  console.log(value.toUpperCase()); // OK
+}
+```
+
+### 型ガード
+
+`typeof`や`instanceof`といった条件文を使って、実行時に変数の型を絞り込むことを「型ガード」と呼びます。これは、`unknown`型を安全に扱うために不可欠です。
+
+## 11. 条件型 (Conditional Types) 🤔
+
+条件型は、ある型が別の型に割り当て可能であるかどうかに基づいて、異なる型を返すことができる高度な機能です。三項演算子に似た構文を使用します。これは、特にジェネリクスと組み合わせて使用され、非常に柔軟な型を定義する際に役立ちます。
+
+```typescript
+type IsString<T> = T extends string ? 'yes' : 'no';
+
+type Result1 = IsString<string>; // Result1 は 'yes' になる
+type Result2 = IsString<number>; // Result2 は 'no' になる
+```
+
+この機能は、複雑なライブラリやフレームワークの型定義でよく見られます。
+
+## 12. マッピング型 (Mapped Types) 🗺️
+
+マッピング型は、既存の型に基づいて新しい型を作成する際に使用されます。オブジェクトの各プロパティをループ処理し、新しい型に変換することができます。
+
+```typescript
+type User = {
+  name: string;
+  age: number;
+};
+
+// Userのすべてのプロパティを読み取り専用にする
+type ReadonlyUser = {
+  readonly [P in keyof User]: User[P];
+};
+
+const user: ReadonlyUser = {
+  name: 'Alice',
+  age: 30,
+};
+
+// エラー: 'name' は読み取り専用プロパティであるため、割り当てできません。
+// user.name = 'Bob'; 
+```
+
+この例では、`Readonly<T>`ユーティリティ型を自作していますが、このように既存の型を変換する処理を一般化することができます。
+
+## 13. デコレーター (Decorators) 🎨
+
+デコレーターは、クラスやプロパティ、メソッドなどに特別な動作をアタッチする機能です。実験的な機能ですが、AngularやNestJSといったフレームワークで広く使われています。
+
+デコレーターは`@`シンボルを使って適用されます。
+
+```typescript
+function log(target, key, descriptor) {
+  const originalMethod = descriptor.value;
+  descriptor.value = function(...args: any[]) {
+    console.log(`Calling ${key} with`, args);
+    return originalMethod.apply(this, args);
+  };
+  return descriptor;
+}
+
+class Calculator {
+  @log
+  add(x: number, y: number) {
+    return x + y;
+  }
+}
+```
+
+このコードでは、`add`メソッドが呼び出されるたびに、自動的に引数がログ出力されます。デコレーターは、ロギング、認証、トランザクション管理といった横断的な関心を、コードを汚すことなく実装するのに役立ちます。
+
+これらのトピックを追加することで、ドキュメントはTypeScriptの型システムに関する非常に高度で包括的なリソースになります。
