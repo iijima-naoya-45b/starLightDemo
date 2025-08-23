@@ -3,26 +3,61 @@ title: "パフォーマンスチューニング"
 label: "パフォーマンスチューニング"
 ---
 
-Astroのパフォーマンスチューニング方法を以下に示します。
+# パフォーマンスチューニング
 
-## 画像最適化
+Astro は、デフォルトで高速なウェブサイトを構築できますが、さらにパフォーマンスを向上させるための方法がいくつかあります。
 
-Astroでは、画像を最適化するために`astro-imagetools`を使用できます。
+## 1. 画像最適化
+
+画像はウェブサイトのパフォーマンスに大きな影響を与えます。`astro:assets` は、Astro が公式に提供する画像処理のためのインテグレーションで、これにより画像の最適化を簡単に行うことができます。
 
 ```bash
-npm install astro-imagetools
+npx astro add @astrojs/image
 ```
 
-## コード分割
+このインテグレーションを使用することで、画像のサイズ変更、フォーマット変換、WebP などの次世代フォーマットへの最適化が自動的に行われます。また、`src` ディレクティブに画像のパスを指定するだけで、レスポンシブな画像（`srcset` 属性）を生成することも可能です。
 
-Astroは、ページごとにコードを分割して、パフォーマンスを向上させます。
+### 例:
 
-```javascript
-// astro.config.mjs
-export default {
-  buildOptions: {
-    site: 'https://example.com',
-    sitemap: true,
-  },
-};
+```astro
+---
+import { Image } from 'astro:assets';
+import myImage from '../assets/my-image.jpg';
+---
+<Image src={myImage} alt="My awesome image" width={500} height={300} />
 ```
+
+## 2. コード分割 (Code Splitting)
+
+Astro は、コンポーネントの JavaScript を必要最小限に抑える「アイランドアーキテクチャ」を採用しています。これにより、ページの大部分は静的な HTML として提供され、JavaScript は必要な場所でのみロードされます。
+
+### 動的インポート
+
+JavaScript をさらに最適化するために、動的にインポート（Dynamic Imports）を使うことで、特定のコンポーネントやライブラリを必要な時にだけロードできます。
+
+#### 例:
+
+```astro
+---
+const components = import('../components/heavy-component.astro');
+---
+<div>
+  <Astro.Component {...components} />
+</div>
+```
+
+## 3. その他の最適化手法
+
+- **CSS の最適化:** PostCSS や PurgeCSS などのツールを組み込み、不要な CSS を削除することで、ファイルサイズを削減できます。
+
+- **サードパーティスクリプトの遅延ロード:** Google Analytics や広告スクリプトなどのサードパーティスクリプトは、ページのレンダリングをブロックすることがあります。これらのスクリプトを `async` や `defer` 属性を使って遅延ロードすることで、初期表示速度を改善できます。
+
+- **プリフェッチとプリロード:** `Astro.prefetch` ディレクティブを使用すると、ユーザーが次にアクセスする可能性のあるページを事前にロードしておき、ナビゲーションを高速化できます。
+
+- **CDN の活用:** デプロイ時に CDN（コンテンツデリバリーネットワーク）を利用することで、世界中のユーザーにコンテンツを高速に配信できます。
+
+## 4. サーバーサイドレンダリング (SSR) の活用
+
+Astro が SSR をサポートしている場合、サーバー側でデータを取得・処理し、完成した HTML をクライアントに送信できます。これにより、ブラウザでの JavaScript 実行を最小限に抑え、ページの初期表示を高速化できます。
+
+これらの方法を組み合わせることで、Astro アプリケーションのパフォーマンスを最大限に引き出すことができます。

@@ -1,0 +1,53 @@
+---
+title: "Jestの中級"
+label: "Jestの中級"
+---
+
+このセクションでは、Jestを使用した中級レベルのテスト手法について説明します。
+
+## モックとスパイ
+
+Jestを使用して関数のモックやスパイを行う方法を紹介します。これにより、テスト中に関数の呼び出しを監視したり、モックしたりすることが可能です。
+
+### モックの使用
+
+Jestの`jest.mock`を使用して、モジュールをモックすることができます。
+
+```javascript
+// user.js
+function getUser() {
+  return { name: 'Alice' };
+}
+module.exports = getUser;
+
+// user.test.js
+jest.mock('./user');
+const getUser = require('./user');
+
+test('should mock getUser function', () => {
+  getUser.mockReturnValue({ name: 'Bob' });
+  expect(getUser()).toEqual({ name: 'Bob' });
+});
+```
+
+### スパイの使用
+
+Jestの`jest.spyOn`を使用して、関数の呼び出しをスパイすることができます。
+
+```javascript
+// math.js
+const math = {
+  add: (a, b) => a + b,
+};
+module.exports = math;
+
+// math.test.js
+const math = require('./math');
+
+test('spies on add method', () => {
+  const spy = jest.spyOn(math, 'add');
+  math.add(1, 2);
+  expect(spy).toHaveBeenCalledWith(1, 2);
+});
+```
+

@@ -18,3 +18,91 @@ test('basic test', async ({ page }) => {
   expect(title).toBe('Example Domain');
 });
 ```
+
+## 高度なテスト
+
+Playwrightを使用して高度なテストを作成します。
+
+```javascript
+const { test, expect } = require('@playwright/test');
+
+// 並行テストの実行
+// 複数のブラウザコンテキストで同時にテストを実行します。
+test('parallel test', async ({ browser }) => {
+  const context1 = await browser.newContext();
+  const page1 = await context1.newPage();
+  await page1.goto('https://example.com');
+
+  const context2 = await browser.newContext();
+  const page2 = await context2.newPage();
+  await page2.goto('https://example.org');
+
+  const title1 = await page1.title();
+  const title2 = await page2.title();
+
+  expect(title1).toBe('Example Domain');
+  expect(title2).toBe('Example Domain');
+});
+
+// ネットワークのモック
+// APIリクエストをモックしてテストを行います。
+test('network mocking', async ({ page }) => {
+  await page.route('**/api/data', route => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: 'mocked data' })
+    });
+  });
+
+  await page.goto('https://example.com');
+  // ここでモックされたデータを使用したテストを行います。
+});
+
+// デバイスエミュレーション
+// モバイルデバイスをエミュレートしてテストを行います。
+test('device emulation', async ({ browser }) => {
+  const iPhone = playwright.devices['iPhone 11'];
+  const context = await browser.newContext({ ...iPhone });
+  const page = await context.newPage();
+  await page.goto('https://example.com');
+  // モバイルビューでのテストを行います。
+});
+
+## モックとスパイ
+
+Playwrightでは、ネットワークのモックを行うことができますが、関数のスパイ機能は直接的には提供されていません。以下に、PlaywrightとJestを組み合わせたモックとスパイの例を示します。
+
+### ネットワークのモック
+
+Playwrightを使用して、特定のAPIリクエストをモックすることができます。これにより、外部APIのレスポンスを制御し、テストを行うことが可能です。
+
+```javascript
+await page.route('**/api/data', route => {
+  route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ data: 'mocked data' })
+  });
+});
+```
+
+### 関数のスパイ
+
+Jestを使用することで、関数の呼び出しをスパイし、どのように呼び出されたかを検証することができます。
+
+```javascript
+// Jestを使用した関数のスパイ例
+const myFunction = jest.fn();
+myFunction();
+expect(myFunction).toHaveBeenCalled();
+```
+
+これらの機能を組み合わせることで、より柔軟で強力なテストを作成することができます。
+
+## ベストプラクティス
+
+- テストは独立して実行できるように設計します。
+- テストデータはモックまたはスタブを使用して管理します。
+- テストの実行速度を最適化するために、並行テストを活用します。
+- エラーハンドリングを適切に行い、詳細なエラーメッセージを提供します。

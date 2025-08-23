@@ -1,0 +1,89 @@
+---
+title: "active_job"
+label: "active_job"
+---
+
+Active Job
+Active Jobは、Railsアプリケーションでジョブ（時間のかかる処理）をキューに入れて、非同期的に実行するためのフレームワークです。これにより、ユーザーのリクエストに対するレスポンスを素早く返し、ユーザーエクスペリエンスを向上させることができます。
+
+なぜActive Jobを使うのか？
+ウェブアプリケーションには、ユーザーの応答を待たずにバックグラウンドで処理すべきタスクが数多くあります。例えば、以下のような処理です。
+
+メール送信: ユーザー登録後のウェルカムメール送信など。
+
+画像・動画の処理: アップロードされた画像のサムネイル生成など。
+
+外部APIへのリクエスト: 外部サービスとのデータ同期など。
+
+これらの処理をリクエストと同時に実行すると、ユーザーは処理が完了するまで待つことになり、ページの読み込みが遅くなります。Active Jobは、これらのタスクを「ジョブ」として扱い、後で実行することで、ウェブサーバーの負荷を軽減し、ユーザーへのレスポンスタイムを短縮します。
+
+ジョブの作成と実行
+ジョブの生成:
+以下のコマンドでジョブを作成します。
+
+Bash
+
+rails generate job GuestSignup
+このコマンドはapp/jobs/guest_signup_job.rbというファイルを生成します。
+
+ジョブの定義:
+生成されたファイルに、実行したい処理をperformメソッド内に記述します。
+
+Ruby
+
+# app/jobs/guest_signup_job.rb
+
+class GuestSignupJob < ApplicationJob
+  queue_as :default
+
+  def perform(guest)
+    # ゲストユーザーにウェルカムメールを送信
+    GuestMailer.welcome_email(guest).deliver_now
+  end
+end
+ジョブのキューへの追加:
+コントローラーやモデルからperform_laterメソッドを呼び出して、ジョブをキューに追加します。
+
+Ruby
+
+# app/controllers/guests_controller.rb
+
+def create
+  @guest = Guest.new(guest_params)
+  if @guest.save
+    # ジョブをキューに追加
+    GuestSignupJob.perform_later(@guest)
+    redirect_to @guest, notice: 'ユーザー登録が完了しました。'
+  else
+    render :new
+  end
+end
+ジョブの実行環境とSidekiq
+Active Jobは、ジョブを実際に実行するためのバックエンド（ジョブアダプター）を切り替えることができます。
+
+asyncアダプター: デフォルトのアダプターで、開発環境で手軽に非同期処理を試すことができます。ただし、プロセスが終了するとキューがクリアされるため、本番環境での利用は推奨されません。
+
+Sidekiq: 本番環境で最もよく使われるアダプターの一つです。Redisをバックエンドに使い、マルチスレッドで動作するため、高いスループットと低メモリ消費が特徴です。
+
+Sidekiqの導入手順
+Gemの追加:
+Gemfileに以下の行を追加し、bundle installを実行します。
+
+Ruby
+
+# Gemfile
+gem 'sidekiq'
+アダプターの設定:
+config/application.rbに、Active JobのアダプターとしてSidekiqを設定します。
+
+Ruby
+
+# config/application.rb
+config.active_job.queue_adapter = :sidekiq
+Sidekiqの起動:
+Redisをインストールし、ターミナルで以下のコマンドを実行してSidekiqプロセスを起動します。
+
+Bash
+
+bundle exec sidekiq
+このように、Active JobとSidekiqを組み合わせることで、アプリケーションの要件に合わせて、スケーラブルで堅牢な非同期処理を実装することが可能になります。

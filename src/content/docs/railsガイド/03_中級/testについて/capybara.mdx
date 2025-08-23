@@ -1,0 +1,33 @@
+---
+title: "Capybara"
+label: "Capybara"
+---
+Capybara
+Capybaraは、ウェブアプリケーションの**受け入れテスト（E2Eテスト）**をRubyで書くためのツールです。ユーザーがブラウザで行う操作（ボタンのクリック、フォームへの入力など）をシミュレートし、その結果を検証できます。RSpecと組み合わせて使うのが一般的です。
+
+なぜCapybaraを使うのか？
+Capybaraは、実際のユーザー体験に近い形でアプリケーションが正しく機能するかを確認できます。自然言語に近いメソッドを使うため、テストコードが読みやすくなります。また、背後のドライバーを切り替えることで、テストコードを特定のブラウザに依存させない柔軟なテストが可能です。
+
+Capybaraの基本操作
+Capybaraのテストは、ユーザーの操作を模倣するメソッドで構成されます。
+
+visit: 指定されたURLにアクセスします。
+
+fill_in: フォームのフィールドに値を入力します。
+
+click_button: ボタンをクリックします。
+
+expect(page).to have_content: ページに特定のテキストが存在するかを検証します。
+
+Ruby
+
+# Capybaraの基本操作例
+visit '/login'
+fill_in 'メールアドレス', with: 'test@example.com'
+fill_in 'パスワード', with: 'password'
+click_button 'ログイン'
+expect(page).to have_content 'ログインに成功しました。'
+RailsでのCapybara利用法
+Gemのインストール:Gemfileの:testグループにcapybaraとselenium-webdriver（ブラウザ操作用）を追加し、bundle installを実行します。
+
+RSpecとの連携:spec/rails_helper.rbにrequire 'capybara/rspec'を追加することで、RSpecのテストファイル内でCapybara

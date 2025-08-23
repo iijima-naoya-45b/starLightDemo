@@ -1,0 +1,90 @@
+---
+title: "Docker 環境構築"
+label: "Docker 環境構築"
+---
+
+# Docker 環境構築
+
+Docker の基本的な環境構築について説明します。Docker を利用することで、開発環境を簡単に再現・共有できます。
+
+## 1. Docker Desktop のインストール
+
+Docker を利用するためには、まず Docker Desktop をインストールする必要があります。お使いの OS に応じて、以下の公式ページからダウンロードしてください。
+
+- **Windows:** Docker Desktop for Windows
+- **macOS:** Docker Desktop for Mac
+- **Linux:** Docker Desktop for Linux
+
+## 2. Dockerfile の作成
+
+Dockerfile は、Docker イメージを構築するための手順を記述したテキストファイルです。プロジェクトのルートディレクトリに Dockerfile という名前でファイルを作成します。
+
+### 例: Node.js 環境
+
+```dockerfile
+# ベースイメージの指定
+FROM node:18-alpine
+
+# 作業ディレクトリの設定
+WORKDIR /app
+
+# アプリケーションの依存関係をコピー
+COPY package.json ./
+
+# 依存関係のインストール
+RUN npm install
+
+# アプリケーションのソースコードをコピー
+COPY . .
+
+# アプリケーションの実行コマンド
+CMD ["npm", "start"]
+```
+
+## 3. Docker Compose の利用
+
+複数のコンテナを連携させてアプリケーションを構築する場合、Docker Compose を利用するのが一般的です。`docker-compose.yml` ファイルをプロジェクトのルートディレクトリに作成します。
+
+### 例: Node.js と MongoDB の連携
+
+```yaml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+
+  db:
+    image: mongo:latest
+    volumes:
+      - db-data:/data/db
+
+volumes:
+  db-data:
+```
+
+## 4. コンテナのビルドと実行
+
+`docker-compose.yml` があるディレクトリで以下のコマンドを実行すると、コンテナがビルドされて起動します。
+
+```bash
+docker-compose up -d --build
+```
+
+- **up:** コンテナを起動します。
+- **-d:** バックグラウンドで実行します。
+- **--build:** イメージを再ビルドします。
+
+コンテナを停止する場合は、以下のコマンドを実行します。
+
+```bash
+docker-compose down
+```
+
+この内容を参考に、ご自身のプロジェクトに合わせて Dockerfile や Docker Compose ファイルをカスタマイズしてください。

@@ -1,0 +1,44 @@
+---
+title: "Jestの基本"
+label: "Jestの基本"
+---
+
+このセクションでは、Jestを使用した基本的なテストの書き方と環境構築について説明します。
+
+## 環境構築
+
+Jestを使用するための環境を構築します。以下の手順に従ってください。
+
+1. **プロジェクトの初期化**
+   - 新しいプロジェクトを作成し、`npm init`を実行して`package.json`を生成します。
+
+2. **Jestのインストール**
+   - すでにインストール済みの場合はスキップしてください。
+   - ```bash
+     npm install --save-dev jest
+     ```
+
+3. **テストディレクトリの作成**
+   - `tests`ディレクトリを作成し、テストファイルを配置します。
+
+## 基本的なテストの書き方
+
+Jestを使用して基本的なテストを作成します。以下は簡単な例です。
+
+```javascript
+// sum.js
+function sum(a, b) {
+  return a + b;
+}
+module.exports = sum;
+
+// sum.test.js
+const sum = require('./sum');
+
+test('adds 1 + 2 to equal 3', () => {
+  expect(sum(1, 2)).toBe(3);
+});
+```
+
+この例では、`sum`関数が正しく動作することを確認するテストを作成しています。
+

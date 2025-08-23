@@ -1,0 +1,146 @@
+---
+title: "タイトル: Astro 環境構築入門"
+label: "環境構築"
+---
+
+# Astro 環境構築入門
+
+Astroを始めるための環境構築は非常にシンプルです。このガイドでは、コマンドラインを使って新しいAstroプロジェクトを作成し、開発サーバーを起動し、再利用可能なUI部品である「コンポーネント」を作成する基本的な手順を解説します。
+
+## 1. 新規プロジェクトの作成 🚀
+
+まず、ターミナル（コマンドプロンプトやPowerShellなど）を開き、以下のコマンドを実行します。これにより、Astroの公式インストーラーが起動します。
+
+```bash
+# npmを使う場合
+npm create astro@latest
+```
+
+コマンドを実行すると、対話形式でいくつかの質問が表示されます。
+
+- **Where would you like to create your new project? (プロジェクトを作成する場所は？)**
+  プロジェクト名を入力します。例: ./my-astro-site
+
+- **Which template would you like to use? (どのテンプレートを使いますか？)**
+  学習用には Empty (空のプロジェクト) を選択するのがおすすめです。矢印キーで選び、Enterキーで決定します。
+
+- **Would you like to install dependencies? (依存関係をインストールしますか？)**
+  y を入力して npm などのパッケージをインストールします。
+
+- **Would you like to initialize a new git repository? (Gitリポジトリを初期化しますか？)**
+  バージョン管理にGitを使う場合は y を選択します。
+
+- **How would you like to setup TypeScript? (TypeScriptの設定はどうしますか？)**
+  推奨されている Strict を選択するのが一般的です。
+
+セットアップが完了したら、作成されたプロジェクトのディレクトリに移動します。
+
+```bash
+cd my-astro-site
+```
+
+## 2. 開発サーバーの起動
+
+プロジェクトの準備ができたので、開発サーバーを起動してみましょう。以下のコマンドを実行してください。
+
+```bash
+npm run dev
+```
+
+サーバーが起動すると、ターミナルにローカルURL（通常は http://localhost:4321）が表示されます。このURLにブラウザでアクセスすると、Astroサイトが表示されます。
+
+この開発サーバーにはホットリロード機能があり、コードを編集して保存すると、ブラウザが自動的に更新されるため、変更をリアルタイムで確認しながら開発を進められます。
+
+## 3. コンポーネントの作成と利用
+
+Astroでは、UIを「コンポーネント」と呼ばれる再利用可能な部品に分割して構築します。コンポーネントは .astro という拡張子のファイルです。
+
+### コンポーネントの構造
+
+Astroコンポーネントは、主に3つの部分で構成されます。
+
+- **コンポーネントスクリプト (--- で囲まれた部分):** JavaScript/TypeScriptを記述します。データの受け渡しや外部からのデータ取得など、ロジックを担当します。
+
+- **コンポーネントテンプレート (スクリプト部分の下):** HTMLとJSXライクな構文でUIを記述します。
+
+- **コンポーネントスタイル (<style></style> タグ):** CSSを記述します。ここで書かれたスタイルは、そのコンポーネント内にのみ適用（スコープ化）されます。
+
+### コンポーネントを作成する
+
+例として、挨拶メッセージを表示する GreetingCard.astro コンポーネントを作成してみましょう。src/components/ ディレクトリ（なければ作成）に以下のファイルを作成します。
+
+`src/components/GreetingCard.astro`
+
+```astro
+---
+// 親コンポーネントから渡されるデータ（Props）を定義します
+interface Props {
+  title: string;
+  message: string;
+}
+
+// Astro.props でデータを受け取ります
+const { title, message } = Astro.props;
+---
+<div class="card">
+  <h2>{title}</h2>
+  <p>{message}</p>
+</div>
+
+<style>
+  .card {
+    padding: 1.5rem;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background-color: #f9f9f9;
+    margin-bottom: 1rem;
+  }
+  h2 {
+    color: #333;
+    margin-top: 0;
+  }
+</style>
+```
+
+このコンポーネントは、title と message という2つのデータを外部から受け取って表示するシンプルなカードです。
+
+### コンポーネントをページで利用する
+
+作成したコンポーネントを、実際にページに表示してみましょう。例えば、src/pages/index.astro を以下のように編集します。
+
+`src/pages/index.astro`
+
+```astro
+---
+import GreetingCard from '../components/GreetingCard.astro';
+---
+
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width" />
+  <title>Astroへようこそ</title>
+</head>
+<body>
+  <main>
+    <h1>コンポーネントの利用</h1>
+
+    <GreetingCard title="Astroより" message="最初のコンポーネント作成、おめでとうございます！" />
+    <GreetingCard title="次のステップ" message="色々なコンポーネントを作って組み合わせてみましょう。" />
+  </main>
+</body>
+</html>
+
+<style is:global>
+  body {
+    font-family: sans-serif;
+    padding: 2rem;
+  }
+  main {
+    max-width: 800px;
+    margin: auto;
+  }
+</style>
+```
+
+このように、import でコンポーネントを読み込み、HTMLタグのように記述します。属性として渡した値が、コンポーネント内の Astro.props で受け取られます。同じコンポーネントを異なるデータで何度も再利用できることがわかります。

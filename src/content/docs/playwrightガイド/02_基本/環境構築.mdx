@@ -20,3 +20,73 @@ Playwrightを使用するための基本的なセットアップを行います�
 ```bash
 npx playwright install
 ```
+
+# CI/CD統合
+
+PlaywrightをCI/CDパイプラインに統合する方法を以下に示します。
+
+## GitHub Actionsを使用したCI/CD
+
+GitHub Actionsを使用して、Playwrightテストを自動化します。
+
+```yaml
+name: Playwright Tests
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Node.js
+      uses: actions/setup-node@v2
+      with:
+        node-version: '14'
+    - run: npm install
+    - run: npx playwright install
+    - run: npx playwright test
+```
+
+# デバッグ
+
+Playwrightでのデバッグ方法を以下に示します。
+
+## VSCodeでのデバッグ
+
+VSCodeを使用して、Playwrightテストをデバッグします。
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Playwright Tests",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/node_modules/.bin/playwright",
+      "args": ["test"],
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    }
+  ]
+}
+```
+
+# テスト実行の詳細
+
+Playwrightでのテスト実行方法を以下に示します。
+
+## 並列テスト実行
+
+Playwrightは、並列でのテスト実行をサポートしています。
+
+```bash
+npx playwright test --workers=4
+```
+
+- **`--workers`**: 並列でテストを実行するワーカーの数を指定します。
