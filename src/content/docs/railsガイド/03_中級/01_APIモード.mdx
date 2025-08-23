@@ -1,0 +1,71 @@
+---
+title: "API利用法"
+label: "API利用法"
+---
+
+## API利用法
+
+Railsは、通常のWebアプリケーションだけでなく、API（Application Programming Interface）を構築するための機能も充実しています。ここでは、APIモードでの開発方法と、CORS（Cross-Origin Resource Sharing）の設定について解説します。
+
+### APIモード
+
+Railsでは、API専用のアプリケーションを簡単に作成できます。これにより、HTMLやCSSの生成といった、Webページ表示に必要な機能を省き、軽量で高速なアプリケーションを構築できます。
+
+以下のコマンドで新しいRailsアプリケーションを作成する際に、`--api`オプションを追加します。
+
+```bash
+rails new my_api --api
+```
+
+このコマンドで作成されたアプリケーションは、以下の設定が自動的に適用されます。
+
+- **ミドルウェアの最適化**: Webページ表示用のミドルウェア（例：ActionView、sprockets）が読み込まれず、より高速に動作します。
+- **ジェネレーターの変更**: `rails generate`コマンドでビューファイル（.html.erbなど）が生成されなくなります。
+
+### コントローラーの作成
+
+APIモードのアプリケーションで、JSONデータを返すためのコントローラーを作成します。
+
+```bash
+rails generate controller Api::V1::Posts index show create update destroy
+```
+
+このコマンドは、`app/controllers/api/v1`ディレクトリに`posts_controller.rb`を作成し、`index`、`show`、`create`、`update`、`destroy`といったアクションを定義します。
+
+### CORS（Cross-Origin Resource Sharing）の設定
+
+APIを開発する上で、異なるドメインからのリクエストを許可するCORSの設定は不可欠です。Railsでは`rack-cors`というGemを使って簡単に設定できます。
+
+#### Gemの追加
+
+`Gemfile`に以下の行を追加し、`bundle install`を実行します。
+
+```ruby
+# Gemfile
+gem 'rack-cors'
+```
+
+```bash
+bundle install
+```
+
+#### 設定ファイルの編集
+
+`config/initializers/cors.rb`ファイルを開き、コメントアウトされている部分を以下のように編集します。
+
+```ruby
+# config/initializers/cors.rb
+
+Rails.application.config.middleware.insert_before 0, Rack::Cors do
+  allow do
+    origins '*'  # 任意のドメインからのリクエストを許可
+    resource '*',
+      headers: :any,
+      methods: [:get, :post, :put, :patch, :delete, :options, :head]
+  end
+end
+```
+
+`origins '*'`は、すべてのドメインからのアクセスを許可する設定です。セキュリティを考慮し、本番環境では特定のドメインのみを許可するように変更することが推奨されます。
+
+例: `origins 'http://example.com'` とすることで、`http://example.com`からのリクエストのみを許可できます。

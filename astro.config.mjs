@@ -2,7 +2,6 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import react from '@astrojs/react';
-import commonCss from './src/styles/common.css';
 
 export default defineConfig({
     integrations: [
@@ -19,7 +18,7 @@ export default defineConfig({
                 },
                 {
                     label: 'Django',
-                    autogenerate: { directory: 'djangoガイド' },
+                    autogenerate: { directory: 'Djangoガイド' },
                 },
                 {
                     label: 'Elixir',
@@ -32,6 +31,10 @@ export default defineConfig({
                 {
                     label: 'Flutter',
                     autogenerate: { directory: 'flutterガイド' },
+                },
+                {
+                    label: 'Jestガイド',
+                    autogenerate: { directory: 'jestガイド' },
                 },
                 {
                     label: 'Next.js',

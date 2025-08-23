@@ -1,0 +1,37 @@
+---
+title: "sideKiq"
+label: "sideKiq"
+---
+
+Sidekiqとは
+Sidekiqは、Active Jobが利用できるジョブアダプターの一つで、Rubyで書かれた高性能なバックグラウンド処理システムです。特に、大規模なRailsアプリケーションで広く採用されています。
+
+Sidekiqの特徴
+Redisをバックエンドとして使用: SidekiqはRedisというインメモリデータベースをジョブキューとして利用します。これにより、ジョブの追加や取得が高速に行われます。
+
+マルチスレッドアーキテクチャ: 従来のプロセスベースのワーカーと異なり、Sidekiqはマルチスレッドで動作します。これにより、1つのプロセス内で複数のジョブを同時に処理できるため、メモリ使用量を抑えつつ高いスループットを実現します。
+
+豊富な機能: Sidekiqには、ジョブの失敗時のリトライ機能、ジョブの実行状況を監視できるウェブUI、スケジューリング機能などが備わっています。
+
+Sidekiqの導入手順
+Gemの追加:
+Gemfileに以下の行を追加し、bundle installを実行します。
+
+Ruby
+
+# Gemfile
+gem 'sidekiq'
+アダプターの設定:
+config/application.rbに、Active JobのアダプターとしてSidekiqを設定します。
+
+Ruby
+
+# config/application.rb
+config.active_job.queue_adapter = :sidekiq
+Sidekiqの起動:
+Redisをインストールし、ターミナルで以下のコマンドを実行してSidekiqプロセスを起動します。
+
+Bash
+
+bundle exec sidekiq
+これにより、アプリケーションの要件に合わせて、スケーラブルで堅牢な非同期処理を実装することが可能になります。

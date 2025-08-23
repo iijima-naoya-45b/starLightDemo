@@ -1,0 +1,60 @@
+---
+title: "API利用法"
+label: "API利用法"
+---
+
+## 💎 なぜシリアライザーを使用するのか？
+
+シリアライザーは、データベースに保存されているデータと、クライアント（Webブラウザやモバイルアプリなど）に提供するJSONデータの形式を分離するために使われます。
+
+1. **データの整形とフィルタリング**
+   - データベースのテーブルには、認証情報や内部管理用のデータなど、APIのレスポンスとして公開すべきではない情報が含まれていることがあります。シリアライザーを使うことで、必要な属性だけを選択してJSONに含めることができ、不必要なデータや機密情報の漏洩を防ぐことができます。
+
+2. **関連データの組み込み**
+   - ブログの投稿（Post）と、その投稿に紐づくコメント（Comment）のような関連するデータがある場合、シリアライザーはこれらの関連情報を一つのJSONレスポンスに含めることを可能にします。これにより、クライアントは複数のAPIリクエストを送信することなく、必要なすべてのデータを一度に取得できます。
+
+3. **パフォーマンスの向上**
+   - 余分なデータを含まない、軽量なJSONレスポンスを提供することで、ネットワークの負荷を減らし、APIのレスポンス速度を向上させることができます。
+
+## 💡 Active Model Serializers の利用方法
+
+Active Model Serializers を利用したJSONレスポンス形式の定義方法について、おさらいします。
+
+1. **Gem の追加**
+   - まず、`Gemfile` に `active_model_serializers` を追加し、ターミナルで `bundle install` を実行します。
+
+   ```ruby
+   # Gemfile
+gem 'active_model_serializers'
+   ```
+
+2. **シリアライザーの生成**
+   - `rails generate serializer` コマンドを使って、モデルに対応するシリアライザーを作成します。
+
+   ```bash
+   rails generate serializer post
+   ```
+
+3. **シリアライザーの定義**
+   - `app/serializers/post_serializer.rb` ファイルを開き、レスポンスに含めたい属性を定義します。
+
+   ```ruby
+   # app/serializers/post_serializer.rb
+   class PostSerializer < ActiveModel::Serializer
+     attributes :id, :title, :content, :created_at
+   end
+   ```
+
+4. **コントローラーでの利用**
+   - コントローラーで `@posts` オブジェクトをJSONとしてレンダリングするだけで、定義したシリアライザーが自動的に適用されます。
+
+   ```ruby
+   class PostsController < ApplicationController
+     def index
+       @posts = Post.all
+       render json: @posts
+     end
+   end
+   ```
+
+このように、シリアライザーはAPI開発におけるデータ管理をシンプルかつ効率的にし、セキュリティとパフォーマンスの向上に貢献します。

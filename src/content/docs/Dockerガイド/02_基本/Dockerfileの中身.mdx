@@ -1,0 +1,108 @@
+---
+title: "Docker構成"
+label: "Docker構成"
+---
+
+# Rails アプリケーションの Dockerfile 構成
+
+Rails アプリケーションの Dockerfile は、Ruby の実行環境と、必要なライブラリ、データベースクライアントなどを構築します。
+
+## 1. ベースイメージの指定
+
+- **FROM:** ベースとなるイメージを指定します。`ruby:3.2.2` のようにバージョンを明示することで、環境の再現性を高めます。
+
+## 2. 作業ディレクトリの設定
+
+- **WORKDIR:** コンテナ内で作業を行うディレクトリを設定します。これにより、以降のコマンドはこのディレクトリ内で実行されます。
+
+## 3. 必要なパッケージのインストール
+
+- **RUN:** コンテナ内でコマンドを実行します。ここでは、Node.js や yarn、データベースクライアント（例：postgresql-client）といった、Rails アプリケーションに必要な依存関係をインストールします。複数の RUN コマンドをまとめることで、レイヤー数を減らし、イメージサイズを最適化できます。
+
+## 4. ファイルのコピーとインストール
+
+- **COPY:** ローカルのファイルをコンテナ内にコピーします。`Gemfile` と `Gemfile.lock` を先にコピーして `bundle install` を実行することで、コードが変更されても Gem のインストールレイヤーを再利用できます。
+
+## 5. サーバー起動コマンド
+
+- **CMD:** コンテナが起動したときに実行されるコマンドを定義します。開発環境では `rails s -b 0.0.0.0` のようにサーバーを起動するコマンド、本番環境では `bundle exec rails s -e production` などが一般的です。
+
+### Dockerfile
+
+```dockerfile
+# ベースイメージは、Ruby と Node.js が含まれるものを使用
+FROM ruby:3.2.2
+
+# 必要なパッケージをインストール
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    git \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 作業ディレクトリを設定
+WORKDIR /app
+
+# Gemfile と Gemfile.lock をコピーして bundle install を実行
+COPY Gemfile Gemfile.lock ./
+RUN bundle install
+
+# ソースコード全体をコピー
+COPY . .
+
+# サーバー起動コマンド
+CMD ["rails", "s", "-b", "0.0.0.0"]
+```
+
+# Next.js アプリケーションの Dockerfile 構成
+
+Next.js の Dockerfile は、マルチステージビルドを使用するのが一般的です。これにより、開発環境に必要なツール（npm など）を含まず、本番環境で必要なファイルのみを含む軽量なイメージを作成できます。
+
+## 第一ステージ（builder）
+
+- **FROM:** ビルド用のベースイメージを指定します。
+- **WORKDIR:** 作業ディレクトリを設定します。
+- **COPY:** `package.json` と `package-lock.json` をコピーして、`npm install` を実行します。
+- **RUN:** `npm run build` を実行し、本番環境用の Next.js アプリケーションをビルドします。
+
+## 第二ステージ（本番環境）
+
+- **FROM:** 本番環境用のベースイメージを指定します。通常はより軽量な Node.js イメージを使用します。
+- **WORKDIR:** 作業ディレクトリを設定します。
+- **COPY --from=builder:** 第一ステージでビルドした成果物（`.next`、`public`、`node_modules` など）をコピーします。これにより、本番環境のイメージにビルドツールを含める必要がなくなります。
+- **CMD:** アプリケーションを本番モードで起動するコマンドを定義します。
+
+### Dockerfile
+
+```dockerfile
+# 第一ステージ: ビルド
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+# 第二ステージ: 本番環境
+FROM node:18-alpine
+
+WORKDIR /app
+
+# .env.production や public フォルダをコピー
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package.json ./package.json
+
+# ポートを公開
+EXPOSE 3000
+
+# 本番環境で起動
+CMD ["npm", "start"]
+```
+
+これらの構成は一般的なものであり、各プロジェクトの要件に合わせてカスタマイズできます。

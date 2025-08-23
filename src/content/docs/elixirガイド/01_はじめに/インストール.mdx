@@ -1,20 +1,62 @@
 ---
-title: "インストール"
-label: "インストール"
+title: "Elixir のインストール"
+label: "Elixir のインストール"
 ---
 
-Elixirのインストール手順を以下に示します。
+
+# Elixir のインストール
+
+Elixir をインストールするには、まず Elixir が依存している Erlang/OTP をインストールする必要があります。Elixir は Erlang VM（仮想マシン）上で動作するため、Erlang が必須となります。
 
 ## 必要なツール
 
-- Elixir
-- Erlang
+- **Erlang/OTP:** Elixir が動作するための基盤となる仮想マシンです。
+- **Elixir:** プログラミング言語本体です。
 
-## インストール手順
+## インストール手順（macOS の場合）
 
-1. Erlangをインストールします。
-2. Elixirをインストールします。
+macOS の場合、パッケージマネージャーの Homebrew を使うのが最も簡単で推奨される方法です。
+
+### Homebrew のインストール
+
+まだ Homebrew をインストールしていない場合は、以下のコマンドをターミナルで実行してインストールしてください。
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+### Erlang と Elixir のインストール
+
+Homebrew を使って Erlang と Elixir を一度にインストールできます。
 
 ```bash
 brew install elixir
 ```
+
+このコマンドは、Elixir が依存している Erlang も自動的にインストールしてくれます。
+
+## インストール手順（その他の OS の場合）
+
+### Windows
+
+- **Chocolatey を利用:** Chocolatey をインストール後、`choco install erlang elixir` でインストールできます。
+- **公式インストーラーを利用:** Elixir 公式サイトからインストーラーをダウンロードしてインストールします。
+
+### Linux (Ubuntu/Debian)
+
+公式リポジトリからインストールできます。
+
+```bash
+sudo apt-get update
+sudo apt-get install erlang elixir
+```
+
+## インストールの確認
+
+インストールが完了したら、以下のコマンドをターミナルで実行して、バージョン情報が表示されるか確認しましょう。
+
+```bash
+elixir --version
+```
+
+バージョン情報が正しく表示されれば、インストールは完了です。これで Elixir を使った開発を始める準備ができました。
