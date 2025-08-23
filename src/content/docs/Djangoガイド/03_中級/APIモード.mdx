@@ -1,0 +1,122 @@
+---
+title: "APIモード"
+label: "APIモード"
+---
+
+## DjangoのAPIモードとは
+Djangoには、デフォルトで「APIモード」という特別な設定があるわけではありません。DjangoをAPIとして機能させるためには、**Django REST Framework（DRF）**のようなライブラリを組み合わせて使用することが一般的です。これにより、ウェブサイトの機能とAPI機能を共存させたり、API専用のバックエンドを構築したりすることができます。
+
+### APIモードの主要コンポーネント
+DjangoでAPIを構築する際は、以下の主要なコンポーネントを理解することが重要です。
+
+1. **シリアライザー（Serializer）**
+   シリアライザーは、Djangoのモデルインスタンス（Pythonオブジェクト）と、APIで扱うJSONやXMLなどのデータ形式との間で変換を行う役割を担います。
+
+   - **シリアライゼーション**: モデルインスタンスをJSON形式に変換し、レスポンスとして返す。
+   - **デシリアライゼーション**: JSON形式のデータを受信し、モデルインスタンスに変換してデータベースに保存する。
+   - **バリデーション**: 受信したデータが正しい形式かどうかを検証する。
+
+2. **ビュー（View）**
+   ビューは、APIリクエストを処理し、シリアライザーを使ってレスポンスを生成します。DRFでは、API開発を効率化するために、一般的な操作を簡潔に記述できる汎用ビューが提供されています。
+
+   - **リクエスト処理**: GET、POST、PUT、DELETEなどのHTTPリクエストを処理。
+   - **データ取得・保存**: モデルを操作してデータベースからデータを取得したり、保存したりする。
+   - **レスポンス生成**: シリアライザーを使ってデータを整形し、レスポンスを返す。
+
+3. **ルーティング（Routing）**
+   ルーティングは、特定のURLがどのビューによって処理されるかを定義します。これにより、APIのエンドポイントを整理し、構造化されたURLを設計できます。
+
+   - **URLパターンとビューを結びつける。**
+   - **エンドポイントを論理的にグループ化する。**
+
+### APIモードのユースケース
+DjangoをAPIとして利用する主なユースケースは以下の通りです。
+
+- **SPA（Single Page Application）のバックエンド**: React、Vue.js、Angularといったフロントエンドフレームワークと連携し、データを提供するAPIサーバーとして機能します。
+- **モバイルアプリケーションのバックエンド**: iOSやAndroidアプリにデータを供給するためのAPIを構築します。
+- **マイクロサービス**: 複数のサービスが連携するアーキテクチャにおいて、他のサービスにデータや機能を提供するAPIとして利用されます。
+
+これらのコンポーネントを組み合わせることで、Djangoは柔軟かつ強力なAPIバックエンドとして機能し、多様なクライアントからのデータ要求に応えることができます。
+
+ここでは、簡単なブログアプリケーションを想定し、「記事（Article）」データを操作するAPIを作成します。
+
+1. **モデルの定義**
+   まず、APIで扱うデータを定義するDjangoモデルを作成します。
+
+   ```python
+   # blog/models.py
+   from django.db import models
+
+   class Article(models.Model):
+       title = models.CharField(max_length=200)
+       content = models.TextField()
+       is_published = models.BooleanField(default=False)
+       created_at = models.DateTimeField(auto_now_add=True)
+       updated_at = models.DateTimeField(auto_now=True)
+
+       def __str__(self):
+           return self.title
+   ```
+
+2. **シリアライザーの作成**
+   次に、モデルをJSON形式に変換するためのシリアライザーを作成します。`ModelSerializer`を使うと、モデルのフィールドを自動的にマッピングしてくれます。
+
+   ```python
+   # blog/serializers.py
+   from rest_framework import serializers
+   from .models import Article
+
+   class ArticleSerializer(serializers.ModelSerializer):
+       class Meta:
+           model = Article
+           fields = ['id', 'title', 'content', 'is_published', 'created_at']
+   ```
+
+3. **ビューの作成**
+   APIのリクエストを処理するビューを作成します。ここでは、DRFの汎用ビューを使用し、CRUD（作成、読み取り、更新、削除）操作を簡潔に実装します。
+
+   ```python
+   # blog/views.py
+   from rest_framework import generics
+   from .models import Article
+   from .serializers import ArticleSerializer
+
+   # 記事のリスト表示と新規作成
+   class ArticleListCreateView(generics.ListCreateAPIView):
+       queryset = Article.objects.all()
+       serializer_class = ArticleSerializer
+
+   # 特定の記事の取得、更新、削除
+   class ArticleRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+       queryset = Article.objects.all()
+       serializer_class = ArticleSerializer
+   ```
+
+4. **URLルーティングの設定**
+   最後に、APIのエンドポイントを定義します。これにより、特定のURLパターンが対応するビューと紐付けられます。
+
+   ```python
+   # myproject/urls.py
+   from django.urls import path
+   from blog.views import ArticleListCreateView, ArticleRetrieveUpdateDestroyView
+
+   urlpatterns = [
+       # APIのルートエンドポイント
+       path('api/articles/', ArticleListCreateView.as_view(), name='article-list'),
+       
+       # IDを指定して特定の記事を操作するエンドポイント
+       path('api/articles/<int:pk>/', ArticleRetrieveUpdateDestroyView.as_view(), name='article-detail'),
+   ]
+   ```
+
+このコードをデプロイすると、以下のAPIエンドポイントが利用可能になります。
+
+```bash
+- **GET /api/articles/**: すべての記事をリストで取得します。
+- **POST /api/articles/**: 新しい記事を作成します。
+- **GET /api/articles/<id>/**: 特定の記事を取得します。
+- **PUT /api/articles/<id>/**: 特定の記事を更新します。
+- **DELETE /api/articles/<id>/**: 特定の記事を削除します。
+```
+
+DRFのブラウザブルAPI機能のおかげで、これらのエンドポイントにウェブブラウザから直接アクセスし、簡単に動作を確認できます。

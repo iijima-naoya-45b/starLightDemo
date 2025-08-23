@@ -3,11 +3,54 @@ title: "サーバーの起動"
 label: "サーバーの起動"
 ---
 
-プロジェクトディレクトリに移動し、サーバーを起動します。
+## サーバーの起動とアクセス
+Djangoプロジェクトを作成したら、開発中にアプリケーションの動作を確認するために、開発用サーバーを起動します。このサーバーは、`manage.py`というファイルを使って制御します。
+
+まず、作成したプロジェクトのルートディレクトリ（`manage.py`がある場所）に移動します。
 
 ```bash
 cd mysite
+```
+
+次に、以下のコマンドを実行します。
+
+```bash
 python manage.py runserver
 ```
 
-これで、Djangoサーバーが起動し、`http://localhost:8000`でアクセス可能になります。
+このコマンドが正常に実行されると、以下のようなメッセージがターミナルに表示されます。
+
+```plaintext
+Watching for file changes with StatReloader
+Performing system checks...
+
+System check identified no issues (0 silenced).
+
+You can now view your project at http://127.0.0.1:8000/
+
+July 01, 2025 - 12:00:00
+Django version 5.0, using settings 'mysite.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CTRL-C.
+```
+
+このメッセージが表示されたら、ウェブブラウザを開き、表示されているURL（通常は`http://127.0.0.1:8000/`または`http://localhost:8000/`）にアクセスしてください。Djangoの初期ウェルカムページが表示されれば、サーバーは正しく起動しています。
+
+### runserverコマンドの補足
+`runserver`コマンドは、いくつかの便利なオプションを持っています。
+
+- **ポート番号の変更**: デフォルトのポート8000が使用できない場合や、別のポートで起動したい場合は、ポート番号を指定できます。
+
+  ```bash
+  python manage.py runserver 8080
+  ```
+
+- **外部からのアクセスを許可**: デフォルトでは、サーバーはローカルマシンからのみアクセス可能です。他のデバイス（同じネットワーク内のスマートフォンなど）からアクセスしたい場合は、IPアドレスを指定します。
+
+  ```bash
+  python manage.py runserver 0.0.0.0:8000
+  ```
+
+  これにより、ローカルネットワーク内のすべてのデバイスから、あなたのコンピューターのローカルIPアドレス（例: `http://192.168.1.5:8000/`）経由でアクセスできるようになります。
+
+開発用サーバーは、コードの変更を自動で検知し、再読み込みしてくれるため、開発効率が非常に高いです。サーバーを停止したい場合は、ターミナルで**Ctrl + C**を押してください。

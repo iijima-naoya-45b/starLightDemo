@@ -3,9 +3,9 @@ title: "API利用法"
 label: "API利用法"
 ---
 
-PlaywrightのAPI利用法を以下に示します。
+## PlaywrightのAPI利用法
 
-## 基本的なテスト
+### 基本的なテスト
 
 Playwrightを使用して基本的なテストを作成します。
 
@@ -19,7 +19,7 @@ test('basic test', async ({ page }) => {
 });
 ```
 
-## 高度なテスト
+### 高度なテスト
 
 Playwrightを使用して高度なテストを作成します。
 
@@ -68,12 +68,13 @@ test('device emulation', async ({ browser }) => {
   await page.goto('https://example.com');
   // モバイルビューでのテストを行います。
 });
+```
 
-## モックとスパイ
+### モックとスパイ
 
 Playwrightでは、ネットワークのモックを行うことができますが、関数のスパイ機能は直接的には提供されていません。以下に、PlaywrightとJestを組み合わせたモックとスパイの例を示します。
 
-### ネットワークのモック
+#### ネットワークのモック
 
 Playwrightを使用して、特定のAPIリクエストをモックすることができます。これにより、外部APIのレスポンスを制御し、テストを行うことが可能です。
 
@@ -87,7 +88,7 @@ await page.route('**/api/data', route => {
 });
 ```
 
-### 関数のスパイ
+#### 関数のスパイ
 
 Jestを使用することで、関数の呼び出しをスパイし、どのように呼び出されたかを検証することができます。
 
@@ -100,9 +101,146 @@ expect(myFunction).toHaveBeenCalled();
 
 これらの機能を組み合わせることで、より柔軟で強力なテストを作成することができます。
 
-## ベストプラクティス
+### ベストプラクティス
 
 - テストは独立して実行できるように設計します。
 - テストデータはモックまたはスタブを使用して管理します。
 - テストの実行速度を最適化するために、並行テストを活用します。
 - エラーハンドリングを適切に行い、詳細なエラーメッセージを提供します。
+
+### PlaywrightのAPI利用法についての追加解説 📝
+
+提示された内容に加えて、テストの信頼性とメンテナンス性をさらに高めるための補足事項をいくつか追加します。
+
+1. **Locatorを使用したベストプラクティス**
+   - `page.click()`や`page.fill()`にセレクタ文字列を直接渡す方法は、要素のセレクタが変更された場合にテストが壊れやすくなる可能性があります。Playwrightの最新のベストプラクティスでは、Locatorを使用することが強く推奨されています。
+
+   **なぜLocatorを使うべきか？**
+   - Locatorは、ユーザーが要素とやり取りするのと同じように、HTMLのセマンティクスやアクセシビリティに基づいて要素を見つけます。これにより、セレクタが変更されてもテストコードを書き換える必要が少なくなり、テストの堅牢性が向上します。
+
+   | セレクタ | pageメソッド | page.locatorメソッド |
+   | --- | --- | --- |
+   | テキスト | `page.click('text=Log in')` | `page.getByText('Log in').click()` |
+   | ロール (ARIA) | `page.click('[role=button]')` | `page.getByRole('button').click()` |
+   | ラベル | `page.fill('label=Username', 'test')` | `page.getByLabel('Username').fill('test')` |
+   | テストID | `page.click('[data-testid=login-btn]')` | `page.getByTestId('login-btn').click()` |
+
+   **例の改善:**
+   - 提示されたコードの`page.fill('#username', 'testuser');`は、id属性に依存しています。より堅牢な方法として、`page.getByLabel()`やカスタムテストIDを使用する形に書き換えることができます。
+
+   ```javascript
+   test('より堅牢なユーザーインタラクション', async ({ page }) => {
+     await page.goto('https://playwright.dev/login');
+     // ラベルに基づいて要素を探す
+     await page.getByLabel('Username').fill('testuser');
+     await page.getByLabel('Password').fill('password123');
+     // テキストに基づいてボタンを探す
+     await page.getByText('Log in').click();
+     
+     const welcomeMessage = await page.locator('#welcome-message');
+     await expect(welcomeMessage).toHaveText('Welcome, testuser!');
+   });
+   ```
+
+2. **並行テストのWorkerプロセスについて**
+   - 提示された「並行テスト」の例では、`newContext()`を複数作成してテストしていますが、Playwrightのテストランナーは、デフォルトでWorkerプロセスを使用して並行テストを実行します。これは、`playwright.config.js`で設定された`workers`の数に応じて、複数のテストファイルまたはテストケースを同時に実行する機能です。
+
+   **Workerプロセスの利点:**
+   - テストの高速化: 複数のテストケースを同時に実行することで、実行時間を大幅に短縮できます。
+   - 分離された環境: 各Workerプロセスは独立したブラウザコンテキスト（クリーンなセッション）で実行されるため、テスト間でのデータの干渉を防ぎます。
+
+   **正しい並行テストの実装:**
+   - 特別な理由がない限り、テストケースごとに`test()`関数を記述するだけで、Playwrightが自動で並行実行してくれます。
+
+   ```javascript
+   // test-file1.spec.js
+   test('Test A', async ({ page }) => { ... });
+
+   // test-file2.spec.js
+   test('Test B', async ({ page }) => { ... });
+   ```
+   - 上記のテストは、`npx playwright test`を実行すると、異なるWorkerで並行して実行されます。
+
+3. **モックとスパイの使い分け**
+   - 提示されたモックとスパイの組み合わせは正しいアプローチです。
+
+   **モック:**
+   - 外部リソース（API、ファイルなど）の振る舞いを模倣し、テスト環境を制御します。Playwrightの`page.route()`がこれに該当します。
+
+   **スパイ:**
+   - 既存の関数の呼び出しを監視し、その呼び出し回数や引数などを検証します。JestやVitestのようなテストフレームワークの機能がこれに該当します。
+
+   - これらの概念を適切に使い分けることで、より堅牢な単体テストや統合テストを作成できます。PlaywrightとJestの組み合わせは、E2Eテストとユニットテストの境界を明確にするための良い例です。
+
+### APIテストと認証 🔐
+
+Playwrightは、APIテストにおいて認証を扱うための強力な機能を提供します。APIリクエストに認証トークンやセッション情報を含めることで、保護されたエンドポイントをテストできます。
+
+#### requestフィクスチャ
+
+UIテストで使われる`page`フィクスチャとは別に、PlaywrightはAPIテスト専用の**`request`フィクスチャ**を提供しています。これにより、UIを介さずに直接APIリクエストを送信できます。
+
+```javascript
+import { test, expect } from '@playwright/test';
+
+test('認証されたAPIリクエストのテスト', async ({ request }) => {
+  // 認証トークンをヘッダーに含める
+  const response = await request.get('https://api.example.com/protected/data', {
+    headers: {
+      'Authorization': `Bearer YOUR_ACCESS_TOKEN`,
+    },
+  });
+
+  // レスポンスのステータスコードを検証
+  expect(response.status()).toBe(200);
+
+  // レスポンスのボディを検証
+  const data = await response.json();
+  expect(data.isProtected).toBe(true);
+});
+```
+
+- `request`フィクスチャは、**`playwright.config.js`**で`baseURL`や`extraHTTPHeaders`を設定することで、テスト全体で共通の認証情報を利用できます。
+
+#### 認証状態の再利用
+
+`test.use()`を使用して、認証状態をテスト間で共有することで、テストの実行時間を短縮できます。ログイン処理を一度だけ行い、その認証状態を後続のすべてのテストで再利用するシナリオに役立ちます。
+
+```javascript
+test.use({ storageState: 'playwright/.auth/user.json' });
+
+// このブロック内のテストはすべてログイン済み
+test('ログイン後のページアクセス', async ({ page }) => {
+  await page.goto('https://example.com/dashboard');
+  // ダッシュボードのコンテンツが表示されていることを確認
+  await expect(page.locator('h1')).toHaveText('Dashboard');
+});
+```
+
+- `playwright.config.js`にこの設定を追加することで、テストランナーが自動的に認証状態を読み込み、テストを高速化します。
+
+### APIテストとUIテストの連携 🔗
+
+Playwrightの最大の強みの一つは、APIテストとUIテストを同じフレームワーク内でシームレスに連携できることです。
+
+#### APIでテストデータを準備する
+
+ユーザーインターフェースを操作する前に、APIを使ってテストデータを準備するシナリオは非常に効率的です。
+
+```javascript
+test('APIでデータを準備し、UIで検証', async ({ page, request }) => {
+  // 1. APIを使って新しい投稿を作成
+  const postResponse = await request.post('https://api.example.com/posts', {
+    data: { title: 'Test Post', content: 'Hello, World!' },
+  });
+  const newPost = await postResponse.json();
+
+  // 2. UIで新しく作成された投稿を検証
+  await page.goto(`https://example.com/posts/${newPost.id}`);
+  await expect(page.locator('h1')).toHaveText('Test Post');
+});
+```
+
+- このアプローチは、UIを介した複雑なセットアッププロセスを省略し、テストの信頼性と速度を向上させます。
+
+これらのトピックを追加することで、Playwrightが単なるUIテストツールではなく、包括的なエンドツーエンドテストフレームワークとしていかに強力であるかをより明確に伝えられます。

@@ -1,0 +1,94 @@
+---
+title: "StarLight 環境構築入門"
+label: "環境構築"
+---
+
+## Starlight 環境構築入門
+Starlightは、Astroを基盤としたドキュメントサイト構築のためのフレームワークです。Astroのシンプルなセットアップをさらに最適化し、美しいドキュメントサイトを素早く立ち上げることができます。このガイドでは、Starlightを使って新しいドキュメントプロジェクトを作成し、コンテンツを追加する基本的な手順を解説します。
+
+### 1. 新規プロジェクトの作成 🚀
+まず、ターミナルを開き、以下のコマンドを実行してStarlightの公式インストーラーを起動します。
+
+```bash
+# npmを使う場合
+npm create astro@latest -- --template starlight
+```
+
+このコマンドは、Astroのインストーラーを実行し、テンプレートとしてstarlightを直接指定します。
+
+コマンドを実行すると、対話形式でいくつかの質問が表示されます。
+
+- **Where would you like to create your new project?** (プロジェクトを作成する場所は？)
+  プロジェクト名を入力します。例: `./my-starlight-docs`
+
+- **Would you like to install dependencies?** (依存関係をインストールしますか？)
+  `y`を入力してnpmなどのパッケージをインストールします。
+
+- **Would you like to initialize a new git repository?** (Gitリポジトリを初期化しますか？)
+  バージョン管理にGitを使う場合は`y`を選択します。
+
+セットアップが完了したら、作成されたプロジェクトのディレクトリに移動します。
+
+```bash
+cd my-starlight-docs
+```
+
+### 2. 開発サーバーの起動
+プロジェクトの準備ができたので、開発サーバーを起動してみましょう。以下のコマンドを実行してください。
+
+```bash
+npm run dev
+```
+
+サーバーが起動すると、ターミナルにローカルURL（通常は `http://localhost:4321`）が表示されます。ブラウザでこのURLにアクセスすると、Starlightのドキュメントサイトが表示されます。このサーバーにはホットリロード機能があり、リアルタイムで変更を確認できます。
+
+### 3. コンテンツの追加
+Starlightは、`src/content/docs/`ディレクトリ内のファイルをドキュメントとして扱います。MarkdownまたはMDXファイルとしてコンテンツを作成するだけで、自動的にページが生成されます。
+
+#### 新しいページの作成
+例として、「最初のページ」を作成してみましょう。`src/content/docs/`に`first-page.mdx`というファイルを作成します。
+
+```markdown
+---
+title: 最初のページ
+description: これはStarlightで作成した最初のページです。
+---
+
+# Starlightへようこそ！
+
+これはStarlightで作成した最初のドキュメントページです。
+
+**太字**や*斜体*など、通常のMarkdown構文を使ってコンテンツを記述できます。
+```
+
+ファイルを保存すると、開発サーバーが自動的に更新され、サイドバーに新しいページが表示されます。
+
+#### フロントマターについて
+Markdownファイルの冒頭にある`---`で囲まれた部分はフロントマターと呼ばれ、ページのメタデータを定義します。`title`や`description`は必須項目です。
+
+#### サイドバーのカスタマイズ
+サイドバーの表示順やグループ分けは、`src/content/config.ts`で設定します。これにより、ドキュメントの構成を整理できます。
+
+```typescript
+import { defineCollection } from 'astro:content';
+import { docsSchema } from '@astrojs/starlight/schema';
+
+export const collections = {
+  docs: defineCollection({
+    schema: docsSchema({
+      // サイドバーのカスタマイズ
+      sidebar: [
+        {
+          label: 'はじめに',
+          items: [
+            { label: '最初のページ', link: '/first-page/' },
+            { label: 'もう一つのページ', link: '/another-page/' },
+          ],
+        },
+      ],
+    }),
+  }),
+};
+```
+
+Starlightは、ドキュメントの作成と管理を非常に簡単にする強力なツールです。このシンプルなセットアップから始めて、独自のドキュメントサイトを構築しましょう。

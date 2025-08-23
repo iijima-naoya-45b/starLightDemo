@@ -3,19 +3,174 @@ title: "パフォーマンスチューニング"
 label: "パフォーマンスチューニング"
 ---
 
-Djangoのパフォーマンスチューニング方法を以下に示します。
+## パフォーマンスチューニング
+Djangoアプリケーションのパフォーマンスを最適化するための方法を、絵文字を使って親しみやすく解説します。
 
-## MVCアーキテクチャ
+### 1. データベースの最適化 📊
+データベースは、パフォーマンスのボトルネックになりがちです。
 
-DjangoのMVCアーキテクチャを理解し、パフォーマンスを最適化します。
+- **インデックスの活用 🔍**: `db_index=True`を設定すると、検索が速くなります。これは、よく検索するフィールドに設定することで、クエリ速度を劇的に向上させます。
 
-## データベースの最適化
-
-データベースのインデックスを適切に設定することで、クエリのパフォーマンスを向上させることができます。
+- **N+1クエリ問題の解決 🐢➡️🚀**: 関連データを取得するたびに何度もデータベースにアクセスしてしまう「N+1クエリ問題」は、アプリケーションを遅くします。
+  - `select_related()` は、JOINを使って関連データを1回のクエリでまとめて取得します。
+  - `prefetch_related()` は、複数のクエリを使い、Pythonのメモリ内で関連付けを行います。
 
 ```python
 from django.db import models
 
 class MyModel(models.Model):
+    # 頻繁に検索されるフィールドにインデックスを設定
     name = models.CharField(max_length=100, db_index=True)
 ```
+
+```python
+# 通常のアクセス（N+1クエリが発生）
+books = Book.objects.all()
+for book in books:
+    print(book.author.name) # ループごとにクエリが発生
+
+# select_relatedを使用（単一のJOINクエリに最適化）
+books = Book.objects.select_related('author').all()
+for book in books:
+    print(book.author.name) # 追加クエリなし
+```
+
+### 2. キャッシュの活用 💾
+頻繁にアクセスされるデータを一時的に保存し、データベースへのアクセスを減らします。
+
+- **フレームワークレベルのキャッシュ 🖼️**: ビューやテンプレートの出力をキャッシュできます。`@cache_page`デコレータを使えば、簡単に実装できます。
+
+- **ORMレベルのキャッシュ 🧠**: `django-cachalot`のようなライブラリを使うと、同じクエリが再実行されるのを防ぎ、処理を高速化します。
+
+```python
+# settings.py
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "unique-snowflake",
+    }
+}
+
+# myapp/views.py
+from django.views.decorators.cache import cache_page
+from django.shortcuts import render
+
+@cache_page(60 * 15) # 15分間キャッシュ
+def my_view(request):
+    return render(request, 'my_template.html', {'data': 'Some expensive data'})
+```
+
+### 3. 非同期処理とタスクキュー 📧
+時間のかかる処理（メール送信や画像リサイズなど）をバックグラウンドに回し、ユーザーを待たせないようにします。
+
+- **Celery**は、これらのタスクを非同期に実行するのに役立ちます。これにより、アプリの応答性が向上し、ユーザー体験がスムーズになります。
+
+```python
+# tasks.py (Celeryタスクの定義)
+from celery import shared_task
+from django.core.mail import send_mail
+
+@shared_task
+def send_welcome_email(user_email):
+    send_mail(
+        'Welcome to MySite',
+        'Thank you for signing up!',
+        'from@example.com',
+        [user_email],
+        fail_silently=False,
+    )
+
+# views.py (タスクを呼び出す)
+from .tasks import send_welcome_email
+
+def user_signup(request):
+    ...
+    user = User.objects.create(...)
+    send_welcome_email.delay(user.email) # タスクを非同期で実行
+    return redirect('success')
+```
+
+### 4. 静的ファイルとメディアファイルの最適化 🌐
+ファイルのロード時間を短縮することで、ウェブサイトをより速く感じさせます。
+
+- **静的ファイル (CSS, JSなど)** は`collectstatic`で一元管理し、CDNを通じて配信することで、世界中のどこからでも高速にアクセスできます。
+
+- **メディアファイル (画像や動画)** は、Amazon S3のようなクラウドストレージに保存し、サーバーの負担を軽減します。
+
+```python
+# settings.py
+STATIC_ROOT = '/var/www/myproject/static/'
+STATIC_URL = 'https://cdn.example.com/static/' # CDNのURL
+MEDIA_ROOT = '/var/www/myproject/media/'
+MEDIA_URL = 'https://s3.amazonaws.com/myproject-media/' # クラウドストレージのURL
+```
+
+### 5. QuerySetの最適化 📈
+QuerySetを賢く使うことで、データベースへの不要なアクセスを減らします。
+
+- **`values()` と `values_list()`**: モデルインスタンス全体ではなく、必要なフィールドの値だけを取得します。
+
+- **`only()` と `defer()`**: フィールドを部分的にロードすることで、メモリ使用量を抑えます。
+
+- **`count()` vs `len()`**: 要素数を数えるだけなら、`count()`メソッドを使います。Pythonの`len()`を使うと、クエリセット全体がロードされてしまうので注意が必要です。
+
+```python
+# values() と values_list() の例
+# 特定のフィールドの値だけを取得
+titles_and_authors = Book.objects.values('title', 'author__name')
+# 単一のフィールドのリストとして取得
+titles = Book.objects.values_list('title', flat=True)
+
+# only() と defer() の例
+# titleとcontentだけをロード
+articles = Article.objects.only('title', 'content')
+# contentフィールドを遅延ロード
+articles_without_content = Article.objects.defer('content')
+
+# count() vs len() の例
+queryset = Article.objects.all()
+# 高速なデータベースCOUNT
+article_count = queryset.count()
+# 全データをロードしてからPythonでカウント
+# article_count = len(queryset) # 非推奨
+```
+
+### 6. テンプレートの最適化 🖌️
+テンプレートのレンダリングを高速化します。
+
+- **`cached_template_loader`**: テンプレートをメモリにキャッシュし、読み込みを高速化します。
+
+- **`with`タグの活用**: テンプレート内で複雑なロジックをキャッシュして再利用します。
+
+### 7. HTTPレベルでの最適化 📦
+アプリケーションの外側でもパフォーマンスは改善できます。
+
+- **HTTP圧縮（Gzip/Brotli）**: ファイルサイズを小さくして、ロード時間を短縮します。
+
+- **CDN (Content Delivery Network)**: ファイルをユーザーの近くのサーバーから配信し、遅延を最小限に抑えます。
+
+### 8. WSGIサーバーの設定 ⚙️
+本番環境では、開発サーバーは使えません。GunicornやuWSGIのようなWSGIサーバーを正しく設定することが不可欠です。
+
+- ワーカープロセスの数やタイムアウト設定を最適化し、サーバーの処理能力を最大限に引き出します。
+
+### 9. データベース接続の持続化 🔗
+リクエストごとにデータベース接続を確立・切断するオーバーヘッドをなくします。
+
+- **`CONN_MAX_AGE`** を設定することで、接続を再利用し、レイテンシを減少させます。
+
+```python
+# settings.py
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        # その他の設定...
+        'CONN_MAX_AGE': 600,  # 600秒間（10分間）接続を再利用
+    }
+}
+```
+
+### 10. プロファイリングとモニタリング 🔬
+どこが遅いのかを正確に把握することが、パフォーマンス改善の第一歩です。
+
+- **`django-silk` や `cProfile`** などのツールを使って、コードのボトルネックを特定し、データに基づいた最適化を行います。
