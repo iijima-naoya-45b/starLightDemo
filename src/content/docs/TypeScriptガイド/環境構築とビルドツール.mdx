@@ -1,0 +1,66 @@
+---
+title: "ビルドツール"
+label: "ビルドツール"
+---
+
+## 2. ビルドツールの選定と連携
+
+本番環境にデプロイする際には、TypeScriptコードをJavaScriptにコンパイルし、最適化する必要があります。
+
+### TypeScriptのコンパイラ (`tsc`)
+
+TypeScriptに標準で付属するコンパイラです。ビルドの基本となります。
+
+#### `package.json` の設定:
+
+```json
+"scripts": {
+  "build": "tsc"
+}
+```
+
+このコマンドは、`tsconfig.json`の設定に従って、TypeScriptファイルをJavaScriptにコンパイルし、`outDir`で指定されたディレクトリに出力します。
+
+### 高速バンドラー (Vite / esbuild)
+
+大規模なアプリケーションでは、`tsc`のコンパイル速度が開発のボトルネックになることがあります。Viteやesbuildは、圧倒的な速度でビルドを行う次世代のツールです。
+
+- **Vite**: 開発時にESモジュールをネイティブに利用し、超高速な開発体験を提供します。
+- **esbuild**: Go言語で書かれており、非常に高速なバンドルとトランスパイルが可能です。
+
+#### Viteでのプロジェクト構築例:
+
+```bash
+npm create vite@latest my-ts-app -- --template react-ts
+# または vue-ts
+```
+
+このコマンドは、TypeScriptとReact（またはVue）の環境をViteを使って瞬時にセットアップします。
+
+## 3. リンターとフォーマッターの統合
+
+コードの品質と一貫性を保つために、リンターとフォーマッターは不可欠です。
+
+### ESLint と Prettier
+
+- **ESLint**: コード内の問題（構文エラーやスタイル違反）を静的に解析します。
+- **Prettier**: 決められたルールに従ってコードを自動で整形します。
+
+#### インストール:
+
+```bash
+npm install --save-dev eslint prettier @typescript-eslint/parser @typescript-eslint/eslint-plugin eslint-config-prettier
+```
+
+#### 設定:
+
+`eslint.json`と`.prettierrc`ファイルでルールを定義します。そして、`package.json`に以下のスクリプトを追加します。
+
+```json
+"scripts": {
+  "lint": "eslint 'src/**/*.ts'",
+  "format": "prettier --write 'src/**/*.ts'"
+}
+```
+
+VS Codeなどのエディタで、ファイルを保存するたびに自動で整形・修正されるように設定することで、手動での作業をなくし、開発効率を最大化できます。
