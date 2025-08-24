@@ -52,6 +52,13 @@ Starlightは、`src/content/docs/`ディレクトリ内のファイルをドキ�
 ---
 title: 最初のページ
 description: これはStarlightで作成した最初のページです。
+author: あなたの名前
+date: 2023-10-01
+tags: [Starlight, Astro, ドキュメント]
+version: 1.0
+category: ガイド
+layout: default
+status: published
 ---
 
 # Starlightへようこそ！
@@ -65,6 +72,41 @@ description: これはStarlightで作成した最初のページです。
 
 #### フロントマターについて
 Markdownファイルの冒頭にある`---`で囲まれた部分はフロントマターと呼ばれ、ページのメタデータを定義します。`title`や`description`は必須項目です。
+
+### Starlight フロントマター完全リファレンス ✨
+
+#### 必須プロパティ
+| プロパティ名 | 型 | 説明 |
+| --- | --- | --- |
+| title | string | ページのタイトル。ブラウザのタブやサイドバーに表示されます。 |
+| description | string | ページの要約。SEOのメタタグとして使用されます。 |
+
+
+#### レイアウトと表示に関するプロパティ
+| プロパティ名 | 型 | 説明 |
+| --- | --- | --- |
+| editUrl | boolean or string | ページ編集リンクの表示を制御します。falseで非表示、trueでデフォルトのGitHubリンク、stringでカスタムURLを設定します。 |
+| tableOfContents | boolean or object | ページの目次（TOC）を表示するか、およびどのレベルの見出しまで表示するかを制御します。 |
+| template | 'doc' or 'splash' | ページのレイアウトテンプレートを指定します。splashはランディングページ用で、ヒーローセクションを表示します。 |
+| head | HeadConfig[] | ページの <head></head> 要素にカスタムタグを追加します。外部スタイルシートやスクリプトの読み込みに便利です。 |
+| hero | HeroConfig | template: 'splash'指定時にヒーローセクションを設定します。titleやtagline、actionsなどを定義できます。 |
+
+#### ナビゲーションに関するプロパティ
+| プロパティ名 | 型 | 説明 |
+| --- | --- | --- |
+| sidebar | object | サイドバーの表示をカスタマイズします。labelで表示名を、orderで表示順を、badgeでバッジを制御します。 |
+| lastUpdated | boolean | ページの最終更新日を表示するかどうかを制御します。 |
+| prev | boolean or SidebarLink | ページ下部に前のページへのリンクを表示するかを制御します。 |
+| next | boolean or SidebarLink | ページ下部に次のページへのリンクを表示するかを制御します。 |
+| pagination | boolean | ページ下部に前後のページリンクを表示するかをまとめて制御します。 |
+
+#### コンテンツのメタデータと表示オプション
+| プロパティ名 | 型 | 説明 |
+| --- | --- | --- |
+| pagefind | boolean | このページを検索インデックスに含めるかどうかを制御します。 |
+| slug | string | ページのURLをカスタマイズします。ファイル名とは異なるURLを設定できます。 |
+| lang | string | ページの言語コードを設定します。多言語サイトで使用します。 |
+
 
 #### サイドバーのカスタマイズ
 サイドバーの表示順やグループ分けは、`src/content/config.ts`で設定します。これにより、ドキュメントの構成を整理できます。

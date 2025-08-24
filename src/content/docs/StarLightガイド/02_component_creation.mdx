@@ -2,6 +2,8 @@
 title: "コンポーネントの作成"
 ---
 
+import Button from './components/Button.tsx';
+
 ## Astroコンポーネントの基本
 Astroコンポーネントは、ウェブサイトのUIを再利用可能な部品に分割して構築します。HTML、CSS、JavaScriptを一つのファイルにまとめられるのが特徴です。これにより、コードの再利用性が向上し、保守が容易になります。
 
@@ -58,36 +60,57 @@ npx astro add react
 ```
 
 ##### Reactコンポーネントの作成
-`src/components/Counter.jsx`というファイルに、Reactでカウンターコンポーネントを作成します。
+`src/components/Button.tsx`というファイルに、Reactでカウンターコンポーネントを作成します。
 
 ```javascript
-import { useState } from 'react';
+import { useState } from "react"
 
-export default function Counter() {
-  const [count, setCount] = useState(0);
+const Button = () => {
+    const [count, setCount] = useState(0)
+
+    const handleClick = () => {
+        setCount(count + 1)
+    }
 
   return (
     <div>
+      <button onClick={handleClick}>
+        Count{count}
+      </button>
       <p>Count: {count}</p>
-      <button onClick={() => setCount(count + 1)}>Increment</button>
     </div>
-  );
+  )
 }
+
+export default Button  
 ```
 
 ##### Astroページでの利用
-作成した`Counter.jsx`をAstroページにインポートし、`client:load`ディレクティブを追加します。これにより、ページが読み込まれた後にJavaScriptが有効になり、インタラクティブな機能が使えるようになります。
+作成した`Button.tsx`をAstroページにインポートし、`client:load`ディレクティブを追加します。これにより、ページが読み込まれた後にJavaScriptが有効になり、インタラクティブな機能が使えるようになります。
 
 #### src/pages/counter-page.astro
 
 ```astro
 ---
-import Counter from '../components/Counter.jsx';
+import Button from './components/Button.tsx';
 ---
 <body>
   <h1>カウンターページ</h1>
-  <Counter client:load />
+  <Button client:load />
 </body>
 ```
+
+### mdxファイルの場合
+
+```mdx
+import Button from './components/Button.tsx';
+
+// コンテンツの内容
+
+<Button client:load />
+
+```
+<Button client:load />
+
 
 このように、Astroは静的な部分と動的な部分を分離し、必要な部分にだけJavaScriptを適用することで、パフォーマンスを最適化します。`client:load`以外にも、コンポーネントが画面に入ったときにロードする`client:visible`など、複数のディレクティブがあり、ユースケースに応じて使い分けることができます。

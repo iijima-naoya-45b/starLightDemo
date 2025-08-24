@@ -1,19 +1,17 @@
-name: CI/CD Pipeline
+name: Build Verification on Feature and Master Branches
 
 on:
   push:
     branches:
-      - main
-  pull_request:
-    branches:
-      - main
+      - master
+      - 'feature/wip'
 
 jobs:
-  build_and_verify:
+  build_check:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Node.js

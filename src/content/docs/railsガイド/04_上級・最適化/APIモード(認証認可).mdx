@@ -1,0 +1,498 @@
+---
+title: "API認証認可"
+label: "API認証認可"
+---
+
+## 🔑 API認証・認可の比較
+
+Next.js（フロントエンド）とRails（バックエンド）を連携させるAPI認証において、主要な2つの方法を比較します。
+
+### 1. JWT + HttpOnly Cookie
+
+この方法は、セキュリティを最優先する場合に最適なアプローチです。
+
+**仕組み:**
+
+- 認証成功後、JWT（JSON Web Token）を生成し、HttpOnly属性付きのCookieに格納してフロントエンドに送ります。
+- ブラウザは以降のAPIリクエストにこのCookieを自動的に添付します。
+
+**メリット:**
+
+- 高いセキュリティ: HttpOnly属性により、JavaScriptからのトークンアクセスを遮断し、XSS（クロスサイト・スクリプティング）攻撃によるトークン盗難のリスクを大幅に減らせます。
+
+**デメリット:**
+
+- 実装の複雑性: クロスドメイン通信の場合、CORS設定や認証情報を含むリクエストの制御が必要となり、実装が少し複雑になります。
+- CSRF対策: Cookieを使用するため、別途CSRF対策（SameSite=Laxなど）が必要です。
+
+### 2. Bearerトークン (localStorage保管)
+
+この方法は、実装のシンプルさと汎用性が大きな利点です。
+
+**仕組み:**
+
+- 認証成功後、サーバーはJWTを発行し、JSONレスポンスとしてフロントエンドに返します。
+- フロントエンドは、このトークンを**localStorage**に保存します。
+- APIリクエスト時に、`Authorization: Bearer <your_token>`というヘッダーを付けてトークンを送信します。
+
+**メリット:**
+
+- 高い汎用性: Webブラウザだけでなく、モバイルアプリなど様々なクライアントと共通の認証方式として利用しやすいです。
+- 実装がシンプル: ヘッダーにトークンをセットするだけで、異なるドメイン間でも比較的簡単に実装できます。
+
+**デメリット:**
+
+- 低いセキュリティ: localStorageはJavaScriptからアクセス可能なため、XSS攻撃に非常に脆弱です。トークンが盗まれると、その有効期限が切れるまで不正利用されるリスクがあります。
+
+### どちらを選ぶべきか？
+
+- セキュリティを最優先するなら、JWT + HttpOnly Cookieを選びましょう。これは、Webアプリケーションにおける現代のベストプラクティスと見なされています。
+- 実装のシンプルさや、Webアプリとモバイルアプリで認証基盤を共通化したい場合は、Bearerトークンも選択肢になります。ただし、その場合はXSS対策（CSPなど）を厳重に行う必要があります。
+
+## 🛡️ API認証方式の比較
+
+| 項目 | JWT + HttpOnly Cookie | Bearerトークン (localStorage) |
+| --- | --- | --- |
+| **セキュリティ** | 最高 🛡️ <br/>XSS（クロスサイト・スクリプティング）攻撃に非常に強い。HttpOnly属性により、JavaScriptからのトークンアクセスを完全に遮断。 | 低い 🚨 <br/>XSS攻撃に非常に弱い。localStorageに保存されるため、悪意あるスクリプトによって簡単にトークンが盗まれる。 |
+| **利便性** | 中 <br/>ブラウザが自動的にCookieを添付するため、フロントエンドでの手動管理は不要。 | 高 <br/>JavaScriptからトークンを簡単に取得・設定でき、実装がシンプル。 |
+| **汎用性** | 中 <br/>主にブラウザベースのWebアプリケーションに適している。 | 最高 <br/>Web、モバイル、デスクトップなど、様々なクライアントで利用可能。 |
+| **クロスドメイン** | 複雑 <br/>異なるドメイン間での通信には、CORS設定や認証情報の制御が必要。 | シンプル <br/>ヘッダーにトークンをセットするだけなので、比較的簡単に通信が可能。 |
+| **CSRF耐性** | 弱い <br/>Cookieを使用するため、SameSite属性などの追加的な対策が必要。 | 強い <br/>Authorizationヘッダーを使用するため、CSRFの脅威にさらされにくい。 |
+| **主なユースケース** | Webアプリケーション <br/>セキュリティを最優先する場合。 | モバイルアプリやSPA <br/>シンプルさや、多様なクライアントへの対応を重視する場合。 |
+
+**結論:** Webアプリケーションにおいて、セキュリティを重視するなら「JWT + HttpOnly Cookie」が最善の選択肢です。一方で、モバイルアプリとの連携や実装のシンプルさを優先する場合は「Bearerトークン」も選択肢となりえますが、その際にはXSS対策を厳重に行う必要があります。
+
+## 1. Sorceryとは？
+
+Sorceryは、Rails用の認証ライブラリです。他の認証ライブラリ（Deviseなど）と比較して、非常に軽量で、必要に応じて機能をプラグインとして追加できる柔軟性が特徴です。これにより、最小限の機能から始めて、プロジェクトの要件に合わせてカスタマイズできます。
+
+## 2. Railsプロジェクトのセットアップ
+
+**Step 1: Railsプロジェクトの作成**
+
+まず、新しいRailsプロジェクトを作成します。Next.jsとの連携を想定しているため、`--api`フラグを付けてAPIモードで生成します。
+
+```bash
+rails new your_app_name --api
+```
+
+**Step 2: Gemのインストール**
+
+GemfileにSorceryと関連Gemを追加します。`jwt`はJWTのエンコード/デコード用、`sorcery-jwt`はSorceryでJWTを扱うためのプラグインです。
+
+```ruby
+# Gemfile
+gem 'sorcery'
+gem 'sorcery-jwt'
+gem 'jwt'
+```
+
+`bundle install` を実行して、Gemをインストールします。
+
+```bash
+bundle install
+```
+
+## 3. Sorceryのセットアップ
+
+**Step 1: Sorceryの初期化**
+
+Sorceryをプロジェクトに組み込むためのコマンドを実行します。ここでは、`jwt`プラグインと、ユーザー認証を可能にするための`core`プラグインを指定します。
+
+```bash
+rails g sorcery:install jwt
+```
+
+このコマンドは以下のファイルを生成します。
+
+- **マイグレーションファイル**: `db/migrate/xxxxxx_sorcery_core.rb` が作成され、ユーザーを管理するための`users`テーブルが生成されます。
+- **モデルファイル**: `app/models/user.rb` が生成され、Sorceryの機能が組み込まれます。
+- **設定ファイル**: `config/initializers/sorcery.rb` が作成され、Sorceryの全体設定を記述します。
+
+**Step 2: データベースのマイグレーション**
+
+生成されたマイグレーションファイルを実行して、`users`テーブルを作成します。
+
+```bash
+rails db:migrate
+```
+
+## 4. JWT認証の設定とコントローラーの実装
+
+**Step 1: JWTの秘密鍵の設定**
+
+JWTの署名には秘密鍵が必要です。`Rails.application.credentials`に安全に保管します。
+
+```bash
+rails credentials:edit
+```
+
+エディタが開いたら、以下のように`jwt_secret_key`を追加して保存します。
+
+```yaml
+# config/credentials.yml.enc
+secret_key_base: <自動生成された値>
+jwt_secret_key: 'your_strong_and_secret_key' # ここに独自の秘密鍵を設定
+```
+
+**Step 2: アプリケーションコントローラーの設定**
+
+JWTのペイロードと秘密鍵を定義します。これは、JWTの生成と検証に必要です。
+
+```ruby
+# app/controllers/application_controller.rb
+class ApplicationController < ActionController::API # APIモードのためActionController::APIを継承
+  # Sorceryのログイン/ログアウトメソッドを有効にする
+  include Sorcery::Controller
+  
+  # JWTのペイロードに含める情報を定義
+  def jwt_payload_for(user)
+    { user_id: user.id }
+  end
+
+  # JWTの秘密鍵を定義
+  def jwt_secret_key
+    Rails.application.credentials.jwt_secret_key
+  end
+end
+```
+
+**Step 3: 認証コントローラーの作成**
+
+ログイン・ログアウト処理を行うコントローラーを作成します。
+
+```bash
+rails g controller api/v1/sessions create destroy
+```
+
+生成されたファイルに以下のコードを記述します。
+
+- **createアクション**: ユーザー名とパスワードで認証し、成功すればJWTを生成してCookieにセットします。
+- **destroyアクション**: ログアウト処理を行い、CookieからJWTを削除します。
+
+```ruby
+# app/controllers/api/v1/sessions_controller.rb
+class Api::V1::SessionsController < ApplicationController
+  def create
+    user = User.authenticate(params[:email], params[:password])
+
+    if user
+      jwt = sorcery_login(user) # SorceryがJWTを生成
+      cookies.signed[:jwt] = {
+        value: jwt,
+        httponly: true,
+        secure: Rails.env.production?
+      }
+      render json: { message: 'Logged in successfully' }
+    else
+      render json: { error: 'Invalid email or password' }, status: :unauthorized
+    end
+  end
+
+  def destroy
+    sorcery_logout # Sorceryがユーザーをログアウト
+    cookies.delete(:jwt, secure: Rails.env.production?)
+    render json: { message: 'Logged out successfully' }
+  end
+end
+```
+
+**Step 4: ルーティングの設定**
+
+APIエンドポイントを定義します。
+
+```ruby
+# config/routes.rb
+Rails.application.routes.draw do
+  namespace :api do
+    namespace :v1 do
+      resources :sessions, only: [:create] do
+        delete :destroy, on: :collection
+      end
+    end
+  end
+end
+```
+
+## 5. Next.jsとの連携
+
+**Step 1: APIクライアントのセットアップ**
+
+Next.js側でAPIと通信するためのクライアント（ここではaxios）を設定します。認証情報（Cookie）を自動で送信するよう設定することが重要です。
+
+```javascript
+// utils/api.js (例)
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: 'http://localhost:3000/api/v1',
+  withCredentials: true, // これが重要！
+});
+
+export default api;
+```
+
+**Step 2: ログイン処理の実装**
+
+ログインフォームの送信時に、JWTをJSONで受け取るのではなく、Cookieの保存をブラウザに任せます。
+
+```javascript
+// pages/login.js (例)
+import { useState } from 'react';
+import api from '../utils/api'; // 先ほど作成したaxiosクライアント
+
+export default function LoginPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post('/sessions', { email, password });
+      window.location.href = '/dashboard'; 
+    } catch (error) {
+      console.error('Login failed', error);
+    }
+  };
+
+  return (
+    // ... フォームのJSX
+  );
+}
+```
+
+**Step 3: 認証が必要なAPIへのアクセス**
+
+ログイン後、認証が必要なAPIにアクセスする際は、特別なヘッダー設定は不要です。`withCredentials: true`の設定により、ブラウザが自動的にCookieを添付してくれます。
+
+```javascript
+// pages/dashboard.js (例)
+import { useEffect, useState } from 'react';
+import api from '../utils/api';
+
+export default function DashboardPage() {
+  const [profile, setProfile] = useState(null);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const response = await api.get('/profile'); // Railsの認証が必要なエンドポイント
+        setProfile(response.data);
+      } catch (error) {
+        console.error('Failed to fetch profile', error);
+      }
+    };
+    fetchProfile();
+  }, []);
+
+  return (
+    <div>
+      {profile ? (
+        <h1>Welcome, {profile.name}!</h1>
+      ) : (
+        <p>Loading...</p>
+      )}
+    </div>
+  );
+}
+```
+
+**Step 4: 認証の検証（Rails側）**
+
+Rails側では、認証が必要なコントローラーに`before_action :require_login_from_jwt`を追加します。
+
+```ruby
+# app/controllers/api/v1/profiles_controller.rb
+class Api::V1::ProfilesController < ApplicationController
+  before_action :require_login_from_jwt
+
+  def show
+    render json: current_user.to_json
+  end
+end
+```
+
+これにより、リクエストヘッダーに有効なJWTがCookieとして含まれているか自動で検証し、`current_user`がセットされます。無効な場合は401 Unauthorizedエラーが返されます。
+
+Step 2: マイグレーションファイルの追加
+リフレッシュトークンをデータベースに保存するためのテーブルを追加します。
+
+```bash
+rails g model refresh_token token:string user:references
+```
+
+```bash
+rails db:migrate
+```
+
+Step 3: JWT生成ロジックの変更
+JWTのペイロードに有効期限とJTIを含めるようにApplicationControllerを修正します。
+
+```ruby
+# app/controllers/application_controller.rb
+
+class ApplicationController < ActionController::API
+  include Sorcery::Controller
+  
+  # JWTのペイロードに含める情報を定義
+  def jwt_payload_for(user)
+    {
+      user_id: user.id,
+      exp: Time.now.to_i + 300, # アクセストークンを5分で期限切れに設定 (例)
+      jti: SecureRandom.uuid # 一意なJWT ID
+    }
+  end
+
+  def jwt_secret_key
+    Rails.application.credentials.jwt_secret_key
+  end
+end
+```
+
+Step 4: 認証コントローラーの修正
+ログイン時に、アクセストークンとリフレッシュトークンの両方を発行し、Cookieに保存します。
+
+```ruby
+# app/controllers/api/v1/sessions_controller.rb
+
+class Api::V1::SessionsController < ApplicationController
+  def create
+    user = login(params[:email], params[:password])
+
+    if user
+      # 1. アクセストークンを発行
+      access_token = sorcery_login(user)
+      cookies.signed[:access_token] = {
+        value: access_token,
+        httponly: true,
+        secure: Rails.env.production?
+      }
+
+      # 2. リフレッシュトークンを生成し、DBとCookieに保存
+      refresh_token = user.refresh_tokens.create!(token: SecureRandom.uuid)
+      cookies.signed[:refresh_token] = {
+        value: refresh_token.token,
+        httponly: true,
+        secure: Rails.env.production?,
+        expires: 1.month.from_now # 1ヶ月後に期限切れ (例)
+      }
+      
+      render json: { message: 'Logged in successfully' }
+    else
+      render json: { error: 'Invalid email or password' }, status: :unauthorized
+    end
+  end
+
+  def destroy
+    sorcery_logout
+    # ログアウト時に両方のトークンを削除
+    cookies.delete(:access_token)
+    cookies.delete(:refresh_token)
+    render json: { message: 'Logged out successfully' }
+  end
+end
+```
+
+Step 5: リフレッシュエンドポイントの追加
+アクセストークンの期限が切れた場合に、新しいトークンを発行するためのエンドポイントを作成します。
+
+```ruby
+# app/controllers/api/v1/token_refreshes_controller.rb
+
+class Api::V1::TokenRefreshesController < ApplicationController
+  def create
+    refresh_token = cookies.signed[:refresh_token]
+    
+    # Cookieからリフレッシュトークンを取得し、有効性を検証
+    if refresh_token_record = RefreshToken.find_by(token: refresh_token)
+      user = refresh_token_record.user
+      
+      # 新しいアクセストークンを発行
+      access_token = sorcery_login(user)
+      cookies.signed[:access_token] = {
+        value: access_token,
+        httponly: true,
+        secure: Rails.env.production?
+      }
+
+      render json: { message: 'Access token refreshed successfully' }
+    else
+      render json: { error: 'Invalid refresh token' }, status: :unauthorized
+    end
+  end
+end
+```
+
+Step 6: ルーティングの追加
+config/routes.rbにリフレッシュトークン用のエンドポイントを追加します。
+
+```ruby
+# config/routes.rb
+
+Rails.application.routes.draw do
+  namespace :api do
+    namespace :v1 do
+      resources :sessions, only: [:create] do
+        delete :destroy, on: :collection
+      end
+      resources :token_refreshes, only: [:create]
+    end
+  end
+end
+```
+
+2. Next.js (フロントエンド) のセットアップ
+Step 1: APIクライアントの設定
+axiosのインターセプターを使って、アクセストークンの期限切れを自動的に検知し、リフレッシュトークンを使って新しいアクセストークンを取得するロジックを実装します。
+
+```javascript
+// utils/api.js
+
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: 'http://localhost:3000/api/v1',
+  withCredentials: true,
+});
+
+// リクエストが送信される前に実行されるインターセプター
+api.interceptors.request.use((config) => {
+  // ここでは特に何もしない。Cookieはブラウザが自動で添付
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});
+
+// レスポンスが返された後に実行されるインターセプター
+api.interceptors.response.use((response) => {
+  return response;
+}, async (error) => {
+  const originalRequest = error.config;
+  
+  // アクセストークンの期限切れエラー（401）かつ、リトライがまだの場合
+  if (error.response.status === 401 && !originalRequest._retry) {
+    originalRequest._retry = true;
+    try {
+      // リフレッシュトークンを使って新しいアクセストークンをリクエスト
+      await axios.post('http://localhost:3000/api/v1/token_refreshes', null, { withCredentials: true });
+      // 新しいアクセストークンで元のリクエストを再試行
+      return api(originalRequest);
+    } catch (refreshError) {
+      // リフレッシュトークンも無効な場合、ログアウト処理を行う
+      console.error('Refresh token failed:', refreshError);
+      // ユーザーをログインページにリダイレクトするなど
+      window.location.href = '/login';
+      return Promise.reject(refreshError);
+    }
+  }
+
+  return Promise.reject(error);
+});
+
+export default api;
+```
+
+Step 2: ログイン処理の実装
+ログインフォームのコードは前回と同じです。ブラウザが自動的に2つのCookieを保存します。
+
+この仕組みにより、ユーザーは長期間ログイン状態を維持でき、同時にセキュリティ上のリスクも軽減できます。
