@@ -3,18 +3,63 @@ title: "パフォーマンスチューニング"
 label: "パフォーマンスチューニング"
 ---
 
-FastAPIのパフォーマンスチューニング方法を以下に示します。
+## FastAPIのパフォーマンスチューニング
 
-## 非同期処理
+FastAPIはデフォルトで高いパフォーマンスを提供しますが、大規模なアプリケーションではさらなる最適化が不可欠です。ここでは、FastAPIのパフォーマンスを最大限に引き出すための主要なテクニックを解説します。
 
-FastAPIは、非同期処理をサポートしており、リクエストの処理を効率化します。
+### 1. 非同期処理の活用 ⚡
+
+FastAPIはPythonの**asyncio**ライブラリに基づいています。これにより、I/O処理（例: データベースアクセス、外部API呼び出し、ファイル操作）中にサーバーがブロックされることなく、複数のリクエストを同時に処理できます。この特性を活かすことが、パフォーマンスチューニングの鍵となります。
+
+- **async def と await の使い分け**:
+  - `async def`: データベースクエリやAPIリクエストなど、I/Oバウンドな処理を含む関数に適用します。
+  - `await`: `async def`関数内で、I/O処理の完了を待つ際に使用します。
+
+- **同期関数と非同期関数の混在**:
+  FastAPIは、同期関数（`def`）を自動的に別のスレッドプールで実行します。これにより、同期的な処理が他のリクエストをブロックするのを防ぎます。しかし、パフォーマンスを最大化するためには、可能な限り非同期処理に書き換えることが推奨されます。
+
+### 2. 依存性注入の活用 💉
+
+FastAPIの**依存性注入（DI）**システムは、データベース接続の管理や認証トークンの取得といった共通のタスクを効率化します。
+
+- **データベースセッションの管理**: リクエストごとに新しいデータベースセッションを開き、処理完了後に自動的に閉じるように依存性注入を設定することで、リソースリークを防ぎ、接続プールを効率的に利用できます。
+
+#### 例: データベースセッションの管理
 
 ```python
-from fastapi import FastAPI
+# db/database.py
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-app = FastAPI()
+SQLALCHEMY_DATABASE_URL = "sqlite:///./sql_app.db"
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-@app.get("/items/{item_id}")
-async def read_item(item_id: int, q: str = None):
-    return {"item_id": item_id, "q": q}
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 ```
+この`get_db`関数を`Depends`としてエンドポイントに注入することで、データベース管理のロジックを分離できます。
+
+### 3. キャッシュ戦略の導入 💾
+
+頻繁にアクセスされるが更新頻度の低いデータは、キャッシュを利用することでデータベースへのアクセスを減らし、応答時間を大幅に短縮できます。
+
+- **インメモリキャッシュ**: `lru_cache`デコレータなどを使用して、関数呼び出しの結果をキャッシュします。
+- **Redisなどの外部キャッシュ**: 大規模な分散システムでは、Redisなどのキーバリューストアをキャッシュとして利用します。`FastAPI-Cache`などのライブラリが便利です。
+
+### 4. 適切なWebサーバーの選択 🖥️
+
+FastAPIは**ASGI（Asynchronous Server Gateway Interface）**サーバー上で動作します。開発にはUvicornがよく使われますが、本番環境ではより堅牢なサーバーと組み合わせて利用することが推奨されます。
+
+- **Gunicorn + Uvicorn**: Gunicornはプロセス管理を、Uvicornは非同期ワーカーを担う構成です。これにより、複数のUvicornワーカープロセスを起動し、CPUコアを最大限に活用できます。
+
+### 5. データ検証の最適化 📊
+
+FastAPIはPydanticを使ってデータの自動検証を行いますが、大きなデータセットを扱う場合はこの検証プロセスがボトルネックになることがあります。
+
+- **スキーマの簡素化**: 不要なフィールドは定義しないようにします。
+- **response_modelの最適化**: 応答モデルには、クライアントに返す必要のある最小限のデータのみを含めるようにします。これにより、不必要なデータのシリアライズ処理を削減できます。

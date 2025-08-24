@@ -1,0 +1,93 @@
+---
+title: "cookie戦略"
+label: "cookie戦略"
+---
+
+## 🎨 スタイリング戦略
+
+Next.jsは、アプリケーションのスタイリングに複数の方法を提供します。プロジェクトの規模やチームの好みに応じて最適な方法を選択できます。
+
+### 1. CSS Modules
+
+CSS Modulesは、コンポーネントごとに独立したスタイルを適用するための推奨される方法です。各CSSファイルは自動的に一意のクラス名を生成するため、クラス名の衝突を防ぐことができます。
+
+- **利点**: グローバルな名前空間の汚染を防ぎ、コンポーネントの再利用性を高めます。
+- **使用法**: ファイル名を`.module.css`で終わらせます。
+
+```css
+/* styles/Button.module.css */
+.button {
+  background-color: blue;
+  color: white;
+}
+```
+
+```typescript
+import styles from '../styles/Button.module.css';
+
+function Button() {
+  return <button className={styles.button}>Click me</button>;
+}
+```
+
+### 2. Styled-Components / Emotion
+
+Styled-ComponentsやEmotionといったCSS-in-JSライブラリを使用すると、スタイルをJavaScriptコード内に直接記述できます。これにより、コンポーネントとスタイルを1つのファイルにまとめることができます。
+
+- **利点**: コンポーネントのプロパティに基づいて動的なスタイルを適用するのが簡単です。JavaScriptの機能（変数、関数など）をスタイルに利用できます。
+- **使用法**: ライブラリをインストールし、コンポーネントを作成します。
+
+```typescript
+import styled from 'styled-components';
+
+const StyledButton = styled.button`
+  background-color: ${props => props.primary ? 'blue' : 'gray'};
+  color: white;
+  border: none;
+`;
+
+function Button({ primary }) {
+  return <StyledButton primary={primary}>Styled Button</StyledButton>;
+}
+```
+
+### 3. Tailwind CSS
+
+Tailwind CSSは、ユーティリティファーストのCSSフレームワークです。事前に定義されたクラス（例：`flex`, `text-center`, `p-4`）をHTMLに直接適用することで、素早くデザインを構築できます。
+
+- **利点**: カスタムCSSを書く必要がほとんどなく、開発スピードが大幅に向上します。ビルド時に不要なCSSが削除されるため、最終的なファイルサイズが非常に小さくなります。
+- **使用法**: クラス名を直接HTMLに追加します。
+
+```typescript
+<button className="bg-blue-500 text-white font-bold py-2 px-4 rounded">
+  Tailwind Button
+</button>
+```
+
+## 🌐 国際化（i18n）
+
+Next.jsは、アプリケーションを多言語対応にするための国際化機能をサポートしています。これにより、ユーザーの言語設定に応じてコンテンツを切り替えることができます。
+
+### 1. Next.jsのi18n機能
+
+Next.jsの組み込みi18n機能は、ルーティングを介して言語を処理します。`next.config.js`でサポートするロケール（言語）とデフォルトのロケールを設定するだけで簡単に始められます。
+
+#### 設定例:
+
+```javascript
+// next.config.js
+module.exports = {
+  i18n: {
+    locales: ['en', 'ja'], // サポートする言語
+    defaultLocale: 'en',  // デフォルトの言語
+  },
+};
+```
+
+この設定により、URLが自動的に`/ja/about`や`/en/about`のように言語ごとにルーティングされます。
+
+### 2. 外部ライブラリとの連携
+
+より高度な機能（動的な翻訳、複数形など）が必要な場合は、`react-i18next`や`next-intl`のようなライブラリを組み合わせるのが一般的です。これらのライブラリは、翻訳ファイルの管理やコンポーネント内での翻訳文字列の利用を容易にします。
+
+これらのトピック以外にも、認証、テスト、パフォーマンス最適化など、Next.jsには掘り下げるべき分野がまだたくさんあります。

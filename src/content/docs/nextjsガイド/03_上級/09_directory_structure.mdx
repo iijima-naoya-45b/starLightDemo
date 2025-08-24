@@ -1,0 +1,94 @@
+---
+title: "Next.jsのディレクトリ構造"
+label: "Next.jsのディレクトリ構造"
+---
+
+## 🗂️ Next.jsのディレクトリ構造
+
+Next.jsプロジェクトのディレクトリ構造は、プロジェクトの規模や目的に応じて柔軟に設計できます。以下に、一般的なディレクトリ構造の例を示します。
+
+### 1. 小規模プロジェクト
+
+小規模なプロジェクトでは、シンプルなディレクトリ構造が適しています。
+
+```
+/
+├── pages/
+│   ├── index.js
+│   ├── about.js
+│   └── contact.js
+├── public/
+│   └── images/
+├── styles/
+│   └── globals.css
+└── package.json
+```
+
+### 2. 大規模プロジェクト
+
+大規模なプロジェクトでは、機能ごとにディレクトリを分けることで、コードの可読性と保守性を向上させることができます。
+
+```
+/
+├── components/
+│   ├── Header.js
+│   ├── Footer.js
+│   └── Sidebar.js
+├── pages/
+│   ├── index.js
+│   ├── about.js
+│   └── contact.js
+├── public/
+│   └── images/
+├── styles/
+│   ├── globals.css
+│   └── Header.module.css
+└── package.json
+```
+
+### 3. 機能ベースのディレクトリ構造
+
+機能ベースのディレクトリ構造は、特定の機能に関連するすべてのファイルを一つのディレクトリにまとめる方法です。
+
+```
+/
+├── features/
+│   ├── auth/
+│   │   ├── Login.js
+│   │   ├── Register.js
+│   │   └── auth.module.css
+│   ├── dashboard/
+│   │   ├── Dashboard.js
+│   │   └── dashboard.module.css
+│   └── profile/
+│       ├── Profile.js
+│       └── profile.module.css
+├── pages/
+│   ├── index.js
+│   ├── about.js
+│   └── contact.js
+├── public/
+│   └── images/
+├── styles/
+│   └── globals.css
+└── package.json
+```
+
+### 4. Next.js 13以降のディレクトリ構造
+
+Next.js 13以降では、`app/`ディレクトリを使用した新しいディレクトリ構造が導入されました。
+
+```
+/app
+├── layout.tsx
+├── page.tsx
+├── about/
+│   └── page.tsx
+└── blog/
+    └── [slug]/
+        └── page.tsx
+```
+
+この構造では、`app/`ディレクトリ内のサブディレクトリがURLパスに対応し、各セグメントの`page.tsx`ファイルがそのパスのUIを定義します。
+
+Next.jsのディレクトリ構造は、プロジェクトのニーズに応じて柔軟に設計できるため、開発者は最適な構造を選択することが重要です。

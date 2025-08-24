@@ -3,14 +3,98 @@ title: "FastAPIのインストール"
 label: "FastAPIのインストール"
 ---
 
-FastAPIをインストールするには、以下のコマンドを実行します。
+## 🚀 FastAPIのインストール手順
+
+FastAPIは、PythonのモダンなWebフレームワークで、高いパフォーマンスと開発効率が魅力です。ここでは、FastAPIと、開発に不可欠なWebサーバーであるUvicornのインストール方法を解説します。
+
+### 1. FastAPIとUvicornのインストール
+
+ターミナルまたはコマンドプロンプトを開き、以下のコマンドを順番に実行します。
 
 ```bash
 pip install fastapi
+pip install "uvicorn[standard]"
 ```
 
-また、開発サーバーとしてUvicornを使用するため、以下のコマンドでインストールします。
+- **FastAPI本体をインストールします。** これにより、フレームワークの主要な機能が利用可能になります。
+- **Uvicornをインストールします。** Uvicornは、FastAPIアプリケーションを動かすためのASGI（Asynchronous Server Gateway Interface）サーバーです。`[standard]`オプションを付けることで、`httptools`や`watchfiles`といった便利な追加ライブラリも同時にインストールされ、ホットリロード（コード変更時の自動再起動）などの機能が使えるようになります。
+
+### 2. 環境の準備と実行
+
+インストールが完了したら、簡単なPythonファイルを作成して動作を確認してみましょう。
+
+#### `main.py`
+
+```python
+from typing import Optional
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/")
+def read_root():
+    return {"Hello": "World"}
+
+@app.get("/items/{item_id}")
+def read_item(item_id: int, q: Optional[str] = None):
+    return {"item_id": item_id, "q": q}
+```
+
+このファイルを保存し、ターミナルで以下のコマンドを実行します。
 
 ```bash
-pip install uvicorn
+uvicorn main:app --reload
 ```
+
+- **`main:app`**: `main`はファイル名（`main.py`）、`app`は`FastAPI()`インスタンスのオブジェクト名を指します。
+- **`--reload`**: このオプションを付けると、コードを変更するたびにサーバーが自動的に再起動します。開発中に非常に便利な機能です。
+
+これで、Webブラウザから`http://127.0.0.1:8000`にアクセスすると、`{"Hello": "World"}`というレスポンスが表示されます。
+
+### 3. 仮想環境の作成と利用
+
+Python開発では、プロジェクトごとに独立した環境を構築するために仮想環境を使用するのが一般的です。これにより、異なるプロジェクト間でパッケージのバージョンが衝突するのを防ぐことができます。
+
+#### 仮想環境の作成
+
+プロジェクトのルートディレクトリで、以下のコマンドを実行して仮想環境を作成します。
+
+```bash
+python -m venv venv
+```
+
+これにより、`venv`という名前のディレクトリが作成され、その中にPythonの実行ファイルと`pip`が格納されます。
+
+#### 仮想環境の有効化
+
+次に、作成した仮想環境を有効化します。
+
+- **macOS / Linux:**
+
+  ```bash
+  source venv/bin/activate
+  ```
+
+- **Windows:**
+
+  ```bash
+  venv\Scripts\activate
+  ```
+
+有効化すると、ターミナルのプロンプトの先頭に`(venv)`と表示され、この環境がアクティブになっていることを示します。この状態で`pip install`コマンドを実行すると、パッケージはこの仮想環境内にのみインストールされます。
+
+#### 依存関係の管理
+
+プロジェクトの依存関係を管理するために、インストールしたパッケージを`requirements.txt`ファイルに記録しておきましょう。
+
+```bash
+pip freeze > requirements.txt
+```
+
+他の開発者がプロジェクトに参加する際や、本番環境にデプロイする際には、このファイルから必要なパッケージを一括でインストールできます。
+
+```bash
+pip install -r requirements.txt
+```
+
+このトピックを追加することで、初心者がより良い開発プラクティスを身につけ、プロジェクトを長期的に管理しやすくなります。

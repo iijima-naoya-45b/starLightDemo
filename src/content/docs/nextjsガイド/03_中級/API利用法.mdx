@@ -3,15 +3,107 @@ title: "API利用法"
 label: "API利用法"
 ---
 
-Next.jsのAPI利用法を以下に示します。
+🤝 外部APIの利用とAPIルートの役割
+Next.jsでは、外部のAPIを利用する場合と、プロジェクト内に独自のAPIエンドポイントを作成する場合の2つが考えられます。外部APIを直接クライアントサイドから呼び出すことも可能ですが、セキュリティやパフォーマンスの観点から、**APIルート（Route Handler）**を介して呼び出すのが推奨されます。
 
-## APIルート
+1. 外部APIをAPIルートから呼び出す 📞
+外部APIキーなどの機密情報をフロントエンドに公開することなく、安全にデータを取得するのがこの方法です。Next.jsのAPIルートがサーバーサイドで外部APIを呼び出し、その結果をフロントエンドに返します。
 
-Next.jsでは、`pages/api`ディレクトリにAPIルートを作成できます。
+APIルートの作成 (app/api/data/route.ts)
+App Routerでは、app/apiディレクトリにAPIエンドポイントを作成します。
 
-```javascript
-// pages/api/hello.js
-export default function handler(req, res) {
-  res.status(200).json({ text: 'Hello' });
+TypeScript
+
+import { NextResponse } from 'next/server';
+
+export async function GET() {
+  try {
+    // 外部APIキーは環境変数から安全に取得
+    const apiKey = process.env.EXTERNAL_API_KEY;
+    const res = await fetch(`https://api.example.com/data?key=${apiKey}`);
+    
+    if (!res.ok) {
+      throw new Error('Failed to fetch data from external API');
+    }
+    
+    const data = await res.json();
+    
+    // 取得したデータをフロントエンドに返す
+    return NextResponse.json({ data });
+  } catch (error) {
+    console.error('API call failed:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
 }
-```
+コンポーネントからの呼び出し
+作成したAPIルートは、通常のAPIエンドポイントとしてフロントエンドから呼び出せます。
+
+TypeScript
+
+// components/DataDisplay.tsx
+'use client';
+
+import { useEffect, useState } from 'react';
+
+export default function DataDisplay() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      const res = await fetch('/api/data');
+      const result = await res.json();
+      setData(result.data);
+      setLoading(false);
+    }
+    fetchData();
+  }, []);
+
+  if (loading) return <div>Loading...</div>;
+  if (!data) return <div>No data found.</div>;
+
+  return (
+    <div>
+      <h1>Data from API:</h1>
+      <pre>{JSON.stringify(data, null, 2)}</pre>
+    </div>
+  );
+}
+2. サーバーコンポーネントからの直接呼び出し ⚡️
+Next.jsのサーバーコンポーネントでは、外部APIを直接呼び出すことができ、APIルートを介す必要はありません。これにより、データ取得ロジックがコンポーネントの近くに配置され、シンプルになります。
+
+サーバーコンポーネントでのデータ取得 (app/page.tsx)
+TypeScript
+
+// app/page.tsx
+export default async function Page() {
+  // 外部APIキーは環境変数から安全に取得
+  const apiKey = process.env.EXTERNAL_API_KEY;
+  const res = await fetch(`https://api.example.com/data?key=${apiKey}`);
+  const data = await res.json();
+
+  return (
+    <div>
+      <h1>Data fetched on the server:</h1>
+      <pre>{JSON.stringify(data, null, 2)}</pre>
+    </div>
+  );
+}
+このアプローチは、APIキーを安全に保ちつつ、クライアントサイドでのデータ取得や状態管理の複雑さを避けることができます。この処理はサーバー上で行われるため、クライアントに機密情報が公開されることはありません。
+
+どちらを選ぶべきか？
+APIルートを介す場合:
+
+認証: 外部APIを呼び出す前に、カスタムの認証やバリデーションロジックを実行する必要がある場合。
+
+データ加工: 外部APIから取得したデータを複数のコンポーネントで利用するために、複雑な加工や変換が必要な場合。
+
+クライアントでの利用: データの取得をクライアントサイドの状態管理ライブラリ（Zustand, Reduxなど）と連携させたい場合。
+
+サーバーコンポーネントから直接呼び出す場合:
+
+シンプルさ: コンポーネントのレンダリングに必要なデータを直接取得するだけで良い場合。
+
+パフォーマンス: サーバーコンポーネントのキャッシュ機能を利用して、パフォーマンスを最適化したい場合。
+
+まとめると、Next.jsは外部APIを利用するための柔軟な選択肢を提供します。プロジェクトの要件に応じて、APIルートを介して中間層を設けるか、サーバーコンポーネントから直接呼び出すかを決定します。

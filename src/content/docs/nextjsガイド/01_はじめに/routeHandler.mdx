@@ -1,0 +1,60 @@
+---
+title: "RouteHandlerについて"
+label: "RouteHandlerについて"
+---
+
+## 🛣️ Route Handlerとは
+
+Route Handlerは、Next.jsのApp RouterでAPIルートを作成するための新しい方法です。`pages/api`ディレクトリに依存する従来のAPIルートとは異なり、`app/api`ディレクトリ内の`route.ts`（または`.js`）ファイルとして定義されます。
+
+Route Handlerは、RequestやResponseといったWeb標準のAPIに基づいているため、サーバーサイドのロジックをよりシンプルかつ柔軟に記述できます。
+
+## 📝 Route Handlerの作成方法
+
+Route Handlerを作成するには、`app/`ディレクトリ内に`api`という名前のディレクトリを作成し、その中にHTTPメソッドに対応する関数をエクスポートする`route.ts`ファイルを追加します。
+
+### 基本的な例
+
+`app/api/hello/route.ts`
+
+```typescript
+import { NextResponse } from 'next/server';
+
+export async function GET() {
+  return NextResponse.json({ message: 'Hello from Route Handler!' });
+}
+
+export async function POST(request: Request) {
+  const data = await request.json();
+  return NextResponse.json({ message: 'POST request received', data });
+}
+```
+
+- `GET()`: GETリクエストを処理します。
+- `POST()`: POSTリクエストを処理します。
+- `NextResponse.json()`: Responseオブジェクトの便利なラッパーで、JSON形式のレスポンスを簡単に作成できます。
+
+## 💡 Route Handlerの主な特徴
+
+1. **Web標準APIへの準拠**
+   - Route Handlerは、Requestオブジェクト（リクエストボディ、ヘッダー、URLなどを含む）とResponseオブジェクト（レスポンスを構築）というWeb標準APIに準拠しています。これにより、Node.jsの知識だけでなく、Web開発の一般的な知識が活かせます。
+
+2. **HTTPメソッドごとの関数定義**
+   - 従来のAPIルートでは、1つのhandler関数内で`req.method`を使って分岐処理を行っていました。Route Handlerでは、GET, POST, PUT, DELETEなどのHTTPメソッドごとに個別の関数をエクスポートするだけで、ルーティングを自動的に処理してくれます。これにより、コードがより整理され、読みやすくなります。
+
+3. **キャッシュと再検証（Revalidation）**
+   - Route Handlerは、App Routerの高度なキャッシュ機能と統合されています。デフォルトで静的（static）なレスポンスがキャッシュされるため、パフォーマンスが向上します。必要に応じて、以下の方法で再検証を制御できます。
+     - `revalidate`オプション: `fetch`APIで`revalidate`オプションを指定することで、キャッシュを更新する頻度を制御できます。
+     - 動的関数: `headers()`, `cookies()`, `request()`のような動的な関数を使用すると、自動的にレスポンスが動的（dynamic）にレンダリングされます。
+
+## 🤝 従来のAPIルートとの違い
+
+| 特徴               | 従来のAPIルート (`pages/api`) | Route Handler (`app/api`) |
+|--------------------|-------------------------------|---------------------------|
+| ファイル名         | 任意のファイル名（例: `hello.js`） | `route.ts`                |
+| ディレクトリ       | `pages/api/`                  | `app/api/`                |
+| リクエスト処理     | `req.method`で分岐            | HTTPメソッドごとの関数（例: `GET()`, `POST()`） |
+| API                | Node.jsの`http.ServerResponse` | Web標準の`Request`と`Response` |
+| キャッシュ         | キャッシュなし（動的）         | デフォルトで静的、柔軟な再検証が可能 |
+
+新しいプロジェクトでは、これらの利点からRoute Handlerを使用することが推奨されます。Route Handlerは、単一のリポジトリ内で効率的なフルスタック開発を実現するNext.jsの基盤の一つです。

@@ -1,0 +1,82 @@
+---
+title: "Next.jsの状態管理"
+label: "Next.jsの状態管理"
+---
+
+## 🔄 Next.jsの状態管理
+
+Next.jsでは、さまざまな方法で状態管理を行うことができます。これにより、アプリケーションの状態を効率的に管理し、ユーザー体験を向上させることが可能です。
+
+### 1. ReactのuseStateとuseReducer
+
+Reactの`useState`と`useReducer`フックを使用して、コンポーネント内で状態を管理することができます。
+
+#### 実装例
+
+```typescript
+// components/Counter.tsx
+import { useState } from 'react';
+
+export default function Counter() {
+  const [count, setCount] = useState(0);
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(count + 1)}>Increment</button>
+    </div>
+  );
+}
+```
+
+### 2. Context API
+
+Context APIを使用すると、コンポーネントツリー全体で状態を共有することができます。これにより、プロップドリリングを避け、状態管理を簡素化できます。
+
+#### 実装例
+
+```typescript
+// context/ThemeContext.tsx
+import { createContext, useContext, useState, ReactNode } from 'react';
+
+const ThemeContext = createContext(null);
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [theme, setTheme] = useState('light');
+
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+}
+
+export function useTheme() {
+  return useContext(ThemeContext);
+}
+```
+
+### 3. Zustand
+
+Zustandは、軽量でシンプルな状態管理ライブラリです。Next.jsと組み合わせて使用することで、効率的に状態を管理できます。
+
+#### 実装例
+
+```typescript
+// store/useStore.ts
+import create from 'zustand';
+
+interface StoreState {
+  count: number;
+  increment: () => void;
+}
+
+const useStore = create<StoreState>((set) => ({
+  count: 0,
+  increment: () => set((state) => ({ count: state.count + 1 })),
+}));
+
+export default useStore;
+```
+
+これらの方法を組み合わせることで、Next.jsアプリケーション内での状態管理が効率的に行えます。プロジェクトの規模や要件に応じて、最適な方法を選択してください。

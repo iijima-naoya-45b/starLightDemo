@@ -1,0 +1,82 @@
+---
+title: "Next.jsのCookie管理"
+label: "Next.jsのCookie管理"
+---
+
+## 🍪 Next.jsのCookie管理
+
+Next.jsでは、サーバーコンポーネントとクライアントコンポーネントの両方でCookieを管理することができます。Cookieは、ユーザーのセッション情報や認証トークンを保存するために使用されます。
+
+### 1. サーバーコンポーネントでのCookie管理
+
+サーバーコンポーネントでは、`cookies()`関数を使用してCookieを読み取ることができます。これにより、サーバーサイドでの認証やセッション管理が可能になります。
+
+#### 実装例
+
+```typescript
+// app/dashboard/page.tsx
+import { cookies } from 'next/headers';
+
+export default function DashboardPage() {
+  const cookieStore = cookies();
+  const token = cookieStore.get('auth_token')?.value;
+
+  // トークンを使用して認証情報を取得
+  // ...
+
+  return (
+    <div>
+      <h1>ダッシュボード</h1>
+      {/* 認証情報に基づくコンテンツを表示 */}
+    </div>
+  );
+}
+```
+
+### 2. ルートハンドラーでのCookie設定
+
+ルートハンドラーでは、`cookies()`関数を使用してCookieを設定することができます。これにより、サーバーサイドでのCookieの読み取りと書き込みが可能になります。
+
+#### 実装例
+
+```typescript
+// app/api/login/route.ts
+import { cookies } from 'next/headers';
+import { NextResponse } from 'next/server';
+
+export async function POST(req) {
+  const token = 'generated_auth_token_123';
+
+  // Cookieを設定
+  cookies().set('auth_token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 60 * 60 * 24 * 7, // 1週間
+    path: '/',
+    sameSite: 'strict',
+  });
+
+  return NextResponse.json({ message: 'Login successful' });
+}
+```
+
+### 3. クライアントコンポーネントでのCookie管理
+
+クライアントコンポーネントでは、Cookieの読み取りと書き込みにライブラリを使用することが一般的です。これにより、クライアントサイドでの状態管理が容易になります。
+
+#### 実装例
+
+```typescript
+// クライアントサイドでのCookie管理
+import Cookies from 'js-cookie';
+
+function setAuthToken(token) {
+  Cookies.set('auth_token', token, { expires: 7, path: '/' });
+}
+
+function getAuthToken() {
+  return Cookies.get('auth_token');
+}
+```
+
+これらの方法を組み合わせることで、Next.jsアプリケーション内でのCookie管理が効率的に行えます。サーバーサイドでのセキュアなCookie設定と、クライアントサイドでの柔軟な状態管理を両立させることが可能です。

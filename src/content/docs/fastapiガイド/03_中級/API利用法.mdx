@@ -3,18 +3,175 @@ title: "API利用法"
 label: "API利用法"
 ---
 
-FastAPIのAPI利用法を以下に示します。
+## FastAPIのAPI利用法
 
-## エンドポイントの定義
+FastAPIは、Pythonの型ヒントを最大限に活用することで、シンプルかつ直感的にAPIエンドポイントを定義できます。これにより、開発者は煩雑な設定から解放され、ビジネスロジックに集中できます。
 
-FastAPIを使用して、エンドポイントを定義します。非同期処理を活用することで、リクエストの処理を効率化し、サーバーのパフォーマンスを向上させることができます。
+### 1. エンドポイントの定義とルーティング
+
+APIのエンドポイントは、Pythonの関数にデコレータを適用することで定義します。このデコレータは、HTTPメソッド（GET, POSTなど）とURLパスを指定します。
+
+#### 例：基本的なエンドポイント
 
 ```python
 from fastapi import FastAPI
 
 app = FastAPI()
 
+# GETメソッドのエンドポイントを定義
+@app.get("/")
+def read_root():
+    return {"Hello": "World"}
+```
+このコードは、ルートURL（/）へのGETリクエストを処理するエンドポイントを定義しています。
+
+### 2. パラメータの利用
+
+FastAPIでは、関数の引数としてパラメータを受け取ります。これらの引数にPythonの型ヒントを付けるだけで、FastAPIが自動的にデータのバリデーションとシリアライズを行います。
+
+| パラメータの種類 | 説明 | 例 |
+| --- | --- | --- |
+| パスパラメータ | URLパスの一部として渡される値。 | `/items/{item_id}` |
+| クエリパラメータ | URLの?以降にkey=value形式で渡される値。 | `/items?q=query_string` |
+| リクエストボディ | POSTやPUTリクエストの本文としてJSON形式で渡されるデータ。 | `{ "name": "item", "price": 100 }` |
+
+#### 例：パスパラメータとクエリパラメータ
+
+```python
+from typing import Optional
+from fastapi import FastAPI
+
+app = FastAPI()
+
 @app.get("/items/{item_id}")
-async def read_item(item_id: int, q: str = None):
+async def read_item(item_id: int, q: Optional[str] = None):
+    # item_idはint型として、qはstr型として自動的に検証される
     return {"item_id": item_id, "q": q}
 ```
+- `item_id: int`: パスから取得したitem_idが整数であることを保証します。
+- `q: Optional[str] = None`: qが文字列であり、省略可能（デフォルト値None）であることを示します。
+
+### 3. リクエストボディの処理
+
+POST、PUTなどのリクエストでJSONデータを受け取る場合、Pydanticモデルを使ってリクエストボディの構造を定義します。これにより、データの自動検証とドキュメント生成が実現します。
+
+#### 例：リクエストボディの受け取り
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+# リクエストボディのデータ構造を定義
+class Item(BaseModel):
+    name: str
+    price: float
+    is_offer: bool = None
+
+@app.post("/items/")
+async def create_item(item: Item):
+    # FastAPIが自動的にリクエストJSONをItemクラスのインスタンスに変換
+    return {"item_name": item.name, "message": "Item created successfully"}
+```
+`create_item`関数の引数`item: Item`は、Itemモデルに従ってJSONデータを自動的に検証します。
+
+### 4. 応答（レスポンス）
+
+FastAPIは、関数が返すPythonオブジェクト（辞書、リスト、Pydanticモデルなど）を自動的にJSON形式のレスポンスに変換します。
+
+#### 例：レスポンスのカスタマイズ
+
+```python
+from fastapi import FastAPI, status
+
+app = FastAPI()
+
+# ステータスコードをカスタマイズ
+@app.post("/items/", status_code=status.HTTP_201_CREATED)
+async def create_item():
+    return {"message": "Item created!"}
+```
+`status_code`引数を使用することで、HTTPステータスコードを明示的に設定できます。
+
+### 5. 自動生成されるAPIドキュメント
+
+FastAPIの大きな利点は、上記のコードだけでインタラクティブなAPIドキュメントが自動生成されることです。
+
+- `/docs`にアクセスするとSwagger UI、`/redoc`にアクセスするとReDocのドキュメントが表示されます。
+- これにより、APIの仕様確認やテストが非常に簡単になります。
+
+### 6. エラーハンドリング 🚨
+
+API開発において、予期せぬエラーや特定の条件でエラーを返すことは不可欠です。FastAPIは`HTTPException`を使って、HTTPステータスコードと詳細メッセージを伴うエラーレスポンスを簡単に生成できます。
+
+#### 例: ユーザーが見つからない場合のエラー
+
+```python
+from fastapi import FastAPI, HTTPException
+
+@app.get("/users/{user_id}")
+async def get_user(user_id: int):
+    # 仮のデータベースアクセス
+    user = {"id": 1, "name": "Alice"}
+    
+    if user_id != user["id"]:
+        raise HTTPException(
+            status_code=404, 
+            detail="User not found"
+        )
+    return user
+```
+`HTTPException`: この例外を発生させると、FastAPIは自動的に適切なHTTPステータスコード（例: 404 Not Found）と、JSON形式のレスポンスボディ（`{"detail": "User not found"}`）を返します。
+
+### 7. ルーターの分割とモジュール化 🧩
+
+アプリケーションが大規模になるにつれて、すべてのエンドポイントを`main.py`に記述するのは非効率的です。FastAPIでは、`APIRouter`を使ってエンドポイントをファイルごとに分割し、モジュール化することができます。
+
+#### 例: ユーザーAPIの分割
+
+`api/v1/users.py`
+
+```python
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.get("/users/{user_id}")
+async def read_user(user_id: int):
+    return {"message": f"Reading user {user_id}"}
+```
+
+`main.py`
+
+```python
+from fastapi import FastAPI
+from .api.v1 import users
+
+app = FastAPI()
+
+# ルーターをインクルード
+app.include_router(users.router, prefix="/api/v1")
+```
+- `APIRouter`: エンドポイントをグループ化し、個別のファイルで管理するためのクラスです。
+- `include_router`: `main.py`で`APIRouter`のインスタンスを読み込み、URLのプレフィックス（`prefix`）を指定してアプリケーションに組み込みます。これにより、`users.py`の`@router.get("/users/{user_id}")`は`/api/v1/users/{user_id}`として機能します。
+
+### 8. セキュリティと認証 🔑
+
+FastAPIは、認証と認可の機能も標準でサポートしています。OAuth 2.0やHTTP Basic Authなどのスキーマを簡単に実装できます。
+
+#### 例: OAuth2によるトークン認証
+
+```python
+from fastapi import Depends, FastAPI
+from fastapi.security import OAuth2PasswordBearer
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+@app.get("/profile")
+async def get_profile(token: str = Depends(oauth2_scheme)):
+    # tokenを使ってユーザーを認証するロジック
+    return {"message": "Profile accessed", "token": token}
+```
+- `Depends`: 依存性注入の仕組みを使い、リクエストヘッダーから認証トークンを自動で取得します。
+- `OAuth2PasswordBearer`: ユーザー名とパスワードを介してOAuth2トークンを取得するためのスキーマを定義します。

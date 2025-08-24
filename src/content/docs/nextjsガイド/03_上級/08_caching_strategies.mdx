@@ -1,0 +1,89 @@
+---
+title: "Next.jsのキャッシング戦略"
+label: "Next.jsのキャッシング戦略"
+---
+
+## 🗄️ Next.jsのキャッシング戦略
+
+Next.jsでは、パフォーマンスを向上させるためにさまざまなキャッシング戦略を採用できます。これにより、ユーザーエクスペリエンスを向上させ、サーバーの負荷を軽減することができます。
+
+### 1. 静的サイト生成 (SSG) のキャッシュ
+
+静的サイト生成を使用することで、ビルド時に生成されたHTMLファイルをCDNにキャッシュし、ユーザーに高速で配信できます。
+
+```javascript
+// /pages/posts/[id].js
+export async function getStaticPaths() {
+  return {
+    paths: [
+      { params: { id: '1' } },
+      { params: { id: '2' } },
+    ],
+    fallback: false,
+  };
+}
+
+export async function getStaticProps({ params }) {
+  return {
+    props: { postId: params.id },
+  };
+}
+
+const Post = ({ postId }) => {
+  return <p>Post ID: {postId}</p>;
+};
+
+export default Post;
+```
+
+### 2. サーバーサイドレンダリング (SSR) のキャッシュ
+
+サーバーサイドレンダリングを使用する場合、キャッシュを適切に設定することで、サーバーの負荷を軽減し、レスポンス時間を短縮できます。
+
+```javascript
+// /pages/index.js
+export async function getServerSideProps() {
+  return {
+    props: { message: 'Hello from SSR' },
+  };
+}
+
+const Home = ({ message }) => {
+  return <p>{message}</p>;
+};
+
+export default Home;
+```
+
+### 3. Incremental Static Regeneration (ISR)
+
+ISRを使用することで、静的ページをビルド後に再生成し、最新のデータを反映しつつ、静的サイトのパフォーマンスを維持できます。
+
+```javascript
+// /pages/posts/[id].js
+export async function getStaticProps({ params }) {
+  const post = await fetchPost(params.id);
+  return {
+    props: { post },
+    revalidate: 10, // 10秒ごとに再生成
+  };
+}
+```
+
+### 4. CDNの活用
+
+Next.jsは、Vercelを使用することで、静的アセット（画像、CSS、SSGで生成されたHTMLなど）を世界中のCDNに自動的にキャッシュし、ユーザーに高速で配信します。
+
+### 5. キャッシュ制御ヘッダー
+
+キャッシュ制御ヘッダーを使用して、ブラウザやCDNのキャッシュを細かく制御できます。
+
+```javascript
+// /pages/api/hello.js
+export default function handler(req, res) {
+  res.setHeader('Cache-Control', 's-maxage=10, stale-while-revalidate');
+  res.status(200).json({ message: 'Hello from API!' });
+}
+```
+
+これらのキャッシング戦略を適用することで、Next.jsアプリケーションのパフォーマンスを大幅に向上させることができます。

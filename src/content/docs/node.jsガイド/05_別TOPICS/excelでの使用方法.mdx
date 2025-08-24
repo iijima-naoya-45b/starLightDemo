@@ -1,0 +1,95 @@
+---
+title: "excelでの使用方法"
+label: "excelでの使用方法"
+---
+
+## Node.jsとExcel：高度な利用方法
+
+Node.jsでExcelを扱うための基本的な方法に加えて、頻出ライブラリ、データの出力方法、複数のブックを読み込む方法について解説します。
+
+### 1. 頻出ライブラリ
+
+Node.jsでExcelファイルを扱うための主要なライブラリは、`xlsx`と`exceljs`の2つです。
+
+- **xlsx**:
+  - **特徴**: 読み込みに特化しており、高速で軽量です。複雑なExcelファイルをJSON形式に変換するのに優れています。
+  - **用途**: 大量のExcelデータを高速に処理してデータベースに取り込んだり、データ分析のために変換したりするタスクに適しています。
+
+- **exceljs**:
+  - **特徴**: 読み書き両方の機能が充実しており、セル単位での書式設定やグラフの作成など、より高度な操作が可能です。
+  - **用途**: テンプレートとなるExcelファイルにデータを流し込んで新しいファイルを作成したり、レポートを動的に生成したりするタスクに適しています。
+
+どちらのライブラリも、`npm install <ライブラリ名>`で簡単にインストールできます。
+
+### 2. Excelファイルへの出力方法
+
+Excelファイルを読み込むだけでなく、JavaScriptのデータをExcelに出力することもよくあります。ここでは`xlsx`ライブラリを使った基本的な出力方法を示します。
+
+```javascript
+// writeExcel.js
+
+const XLSX = require('xlsx');
+
+// 出力するJSONデータ（例）
+const data = [
+  { ID: 1, Name: 'Alice', Score: 95 },
+  { ID: 2, Name: 'Bob', Score: 88 },
+  { ID: 3, Name: 'Charlie', Score: 72 }
+];
+
+// JSONデータをワークシートに変換
+const worksheet = XLSX.utils.json_to_sheet(data);
+
+// 新しいワークブックを作成し、ワークシートを追加
+const newWorkbook = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(newWorkbook, worksheet, 'Results');
+
+// Excelファイルとして保存
+XLSX.writeFile(newWorkbook, 'output.xlsx');
+
+console.log('output.xlsx が正常に作成されました。');
+```
+
+このコードは、JavaScriptの配列をExcelのシートに変換し、新しいExcelファイルとして保存します。
+
+### 3. 複数のExcelブックを読み込む方法
+
+複数のExcelファイルを一度に処理する場合、ファイルシステムを操作する`fs`モジュールと組み合わせて使うのが効率的です。
+
+```javascript
+// readMultipleExcels.js
+
+const XLSX = require('xlsx');
+const fs = require('fs');
+const path = require('path');
+
+// Excelファイルがあるディレクトリ
+const directoryPath = './excel_files';
+
+// ディレクトリ内のすべてのExcelファイルを読み込む
+fs.readdir(directoryPath, (err, files) => {
+  if (err) {
+    return console.log('ディレクトリをスキャンできませんでした: ' + err);
+  }
+
+  const allData = [];
+
+  files.forEach(file => {
+    // .xlsx拡張子を持つファイルのみを対象にする
+    if (path.extname(file) === '.xlsx') {
+      const filePath = path.join(directoryPath, file);
+      const workbook = XLSX.readFile(filePath);
+      const sheetName = workbook.SheetNames[0];
+      const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+      
+      // ファイル名とデータを統合して配列にプッシュ
+      allData.push({ fileName: file, data: jsonData });
+    }
+  });
+
+  // 全てのデータを表示
+  console.log(JSON.stringify(allData, null, 2));
+});
+```
+
+このスクリプトは、指定したディレクトリ内のすべての.xlsxファイルを自動的にスキャンし、各ファイルからデータを読み込んで一つの配列にまとめます。これにより、手動で各ファイルを指定する手間が省け、作業を自動化できます。

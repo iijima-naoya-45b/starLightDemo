@@ -1,0 +1,78 @@
+---
+title: "Next.jsのCSS管理"
+label: "Next.jsのCSS管理"
+---
+
+## 🎨 Next.jsのCSS管理
+
+Next.jsでは、さまざまな方法でCSSを管理することができます。これにより、スタイルの一貫性を保ちながら、効率的にUIを構築することが可能です。
+
+### 1. CSS Modules
+
+CSS Modulesは、コンポーネントごとにスタイルをスコープするための方法です。これにより、スタイルの競合を防ぎ、メンテナンス性を向上させることができます。
+
+#### 実装例
+
+```css
+/* styles/Home.module.css */
+.container {
+  padding: 20px;
+  background-color: #f0f0f0;
+}
+```
+
+```typescript
+// pages/index.tsx
+import styles from '../styles/Home.module.css';
+
+export default function Home() {
+  return (
+    <div className={styles.container}>
+      <h1>Welcome to Next.js!</h1>
+    </div>
+  );
+}
+```
+
+### 2. Styled Components
+
+Styled Componentsは、JavaScript内でスタイルを定義するためのライブラリです。これにより、コンポーネントとスタイルを一緒に管理することができます。
+
+#### 実装例
+
+```typescript
+// pages/index.tsx
+import styled from 'styled-components';
+
+const Container = styled.div`
+  padding: 20px;
+  background-color: #f0f0f0;
+`;
+
+export default function Home() {
+  return (
+    <Container>
+      <h1>Welcome to Next.js!</h1>
+    </Container>
+  );
+}
+```
+
+### 3. Tailwind CSS
+
+Tailwind CSSは、ユーティリティファーストのCSSフレームワークで、迅速なUI開発を可能にします。Next.jsと組み合わせることで、効率的にスタイルを適用できます。
+
+#### 実装例
+
+```typescript
+// pages/index.tsx
+export default function Home() {
+  return (
+    <div className="p-5 bg-gray-100">
+      <h1 className="text-2xl font-bold">Welcome to Next.js!</h1>
+    </div>
+  );
+}
+```
+
+これらの方法を組み合わせることで、Next.jsアプリケーション内でのCSS管理が効率的に行えます。プロジェクトの規模や要件に応じて、最適な方法を選択してください。

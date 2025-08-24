@@ -3,20 +3,77 @@ title: "API利用法"
 label: "API利用法"
 ---
 
-ElixirのAPI利用法を以下に示します。
+## ElixirでのAPIプロジェクトの作成
 
-## APIモード
+ElixirのPhoenixフレームワークを使用して、API専用のプロジェクトを作成する方法を紹介します。以下の手順で、データベースを使用する場合と使用しない場合のプロジェクトを作成できます。
 
-Elixirでは、API専用のアプリケーションを作成することができます。
+### データベースありのAPIモード
 
-```bash
-mix phx.new my_api --no-html --no-webpack
+データベースに接続してデータの永続化を伴うAPIを作成する場合、PhoenixプロジェクトはEctoをデフォルトで含みます。
+
+1. **プロジェクトの作成**
+   - コマンド: `mix phx.new my_api --no-html --no-webpack`
+   - 説明: HTMLやフロントエンドのビルドツールを含めず、バックエンドAPIに特化した構造を作成します。EctoとPostgreSQLへの接続設定も含まれます。
+
+2. **リソースの生成とデータベース操作**
+   - `mix ecto.create`: config/dev.exsの設定に基づいて、データベースを作成します。
+   - `mix phx.gen.json Accounts User users name:string`: APIエンドポイントの作成を自動化します。Accountsというコンテキスト、Userというモデル、およびusersテーブルのマイグレーションファイルを生成します。
+   - `mix ecto.migrate`: データベースマイグレーションを実行し、usersテーブルを作成します。
+
+#### フォルダ構成（データベースあり）
+```
+my_api/
+├── config/
+├── lib/
+│   ├── my_api/
+│   │   ├── accounts/
+│   │   │   ├── user.ex      # Userモデル
+│   │   │   └── accounts.ex  # コンテキストモジュール
+│   │   └── repo.ex          # データベースリポジトリ
+│   └── my_api_web/
+│       ├── controllers/
+│       │   └── user_controller.ex # APIコントローラー
+│       └── router.ex          # ルーター
+├── priv/
+│   └── repo/
+│       └── migrations/        # マイグレーションファイル
+└── ...
 ```
 
-## コントローラーの作成
+### データベースなしのAPIモード
 
-API用のコントローラーを作成します。
+データベースを使用しない、純粋なAPI（例：外部APIのプロキシやインメモリデータのみを扱う場合）を作成するには、プロジェクト生成時に--no-ectoフラグを追加します。
 
-```bash
-mix phx.gen.json ContextName ResourceName resource_name field:type
+1. **プロジェクトの作成**
+   - コマンド: `mix phx.new my_api --no-html --no-webpack --no-ecto`
+   - 説明: Ecto関連の依存関係や設定ファイルを一切含みません。
+
+2. **APIエンドポイントの手動作成**
+   - `lib/my_api_web/controllers/api_controller.ex`: APIエンドポイントのロジックを記述します。
+   - `lib/my_api_web/router.ex`: そのコントローラーへのルーティングを設定します。
+
+#### フォルダ構成（データベースなし）
 ```
+my_api/
+├── config/
+├── lib/
+│   └── my_api_web/
+│       ├── controllers/
+│       │   └── api_controller.ex  # 手動で作成したコントローラー
+│       └── router.ex            # ルーター
+├── priv/
+└── ...
+```
+
+### 比較と使い分け
+
+| 特徴 | データベースありAPIモード | データベースなしAPIモード |
+|------|--------------------------|--------------------------|
+| 主な用途 | データの永続化が必要なAPI（例：ユーザー管理、ブログ投稿） | データベースを必要としないAPI（例：外部APIのプロキシ、計算サービス） |
+| プロジェクト作成 | `mix phx.new --no-html --no-webpack` | `mix phx.new --no-html --no-webpack --no-ecto` |
+| データ永続化 | ✅ Ectoによるデータベース接続 | ❌ データベース接続なし |
+| リソース作成 | ✅ phx.gen.jsonジェネレーターが利用可能 | ❌ ジェネレーターは利用不可、手動で作成 |
+| 利点 | 複雑なデータモデルを効率的に管理できる | 不要な依存関係がなく、軽量でシンプル |
+| 考慮点 | 開発環境のセットアップ（Postgresなど）が必要 | すべてのAPIエンドポイントを手動で定義する必要がある |
+
+どちらのモードを選択するかは、APIの目的によって決まります。データの読み書きが必要な場合はデータベースあり、外部サービスとの連携や単純な処理に特化する場合はデータベースなしが適しています。

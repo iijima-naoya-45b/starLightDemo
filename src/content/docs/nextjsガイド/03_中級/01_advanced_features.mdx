@@ -1,0 +1,125 @@
+---
+title: "Next.jsの高度な機能"
+label: "Next.jsの高度な機能"
+---
+
+## 🛠️ Next.jsの高度な機能
+
+Next.jsは、基本的な機能に加えて、開発者がより高度なアプリケーションを構築するための多くの機能を提供しています。これらの機能を活用することで、アプリケーションのパフォーマンスやユーザー体験を向上させることができます。
+
+### 1. サーバーサイドレンダリング（SSR）
+
+Next.jsは、サーバーサイドレンダリングをサポートしており、ページの初回ロードを高速化し、SEOを向上させることができます。SSRを利用することで、サーバーでHTMLを生成し、クライアントに送信することができます。
+
+#### 実装例
+
+```typescript
+// pages/index.tsx
+import { GetServerSideProps } from 'next';
+
+export const getServerSideProps: GetServerSideProps = async (context) => {
+  const res = await fetch('https://api.example.com/data');
+  const data = await res.json();
+
+  return {
+    props: {
+      data,
+    },
+  };
+};
+
+const HomePage = ({ data }) => {
+  return (
+    <div>
+      <h1>サーバーサイドレンダリング</h1>
+      <pre>{JSON.stringify(data, null, 2)}</pre>
+    </div>
+  );
+};
+
+export default HomePage;
+```
+
+### 2. 静的サイト生成（SSG）
+
+静的サイト生成を使用すると、ビルド時にページを事前にレンダリングし、CDNにデプロイすることで、ユーザーからのリクエストに対して静的なHTMLファイルを直接提供できます。
+
+#### 実装例
+
+```typescript
+// pages/blog/[id].tsx
+import { GetStaticPaths, GetStaticProps } from 'next';
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  const res = await fetch('https://api.example.com/posts');
+  const posts = await res.json();
+
+  const paths = posts.map((post) => ({
+    params: { id: post.id.toString() },
+  }));
+
+  return { paths, fallback: false };
+};
+
+export const getStaticProps: GetStaticProps = async (context) => {
+  const res = await fetch(`https://api.example.com/posts/${context.params.id}`);
+  const post = await res.json();
+
+  return {
+    props: {
+      post,
+    },
+  };
+};
+
+const BlogPost = ({ post }) => {
+  return (
+    <div>
+      <h1>{post.title}</h1>
+      <p>{post.content}</p>
+    </div>
+  );
+};
+
+export default BlogPost;
+```
+
+### 3. API Routes
+
+Next.jsのAPI Routesを使用すると、サーバーサイドのロジックを簡単に実装できます。これにより、フロントエンドとバックエンドの機能を一つのプロジェクト内で統合できます。
+
+#### 実装例
+
+```typescript
+// pages/api/hello.ts
+import { NextApiRequest, NextApiResponse } from 'next';
+
+export default function handler(req: NextApiRequest, res: NextApiResponse) {
+  res.status(200).json({ message: 'Hello from API!' });
+}
+```
+
+### 4. 画像の最適化
+
+Next.jsの`next/image`コンポーネントを使用すると、画像の最適化を自動で行い、パフォーマンスを向上させることができます。
+
+#### 実装例
+
+```typescript
+import Image from 'next/image';
+
+const MyImage = () => {
+  return (
+    <Image
+      src="/path/to/image.jpg"
+      alt="My Image"
+      width={500}
+      height={300}
+    />
+  );
+};
+
+export default MyImage;
+```
+
+これらの高度な機能を活用することで、Next.jsアプリケーションのパフォーマンスとユーザー体験を大幅に向上させることができます。

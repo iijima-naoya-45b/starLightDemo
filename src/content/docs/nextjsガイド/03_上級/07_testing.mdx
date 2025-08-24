@@ -1,0 +1,65 @@
+---
+title: "Next.jsのテスト"
+label: "Next.jsのテスト"
+---
+
+## 🧪 Next.jsのテスト
+
+Next.jsアプリケーションのテストは、アプリケーションの品質を保証するために重要です。JestやReact Testing Libraryを使用して、コンポーネントやページのテストを行うことが一般的です。
+
+### 1. Jestのセットアップ
+
+Jestは、JavaScriptのテストフレームワークで、Next.jsプロジェクトで広く使用されています。
+
+#### Jestのインストール
+
+```bash
+npm install --save-dev jest
+npm install --save-dev @testing-library/react
+npm install --save-dev @testing-library/jest-dom
+```
+
+#### Jestの設定
+
+`jest.config.js`ファイルを作成し、以下のように設定します。
+
+```javascript
+// jest.config.js
+module.exports = {
+  testEnvironment: 'jsdom',
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  moduleNameMapper: {
+    '^@/(.*)$': '<rootDir>/$1',
+  },
+};
+```
+
+### 2. React Testing Libraryの使用
+
+React Testing Libraryは、Reactコンポーネントのテストを行うためのライブラリです。
+
+#### 基本的なテストの例
+
+```javascript
+import { render, screen } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import Home from '@/pages/index';
+
+test('renders a heading', () => {
+  render(<Home />);
+  const heading = screen.getByRole('heading', {
+    name: /welcome to next.js!/i,
+  });
+  expect(heading).toBeInTheDocument();
+});
+```
+
+### 3. テストの実行
+
+テストを実行するには、以下のコマンドを使用します。
+
+```bash
+npm test
+```
+
+JestとReact Testing Libraryを使用することで、Next.jsアプリケーションのコンポーネントやページの動作を確実にテストし、品質を保証することができます。

@@ -1,0 +1,132 @@
+---
+title: "Next.jsのキャッシュ戦略"
+label: "Next.jsのキャッシュ戦略"
+---
+
+## 🗄️ Next.jsのキャッシュ戦略
+
+Next.jsは、アプリケーションのパフォーマンスを向上させるために、さまざまなキャッシュ戦略を提供しています。これらの戦略を適切に活用することで、ユーザー体験を大幅に向上させることができます。
+
+### 1. 静的サイト生成（SSG）
+
+静的サイト生成を使用すると、ビルド時にページを事前にレンダリングし、CDNにデプロイすることで、ユーザーからのリクエストに対して静的なHTMLファイルを直接提供できます。
+
+#### 実装例
+
+```typescript
+// pages/blog/[id].tsx
+import { GetStaticPaths, GetStaticProps } from 'next';
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  const res = await fetch('https://api.example.com/posts');
+  const posts = await res.json();
+
+  const paths = posts.map((post) => ({
+    params: { id: post.id.toString() },
+  }));
+
+  return { paths, fallback: false };
+};
+
+export const getStaticProps: GetStaticProps = async (context) => {
+  const res = await fetch(`https://api.example.com/posts/${context.params.id}`);
+  const post = await res.json();
+
+  return {
+    props: {
+      post,
+    },
+  };
+};
+
+const BlogPost = ({ post }) => {
+  return (
+    <div>
+      <h1>{post.title}</h1>
+      <p>{post.content}</p>
+    </div>
+  );
+};
+
+export default BlogPost;
+```
+
+### 2. サーバーサイドレンダリング（SSR）
+
+Next.jsは、サーバーサイドレンダリングをサポートしており、ページの初回ロードを高速化し、SEOを向上させることができます。SSRを利用することで、サーバーでHTMLを生成し、クライアントに送信することができます。
+
+#### 実装例
+
+```typescript
+// pages/index.tsx
+import { GetServerSideProps } from 'next';
+
+export const getServerSideProps: GetServerSideProps = async (context) => {
+  const res = await fetch('https://api.example.com/data');
+  const data = await res.json();
+
+  return {
+    props: {
+      data,
+    },
+  };
+};
+
+const HomePage = ({ data }) => {
+  return (
+    <div>
+      <h1>サーバーサイドレンダリング</h1>
+      <pre>{JSON.stringify(data, null, 2)}</pre>
+    </div>
+  );
+};
+
+export default HomePage;
+```
+
+### 3. ISR（Incremental Static Regeneration）
+
+ISRを使用すると、静的に生成されたページをバックグラウンドで再生成し、最新のデータを提供することができます。これにより、静的サイトのパフォーマンスを維持しつつ、動的なデータを提供できます。
+
+#### 実装例
+
+```typescript
+// pages/blog/[id].tsx
+import { GetStaticPaths, GetStaticProps } from 'next';
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  const res = await fetch('https://api.example.com/posts');
+  const posts = await res.json();
+
+  const paths = posts.map((post) => ({
+    params: { id: post.id.toString() },
+  }));
+
+  return { paths, fallback: 'blocking' };
+};
+
+export const getStaticProps: GetStaticProps = async (context) => {
+  const res = await fetch(`https://api.example.com/posts/${context.params.id}`);
+  const post = await res.json();
+
+  return {
+    props: {
+      post,
+    },
+    revalidate: 60, // 60秒ごとに再生成
+  };
+};
+
+const BlogPost = ({ post }) => {
+  return (
+    <div>
+      <h1>{post.title}</h1>
+      <p>{post.content}</p>
+    </div>
+  );
+};
+
+export default BlogPost;
+```
+
+これらのキャッシュ戦略を適切に活用することで、Next.jsアプリケーションのパフォーマンスとユーザー体験を大幅に向上させることができます。

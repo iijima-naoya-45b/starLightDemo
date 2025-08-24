@@ -3,16 +3,85 @@ title: "パフォーマンスチューニング"
 label: "パフォーマンスチューニング"
 ---
 
-Elixirのパフォーマンスチューニング方法を以下に示します。
+## Elixir パフォーマンスチューニング：主要な手法
 
-## キャッシュの利用
+Elixirは並行処理と耐障害性に優れていますが、最高のパフォーマンスを引き出すには、特定のチューニング手法を理解し、適切に適用することが重要です。
 
-ETSを使用してキャッシュを実装し、パフォーマンスを向上させます。
+### 1. キャッシュの活用：ETSとGenServer
+
+Elixirでキャッシュを実装する最も一般的な方法は、ETS (Erlang Term Storage) を使うことです。ETSはBEAMに組み込まれた超高速なインメモリデータベースです。
+
+- **GenServerとの組み合わせ**: 複数のプロセスからのアクセスを安全に制御するため、ETSテーブルをGenServerでラップします。これにより、一貫性と並行性を保ちながらキャッシュを管理できます。
+
+#### ETSキャッシュをGenServerでラップする例
 
 ```elixir
-:ets.new(:my_cache, [:set, :public, :named_table])
+defmodule CacheServer do
+  use GenServer
+
+  # クライアントAPI
+  def start_link(_opts), do: GenServer.start_link(__MODULE__, :ok, name: :my_cache)
+  def put(key, value), do: GenServer.call(:my_cache, {:put, key, value})
+  def get(key), do: GenServer.call(:my_cache, {:get, key})
+
+  # GenServerコールバック
+  def init(:ok) do
+    :ets.new(:my_cache_table, [:set, :public, :named_table])
+    {:ok, %{}}
+  end
+
+  def handle_call({:put, key, value}, _from, state) do
+    :ets.insert(:my_cache_table, {key, value})
+    {:reply, :ok, state}
+  end
+
+  def handle_call({:get, key}, _from, state) do
+    case :ets.lookup(:my_cache_table, key) do
+      [{^key, value}] -> {:reply, value, state}
+      [] -> {:reply, nil, state}
+    end
+  end
+end
 ```
 
-## プロファイリング
+### 2. プロファイリングとボトルネックの特定
 
-プロファイリングツールを使用して、アプリケーションのボトルネックを特定します。
+パフォーマンスの問題を解決するには、まずボトルネックを正確に特定することが不可欠です。
+
+- **:eprof**: 関数のCPU時間を測定するプロファイラです。
+- **mix profile.fprof**: より詳細な呼び出しグラフ分析を提供します。
+- **recon**: プロセスごとのメモリ使用量やスケジューラの動作をリアルタイムで監視するツールセットです。
+
+#### プロファイリングの使用例
+
+```elixir
+# IEx (Interactive Elixir) セッションで実行
+:eprof.start_profiling()
+:eprof.profile(fn ->
+  # プロファイルしたいコード
+  YourApp.some_expensive_function()
+end)
+:eprof.analyze()
+```
+
+### 3. その他の重要なパフォーマンスチューニング手法
+
+- **I/Oの管理：非同期I/Oと接続プール**:
+  - **非同期I/O**: データベースや外部APIへのアクセスなど、I/Oバウンドな操作では、Task モジュールを使って非同期に実行することで、メインプロセスをブロックせずに済みます。
+  - **DB接続プール**: DBConnectionなどのライブラリを使い、データベース接続をプールすることで、接続の確立にかかるオーバーヘッドを削減し、スループットを向上させます。
+
+- **コード構造：Enum vs Stream**:
+  - **Enum**: コレクション全体を一度に処理します。小さなデータセットに適しています。
+  - **Stream**: 遅延評価（Lazy Evaluation）を行います。操作を必要になるまで実行しないため、大規模なデータセットを扱う際にメモリ消費を抑えられます。
+
+- **JITコンパイラとコンパイル時の最適化**:
+  - Erlang/OTP 24以降に導入されたJITコンパイラは、頻繁に実行されるコードをネイティブコードに変換し、パフォーマンスを向上させます。
+  - **dialyzer**: 静的コード分析ツール。コードの品質とパフォーマンス向上に不可欠です。
+
+- **プロセスの最適化**:
+  - 不要なプロセスの削減や、メッセージキューの監視を行うことで、ガベージコレクションのオーバーヘッドやメモリ使用量を最適化できます。
+
+- **NIF (Native Implemented Functions) の活用**:
+  - 計算集約型（CPUバウンド）の処理には、ネイティブ言語（C, Rustなど）で実装された関数を呼び出すNIFが非常に有効です。Rustlerなどのライブラリを使うと、より安全にNIFを実装できます。ただし、NIFはBEAMプロセスをブロックするため、I/Oバウンドなタスクには不向きです。
+
+これらの手法を組み合わせることで、Elixirアプリケーションは高いスケーラビリティとパフォーマンスを実現できます。
