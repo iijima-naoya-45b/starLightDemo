@@ -1,0 +1,57 @@
+---
+title: openapi-ts定義
+sidebar:
+    label: openapi-ts定義
+---
+
+OpenAPI仕様書からTypeScriptの型を自動生成 🤖
+OpenAPIは、REST APIの設計を記述するための標準的な仕様です。この仕様書には、エンドポイント、リクエスト/レスポンスのスキーマ、認証方法などが定義されています。このスキーマ情報を活用することで、APIのクライアントコード（リクエスト関数や型定義）を自動生成できます。
+
+ツール: openapi-typescript-codegen
+openapi-typescript-codegen は、OpenAPI仕様書からTypeScriptクライアントを自動生成するための人気の高いツールです。このツールは、型定義だけでなく、APIを呼び出すためのクライアントコード（fetchなど）も生成してくれます。
+
+インストール:
+プロジェクトにツールをインストールします。
+
+Bash
+
+npm install --save-dev openapi-typescript-codegen
+package.json にスクリプトを追加:
+package.jsonのscriptsに生成コマンドを追加します。
+
+JSON
+
+"scripts": {
+  "generate:api": "openapi --input ./api-spec.json --output ./src/api --client fetch"
+}
+--input: OpenAPI仕様書ファイルへのパスを指定します。
+
+--output: 生成されたコードを出力するディレクトリを指定します。
+
+--client: 使用するHTTPクライアント（fetch、axiosなど）を指定します。
+
+実行:
+コマンドを実行すると、指定したディレクトリにAPIクライアントと型定義ファイルが自動で生成されます。
+
+Bash
+
+npm run generate:api
+自動生成されたコードの利用例
+生成されたクライアントは、以下のようにTypeScriptコード内で直接利用できます。APIの変更を反映させるには、仕様書を更新して再度コマンドを実行するだけでよいため、手作業によるミスがなくなります。
+
+TypeScript
+
+// src/components/UserList.ts
+import { UsersService, User } from '../api';
+
+async function fetchUsers() {
+  try {
+    // APIクライアントの型が保証されている
+    const users: User[] = await UsersService.getUsers();
+    console.log(users);
+  } catch (error) {
+    console.error('Failed to fetch users:', error);
+  }
+}
+
+fetchUsers();
