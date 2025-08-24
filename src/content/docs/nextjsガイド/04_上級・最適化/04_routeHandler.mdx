@@ -1,0 +1,47 @@
+---
+title: "Next.jsのルートハンドラー"
+label: "Next.jsのルートハンドラー"
+---
+
+## 🔄 Next.jsのルートハンドラー
+
+Next.jsのルートハンドラーは、App Router (`app/api/route.ts`) での新しいAPIルートのメカニズムです。これにより、Web標準API (`Request`, `Response`) に準拠した形で、HTTPメソッドごとの関数を定義し、App Routerのキャッシングや再検証機能と統合できます。
+
+### 1. ルートハンドラーの作成
+
+ルートハンドラーは、`app/api/route.ts`ファイル内で定義されます。各HTTPメソッド（GET, POST, PUTなど）に対して専用の関数を定義できます。
+
+#### 実装例
+
+```typescript
+// app/api/hello/route.ts
+import { NextResponse } from 'next/server';
+
+export async function GET() {
+  return NextResponse.json({ message: 'Hello from Route Handler!' });
+}
+
+export async function POST(request: Request) {
+  const data = await request.json();
+  return NextResponse.json({ message: 'POST request received', data });
+}
+```
+
+- `NextResponse`: 新しいApp Routerで推奨されるレスポンスオブジェクトで、より柔軟なレスポンス制御が可能です。
+- `HTTPメソッド関数`: 各HTTPメソッドに対応する関数をエクスポートすることで、ルーティングが自動的に処理されます。
+
+### 2. ルートハンドラーの利点
+
+- **Web標準APIの準拠**: `Request`や`Response`オブジェクトを使用することで、標準的なWeb APIの知識を活かしてルートを定義できます。
+- **キャッシングと再検証**: App Routerのキャッシング機能と統合することで、効率的なデータフェッチと再検証が可能です。
+- **柔軟なレスポンス制御**: `NextResponse`を使用することで、レスポンスのカスタマイズが容易になります。
+
+### 3. ルートハンドラーの活用例
+
+ルートハンドラーを使用することで、Next.jsアプリケーション内でのAPIルートの管理が効率的に行えます。以下に、一般的な活用例を示します。
+
+- **データベースとの連携**: ルートハンドラー内でデータベースに接続し、データの取得、更新、削除を行うことができます。
+- **外部APIとの通信**: 外部のAPIを呼び出してデータを取得し、加工してからクライアントに渡すことができます。
+- **認証ロジックの実装**: ユーザー認証やセッション管理などのサーバーサイドロジックをルートハンドラー内に実装できます。
+
+これらの利点を活かして、Next.jsアプリケーションのAPIルートを効率的に管理し、開発スピードを向上させることができます。

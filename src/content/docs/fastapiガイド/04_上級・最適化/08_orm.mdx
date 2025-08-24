@@ -1,0 +1,123 @@
+---
+title: "FastAPI ORM"
+label: "FastAPI ORM"
+---
+
+## FastAPIにおけるORM（Object-Relational Mapping）
+
+FastAPI自体にはORM機能は含まれていませんが、Pythonで最も人気のあるORMライブラリであるSQLAlchemyと組み合わせることで、Pythonオブジェクトを介してデータベース操作を効率的に行うことができます。
+
+### SQLAlchemyモデルの定義
+
+SQLAlchemyでは、`declarative_base()`から生成されるBaseクラスを継承して、Pythonのクラスとしてデータベースのテーブルを定義します。
+
+#### 例: ユーザーと投稿のモデル定義
+
+`app/models.py`
+
+```python
+from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy.orm import relationship, declarative_base
+
+Base = declarative_base()
+
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    email = Column(String, unique=True, index=True)
+
+    posts = relationship("Post", back_populates="owner")
+
+class Post(Base):
+    __tablename__ = 'posts'
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True)
+    content = Column(String)
+    owner_id = Column(Integer, ForeignKey("users.id"))
+
+    owner = relationship("User", back_populates="posts")
+```
+- `declarative_base()`: ORMマッピングの基底クラスを作成します。
+- `Column`: テーブルのカラムを定義し、データ型や制約（`primary_key`, `index`, `unique`など）を指定します。
+- `relationship()`: 異なるテーブル間の**リレーション（関連付け）**を定義します。Userモデルの`posts`は、そのユーザーが持つ複数のPostにアクセスするためのリレーションです。
+
+### データベースセッションの管理
+
+SQLAlchemyは**セッション（Session）を通じてデータベースとやり取りします。FastAPIでは、このセッションを依存性注入（Dependency Injection）**で管理するのが一般的です。
+
+#### 例: データベース接続のセットアップ
+
+`app/database.py`
+
+```python
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+DATABASE_URL = "sqlite:///./test.db"
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+```
+- `get_db`関数: `yield`を使用することで、リクエストが処理される間だけデータベースセッションを保持し、処理完了後に自動で閉じるようにします。
+
+### CRUD操作の実装
+
+ORMを利用することで、SQLクエリを直接書く代わりに、Pythonのオブジェクトメソッドを使ってデータベース操作を行うことができます。
+
+#### 例: CRUD操作を抽象化する
+
+`app/crud.py`
+
+```python
+from sqlalchemy.orm import Session
+from . import models, schemas
+
+def get_user(db: Session, user_id: int):
+    return db.query(models.User).filter(models.User.id == user_id).first()
+
+def create_user(db: Session, user: schemas.UserCreate):
+    db_user = models.User(name=user.name, email=user.email)
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+```
+- `db.query()`: `SELECT`文を生成します。
+- `filter()`: `WHERE`句に相当する条件を指定します。
+- `db.add()`: `INSERT`文を準備します。
+- `db.commit()`: 変更をデータベースに確定（コミット）します。
+
+### エンドポイントへの統合
+
+定義したORMモデルとCRUDロジックをFastAPIのエンドポイントに統合します。
+
+#### 例: ORMを利用したエンドポイント
+
+`app/main.py`
+
+```python
+from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy.orm import Session
+from . import crud, models, schemas
+from .database import engine, get_db
+
+models.Base.metadata.create_all(bind=engine) # テーブルを自動作成
+
+app = FastAPI()
+
+@app.post("/users/", response_model=schemas.User)
+def create_new_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    db_user = crud.get_user_by_email(db, email=user.email)
+    if db_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    return crud.create_user(db=db, user=user)
+```
+- `Depends(get_db)`: 依存性注入により、各リクエストにDBセッションを供給します。
+- `response_model`: ORMモデルではなく、Pydanticモデル（`schemas.User`）を指定することで、不要なデータをクライアントに返さないようにします。

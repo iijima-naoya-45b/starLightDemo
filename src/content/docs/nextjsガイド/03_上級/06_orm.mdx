@@ -1,0 +1,73 @@
+---
+title: "Next.jsのORM"
+label: "Next.jsのORM"
+---
+
+## 🗄️ Next.jsのORM
+
+Next.jsでのデータベース操作には、ORM（Object-Relational Mapping）を使用することが一般的です。ORMを使用することで、データベースとのやり取りをオブジェクト指向の方法で行うことができ、コードの可読性と保守性が向上します。
+
+### 1. Prismaの導入
+
+Prismaは、Next.jsプロジェクトでよく使用されるORMの一つです。Prismaを使用することで、データベーススキーマの定義、マイグレーションの管理、データの取得や更新を簡単に行うことができます。
+
+#### Prismaのインストール
+
+```bash
+npm install @prisma/client
+npm install prisma --save-dev
+```
+
+#### Prismaの初期化
+
+```bash
+npx prisma init
+```
+
+このコマンドを実行すると、Prismaの設定ファイルが生成されます。
+
+### 2. データベーススキーマの定義
+
+Prismaでは、`schema.prisma`ファイルを使用してデータベーススキーマを定義します。
+
+```prisma
+// schema.prisma
+model User {
+  id    Int     @id @default(autoincrement())
+  name  String
+  email String  @unique
+}
+```
+
+### 3. マイグレーションの実行
+
+データベーススキーマを変更した後、マイグレーションを実行してデータベースを更新します。
+
+```bash
+npx prisma migrate dev --name init
+```
+
+### 4. データの取得と操作
+
+Prismaクライアントを使用して、データベースからデータを取得したり、更新したりすることができます。
+
+```typescript
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+async function main() {
+  const allUsers = await prisma.user.findMany();
+  console.log(allUsers);
+}
+
+main()
+  .catch(e => {
+    throw e;
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
+```
+
+Prismaを使用することで、Next.jsアプリケーションでのデータベース操作が効率的かつ安全に行えるようになります。

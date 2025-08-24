@@ -1,0 +1,112 @@
+---
+title: "cookie戦略"
+label: "cookie戦略"
+---
+
+## 🍪 Next.jsにおけるCookie戦略
+
+Next.jsは、サーバーサイドとクライアントサイドの両方で動作するため、Cookieの扱い方も特別な考慮が必要です。Next.jsの最新のApp Routerでは、Web標準のAPIを利用してCookieを安全かつ効率的に扱えます。
+
+### 1. サーバーコンポーネントでのCookieの読み取り 🔐
+
+Next.jsのサーバーコンポーネントでは、`next/headers`から提供される`cookies()`関数を使って、リクエストヘッダーのCookieにアクセスできます。これはサーバーサイドで実行されるため、認証情報などの機密データを安全に扱えます。
+
+```typescript
+// app/dashboard/page.tsx
+import { cookies } from 'next/headers';
+
+export default function DashboardPage() {
+  const cookieStore = cookies();
+  const token = cookieStore.get('auth_token')?.value;
+
+  if (!token) {
+    // ユーザーをログインページにリダイレクト
+    return <div>ログインしていません。</div>;
+  }
+
+  // トークンを使ってサーバーサイドでデータを取得するロジック
+  // ...
+
+  return (
+    <div>
+      <h1>ダッシュボード</h1>
+      <p>ユーザー認証済み</p>
+    </div>
+  );
+}
+```
+
+- **注意**: `cookies()`関数は動的（dynamic）な関数であるため、これを使用するコンポーネントはビルド時に静的にレンダリングされず、リクエストごとにサーバーでレンダリングされます。
+
+### 2. Route Handler（APIルート）でのCookieの操作 🔧
+
+Route Handler（`app/api/.../route.ts`）はサーバーサイドで動作するため、Cookieの読み書きに最適な場所です。リクエストからCookieを読み取り、レスポンスに新しいCookieを設定できます。
+
+#### Cookieの読み取り
+
+```typescript
+// app/api/user/route.ts
+import { cookies } from 'next/headers';
+import { NextResponse } from 'next/server';
+
+export async function GET() {
+  const cookieStore = cookies();
+  const token = cookieStore.get('auth_token');
+
+  if (!token) {
+    return NextResponse.json({ message: 'No token found' }, { status: 401 });
+  }
+
+  // トークンを使ってデータベースからユーザー情報を取得
+  // ...
+
+  return NextResponse.json({ user: '...' });
+}
+```
+
+#### Cookieの設定（Set-Cookieヘッダー）
+
+```typescript
+// app/api/login/route.ts
+import { cookies } from 'next/headers';
+import { NextResponse } from 'next/server';
+
+export async function POST(req) {
+  // 認証ロジックを実行し、トークンを生成
+  const { username, password } = await req.json();
+  const token = 'generated_auth_token_123';
+
+  // Cookieを設定
+  cookies().set('auth_token', token, {
+    httpOnly: true, // JavaScriptからのアクセスを禁止
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 60 * 60 * 24 * 7, // 1週間
+    path: '/',
+    sameSite: 'strict',
+  });
+
+  return NextResponse.json({ message: 'Login successful' });
+}
+```
+
+- **httpOnly**: JavaScriptからのアクセスを防ぐため、XSS攻撃（クロスサイトスクリプティング）のリスクを軽減します。認証情報のような機密データには必須です。
+- **secure**: HTTPS接続でのみCookieを送信するように設定します。本番環境では必ず`true`に設定すべきです。
+
+### 3. クライアントコンポーネントでのCookieの読み書き 📖
+
+クライアントサイドでは、`js-cookie`や`universal-cookie`などのライブラリを使用してCookieを操作するのが一般的です。`document.cookie`を直接操作するのは煩雑でエラーを起こしやすいため推奨されません。
+
+- **注意**: クライアントコンポーネントからCookieを直接操作するのは、認証トークンのような機密情報には適していません。クライアントで読み取る必要がある設定情報やテーマ情報などに限定すべきです。
+
+### 4. まとめ：理想的な戦略 🗺️
+
+Next.jsでの理想的なCookie戦略は、サーバーとクライアントの役割を明確に分けることです。
+
+- **サーバーサイド（サーバーコンポーネント & Route Handler）**:
+  - 認証情報や機密データの読み書きはすべてサーバーサイドで行います。
+  - `cookies()`関数を使用して、安全かつ効率的にCookieを操作します。
+
+- **クライアントサイド（クライアントコンポーネント）**:
+  - 非機密データ（テーマ設定など）の読み書きに限定します。
+  - 状態管理ライブラリと組み合わせて、ユーザー体験を向上させます。
+  - 認証が必要な場合は、`fetch`を使ってAPIルートを呼び出し、Cookieの操作はサーバーに任せます。
