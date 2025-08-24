@@ -1,0 +1,44 @@
+---
+title: "Rails ジェネレーターコマンド"
+label: "Rails ジェネレーターコマンド"
+---
+
+## 🛠️ Railsの魔法の杖：ジェネレーターコマンド
+
+`rails generate`（省略形: `rails g`）は、Rails開発のスピードを劇的に加速させる魔法のコマンドです。アプリケーションの部品（Model、Controllerなど）を自動で生成してくれるので、手作業を減らし、開発に集中できます。
+
+### 🚀 主要なジェネレーターコマンド
+
+| コマンド | 役割 | 例 |
+| --- | --- | --- |
+| `rails g model` | データベースのテーブルに対応するモデルとマイグレーションファイルを生成。 | `rails g model Product name:string price:integer` |
+| `rails g controller` | コントローラーと、対応するビューフォルダを生成。 | `rails g controller Pages home about` |
+| `rails g scaffold` | CRUD（作成・読み取り・更新・削除）機能を一気に生成！ Model, Controller, View, ルーティングまでまとめて作ります。 | `rails g scaffold Post title:string content:text` |
+| `rails g migration` | データベースのスキーマを変更するためのマイグレーションファイルだけを生成。 | `rails g migration AddCategoryToPosts category:string` |
+| `rails g resource` | ビューを生成しないScaffold。API開発に最適です。 | `rails g resource User name:string` |
+
+### 🗄️ データベース関連コマンド
+
+データベース操作も、これらのコマンドを使えば簡単です。
+
+| コマンド | 役割 |
+| --- | --- |
+| `rails db:migrate` | 未実行のマイグレーションファイルをすべて実行し、データベースを最新の状態に更新します。 |
+| `rails db:rollback` | 最後に実行したマイグレーションを取り消し、データベースの状態を元に戻します。 |
+| `rails db:seed` | `db/seeds.rb` に書かれた初期データをデータベースに投入します。テストデータを用意する際に便利です。 |
+| `rails db:drop` | データベースを完全に削除します。⚠️慎重に使いましょう！ |
+| `rails db:create` | データベースを作成します。 |
+
+### 💻 開発・サーバー関連コマンド
+
+日々の開発で頻繁に使う、便利なコマンドです。
+
+| コマンド | 役割 |
+| --- | --- |
+| `rails s` | ローカル開発用のウェブサーバーを起動します。`s`は`server`の省略形です。 |
+| `rails c` | アプリケーションのコンテキストで対話型コンソールを起動。データの確認やデバッグに役立ちます。`c`は`console`の省略形です。 |
+| `rails routes` | アプリケーションのすべてのルーティング情報（URLと対応するコントローラー・アクション）を一覧で表示します。 |
+| `rails t` | アプリケーションのテストを実行します。`t`は`test`の省略形です。 |
+| `rails about` | Railsのバージョンや環境設定など、現在のプロジェクト情報を表示します。 |
+
+これらのコマンドを使いこなすことで、あなたのRails開発はさらに効率的で楽しいものになります。
