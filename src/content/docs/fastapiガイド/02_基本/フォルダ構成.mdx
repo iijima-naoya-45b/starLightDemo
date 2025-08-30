@@ -7,7 +7,7 @@ label: "フォルダ構成"
 
 FastAPIには、Railsのような厳格なフォルダ構成の規約はありませんが、大規模なアプリケーションを開発する際には、役割ごとにファイルを分けることが推奨されています。これにより、コードの可読性、保守性、そして再利用性が向上します。
 
-### 一般的なフォルダ構成
+### 一般的なフォルダ構成(APIモードの場合)
 
 ```
 .
@@ -67,6 +67,34 @@ FastAPIの強力な機能を活用することで、より効率的で高品質�
 
 ミドルウェアは、すべてのリクエストやレスポンスに共通の処理を適用するためのレイヤーです。これにより、各エンドポイントに同じコードを繰り返し書く必要がなくなります。
 
+```py
+<!-- app/core/middleware.py -->
+from fastapi.middleware.cors import CORSMiddleware
+
+def add_cors_middleware(app):
+    """
+    CORSミドルウェアをアプリケーションに追加
+    """
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],            # 許可するオリジン (例: ["http://localhost:3000"])
+        allow_credentials=True,         # クッキーや認証情報を許可するか
+        allow_methods=["*"],            # 許可するHTTPメソッド (例: ["GET", "POST"])
+        allow_headers=["*"],            # 許可するHTTPヘッダー
+    )
+```
+
+```py
+<!-- app/main.py -->
+from fastapi import FastAPI
+from app.core.middleware import add_cors_middleware
+
+app = FastAPI()
+
+# CORS ミドルウェアを追加
+add_cors_middleware(app)
+```
+
 - **利用例**: アプリケーション全体の認証・認可、リクエスト/レスポンスのロギング、異なるオリジンからの通信を許可するCORS設定など。
 
 ### 2. 依存性注入 (Dependency Injection) 💉
@@ -75,8 +103,81 @@ FastAPIのDIシステムは、エンドポイント関数が必要とするオ�
 
 - **利用例**: リクエストごとに自動で開閉されるデータベースセッションの取得や、認証済みユーザー情報の取得など、共通のサービスをシンプルに利用できます。これにより、コードの再利用性が高まり、テストも容易になります。
 
+```py
+<!-- app/db/database.py -->
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# データベースセッションを取得する関数
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+```
+
+```py
+<!-- app/api/v1/endpoints/users.py -->
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from app.db.database import get_db
+from app.schemas.user_schema import UserCreate, UserResponse
+from app.crud.user_crud import create_user_crud
+
+router = APIRouter()
+
+@router.post("/users/", response_model=UserResponse)
+def create_user(user: UserCreate, db: Session = Depends(get_db)):
+    db_user = create_user_crud(db, user)
+    if not db_user:
+        raise HTTPException(status_code=400, detail="User already exists")
+    return db_user
+
+```
+***ポイント:***
+
+Depends(get_db) で自動的に DB セッションがビューに渡される
+
+モック化してテストする際も簡単に差し替え可能
+
 ### 3. 非同期処理 (Async/Await) ⚡️
 
 FastAPIは、Pythonの**async/await構文**をネイティブにサポートしており、非同期処理を効率的に行えます。
 
 - **メリット**: 外部API呼び出しやDBアクセスといったI/O待ちが発生する処理を効率的に管理できます。これにより、サーバーが複数のリクエストを同時に処理できるようになり、パフォーマンスが大幅に向上します。
+
+#### 例: 外部APIを非同期で呼び出す
+```py
+<!-- app/services/external_api.py -->
+import httpx
+
+async def fetch_data(url: str):
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        return response.json()
+```
+
+```py
+<!-- app/api/v1/endpoints/items.py -->
+from fastapi import APIRouter
+from app.services.external_api import fetch_data
+
+router = APIRouter()
+
+@router.get("/items/")
+async def get_items():
+    data = await fetch_data("https://api.example.com/items")
+    return {"items": data}
+```
+
+***ポイント:***
+
+async def と await を使うことで、他のリクエストをブロックせずに処理可能
+
+DBアクセスや外部API呼び出しの多いサービスで特に有効

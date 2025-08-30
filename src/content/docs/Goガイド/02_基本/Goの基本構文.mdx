@@ -1,0 +1,175 @@
+---
+title: "Goの基本構文"
+label: "Goの基本構文"
+---
+
+## Goの基本構文 🧩
+
+Goはシンプルで、読み書きしやすい構文を持つことが特徴です。以下にその主要な要素をまとめます。
+
+### 1. パッケージとインポート 📦
+
+Goのプログラムはすべてパッケージに属します。実行可能なプログラムの起点となるのは特別なパッケージ**main**です。
+
+- `package main`: プログラムが実行可能であることを示します。
+- `import`: 他のパッケージの機能を利用するために使います。
+
+```go
+package main
+
+import (
+    "fmt"  // I/Oフォーマットを提供
+    "math" // 数学関数を提供
+)
+```
+
+### 2. 関数 ⚙️
+
+関数は`func`キーワードで定義し、引数と戻り値の型を明示します。
+
+- `func main()`: プログラムのエントリーポイントです。
+- 複数の戻り値: Goの関数は複数の値を返すことができ、エラーハンドリングに広く使われます。
+
+```go
+// 戻り値がない関数
+func sayHello() {
+    fmt.Println("Hello!")
+}
+
+// 複数の戻り値がある関数
+func swap(x, y string) (string, string) {
+    return y, x
+}
+```
+
+### 3. 変数と定数 ✍️
+
+- `var`: 変数を宣言します。型を明示するか、コンパイラに推論させることができます。
+- `:=`: 関数内でのみ使える簡潔な変数宣言と初期化の方法です。
+- `const`: コンパイル時に値が確定する定数を宣言します。
+
+```go
+var name string = "Alice"
+age := 30
+const PI = 3.14
+```
+
+### 4. 複合データ型 📝
+
+Goのデータ型は静的で、コンパイル時にチェックされます。
+
+- 配列 (Array): 固定長のデータ型です。サイズは型の一部となります。
+- スライス (Slice): 可変長のデータ型で、内部的には配列を参照します。メモリ効率が良く、ほとんどのGoプログラムで使われます。
+- マップ (Map): キーと値のペアを格納するデータ型です。
+- 構造体 (Struct): 異なる型のデータをまとめて一つの単位として扱うための複合型です。他の言語のクラスに似ています。
+
+```go
+// 配列の例 (固定長)
+var a [2]string
+a[0] = "Hello"
+a[1] = "World"
+fmt.Println(a[0], a[1]) // Hello World
+
+// スライスの例 (可変長)
+s := []int{1, 2, 3}
+s = append(s, 4, 5) // 要素の追加
+fmt.Println(s) // [1 2 3 4 5]
+
+// マップの例
+m := make(map[string]int)
+m["Apple"] = 100
+m["Banana"] = 200
+fmt.Println(m["Apple"]) // 100
+
+// 構造体の例
+type Person struct {
+    Name string
+    Age  int
+}
+p := Person{Name: "Bob", Age: 25}
+fmt.Println(p.Name) // Bob
+```
+
+### 5. 制御構造 🔁
+
+Goの制御構造は非常にシンプルです。
+
+- `if`: 条件分岐に使います。括弧`()`は不要ですが、中括弧`{}`は必須です。
+- `for`: Goにはwhile文がなく、すべてのループはfor文で記述します。
+- `switch`: 複数の条件を簡潔に記述でき、明示的な`break`は不要です。
+
+```go
+// if/elseの例
+if 7%2 == 0 {
+    fmt.Println("7 is even")
+} else {
+    fmt.Println("7 is odd") // 実行される
+}
+
+// forループの例
+sum := 0
+for i := 1; i <= 10; i++ {
+    sum += i
+}
+fmt.Println(sum) // 55
+
+// switchの例
+i := 2
+switch i {
+case 1:
+    fmt.Println("one")
+case 2:
+    fmt.Println("two") // 実行される
+case 3:
+    fmt.Println("three")
+}
+```
+
+### 6. ポインタ 📍
+
+Goはポインタをサポートしますが、C言語とは異なり、算術演算はできません。
+
+- `&`: 変数のメモリアドレスを取得します。
+- `*`: ポインタが指す先の値にアクセスします。
+
+```go
+// ポインタの例
+i := 10
+p := &i       // iのメモリアドレスをポインタpに代入
+fmt.Println(*p) // pが指す値（10）を出力
+*p = 20       // pが指すiの値を20に変更
+fmt.Println(i)  // 20
+```
+
+### 7. 並行処理の基本 🧵
+
+Goの並行処理は言語レベルで組み込まれています。
+
+- Goroutine: 軽量なスレッドで、`go`キーワードを使って関数を非同期で実行します。
+- Channel: 複数のGoroutine間で安全にデータをやり取りするためのパイプです。Goの設計思想である「通信によってメモリを共有する」を実現します。
+
+```go
+import (
+    "fmt"
+    "time"
+)
+
+// Goroutineの例
+func say(s string) {
+    for i := 0; i < 2; i++ {
+        time.Sleep(100 * time.Millisecond)
+        fmt.Println(s)
+    }
+}
+
+func main() {
+    go say("world") // バックグラウンドで実行
+    say("hello")     // メインのゴルーチンで実行
+
+    // Channelの例
+    messages := make(chan string)
+    go func() { messages <- "ping" }() // 別ゴルーチンでチャネルに値を送信
+    msg := <-messages // メインゴルーチンでチャネルから値を受信
+    fmt.Println(msg)  // ping
+}
+```

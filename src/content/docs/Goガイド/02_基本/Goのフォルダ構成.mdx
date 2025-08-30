@@ -1,0 +1,129 @@
+---
+title: "Goのフォルダ構成"
+label: "Goのフォルダ構成"
+---
+
+## Goの標準的なフォルダ構成ガイド 📂
+
+Goには厳格なルールはありませんが、プロジェクトのスケーラビリティとメンテナンス性を高めるためのベストプラクティスがコミュニティで共有されています。
+
+### 1. 主要なディレクトリの役割
+
+大規模なプロジェクトでは、以下のディレクトリ構成が一般的です。
+
+- `cmd/`: サーバーやCLIツールなど、実行可能なアプリケーションのエントリーポイントを置きます。各サブディレクトリが独立した実行可能ファイルに対応します。
+- `internal/`: プロジェクトの内部ロジックを格納します。Goのツールは、このディレクトリ内のコードが外部プロジェクトからインポートされるのを防ぐため、アプリケーションのコアな部分を保護できます。
+- `pkg/`: 汎用的なヘルパー関数や共通ライブラリなど、他のプロジェクトからも再利用可能な公開コードを置きます。
+- `configs/`: 環境変数やデータベース接続情報など、アプリケーションの設定ファイルを一元管理します。
+- `docs/`: API仕様書や設計ドキュメントなど、プロジェクトのドキュメントを格納します。
+
+### 2. 大規模プロジェクトの構成例
+
+プロジェクトの目的（APIか、バッチ処理かなど）に応じて、`internal`内の構造をさらに細かく分けます。
+
+#### APIサーバーの構成例 🏢
+
+APIを主体とするプロジェクトでは、**関心事の分離（Separation of Concerns）**を徹底します。
+
+```
+/my-api-project
+├── cmd/
+│   └── api/
+│       └── main.go           # サーバー起動コード
+├── internal/
+│   ├── app/                    # アプリケーションのコアロジック
+│   │   ├── handler/            # HTTPリクエストのハンドラ
+│   │   ├── service/            # ビジネスロジック
+│   │   └── repository/         # データベース操作
+│   └── middleware/             # 認証やロギングなどの共通処理
+├── api/
+│   ├── openapi/
+│   │   └── openapi.yaml        # OpenAPI定義
+│   └── proto/                  # gRPCの定義ファイル
+└── go.mod
+```
+
+#### バッチ/CLIツールの構成例 💻
+
+複数の実行ファイルがある場合、各プログラムの役割を明確にします。
+
+```
+/my-batch-project
+├── cmd/
+│   ├── process-data/
+│   │   └── main.go           # データ処理バッチ
+│   └── worker-cli/
+│       └── main.go           # CLIツール
+├── internal/
+│   └── core/
+│       └── logic.go          # 複数のcmdで共有されるロジック
+├── pkg/
+│   └── job/
+│       └── job.go            # 再利用可能なジョブ処理ライブラリ
+└── go.mod
+```
+
+### 3. サンプルコード: ミドルウェアの追加 (CORS)
+
+`internal/middleware/cors.go`にCORS設定を実装し、`cmd/api/main.go`でミドルウェアとして利用する例です。
+
+#### internal/middleware/cors.go:
+
+```go
+package middleware
+
+import (
+    "net/http"
+)
+
+// CORSミドルウェア
+func CORS(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // すべてのオリジンからのリクエストを許可
+        w.Header().Set("Access-Control-Allow-Origin", "*")
+        // 許可するHTTPメソッド
+        w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        // 許可するヘッダー
+        w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+        // OPTIONSリクエスト（プリフライトリクエスト）の場合、200を返して終了
+        if r.Method == "OPTIONS" {
+            w.WriteHeader(http.StatusOK)
+            return
+        }
+
+        // 次のハンドラにリクエストを渡す
+        next.ServeHTTP(w, r)
+    })
+}
+```
+
+#### cmd/api/main.go:
+
+```go
+package main
+
+import (
+    "log"
+    "net/http"
+    "my-api-project/internal/app/handler"
+    "my-api-project/internal/middleware"
+)
+
+func main() {
+    // ユーザーハンドラの初期化
+    userHandler := handler.NewUserHandler()
+
+    // ルーターとミドルウェアの設定
+    router := http.NewServeMux()
+    router.HandleFunc("/users", userHandler.GetUsers)
+
+    // CORSミドルウェアを適用
+    wrappedRouter := middleware.CORS(router)
+
+    log.Println("Server is running on :8080")
+    log.Fatal(http.ListenAndServe(":8080", wrappedRouter))
+}
+```
+
+このように、Goのフォルダ構成は、関心事を分離し、コードをモジュール化することで、大規模なシステム開発を効率的に進めるための鍵となります。
