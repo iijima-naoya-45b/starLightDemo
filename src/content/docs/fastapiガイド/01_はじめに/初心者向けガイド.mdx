@@ -27,6 +27,25 @@ FastAPIは、Starlette（ルーティングとWebソケットのフレームワ�
 FastAPIの最大の特長は、Pythonの**型ヒント（type hints）**を積極的に利用している点です。これにより、開発者はPythonの標準的な構文で、データの型を明確に定義できます。
 
 - **自動データ検証**: FastAPIは、受け取ったリクエストデータが定義された型に一致するかを自動的に検証します。もし型が正しくなければ、エラーを返してくれるため、手動でバリデーションコードを書く必要がありません。
+
+`model`
+```py
+from pydantic import BaseModel
+
+class User(BaseModel):
+    name: str
+    age: int
+```
+
+`endpoint`
+```py
+@app.post("/users")
+def create_user(user: User):
+    return user
+```
+
+こちらで型が不一致の場合は、422で返却されます。
+
 - **自動ドキュメント生成**: 型情報に基づいて、APIの入出力スキーマを自動的に生成します。これは、OpenAPI（旧Swagger）仕様に準拠しており、インタラクティブなAPIドキュメントとして提供されます。
 - **IDEのサポート**: VS Codeなどの開発ツールで、コード補完やエラーチェックが正確に行われるようになり、開発効率が大幅に向上します。
 

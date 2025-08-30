@@ -25,6 +25,12 @@ export default defineConfig({
                     badge: { text: '開発中', variant: 'note' },
                 },
                 {
+                    label: 'Go',
+                    collapsed: true,
+                    autogenerate: { directory: 'Goガイド' },
+                    badge: { text: '開発中', variant: 'note' },
+                },
+                {
                     label: 'Elixir',
                     collapsed: true,
                     autogenerate: { directory: 'elixirガイド' },

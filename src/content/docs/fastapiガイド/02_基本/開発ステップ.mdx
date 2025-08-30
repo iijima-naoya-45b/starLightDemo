@@ -1,0 +1,163 @@
+---
+title: "開発ステップ"
+label: "開発ステップ"
+---
+
+## 開発ステップ
+
+### 1. 開発環境の準備とプロジェクトの初期設定 🛠️
+
+まず、プロジェクトに必要なライブラリを管理するため、`requirements.txt` ファイルを作成し、以下の内容を記述します。
+
+```plaintext
+fastapi
+uvicorn
+pydantic
+```
+
+次に、以下のコマンドでこれらのライブラリをインストールします。
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Pydanticモデルの定義 (Model) 📝
+
+`app/schemas/user.py` に、リクエストやレスポンスのデータの型定義を行うPydanticモデルを作成します。これにより、データのバリデーションとシリアライゼーションが自動的に行われます。
+
+```python
+# app/schemas/user.py
+
+from pydantic import BaseModel
+
+class User(BaseModel):
+    id: int
+    name: str
+    email: str
+
+class UserCreate(BaseModel):
+    name: str
+    email: str
+```
+
+### 3. データベース操作などのロジックの定義 (Model) 💾
+
+`app/services/db_service.py` に、データベース操作やビジネスロジックを記述します。ここでは、簡単な例として、ユーザーデータのリストを保持するダミーのロジックを実装します。
+
+```python
+# app/services/db_service.py
+
+from typing import List
+from app.schemas.user import User, UserCreate
+
+# ダミーのデータベース
+users_db: List[User] = [
+    User(id=1, name="Alice", email="alice@example.com"),
+    User(id=2, name="Bob", email="bob@example.com"),
+]
+
+def get_users() -> List[User]:
+    """すべてのユーザーを取得する"""
+    return users_db
+
+def create_user(user_data: UserCreate) -> User:
+    """新しいユーザーを作成する"""
+    new_id = max([user.id for user in users_db]) + 1 if users_db else 1
+    new_user = User(id=new_id, **user_data.model_dump())
+    users_db.append(new_user)
+    return new_user
+```
+
+### 4. エンドポイントの分割とルーティング 🗺️
+
+APIエンドポイントをモジュールごとに分割し、`APIRouter` を使って整理します。これにより、`main.py`をシンプルに保ち、メンテナンス性を向上させます。
+
+#### フォルダ構成の変更
+
+```plaintext
+.
+├── app/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── api/
+│   │   ├── __init__.py
+│   │   └── endpoints/
+│   │       ├── __init__.py
+│   │       └── user.py
+│   └── schemas/
+│       └── user.py
+│   └── services/
+│       └── db_service.py
+└── requirements.txt
+```
+
+#### エンドポイントの定義 (user.py)
+
+`app/api/endpoints/user.py` に、ユーザー関連のエンドポイントを定義します。
+
+```python
+# app/api/endpoints/user.py
+
+from fastapi import APIRouter
+from typing import List
+
+from app.schemas.user import User, UserCreate
+from app.services.db_service import get_users, create_user
+
+router = APIRouter()
+
+@router.get("/", response_model=List[User])
+def read_users():
+    """全ユーザーのリストを取得するエンドポイント"""
+    return get_users()
+
+@router.post("/", response_model=User, status_code=201)
+def create_new_user(user_data: UserCreate):
+    """新しいユーザーを作成するエンドポイント"""
+    return create_user(user_data)
+```
+
+### 5. CORS設定とルーターのインポート (main.py) 🚀
+
+`app/main.py` に、FastAPIアプリケーションのインスタンスを作成し、CORS設定と、先ほど作成したルーターを`app.include_router()`で読み込みます。
+
+```python
+# app/main.py
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.api.endpoints import user
+
+app = FastAPI()
+
+# CORS設定
+origins = [
+    "http://localhost",
+    "http://localhost:8000",
+    "http://localhost:3000", # 例: フロントエンドのポート
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ルーターをインクルード
+# prefix="/users" で、このルーター内の全エンドポイントに /users が付加される
+app.include_router(user.router, prefix="/users", tags=["users"])
+```
+
+`prefix="/users"` を指定することで、`user.py` 内のパスに `/users` が付加され、`http://127.0.0.1:8000/users/` としてアクセスできるようになります。`tags=["users"]` は、Swagger UIのドキュメントを自動的にグループ化するのに役立ちます。
+
+### 6. サーバーの実行 💻
+
+プロジェクトのルートディレクトリで以下のコマンドを実行し、Uvicornを使って開発サーバーを起動します。
+
+```bash
+uvicorn app.main:app --reload
+```
+
+`--reload` オプションにより、コード変更時にサーバーが自動的に再起動します。サーバー起動後、ブラウザで `http://127.0.0.1:8000/docs` にアクセスして、APIが正しく動作しているか確認できます。

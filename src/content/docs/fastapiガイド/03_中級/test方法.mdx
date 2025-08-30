@@ -1,0 +1,218 @@
+---
+title: "test方法"
+label: "test方法"
+---
+
+## FastAPIのテスト方法ガイド 🧪
+
+FastAPIでは、`TestClient` を使用してAPIエンドポイントを直接テストするのが最も一般的です。`TestClient`は、実際のネットワーク通信をせずに仮想的なリクエストをアプリケーションに送信するため、高速かつ信頼性の高いテストが可能です。
+
+### 1. 必要なライブラリのインストール ⚙️
+
+まず、テストに必要な`pytest`と`httpx`をインストールします。
+
+```bash
+pip install "pytest" "httpx[standard]"
+```
+
+### 2. 基本的なテストコードの作成 (結合テスト) 🤝
+
+`TestClient`を使って、アプリケーション全体が正しく連携して動くかをテストします。
+
+#### フォルダ構成:
+
+```plaintext
+.
+├── app/
+│   └── main.py
+└── tests/
+    └── test_main.py
+```
+
+#### `tests/test_main.py`のコード例:
+
+```python
+from fastapi.testclient import TestClient
+from app.main import app
+
+client = TestClient(app)
+
+def test_read_users():
+    """GET /users/ のエンドポイントをテスト"""
+    response = client.get("/users/")
+    assert response.status_code == 200
+    assert response.json() == [
+        {"id": 1, "name": "Alice", "email": "alice@example.com"},
+        {"id": 2, "name": "Bob", "email": "bob@example.com"},
+    ]
+
+def test_create_user():
+    """POST /users/ のエンドポイントをテスト"""
+    new_user_data = {"name": "Charlie", "email": "charlie@example.com"}
+    response = client.post("/users/", json=new_user_data)
+    assert response.status_code == 201
+    assert response.json() == {"id": 3, "name": "Charlie", "email": "charlie@example.com"}
+```
+
+`TestClient`は、実際のHTTPリクエストと同様に`.get()`や`.post()`などのメソッドを使えるため、直感的にテストが記述できます。
+
+### 3. より実践的なテスト手法 🚀
+
+#### a. データベースを使用する場合のテスト (フィクスチャ)
+
+データベースに依存するテストでは、各テストが独立して実行されるように、テストの前後にデータベースを初期化・クリーンアップする処理が不可欠です。`pytest`のフィクスチャを使うと、この処理を自動化できます。
+
+#### `conftest.py`のコード例:
+
+```python
+# conftest.py (テストのルートディレクトリに配置)
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from app.database import Base
+from app.main import app
+
+@pytest.fixture(scope="function")
+def client():
+    # 依存性を上書きし、テスト用DBに接続
+    def override_get_db():
+        # ... テスト用DBのセッションを返すロジック ...
+        pass
+    
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as client:
+        yield client
+    app.dependency_overrides.clear() # 依存性のオーバーライドを解除
+```
+
+このフィクスチャを配置することで、テストごとにクリーンな状態のテストデータベースが利用できるようになります。
+
+#### b. モック（Mocking）を使ったテスト (単体テスト) 🎯
+
+モックとは、外部サービス（データベース、外部APIなど）を**偽物（モックオブジェクト）**に置き換える手法です。これにより、外部に依存しない高速な単体テストが書けます。
+
+`pytest`では、`monkeypatch`フィクスチャを使って簡単にモックを実現できます。
+
+#### `tests/test_main_mock.py`のコード例:
+
+```python
+# tests/test_main_mock.py
+
+from fastapi.testclient import TestClient
+from app.main import app
+from app.schemas.user import User
+from app.services import db_service
+
+client = TestClient(app)
+
+def test_read_users_mocked(monkeypatch):
+    """get_users関数をモックしてテスト"""
+    mock_users = [User(id=1, name="MockUser", email="mock@example.com")]
+    
+    def mock_get_users():
+        return mock_users
+
+    monkeypatch.setattr(db_service, "get_users", mock_get_users)
+
+    response = client.get("/users/")
+    assert response.status_code == 200
+    assert response.json() == [{"id": 1, "name": "MockUser", "email": "mock@example.com"}]
+```
+
+このテストでは、`db_service.py`が実際のデータベースに接続するかどうかに関わらず、エンドポイントの振る舞いだけを検証できます。
+
+### 4. テストの実行 🚀
+
+プロジェクトのルートディレクトリで以下のコマンドを実行するだけで、`pytest`がテストを自動で実行してくれます。
+
+```bash
+pytest
+```
+
+これにより、アプリケーションの品質と信頼性を確保し、安心して開発を進めることができます。
+
+### テストカバレッジの測定 📊
+
+テストコードがアプリケーションのどの部分をどれだけカバーしているかを把握することは、品質を確保する上で非常に重要です。テストカバレッジを測定することで、テストが不足している箇所（カバレッジホール）を特定し、効率的にテストを追加できます。
+
+`coverage.py` を使用すると、この測定を簡単に行えます。
+
+#### インストール
+
+`coverage.py`をインストールします。
+
+```bash
+pip install coverage
+```
+
+#### カバレッジ付きでテストを実行
+
+`pytest`を直接実行する代わりに、`coverage`コマンドを介して実行します。
+
+```bash
+coverage run -m pytest
+```
+
+#### レポートの生成
+
+カバレッジ情報を読みやすいレポート形式で表示します。
+
+```bash
+coverage report
+```
+
+このコマンドは、各ファイルのカバレッジ率（行数ベース）を一覧で表示します。
+
+より詳細なレポートが必要な場合は、HTML形式で生成することも可能です。
+
+```bash
+coverage html
+```
+
+これにより、`htmlcov/`ディレクトリに詳細なレポートが生成されます。ファイルを開くと、コードの各行がテストされたかどうかを色分けで確認できます。
+
+### その他のテストに関するヒント 💡
+
+- **命名規則の統一**: テスト関数の名前は`test_`で始め、何のためにテストしているのかを明確に記述しましょう（例: `test_create_user_success`）。
+- **テストの分離**: 各テストは完全に独立しているべきです。テスト間で状態が共有されないように、可能な限りフィクスチャを活用しましょう。
+- **継続的インテグレーション（CI）**: GitHub ActionsなどのCIツールと連携し、コードがプッシュされるたびに自動でテストが実行されるように設定することで、品質管理を自動化できます。
+
+### 責務別のテストの考え方 🧪
+
+#### Model (ロジック) のテスト: 単体テスト 🎯
+
+Model層は、アプリケーションのビジネスロジックやデータ操作を担う部分です。この層は、外部サービス（データベースなど）や他の層（View）から独立してテストすべきです。これを**単体テスト（Unit Test）**と呼びます。
+
+- **目的**: Modelの関数やクラスが、与えられた入力に対して常に期待通りの出力を返すか検証する。
+- **テスト対象**: データベースの操作ロジック、データ変換、バリデーションなど。
+- **利点**:
+  - 高速: 外部サービスに接続しないため、テストが非常に高速です。
+  - 再現性: 外部の状態に依存しないため、テストの失敗・成功が常に同じになります。
+  - 問題の特定: どこでバグが発生したかをピンポイントで特定できます。
+- **実装方法**: `pytest`の**モック（Mocking）**機能を使って、データベース接続や外部APIコールを偽物に置き換えます。
+
+#### View (エンドポイント) のテスト: 結合テスト 🤝
+
+View層は、ユーザーからのリクエストを受け付け、適切なModel層のロジックを呼び出し、レスポンスを返す役割を担います。この層のテストは、**結合テスト（Integration Test）**として扱います。
+
+- **目的**: エンドポイントがHTTPリクエストに対して正しく応答するか（例: 正しいステータスコード、正しいJSONレスポンス）、そしてModel層と適切に連携しているか検証する。
+- **テスト対象**:
+  - HTTPメソッド（GET, POST, PUT, DELETE）
+  - URLパスとクエリパラメータ
+  - リクエストボディのバリデーション
+  - レスポンスの形式と内容
+- **利点**:
+  - システム全体の検証: アプリケーションの各コンポーネントが正しく連携していることを確認できます。
+  - エンドツーエンドの確認: ユーザーの視点からAPIが期待通りに動くことを保証できます。
+- **実装方法**: FastAPIの**TestClient**を使って、アプリケーション全体に仮想的なリクエストを送信します。
+
+### なぜテストを切り分けるべきか？
+
+テストを切り分けることで、以下のようなメリットがあります。
+
+- **効率的なデバッグ**: 結合テストが失敗した場合でも、単体テストが通っていれば、問題はModel層ではなくView層やその間の連携にあると絞り込めます。
+- **高速なフィードバック**: 単体テストは非常に高速なため、開発中に頻繁に実行し、早期にバグを発見できます。結合テストは単体テストよりも時間がかかるため、CI/CDパイプラインなどで実行します。
+- **メンテナンス性**: Modelのロジックを変更しても、Viewのテストは壊れにくく、Viewのパスを変更してもModelのテストには影響しません。これにより、コードの変更に強いテストスイートが構築できます。
+
+結論として、Model層はモックを使った単体テストでロジックの正確性を保証し、View層はTestClientを使った結合テストでシステム全体の振る舞いを検証する、というアプローチが理想的です。

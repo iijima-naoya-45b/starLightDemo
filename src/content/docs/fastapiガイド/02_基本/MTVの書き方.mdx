@@ -1,6 +1,6 @@
 ---
-title: "MVCについて"
-label: "MVCについて"
+title: "MTVについて"
+label: "MTVについて"
 ---
 
 ## FastAPIにおけるMTVの考え方
@@ -51,8 +51,26 @@ def get_user_view(user_id: int):
     return user
 ```
 
+
 この例では、`get_user_view`関数がユーザーIDを受け取り、サービスを介してデータを取得し、レスポンスを返す一連の処理を行っています。
 
+**例: FastAPI でテンプレートを読み込む例**
+```py
+from fastapi import FastAPI, Request
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse
+
+app = FastAPI()
+
+# templatesディレクトリを指定
+templates = Jinja2Templates(directory="app/templates")
+
+@app.get("/", response_class=HTMLResponse)
+def read_root(request: Request):
+    # index.html をレンダリング
+    return templates.TemplateResponse("index.html", {"request": request, "title": "Home"})
+
+```
 ## 📦 MTVに基づいたファイル構成
 
 MTVの考え方で整理すると、以下のようなディレクトリ構造になります。
@@ -68,6 +86,9 @@ MTVの考え方で整理すると、以下のようなディレクトリ構造�
 │   └── services/
 │       ├── __init__.py
 │       └── db_service.py   # Model (データベース操作などのロジック)
+│       └── templates/      # Template(apiでは使用しない)
+│        ├── index.html
+│        └── user.html
 └── requirements.txt
 ```
 
