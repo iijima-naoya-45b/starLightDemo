@@ -86,6 +86,12 @@ export default defineConfig({
                     badge: { text: 'おすすめ', variant: 'note' },
 
                 },
+                {
+                    label: 'infraガイド',
+                    collapsed: true,
+                    autogenerate: { directory: 'infraガイド' },
+                    badge: { text: '実験的', variant: 'caution' },
+                },
             ],
         }),
         react(),
