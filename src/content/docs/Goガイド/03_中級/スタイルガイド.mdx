@@ -1,0 +1,210 @@
+---
+title: "Goのスタイルガイド"
+label: "Goのスタイルガイド"
+---
+
+## Goの書き方: スタイルガイドとベストプラクティス 📝
+
+Goは、コーディングスタイルや命名規則に関して、明確な慣習（コンベンション）を持っています。これらのルールに従うことで、コードの可読性が高まり、チームでの共同開発がスムーズになります。
+
+### 1. シンプルさと明示性
+
+Goの哲学は「シンプルisベスト」です。コードはできるだけ簡潔に、そして意図が明確に伝わるように書くことが推奨されます。
+
+- **冗長なコメントを避ける**: コード自体が意図を説明するように記述します。
+
+```go
+// 悪い例: 冗長なコメント
+// sum is the sum of a and b.
+func sum(a, b int) int {
+    return a + b
+}
+
+// 良い例: コードが意図を説明
+func Add(a, b int) int {
+    return a + b
+}
+```
+
+- **不必要な抽象化を避ける**: インターフェースやデザインパターンは、本当に必要な場合にのみ使用します。
+
+### 2. 命名規則 🏷️
+
+Goの命名規則は非常にシンプルで一貫しています。
+
+- **パッケージ名**: 小文字で、単一の単語にします（例: `fmt`, `http`）。
+- **変数名**: 短く、意味が明確になるようにします。
+
+```go
+// 良い例: 慣習的な短い変数名
+for i, v := range items {
+    // ...
+}
+```
+
+- **関数名・メソッド名**:
+  - 公開（Public）: 頭文字を大文字にします（例: `CreateUser`）。
+  - 非公開（Private）: 頭文字を小文字にします（例: `createUser`）。
+- **構造体名**: `User`や`Product`のように、名詞を使います。
+
+### 3. エラーハンドリング 🐞
+
+Goでは、関数はエラーを戻り値として明示的に返します。このエラーを無視することは、予期せぬバグの原因となるため、避けるべきです。
+
+- **エラーの確認**: 常にエラーをチェックし、適切に処理します。
+
+```go
+result, err := someFunction()
+if err != nil {
+    log.Printf("error calling someFunction: %v", err)
+    return err
+}
+```
+
+- **エラーのラップ**: エラーにコンテキスト情報を付加して返すことで、デバッグを容易にします。
+
+```go
+import "fmt"
+
+func readFile(path string) error {
+    // ... ファイル読み込み処理
+    err := someFileIOError
+    return fmt.Errorf("could not read file %s: %w", path, err)
+}
+```
+
+### 4. フォーマット 💅
+
+Goのコードは、公式ツール`gofmt`によって自動的にフォーマットされます。
+
+- **gofmt**: ソースコードを標準的なスタイルに整形します。
+
+```bash
+gofmt -w your_file.go
+```
+
+- **goimports**: `gofmt`の機能に加え、不要なimportを削除したり、必要なimportを追加したりします。
+
+```bash
+goimports -w your_file.go
+```
+
+これらのツールは、多くのエディタやIDEに統合されており、ファイルを保存するたびに自動で実行できます。
+
+### 5. インターフェースの活用 🤝
+
+Goでは、大規模なアプリケーションを構築する上で、インターフェースが極めて重要な役割を果たします。インターフェースは、コードを疎結合にし、テストを容易にするための鍵となります。
+
+- **小さく、シンプルに**: Goのインターフェースは小さく、単一の責務を持つべきです。たった一つのメソッドを持つインターフェースも一般的です（例: `io.Reader`, `io.Writer`）。
+- **インターフェースを実装するのではなく、受け入れる**: 関数は具体的な型ではなく、インターフェースを引数として受け入れるべきです。これにより、引数に様々な型（モックを含む）を渡せるようになり、柔軟性が向上します。
+
+```go
+import "io"
+import "os"
+
+// 良い例: インターフェースに依存
+func ProcessData(r io.Reader) error {
+    data, err := io.ReadAll(r)
+    // ...
+    return err
+}
+
+func main() {
+    file, _ := os.Open("file.txt")
+    ProcessData(file) // io.Readerインターフェースを満たすのでOK
+}
+```
+
+### 6. ゼロ値とコンストラクタ 🧱
+
+Goの型は、明示的に初期化しなくてもゼロ値を持ちます（例: `int`は`0`、`string`は`""`）。この性質は便利ですが、予期せぬ挙動につながることがあります。
+
+- **ゼロ値を活用する**: 多くの場合はゼロ値で十分です。不必要なコンストラクタ関数を作成する必要はありません。
+- **コンストラクタの使用**: ただし、特定のフィールドがゼロ値であってはならない場合や、追加のセットアップが必要な場合は、`New`プレフィックスを付けたコンストラクタ関数を定義します。
+
+```go
+type User struct {
+    ID   int
+    Name string
+}
+
+// コンストラクタ関数
+func NewUser(name string) (*User, error) {
+    if name == "" {
+        return nil, fmt.Errorf("name cannot be empty")
+    }
+    return &User{
+        Name: name,
+    }, nil
+}
+```
+
+### 7. 並行処理のベストプラクティス 🏎️
+
+Goのゴルーチンとチャネルを安全に使うための注意点です。
+
+- **競合状態（Race Conditions）の回避**: 複数のゴルーチンが共有するデータにアクセスする場合、`sync.Mutex`などのロックを使って、同時アクセスを防ぎます。
+
+```go
+import "sync"
+
+var mu sync.Mutex
+var counter int
+
+func increment() {
+    mu.Lock()
+    defer mu.Unlock()
+    counter++
+}
+```
+
+- **sync.WaitGroupの使用**: 複数のゴルーチンの完了を待機する場合、チャネルよりも`sync.WaitGroup`が適しています。
+
+```go
+import "sync"
+
+func main() {
+    var wg sync.WaitGroup
+    for i := 0; i < 5; i++ {
+        wg.Add(1)
+        go func(id int) {
+            defer wg.Done()
+            // ... 処理
+        }(i)
+    }
+    wg.Wait()
+}
+```
+
+### 8. ドキュメンテーションとコメント 📝
+
+Goのコメントは、単なるコードの説明だけでなく、公式ドキュメント（`go doc`や`pkg.go.dev`）としても機能します。
+
+- **公開されたシンボル**: 公開された関数、変数、構造体、インターフェースには、その目的を説明するコメントを記述します。
+
+```go
+// User represents a user in the system.
+type User struct {
+    ID   int
+    Name string
+}
+
+// NewUser creates a new User with the given name.
+func NewUser(name string) *User {
+    // ...
+}
+```
+
+- **パッケージコメント**: パッケージの目的や概要を説明するコメントを、`package`宣言の上に記述します。
+
+```go
+// Package greeting provides functions for generating greetings.
+package greeting
+
+// Greet returns a greeting message for the given name.
+func Greet(name string) string {
+    return fmt.Sprintf("Hello, %s!", name)
+}
+```
+
+これらの実践的なガイドラインに従うことで、Goのコードはより堅牢で、保守しやすく、他の開発者にとって理解しやすいものになります。

@@ -1,0 +1,337 @@
+---
+title: "Goのtest"
+label: "Goのtest"
+---
+
+## Goのテスト 🧪
+
+Goは、標準ライブラリに組み込まれた**testingパッケージ**により、シンプルかつ強力なテスト機能を提供します。外部ライブラリをほとんど使わずに、テスト、ベンチマーク、例示テストを行うことができます。
+
+### 1. テストの基本
+
+Goのテストは、特定の命名規則に従って書くことが決まっています。
+
+- **ファイル名**: テストコードは、テスト対象のファイル名に**_test.go**を付け加えたファイルに記述します（例: main.goに対するmain_test.go）。
+- **関数名**: テスト関数は**Test**で始まり、その後に続く名前（例: TestSum）は、大文字で始まらなければなりません。引数には*testing.Tを必ず指定します。
+
+#### 基本的なテストコード例
+
+テスト対象のコード (calculator.go)
+
+```go
+package calculator
+
+func Add(a, b int) int {
+    return a + b
+}
+```
+
+テストコード (calculator_test.go)
+
+```go
+package calculator
+
+import "testing"
+
+func TestAdd(t *testing.T) {
+    result := Add(1, 2)
+    expected := 3
+    if result != expected {
+        t.Errorf("Add(1, 2) = %d; expected %d", result, expected)
+    }
+}
+```
+
+この例では、Add関数の結果が期待値と異なる場合に`t.Errorf`を呼び出し、テスト失敗をレポートします。
+
+### 2. テストの実行と結果
+
+ターミナルで`go test`コマンドを実行すると、現在のディレクトリにあるすべての_test.goファイルが自動的に実行されます。
+
+- `go test`: テストを実行します。
+- `go test -v`: 詳細なテスト結果（各テスト関数の実行状況）を表示します。
+- `go test ./...`: サブディレクトリを含めてすべてのテストを実行します。
+
+実行結果は、テストの成功/失敗、実行時間などが簡潔に表示されます。
+
+### 3. テーブル駆動テスト 📊
+
+Goのテストで推奨されるパターンの一つがテーブル駆動テストです。これは、複数のテストケースを構造体スライス（テーブル）で定義し、ループでテストを実行する手法です。これにより、コードの重複を避け、新しいテストケースの追加を簡単にします。
+
+```go
+package calculator
+
+import "testing"
+
+func TestAddTableDriven(t *testing.T) {
+    tests := []struct {
+        name     string
+        a, b     int
+        expected int
+    }{
+        {"positive numbers", 1, 2, 3},
+        {"negative numbers", -1, -2, -3},
+        {"zero", 0, 0, 0},
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            result := Add(tt.a, tt.b)
+            if result != tt.expected {
+                t.Errorf("Add(%d, %d) = %d; expected %d", tt.a, tt.b, result, tt.expected)
+            }
+        })
+    }
+}
+```
+
+`t.Run`を使うことで、サブテストとして各ケースを実行できます。これにより、個々のテストケースが独立して表示され、どのケースが失敗したかを明確に把握できます。
+
+### 4. その他のテスト機能
+
+- **ベンチマークテスト**: 処理のパフォーマンスを測定するテストです。関数名を`BenchmarkXxx`とし、`go test -bench=. `で実行します。
+- **カバレッジ**: テストがどれくらいのコードをカバーしているかを測定します。`go test -cover`で実行でき、`go tool cover -html=cover.out`でHTML形式のレポートを作成できます。
+
+Goのテストは、シンプルながらも強力なツールであり、開発プロセスに組み込むことで、コードの品質と信頼性を大きく向上させます。
+
+### 5. モックとスタブ 🎭
+
+テスト対象の関数がデータベースや外部APIなど、外部の依存関係にアクセスする場合、テストの実行が遅くなったり、結果が不安定になったりします。これを解決するために、モック（Mock）やスタブ（Stub）といったテスト用のダミーオブジェクトを使用します。
+
+- **モック**: 外部サービスを模倣し、テスト中にそのサービスがどのように呼び出されたかを検証します。
+- **スタブ**: 外部サービスからの応答を事前に定義しておき、特定の値を返すようにします。
+
+Goでは、インターフェースを使用することで、モックやスタブを簡単に実装できます。テスト対象のコードが、具体的な構造体ではなくインターフェースに依存するように設計することが重要です。
+
+#### インターフェースを使ったテストの例
+
+テスト対象のサービスコード (service.go)
+
+```go
+package service
+
+type DataStore interface {
+    GetData() string
+}
+
+type MyService struct {
+    store DataStore
+}
+
+func (s *MyService) ProcessData() string {
+    data := s.store.GetData()
+    return "Processed: " + data
+}
+```
+
+モックを使ったテストコード (service_test.go)
+
+```go
+package service
+
+import "testing"
+
+// DataStoreインターフェースのモック
+type MockDataStore struct{}
+
+func (m *MockDataStore) GetData() string {
+    return "mocked data"
+}
+
+func TestProcessDataWithMock(t *testing.T) {
+    mockStore := &MockDataStore{}
+    myService := &MyService{store: mockStore}
+    
+    result := myService.ProcessData()
+    expected := "Processed: mocked data"
+    
+    if result != expected {
+        t.Errorf("got %s, want %s", result, expected)
+    }
+}
+```
+
+この例では、MyServiceがDataStoreインターフェースに依存しているため、テスト時に本物のデータベース接続ではなく、MockDataStoreを注入してテストできます。これにより、テストを高速かつ安定して実行できます。
+
+### 6. 例示テスト（Example Tests）📚
+
+Goのtestingパッケージには、ドキュメントとして機能する特別なテストExampleがあります。これらは`go test`で実行され、出力がコメントと一致するか検証されます。
+
+- **特徴**:
+  - `func ExampleXxx()`という形式で記述します。
+  - テスト結果が、関数の説明や使用例としてドキュメントに表示されます。
+  - `go test`実行時に、コメント内の出力と実際の出力が一致するか確認されます。
+
+#### 例示テストのコード例
+
+テスト対象のコード (greeter.go)
+
+```go
+package greeter
+
+func Greet(name string) string {
+    return "Hello, " + name
+}
+```
+
+例示テスト (greeter_test.go)
+
+```go
+package greeter
+
+import "fmt"
+
+func ExampleGreet() {
+    fmt.Println(Greet("World"))
+    // Output: Hello, World
+}
+```
+
+この例示テストは、`go test`で実行されるだけでなく、`go doc`や`pkg.go.dev`といったドキュメントツールで表示されます。これにより、コードのドキュメントとテストを同時に管理できるという利点があります。
+
+### 7. エラー処理のテスト 🐞
+
+Goでは、関数がエラーを返すことが多いため、エラーが発生した場合のテストケースを適切に書くことが重要です。期待されるエラーが返されるか、あるいはエラーが返されない場合に成功するかを検証します。
+
+テスト対象のコード (divider.go)
+
+```go
+package divider
+
+import "errors"
+
+func Divide(a, b int) (int, error) {
+    if b == 0 {
+        return 0, errors.New("cannot divide by zero")
+    }
+    return a / b, nil
+}
+```
+
+エラー処理をテストするコード (divider_test.go)
+
+```go
+package divider
+
+import (
+    "errors"
+    "testing"
+)
+
+func TestDivide(t *testing.T) {
+    // 成功ケースのテスト
+    t.Run("successful division", func(t *testing.T) {
+        result, err := Divide(10, 2)
+        if err != nil {
+            t.Fatalf("Divide(10, 2) returned an error: %v", err)
+        }
+        if result != 5 {
+            t.Errorf("Divide(10, 2) = %d, expected 5", result)
+        }
+    })
+
+    // エラーケースのテスト
+    t.Run("division by zero returns error", func(t *testing.T) {
+        _, err := Divide(10, 0)
+        if err == nil {
+            t.Fatal("Divide(10, 0) did not return an error, but it should have")
+        }
+        if !errors.Is(err, errors.New("cannot divide by zero")) {
+            t.Errorf("unexpected error type: %v", err)
+        }
+    })
+}
+```
+
+この例では、`errors.Is`関数を使って、返されたエラーが期待されるエラーと一致するかを厳密に検証しています。
+
+### 8. テストのヘルパー関数 🛠️
+
+テストコードが複雑になり、多くのテスト関数で同じ処理（例えば、テスト環境のセットアップやティアダウン）を繰り返す場合、テストのヘルパー関数を作成すると便利です。ヘルパー関数は通常、`*testing.T`を引数に取り、テストの補助的な役割を担います。
+
+- **特徴**:
+  - `t.Helper()`を呼び出して、テストの呼び出しスタックからヘルパー関数を隠します。これにより、テストが失敗したときにエラーが発生した元のテスト行を正確に特定できます。
+
+#### ヘルパー関数のコード例
+
+```go
+package myapp
+
+import "testing"
+
+// CheckEqualsは、期待値と結果が一致するかを検証するヘルパー関数
+func CheckEquals[T comparable](t *testing.T, got, want T) {
+    t.Helper() // この関数をヘルパーとしてマーク
+    if got != want {
+        t.Errorf("got %v, want %v", got, want)
+    }
+}
+
+func TestMyFunction(t *testing.T) {
+    // ヘルパー関数を使ってテストを簡潔に記述
+    CheckEquals(t, "hello", "hello")
+    CheckEquals(t, 10, 10)
+    
+    // 失敗するケース
+    CheckEquals(t, "world", "gopher") // この行でエラーが報告される
+}
+```
+
+`t.Helper()`を呼び出すことで、テスト失敗時に`CheckEquals`関数ではなく、`TestMyFunction`の呼び出し元（`CheckEquals`を呼び出した行）がエラーログに表示され、デバッグが容易になります。
+
+### 9. テストでの一時ファイル・ディレクトリの利用 📁
+
+ファイルシステムを扱う関数のテストでは、テストの実行ごとにクリーンな環境を確保することが重要です。Goのtestingパッケージは、一時的なファイルやディレクトリを安全に作成・削除するための機能を提供します。これにより、テストがファイルシステムに影響を与えないようにできます。
+
+- **t.TempDir()**:
+  - このメソッドを呼び出すと、テスト実行中のみ有効な一時ディレクトリが作成されます。
+  - テストが終了すると、Goは自動的にそのディレクトリとその中身をすべて削除します。
+
+- **os.CreateTemp**:
+  - `testing`パッケージの外部で一時ファイルを作成する場合に便利です。
+  - `os.CreateTemp`を使って作成したファイルは、テスト終了後に手動で削除する必要があります。
+
+#### 一時ディレクトリを使ったテストの例
+
+```go
+package myapp
+
+import (
+    "os"
+    "path/filepath"
+    "testing"
+)
+
+// ファイルに書き込み、内容を読み取る関数（テスト対象）
+func WriteAndRead(dir, filename, content string) (string, error) {
+    filePath := filepath.Join(dir, filename)
+    if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+        return "", err
+    }
+    data, err := os.ReadFile(filePath)
+    if err != nil {
+        return "", err
+    }
+    return string(data), nil
+}
+
+// WriteAndRead関数のテスト
+func TestWriteAndRead(t *testing.T) {
+    // t.TempDir() を使って一時ディレクトリを作成
+    tempDir := t.TempDir()
+
+    // 作成された一時ディレクトリ内でテストを実行
+    result, err := WriteAndRead(tempDir, "test.txt", "hello world")
+    if err != nil {
+        t.Fatalf("unexpected error: %v", err)
+    }
+
+    expected := "hello world"
+    if result != expected {
+        t.Errorf("got %q, want %q", result, expected)
+    }
+}
+```
+
+このテストでは、`t.TempDir()`が一時ディレクトリを自動で管理してくれるため、テスト後に手動でクリーンアップする必要がなく、テストコードを簡潔かつ安全に保つことができます。
+
