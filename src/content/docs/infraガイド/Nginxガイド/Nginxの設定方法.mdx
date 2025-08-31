@@ -1,0 +1,189 @@
+---
+title: "Nginxの設定方法"
+label: "Nginxの設定方法"
+---
+
+# `Nginx`の設定方法
+
+## `Nginx`設定ファイルの基本
+
+`Nginx`の設定は、通常`/etc/nginx/nginx.conf`にあるメイン設定ファイルと、`include`ディレクティブで読み込まれるサイト固有の設定ファイル（例：`/etc/nginx/conf.d/`や`/etc/nginx/sites-enabled/`内のファイル）に分かれています。
+
+主要な設定ブロックは以下の通りです。
+
+- **`http`ブロック**: すべての`HTTP`トラフィックに適用されるグローバルな設定。
+- **`server`ブロック**: 特定のドメインやポート（バーチャルホスト）の設定。
+- **`location`ブロック**: `URL`パスごとのリクエスト処理方法を定義。
+
+`Nginx`の設定は、これらのブロックを組み合わせて記述します。設定ファイルを変更した後は、`sudo nginx -t`で構文チェックを行い、`sudo systemctl restart nginx`または`sudo nginx -s reload`で設定を反映させるのが一般的です。
+
+## フロントエンドとバックエンドの連携設定
+
+`Web`アプリケーションは、通常、静的なフロントエンドと動的なバックエンドに分かれています。`Nginx`は、この2つのコンポーネントを効率的に連携させるリバースプロキシとして活躍します。
+
+1. **静的コンテンツの配信**
+   - `HTML`、`CSS`、`JavaScript`、画像などの静的ファイルは、バックエンドサーバーではなく`Nginx`が直接配信することで、高速化とバックエンドの負荷軽減を図ります。`location`ブロックの`root`ディレクティブで、静的ファイルが置かれているディレクトリを指定します。
+
+   ```nginx
+   server {
+       listen 80;
+       server_name your-domain.com;
+
+       # フロントエンドの静的コンテンツを配信
+       location / {
+           root /var/www/html/frontend;
+           try_files $uri $uri/ /index.html;
+       }
+   }
+   ```
+
+   - **`root`**: 静的ファイルのルートディレクトリ。
+   - **`try_files`**: リクエストされた`URI`に対応するファイルやディレクトリを探し、見つからない場合は`/index.html`を返す設定です。これは、`React`や`Vue.js`などの**シングルページアプリケーション（`SPA`）**で、どの`URL`でも`/index.html`を返すために必要です。
+
+2. **バックエンドへのリバースプロキシ**
+   - 動的な`API`リクエストは、`Nginx`がバックエンドサーバーに転送します。これは、リバースプロキシの最も一般的な使用例です。`location`ブロックで`API`エンドポイント（例: `/api/`）を指定し、`proxy_pass`ディレクティブでバックエンドサーバーのアドレスを記述します。
+
+   ```nginx
+   server {
+       listen 80;
+       server_name your-domain.com;
+
+       # フロントエンドの静的コンテンツを配信
+       location / {
+           root /var/www/html/frontend;
+           try_files $uri $uri/ /index.html;
+       }
+
+       # バックエンドAPIへのリクエストを転送
+       location /api/ {
+           proxy_pass http://localhost:3000; # バックエンドサーバーのアドレスとポート
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+       }
+   }
+   ```
+
+   - **`proxy_pass`**: リクエストを転送するバックエンドサーバーの`URL`。
+   - **`proxy_set_header`**: ヘッダー情報をバックエンドに渡すための設定。クライアントの`IP`アドレスやホスト名を正しくバックエンドに伝えるために重要です。
+
+## `SSL/TLS`（`HTTPS`）の設定
+
+本番環境では、通信のセキュリティを確保するため、`HTTPS`を有効にする必要があります。`Nginx`は`SSL/TLS`証明書を簡単に設定でき、リバースプロキシとして`SSL`終端処理を行うことができます。
+
+まず、証明書ファイル（`fullchain.pem`）と秘密鍵（`privkey.pem`）を用意します（`Let's Encrypt`などのサービスが便利です）。次に、`server`ブロックを以下のように設定します。
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+    return 301 https://$host$request_uri; # HTTPからHTTPSへのリダイレクト
+}
+
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
+
+    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+
+    location / {
+        root /var/www/html/frontend;
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+この設定では、ポート`80`（`HTTP`）へのアクセスをポート`443`（`HTTPS`）に自動でリダイレクトします。これにより、ユーザーは常に安全な接続で`Web`サイトを利用できます。`Nginx`は設定がシンプルでわかりやすく、多くのユースケースに対応できる強力なツールです。
+
+## セキュリティ設定の追加 🛡️
+
+`Nginx`は、セキュリティを強化するための様々なディレクティブをサポートしています。これらを追加することで、一般的な`Web`攻撃からアプリケーションを保護できます。
+
+### `SSL/TLS`の最適化
+
+`SSL/TLS`を有効にするだけでなく、より強固な設定を施すことが重要です。
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
+    
+    # 既存の証明書設定...
+    
+    # 強固な暗号スイートとTLSプロトコルの設定
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384';
+    
+    # HSTSヘッダーの追加 (HTTP Strict Transport Security)
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # ...その他のlocationブロック
+}
+```
+
+- **`ssl_protocols` と `ssl_ciphers`**: 古くて脆弱な`TLS`プロトコルや暗号スイートを無効にし、最新かつ安全なもののみを許可します。
+- **`Strict-Transport-Security` (`HSTS`)**: ユーザーのブラウザに「このサイトには常に`HTTPS`でアクセスすること」を強制するヘッダーです。これにより、中間者攻撃（`man-in-the-middle attack`）を防ぐのに役立ちます。
+
+### その他のセキュリティヘッダー
+
+クロスサイトスクリプティング（`XSS`）やクリックジャッキングなどの攻撃を防ぐために、以下のヘッダーを追加します。
+
+```nginx
+server {
+    # ...
+    add_header X-Frame-Options SAMEORIGIN; # クリックジャッキング防止
+    add_header X-Content-Type-Options nosniff; # MIMEタイプスニッフィング防止
+    add_header X-XSS-Protection "1; mode=block"; # XSS攻撃防止
+    # ...
+}
+```
+
+## `S3`など外部ストレージサービスとの連携方法 ☁️
+
+`Nginx`は、`HTTP`リクエストを`S3`バケットなどの外部ストレージに転送し、静的ファイルを直接配信する設定も可能です。これは、静的サイトホスティングや、大量のメディアファイルを配信する際に非常に便利です。
+
+### 設定の例
+
+`S3`との連携には、`proxy_pass`ディレクティブを使用します。`S3`バケットへのリクエストを転送し、必要な認証ヘッダーを付与します。
+
+```nginx
+server {
+    listen 80;
+    server_name cdn.your-domain.com;
+
+    location / {
+        # S3バケットへのリバースプロキシ設定
+        proxy_pass http://your-s3-bucket.s3.amazonaws.com/;
+        
+        # S3への認証ヘッダー
+        # AWS署名V4を設定する必要があります
+        # この設定は複雑なため、サードパーティのモジュール（e.g., ngx_aws_auth）が推奨されます
+        # ここでは概念的な例を示します
+
+        # S3の認証ヘッダーを動的に生成・追加
+        # (具体的な実装はツールやモジュールに依存)
+        # proxy_set_header Authorization "..."; 
+
+        # ホストヘッダーをS3に合わせて変更
+        proxy_set_header Host your-s3-bucket.s3.amazonaws.com;
+    }
+}
+```
+
+- **`proxy_pass`**: `S3`バケットの`URL`を指定します。
+- **認証**: `S3`はプライベートなバケットへのアクセスに認証が必要です。`Nginx`のデフォルト機能だけでは複雑な署名（`AWS`署名`V4`）を生成できないため、多くの場合、サードパーティ製のモジュールを利用するか、`S3`バケットをパブリックに設定して対応します。
+
+この設定により、`cdn.your-domain.com/path/to/image.jpg`へのリクエストが、`your-s3-bucket.s3.amazonaws.com/path/to/image.jpg`に転送され、`Nginx`が`S3`からのレスポンスをクライアントに返します。`Nginx`の`HTTP`キャッシュ機能と組み合わせることで、`S3`へのアクセス回数を減らし、さらに高速な配信を実現できます。
+
+これらの高度な設定は、`Nginx`が単なる`Web`サーバーを超え、現代の複雑な`Web`インフラストラクチャにおける中心的な役割を担う理由を示しています。
