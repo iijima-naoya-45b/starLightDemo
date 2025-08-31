@@ -3,15 +3,17 @@ title: "GoのGenerics（ジェネリクス）とany型"
 label: "GoのGenerics（ジェネリクス）とany型"
 ---
 
-Generics（ジェネリクス） ✨
+# GoのGenerics（ジェネリクス）とany型
+
+## Generics（ジェネリクス） ✨
+
 Go 1.18で導入されたジェネリクスは、特定の型に依存しない関数やデータ型を記述することを可能にします。これにより、同じロジックを異なる型で再利用できるため、コードの重複を減らし、より安全なプログラムを構築できます。
 
-ジェネリクスを使用しない場合:
+### ジェネリクスを使用しない場合
 
 異なる型のスライスに対して同じSum関数を実装するには、それぞれの型ごとにコードを書く必要がありました。
 
-Go
-
+```go
 func SumInts(m map[string]int64) int64 {
     var s int64
     for _, v := range m {
@@ -27,12 +29,13 @@ func SumFloats(m map[string]float64) float64 {
     }
     return s
 }
-ジェネリクスを使用する場合:
+```
 
-comparable や any といった型引数（type parameters） と 型制約（type constraints） を使うことで、1つの関数で複数の型を扱えます。
+### ジェネリクスを使用する場合
 
-Go
+`comparable` や `any` といった型引数（type parameters）と型制約（type constraints）を使うことで、1つの関数で複数の型を扱えます。
 
+```go
 // Numbersインターフェースで型をint64とfloat64に制約
 type Numbers interface {
     int64 | float64
@@ -54,26 +57,31 @@ func main() {
     fmt.Println(Sum(ints))   // int64型で呼び出し
     fmt.Println(Sum(floats)) // float64型で呼び出し
 }
-この例では、Sum関数はint64とfloat64のどちらのスライスでも動作し、コンパイル時に型安全性が保証されます。
+```
 
-any 型の導入（interface{}の別名）
-Go 1.18から、interface{} の別名として**any**が導入されました。これは機能的に全く同じですが、よりシンプルで読みやすいです。
+この例では、`Sum`関数は`int64`と`float64`のどちらのスライスでも動作し、コンパイル時に型安全性が保証されます。
 
-interface{} を使用する場合:
+## any 型の導入（interface{}の別名）
 
-Go
+Go 1.18から、`interface{}` の別名として**any**が導入されました。これは機能的に全く同じですが、よりシンプルで読みやすいです。
 
+### interface{} を使用する場合
+
+```go
 func printValue(v interface{}) {
     fmt.Printf("Value: %v, Type: %T\n", v, v)
 }
-any を使用する場合:
+```
 
-Go
+### any を使用する場合
 
+```go
 func printValue(v any) {
     fmt.Printf("Value: %v, Type: %T\n", v, v)
 }
-anyは、interface{}と同じく、どんな型の値でも受け取ることができます。この変更は、interface{}が持つ「どんな型でも受け入れる」という性質をより明確に表現することを目的としています。
+```
+
+`any`は、`interface{}`と同じく、どんな型の値でも受け取ることができます。この変更は、`interface{}`が持つ「どんな型でも受け入れる」という性質をより明確に表現することを目的としています。
 
 これらの新しい概念は、Goの型システムをより強力かつ柔軟なものにしました。ジェネリクスとany型を理解することで、より現代的で再利用性の高いGoコードを書くことができます。
 

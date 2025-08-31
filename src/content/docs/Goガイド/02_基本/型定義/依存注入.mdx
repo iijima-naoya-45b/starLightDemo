@@ -3,28 +3,32 @@ title: "Goの依存注入"
 label: "Goの依存注入"
 ---
 
-依存性注入 (Dependency Injection: DI) 💉
+# Goの依存注入
+
+## 依存性注入 (Dependency Injection: DI) 💉
+
 依存性注入は、あるオブジェクトが依存している別のオブジェクト（依存オブジェクト）を外部から提供するデザインパターンです。これにより、各レイヤー間の結合度を下げ、テストや保守を容易にします。
 
 Goでは、DIライブラリを使う方法もありますが、関数の引数や構造体のフィールドとして依存オブジェクトを渡すことで、シンプルにDIを実現できます。この手法は、Goの哲学である「シンプルさ」と「明示性」に非常に合っています。
 
-依存性注入のコード例
+### 依存性注入のコード例
+
 ここでは、サービスがリポジトリに依存する構成を例に見てみましょう。
 
 1. リポジトリのインターフェースを定義
 
-Go
-
+```go
 package repository
 
 // UserRepositoryはユーザーデータへのアクセスを抽象化する
 type UserRepository interface {
     GetUserByID(id int) (*User, error)
 }
+```
+
 2. サービスがインターフェースに依存
 
-Go
-
+```go
 package service
 
 import "your_project/repository"
@@ -38,10 +42,11 @@ type UserService struct {
 func NewUserService(repo repository.UserRepository) *UserService {
     return &UserService{repo: repo}
 }
+```
+
 3. main関数で具象化された依存オブジェクトを注入
 
-Go
-
+```go
 package main
 
 import (
@@ -58,7 +63,9 @@ func main() {
 
     // ... アプリケーションの実行 ...
 }
-この方法により、UserServiceは具体的なDBRepositoryの存在を知る必要がなくなり、代わりにUserRepositoryというインターフェースにのみ依存します。これにより、テスト時にはDBRepositoryの代わりに**モック（mock）**を注入して、データベースに接続せずにサービスレイヤーのロジックをテストできるようになります。
+```
+
+この方法により、`UserService`は具体的な`DBRepository`の存在を知る必要がなくなり、代わりに`UserRepository`というインターフェースにのみ依存します。これにより、テスト時には`DBRepository`の代わりに**モック（mock）**を注入して、データベースに接続せずにサービスレイヤーのロジックをテストできるようになります。
 
 ご提示いただいたレイヤードアーキテクチャの解説に、この依存性注入の概念を加えることで、そのアーキテクチャがなぜ優れているのか、そしてどのように実装すべきかがより明確になります。
 
