@@ -16,13 +16,13 @@ export default defineConfig({
                     label: 'StarLightガイド',
                     collapsed: true,
                     autogenerate: { directory: 'StarLightガイド' },
-                    badge: { text: '実験的', variant: 'caution' },
+                    badge: { text: '難易度低め', variant: 'caution' },
                 },
                 {
                     label: 'Django',
                     collapsed: true,
                     autogenerate: { directory: 'Djangoガイド' },
-                    badge: { text: '開発中', variant: 'note' },
+                    badge: { text: 'おすすめ', variant: 'note' },
                 },
                 {
                     label: 'Go',
