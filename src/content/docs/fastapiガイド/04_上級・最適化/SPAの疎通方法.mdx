@@ -1,0 +1,140 @@
+---
+title: "SPAの疎通方法"
+label: "SPAの疎通方法"
+---
+
+## `FastAPI`と`SPA`の連携方法
+
+`FastAPI`は、`React`や`Vue.js`のような**`SPA`（Single Page Application）**と連携するための強力なツールです。連携方法は主に3つあり、プロジェクトの要件に応じて最適な方法を選ぶことができます。
+
+1. **`API`サーバーとして分離する (`REST API`)**
+   - 最も一般的で柔軟なアプローチです。`FastAPI`はデータを提供するバックエンドに徹し、`SPA`は`Fetch API`や`Axios`などを使ってそのデータを取得します。
+
+   - **特徴**:
+     - 完全な分離: フロントエンドとバックエンドが独立しているため、開発チームが異なる技術スタックで並行して作業できます。
+     - `CORS`: フロントエンドとバックエンドが異なるサーバーで動くため、**`CORS`（Cross-Origin Resource Sharing）**の設定が必要です。`FastAPI`のミドルウェアを使えば簡単に設定できます。
+
+   - **実装例**:
+
+     ```python
+     # FastAPI側: main.py
+     from fastapi import FastAPI
+     from fastapi.middleware.cors import CORSMiddleware
+
+     app = FastAPI()
+
+     # CORS設定: Reactアプリのドメインを許可
+     app.add_middleware(
+         CORSMiddleware,
+         allow_origins=["http://localhost:3000"],
+         allow_methods=["*"],
+         allow_headers=["*"],
+     )
+
+     @app.get("/api/items")
+     async def read_items():
+         return [{"name": "Item 1"}, {"name": "Item 2"}]
+     ```
+
+     ```javascript
+     // React側: App.js
+     import React, { useEffect, useState } from 'react';
+
+     function App() {
+       const [items, setItems] = useState([]);
+
+       useEffect(() => {
+         fetch('http://localhost:8000/api/items')
+           .then(response => response.json())
+           .then(data => setItems(data));
+       }, []);
+
+       return (
+         // UIのレンダリング
+       );
+     }
+     ```
+
+2. **静的ファイルを提供する**
+   - この方法では、`FastAPI`がバックエンド`API`と、ビルド済みの`React`アプリの静的ファイル（`HTML`, `CSS`, `JS`）の両方を提供します。
+
+   - **特徴**:
+     - 単一のデプロイ: フロントエンドとバックエンドを一つのサーバーにまとめてデプロイできます。
+     - `CORS`不要: フロントエンドとバックエンドが同じオリジンにあるため、`CORS`の問題を気にする必要がありません。
+     - ルーティング: `SPA`のクライアントサイドルーティング（例: `/users/1`）を正しく処理するため、すべての未定義の`URL`を**`index.html`にフォールバック**させる設定が必要です。
+
+   - **実装例**:
+
+     ```python
+     # FastAPI側: main.py
+     from fastapi import FastAPI
+     from fastapi.staticfiles import StaticFiles
+     from fastapi.responses import FileResponse
+
+     app = FastAPI()
+
+     # 静的ファイルを提供 (Reactのビルドディレクトリをマウント)
+     app.mount("/static", StaticFiles(directory="static"), name="static")
+
+     @app.get("/api/items")
+     async def read_items():
+         return [{"name": "Item 1"}, {"name": "Item 2"}]
+
+     # すべてのルートをindex.htmlにフォールバック
+     @app.get("/{full_path:path}")
+     async def serve_spa(full_path: str):
+         return FileResponse("static/index.html")
+     ```
+
+3. **リアルタイム通信 (`WebSocket`)**
+   - `REST API`が「リクエスト-レスポンス」の単発通信であるのに対し、`WebSocket`はクライアントとサーバー間の持続的な接続を確立します。リアルタイムな双方向通信が必要な場合に最適です。
+
+   - **特徴**:
+     - リアルタイム性: クライアントとサーバー間で即座にデータを交換できます。
+     - 低オーバーヘッド: 接続を維持するため、通信のオーバーヘッドが低減されます。
+     - ブロードキャスト: サーバーは、受け取ったメッセージを他の接続されたすべてのクライアントにブロードキャストすることで、リアルタイムな共有を実現します。
+
+   - **実装例**:
+
+     ```python
+     # FastAPI側: main.py
+     from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+     app = FastAPI()
+     connected_clients = []
+
+     @app.websocket("/ws")
+     async def websocket_endpoint(websocket: WebSocket):
+         await websocket.accept()
+         connected_clients.append(websocket)
+         try:
+             while True:
+                 data = await websocket.receive_text()
+                 for client in connected_clients:
+                     await client.send_text(f"Message: {data}")
+         except WebSocketDisconnect:
+             connected_clients.remove(websocket)
+     ```
+
+     ```javascript
+     // React側: App.js
+     import React, { useEffect, useState } from 'react';
+
+     function ChatApp() {
+       const [messages, setMessages] = useState([]);
+
+       useEffect(() => {
+         const socket = new WebSocket("ws://localhost:8000/ws");
+         socket.onmessage = (event) => {
+           setMessages(prevMessages => [...prevMessages, event.data]);
+         };
+         return () => socket.close();
+       }, []);
+
+       return (
+         // UIのレンダリング
+       );
+     }
+     ```
+
+これらの方法を適切に使い分けることで、`FastAPI`のパフォーマンスを最大限に活かし、目的に合った`SPA`を効率的に開発できます。
