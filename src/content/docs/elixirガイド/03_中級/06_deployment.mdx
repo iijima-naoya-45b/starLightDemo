@@ -3,15 +3,40 @@ title: "デプロイメントの詳細"
 label: "デプロイメントの詳細"
 ---
 
-Elixirアプリケーションのデプロイメント方法をさらに詳しく解説します。
+## `Elixir`デプロイメントの基本思想
 
-## Kubernetesを使用したデプロイメント
+`Elixir`アプリケーションのデプロイメントの根幹には、`mix release`コマンドで生成される自己完結型リリースがあります。これは、アプリケーションのソースコード、依存ライブラリ、そして軽量な`Erlang VM (BEAM)`をすべて一つの実行可能なファイルにまとめる機能です。このリリースの最大の利点は、デプロイ先のサーバーに`Elixir`や`Erlang`を事前にインストールする必要がないことです。これにより、デプロイプロセスが劇的に簡素化され、`Docker`や`Kubernetes`のようなコンテナ環境との相性が非常に良くなります。
 
-Kubernetesを使用して、Elixirアプリケーションをデプロイします。Kubernetesは、コンテナ化されたアプリケーションのデプロイ、スケーリング、管理を行うためのオープンソースプラットフォームです。
+### `Docker`と`Kubernetes`を使用したデプロイメント 🐳
 
-### デプロイメントの設定
+自己完結型リリースをコンテナ化してデプロイするのは、最も一般的で堅牢な手法です。このプロセスは、通常、多段階ビルド (`Multi-stage build`) を使用して、本番用コンテナイメージのサイズを最小限に抑えます。
 
-以下に、Kubernetesでのデプロイメント設定の例を示します。
+#### `Dockerfile`の例
+
+```dockerfile
+# ビルドステージ
+# 完全なElixir環境を使ってリリースをビルド
+FROM hexpm/elixir:1.14.3-erlang-25.3.2-ubuntu-jammy AS builder
+WORKDIR /app
+COPY mix.exs mix.lock ./
+RUN mix deps.get --only prod
+COPY priv priv
+COPY lib lib
+COPY config config
+RUN mix release --env=prod
+
+# ランタイムステージ
+# わずか数MBの軽量なAlpineイメージに、ビルドしたリリースをコピー
+FROM alpine:3.18.2
+WORKDIR /app
+RUN apk add --no-cache openssl
+COPY --from=builder /app/_build/prod/rel/my_app ./
+CMD ["/app/bin/my_app", "start"]
+```
+
+#### `Kubernetes`のデプロイメント設定
+
+ビルドした`Docker`イメージを`Kubernetes`クラスタにデプロイするための設定例です。
 
 ```yaml
 apiVersion: apps/v1
@@ -30,24 +55,48 @@ spec:
     spec:
       containers:
       - name: myapp
-        image: myapp:latest
+        # Dockerイメージのリポジトリとタグを指定
+        image: your-docker-registry/my_app:latest
         ports:
         - containerPort: 4000
 ```
 
-- **`replicas: 3`**: アプリケーションのインスタンスを3つ作成します。
-- **`image: myapp:latest`**: 使用するDockerイメージを指定します。
+この設定により、`Kubernetes`はアプリケーションのコンテナを3つ起動し、自動的に負荷分散を行います。
 
-### 使用例
+### `Render.com`でのデプロイメント 🚀
 
-この設定により、Kubernetesは3つのインスタンスを作成し、負荷分散を行います。これにより、アプリケーションの可用性とスケーラビリティが向上します。
+`Render.com`のような`PaaS`は、上記の`Docker`や`Kubernetes`の設定を気にすることなく、`Elixir`アプリケーションをデプロイできます。`Render`は、`Git`リポジトリと連携するだけで、自動的にビルドとデプロイを実行します。
 
-## 高度なデプロイメント
+#### `Render.yaml`の設定例
 
-Elixirアプリケーションのデプロイメントを自動化するために、CI/CDパイプラインを構築します。以下に、GitHub Actionsを使用したCI/CDパイプラインの例を示します。
+`Render`は、`render.yaml`という設定ファイルで、アプリケーションのビルドと起動方法を自動で認識します。
 
 ```yaml
-name: Elixir CI
+services:
+- type: web
+  name: myapp
+  env: elixir
+  # ビルドコマンド。依存関係を取得し、リリースをビルド。
+  buildCommand: "mix do deps.get, compile, release"
+  # アプリケーションの起動コマンド
+  startCommand: "_build/prod/rel/my_app/bin/my_app start"
+  envVars:
+  - key: SECRET_KEY_BASE
+    generateValue: true
+```
+
+#### `Render`と`Elixir`の強力な相性
+
+`Render`は、`Elixir`の強みである分散ノード機能や自動スケーリングをネイティブにサポートしています。これにより、複数のインスタンスが互いに連携し、トラフィックの急増にも柔軟に対応できる、高可用性かつリアルタイムなアプリケーションを簡単に構築できます。
+
+### `CI/CD`パイプラインの自動化 🤖
+
+提供された`GitHub Actions`の例は、`CI/CD`プロセスを自動化するための良い出発点です。これをさらに洗練させ、デプロイフックを使用して自動デプロイを実現するワークフローの例を以下に示します。
+
+#### `GitHub Actions`ワークフローの例 (`.github/workflows/ci.yml`)
+
+```yaml
+name: Elixir CI/CD
 
 on:
   push:
@@ -55,25 +104,27 @@ on:
       - main
 
 jobs:
-  build:
+  build_and_deploy:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v2
     - name: Set up Elixir
-      uses: actions/setup-elixir@v1
+      uses: erlef/setup-elixir@v1
       with:
-        elixir-version: '1.11'
+        elixir-version: '1.14'
+        otp-version: '25'
     - name: Install dependencies
       run: mix deps.get
     - name: Run tests
       run: mix test
     - name: Build release
-      run: mix release
+      # プロダクション環境用の設定でリリースをビルド
+      run: mix release --env=prod
+    
+    - name: Deploy to Render
+      # テストとビルドが成功した場合にのみ実行
+      if: success()
+      run: curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK }}
 ```
 
-- **`GitHub Actions`**: CI/CDパイプラインを構築して、デプロイメントを自動化します。
-
-### 使用例
-
-この設定により、コードがプッシュされるたびに自動的にテストが実行され、リリースがビルドされます。CI/CDパイプラインを使用することで、デプロイメントプロセスを効率化し、エラーを減らすことができます。
+このワークフローは、`main`ブランチへのプッシュをトリガーに、テストを実行し、リリースをビルドします。すべてのステップが成功した場合にのみ、`curl`コマンドで`Render`のデプロイフックを呼び出し、デプロイプロセスを自動で開始します。これにより、「テストが通ったときだけデプロイする」という安全で堅牢なパイプラインが構築できます。
