@@ -19,6 +19,12 @@ export default defineConfig({
                     badge: { text: '難易度低め', variant: 'caution' },
                 },
                 {
+                    label: 'Unityガイド',
+                    collapsed: true,
+                    autogenerate: { directory: 'Unityガイド' },
+                    badge: { text: '開発中', variant: 'note' },
+                },
+                {
                     label: 'Django',
                     collapsed: true,
                     autogenerate: { directory: 'Djangoガイド' },
