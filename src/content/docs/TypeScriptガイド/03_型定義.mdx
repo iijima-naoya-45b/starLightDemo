@@ -559,7 +559,7 @@ const cache2: CacheOptions<User> = {
 
 TypeScriptが標準で提供するユーティリティ型は、既存の型を変換して新しい型を生成するのに役立ちます。これらを適切に使用することで、型の重複を避け、保守性の高いコードを書けます。
 
-### Partial<T>: すべてのプロパティをオプショナルに
+### Partial型: すべてのプロパティをオプショナルに
 
 **実践的なユースケース:**
 
@@ -592,7 +592,7 @@ const formState: UserFormState = {
 };
 ```
 
-### Required<T>: すべてのプロパティを必須に
+### Required型: すべてのプロパティを必須に
 
 **実践的なユースケース:**
 
@@ -617,7 +617,7 @@ const config = createConfig({ apiUrl: "https://custom.api.com" });
 console.log(config.timeout);  // 型安全: undefinedの可能性がない
 ```
 
-### Readonly<T>: すべてのプロパティを読み取り専用に
+### Readonly型: すべてのプロパティを読み取り専用に
 
 **実践的なユースケース:**
 
@@ -649,7 +649,7 @@ const config: Readonly<AppConfig> = {
 // config.apiUrl = "new";  // エラー: 読み取り専用
 ```
 
-### Pick<T, K>: 特定のプロパティを選択
+### Pick型: 特定のプロパティを選択
 
 **実践的なユースケース:**
 
@@ -686,7 +686,7 @@ const formData: UserFormData = {
 };
 ```
 
-### Omit<T, K>: 特定のプロパティを除外
+### Omit型: 特定のプロパティを除外
 
 **実践的なユースケース:**
 
@@ -708,7 +708,7 @@ function updateUser(id: number, updates: Partial<UserUpdate>): void {
 }
 ```
 
-### Record<K, T>: キーと値の型を指定したオブジェクト型
+### Record型: キーと値の型を指定したオブジェクト型
 
 **実践的なユースケース:**
 
@@ -735,7 +735,7 @@ const endpoints: ApiEndpoints = {
 };
 ```
 
-### Exclude<T, U> と Extract<T, U>
+### Exclude型とExtract型
 
 **実践的なユースケース:**
 
