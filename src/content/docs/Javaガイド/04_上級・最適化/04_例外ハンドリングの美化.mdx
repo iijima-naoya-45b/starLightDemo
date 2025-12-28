@@ -1,0 +1,1156 @@
+---
+title: "例外ハンドリングの美化"
+label: "例外ハンドリングの美化"
+---
+
+## 例外ハンドリングの美化
+
+適切な例外ハンドリングは、アプリケーションの堅牢性と保守性を向上させる重要な要素です。この章では、Spring Bootアプリケーションにおける例外ハンドリングのベストプラクティスと、エラーレスポンスを統一して美しくする方法について解説します。
+
+### なぜ例外ハンドリングが重要なのか
+
+#### 例外ハンドリングの本質的な価値
+
+**問題のあるコードの例:**
+
+```java
+// 問題1: 例外を無視する
+public User findUser(Long id) {
+    try {
+        return userRepository.findById(id);
+    } catch (Exception e) {
+        // 問題: 例外を無視してnullを返す
+        return null;
+    }
+}
+
+// 問題2: 汎用的な例外を投げる
+public void createUser(UserCreateRequest request) {
+    if (userRepository.existsByEmail(request.getEmail())) {
+        // 問題: 汎用的な例外で、呼び出し側が適切に処理できない
+        throw new RuntimeException("User already exists");
+    }
+    userRepository.save(convertToEntity(request));
+}
+
+// 問題3: 例外の情報が不足
+public void processOrder(OrderRequest request) {
+    try {
+        orderService.create(request);
+    } catch (Exception e) {
+        // 問題: どのようなエラーが発生したか分からない
+        log.error("Error occurred");
+        throw e;
+    }
+}
+```
+
+**適切な例外ハンドリングの価値:**
+
+```java
+// 1. エラーの種類を明確に表現
+public class UserNotFoundException extends ResourceNotFoundException {
+    public UserNotFoundException(Long id) {
+        super("User", id);
+        // 呼び出し側が適切に処理できる
+    }
+}
+
+// 2. エラーの原因を記録
+public void processOrder(OrderRequest request) {
+    try {
+        orderService.create(request);
+    } catch (OrderCreationException e) {
+        // 詳細な情報をログに記録
+        log.error("Failed to create order: orderId={}, customerId={}, amount={}", 
+            request.getOrderId(), request.getCustomerId(), request.getAmount(), e);
+        throw e;
+    }
+}
+
+// 3. エラーの回復戦略を実装
+public void processOrderWithRetry(OrderRequest request) {
+    int maxRetries = 3;
+    int retryCount = 0;
+    
+    while (retryCount < maxRetries) {
+        try {
+            orderService.create(request);
+            return;
+        } catch (TemporaryException e) {
+            retryCount++;
+            if (retryCount >= maxRetries) {
+                throw new OrderCreationFailedException("Failed after " + maxRetries + " retries", e);
+            }
+            // 指数バックオフでリトライ
+            sleep((long) Math.pow(2, retryCount) * 1000);
+        } catch (PermanentException e) {
+            // 永続的なエラーはリトライしない
+            throw new OrderCreationFailedException("Permanent error", e);
+        }
+    }
+}
+```
+
+#### 例外設計の原則
+
+**1. 例外の階層設計:**
+
+```java
+// 例外階層の設計原則
+// 
+// Throwable
+// ├── Error (システムエラー、通常はキャッチしない)
+// └── Exception
+//     ├── RuntimeException (実行時例外)
+//     │   ├── BusinessException (ビジネス例外)
+//     │   │   ├── ResourceNotFoundException
+//     │   │   ├── ValidationException
+//     │   │   └── DuplicateResourceException
+//     │   └── TechnicalException (技術的例外)
+//     │       ├── DatabaseException
+//     │       └── ExternalServiceException
+//     └── CheckedException (チェック例外、通常は使用しない)
+
+// 設計原則:
+// 1. ビジネス例外: ビジネスルール違反（呼び出し側が処理可能）
+// 2. 技術的例外: システムエラー（呼び出し側が処理困難）
+// 3. 例外の階層を適切に設計して、適切なハンドリングを可能にする
+```
+
+**2. 例外の情報設計:**
+
+```java
+// 例外に含めるべき情報
+public class OrderCreationException extends BusinessException {
+    private final Long orderId;
+    private final Long customerId;
+    private final BigDecimal amount;
+    private final String reason;
+    
+    public OrderCreationException(Long orderId, Long customerId, 
+                                 BigDecimal amount, String reason) {
+        super("ORDER_CREATION_FAILED", 
+            String.format("Failed to create order: %s", reason));
+        this.orderId = orderId;
+        this.customerId = customerId;
+        this.amount = amount;
+        this.reason = reason;
+    }
+    
+    // デバッグに必要な情報を提供
+    public String getDebugInfo() {
+        return String.format("OrderId: %d, CustomerId: %d, Amount: %s, Reason: %s",
+            orderId, customerId, amount, reason);
+    }
+}
+```
+
+**3. 例外の回復可能性:**
+
+```java
+// 回復可能な例外 vs 回復不可能な例外
+public abstract class BusinessException extends RuntimeException {
+    private final boolean recoverable;
+    
+    protected BusinessException(String errorCode, String message, boolean recoverable) {
+        super(message);
+        this.recoverable = recoverable;
+    }
+    
+    public boolean isRecoverable() {
+        return recoverable;
+    }
+}
+
+// 回復可能な例外: ユーザーが修正できる
+public class ValidationException extends BusinessException {
+    public ValidationException(String message, Map<String, String> fieldErrors) {
+        super("VALIDATION_ERROR", message, true);  // 回復可能
+        this.fieldErrors = fieldErrors;
+    }
+}
+
+// 回復不可能な例外: システム側の問題
+public class DatabaseException extends BusinessException {
+    public DatabaseException(String message, Throwable cause) {
+        super("DATABASE_ERROR", message, false);  // 回復不可能
+    }
+}
+```
+
+### カスタム例外クラスの作成
+
+まず、アプリケーション固有の例外クラスを階層的に定義します。
+
+```java
+// 基底例外クラス
+public class BusinessException extends RuntimeException {
+    private final String errorCode;
+    private final Object[] args;
+    
+    public BusinessException(String errorCode, String message) {
+        super(message);
+        this.errorCode = errorCode;
+        this.args = null;
+    }
+    
+    public BusinessException(String errorCode, String message, Object... args) {
+        super(message);
+        this.errorCode = errorCode;
+        this.args = args;
+    }
+    
+    public BusinessException(String errorCode, String message, Throwable cause) {
+        super(message, cause);
+        this.errorCode = errorCode;
+        this.args = null;
+    }
+    
+    public String getErrorCode() {
+        return errorCode;
+    }
+    
+    public Object[] getArgs() {
+        return args;
+    }
+}
+
+// リソースが見つからない場合の例外
+public class ResourceNotFoundException extends BusinessException {
+    public ResourceNotFoundException(String resourceName, Object identifier) {
+        super(
+            "RESOURCE_NOT_FOUND",
+            String.format("%s with identifier %s not found", resourceName, identifier),
+            resourceName,
+            identifier
+        );
+    }
+}
+
+// バリデーションエラーの例外
+public class ValidationException extends BusinessException {
+    private final Map<String, String> fieldErrors;
+    
+    public ValidationException(String message, Map<String, String> fieldErrors) {
+        super("VALIDATION_ERROR", message);
+        this.fieldErrors = fieldErrors;
+    }
+    
+    public Map<String, String> getFieldErrors() {
+        return fieldErrors;
+    }
+}
+
+// 認証エラーの例外
+public class AuthenticationException extends BusinessException {
+    public AuthenticationException(String message) {
+        super("AUTHENTICATION_ERROR", message);
+    }
+}
+
+// 認可エラーの例外
+public class AuthorizationException extends BusinessException {
+    public AuthorizationException(String message) {
+        super("AUTHORIZATION_ERROR", message);
+    }
+}
+
+// 重複リソースの例外
+public class DuplicateResourceException extends BusinessException {
+    public DuplicateResourceException(String resourceName, Object identifier) {
+        super(
+            "DUPLICATE_RESOURCE",
+            String.format("%s with identifier %s already exists", resourceName, identifier),
+            resourceName,
+            identifier
+        );
+    }
+}
+```
+
+### エラーレスポンスDTOの作成
+
+統一されたエラーレスポンス形式を定義します。
+
+```java
+public class ErrorResponse {
+    private String timestamp;
+    private int status;
+    private String error;
+    private String errorCode;
+    private String message;
+    private String path;
+    private Map<String, Object> details;
+    private List<FieldError> fieldErrors;
+    
+    // コンストラクタ
+    public ErrorResponse() {
+        this.timestamp = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+    }
+    
+    public ErrorResponse(int status, String error, String errorCode, String message, String path) {
+        this();
+        this.status = status;
+        this.error = error;
+        this.errorCode = errorCode;
+        this.message = message;
+        this.path = path;
+    }
+    
+    // ビルダーパターン
+    public static ErrorResponseBuilder builder() {
+        return new ErrorResponseBuilder();
+    }
+    
+    public static class ErrorResponseBuilder {
+        private ErrorResponse errorResponse;
+        
+        public ErrorResponseBuilder() {
+            this.errorResponse = new ErrorResponse();
+        }
+        
+        public ErrorResponseBuilder status(int status) {
+            this.errorResponse.status = status;
+            return this;
+        }
+        
+        public ErrorResponseBuilder error(String error) {
+            this.errorResponse.error = error;
+            return this;
+        }
+        
+        public ErrorResponseBuilder errorCode(String errorCode) {
+            this.errorResponse.errorCode = errorCode;
+            return this;
+        }
+        
+        public ErrorResponseBuilder message(String message) {
+            this.errorResponse.message = message;
+            return this;
+        }
+        
+        public ErrorResponseBuilder path(String path) {
+            this.errorResponse.path = path;
+            return this;
+        }
+        
+        public ErrorResponseBuilder details(Map<String, Object> details) {
+            this.errorResponse.details = details;
+            return this;
+        }
+        
+        public ErrorResponseBuilder fieldErrors(List<FieldError> fieldErrors) {
+            this.errorResponse.fieldErrors = fieldErrors;
+            return this;
+        }
+        
+        public ErrorResponse build() {
+            return this.errorResponse;
+        }
+    }
+    
+    // getter/setter
+    public String getTimestamp() {
+        return timestamp;
+    }
+    
+    public void setTimestamp(String timestamp) {
+        this.timestamp = timestamp;
+    }
+    
+    public int getStatus() {
+        return status;
+    }
+    
+    public void setStatus(int status) {
+        this.status = status;
+    }
+    
+    public String getError() {
+        return error;
+    }
+    
+    public void setError(String error) {
+        this.error = error;
+    }
+    
+    public String getErrorCode() {
+        return errorCode;
+    }
+    
+    public void setErrorCode(String errorCode) {
+        this.errorCode = errorCode;
+    }
+    
+    public String getMessage() {
+        return message;
+    }
+    
+    public void setMessage(String message) {
+        this.message = message;
+    }
+    
+    public String getPath() {
+        return path;
+    }
+    
+    public void setPath(String path) {
+        this.path = path;
+    }
+    
+    public Map<String, Object> getDetails() {
+        return details;
+    }
+    
+    public void setDetails(Map<String, Object> details) {
+        this.details = details;
+    }
+    
+    public List<FieldError> getFieldErrors() {
+        return fieldErrors;
+    }
+    
+    public void setFieldErrors(List<FieldError> fieldErrors) {
+        this.fieldErrors = fieldErrors;
+    }
+}
+
+// フィールドエラー用のクラス
+public class FieldError {
+    private String field;
+    private Object rejectedValue;
+    private String message;
+    
+    public FieldError(String field, Object rejectedValue, String message) {
+        this.field = field;
+        this.rejectedValue = rejectedValue;
+        this.message = message;
+    }
+    
+    // getter/setter
+    public String getField() {
+        return field;
+    }
+    
+    public void setField(String field) {
+        this.field = field;
+    }
+    
+    public Object getRejectedValue() {
+        return rejectedValue;
+    }
+    
+    public void setRejectedValue(Object rejectedValue) {
+        this.rejectedValue = rejectedValue;
+    }
+    
+    public String getMessage() {
+        return message;
+    }
+    
+    public void setMessage(String message) {
+        this.message = message;
+    }
+}
+```
+
+### グローバル例外ハンドラーの実装
+
+`@ControllerAdvice`を使用して、アプリケーション全体の例外を一元管理します。
+
+```java
+@RestControllerAdvice
+@Slf4j
+public class GlobalExceptionHandler {
+    
+    private static final String INTERNAL_SERVER_ERROR_MESSAGE = "An unexpected error occurred";
+    
+    // カスタムビジネス例外のハンドリング
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<ErrorResponse> handleBusinessException(
+            BusinessException ex,
+            HttpServletRequest request) {
+        
+        log.error("Business exception occurred: errorCode={}, message={}, path={}",
+                ex.getErrorCode(), ex.getMessage(), request.getRequestURI(), ex);
+        
+        HttpStatus status = determineHttpStatus(ex);
+        
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(status.value())
+                .error(status.getReasonPhrase())
+                .errorCode(ex.getErrorCode())
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .build();
+        
+        return ResponseEntity.status(status).body(errorResponse);
+    }
+    
+    // リソースが見つからない場合
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleResourceNotFoundException(
+            ResourceNotFoundException ex,
+            HttpServletRequest request) {
+        
+        log.warn("Resource not found: errorCode={}, message={}, path={}",
+                ex.getErrorCode(), ex.getMessage(), request.getRequestURI());
+        
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.NOT_FOUND.value())
+                .error(HttpStatus.NOT_FOUND.getReasonPhrase())
+                .errorCode(ex.getErrorCode())
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .build();
+        
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+    }
+    
+    // バリデーションエラー
+    @ExceptionHandler(ValidationException.class)
+    public ResponseEntity<ErrorResponse> handleValidationException(
+            ValidationException ex,
+            HttpServletRequest request) {
+        
+        log.warn("Validation error: errorCode={}, message={}, path={}",
+                ex.getErrorCode(), ex.getMessage(), request.getRequestURI());
+        
+        List<FieldError> fieldErrors = ex.getFieldErrors().entrySet().stream()
+                .map(entry -> new FieldError(entry.getKey(), null, entry.getValue()))
+                .collect(Collectors.toList());
+        
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
+                .errorCode(ex.getErrorCode())
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .fieldErrors(fieldErrors)
+                .build();
+        
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    }
+    
+    // Springのバリデーションエラー（@Valid）
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ErrorResponse> handleMethodArgumentNotValid(
+            MethodArgumentNotValidException ex,
+            HttpServletRequest request) {
+        
+        log.warn("Method argument validation failed: path={}", request.getRequestURI());
+        
+        List<FieldError> fieldErrors = ex.getBindingResult().getFieldErrors().stream()
+                .map(error -> new FieldError(
+                        error.getField(),
+                        error.getRejectedValue(),
+                        error.getDefaultMessage()))
+                .collect(Collectors.toList());
+        
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
+                .errorCode("VALIDATION_ERROR")
+                .message("Validation failed")
+                .path(request.getRequestURI())
+                .fieldErrors(fieldErrors)
+                .build();
+        
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    }
+    
+    // リクエストボディのバリデーションエラー
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleHttpMessageNotReadable(
+            HttpMessageNotReadableException ex,
+            HttpServletRequest request) {
+        
+        log.warn("HTTP message not readable: path={}", request.getRequestURI(), ex);
+        
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
+                .errorCode("INVALID_REQUEST_BODY")
+                .message("Request body is invalid or malformed")
+                .path(request.getRequestURI())
+                .build();
+        
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    }
+    
+    // 認証エラー
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ErrorResponse> handleAuthenticationException(
+            AuthenticationException ex,
+            HttpServletRequest request) {
+        
+        log.warn("Authentication failed: errorCode={}, message={}, path={}",
+                ex.getErrorCode(), ex.getMessage(), request.getRequestURI());
+        
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.UNAUTHORIZED.value())
+                .error(HttpStatus.UNAUTHORIZED.getReasonPhrase())
+                .errorCode(ex.getErrorCode())
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .build();
+        
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
+    }
+    
+    // 認可エラー
+    @ExceptionHandler(AuthorizationException.class)
+    public ResponseEntity<ErrorResponse> handleAuthorizationException(
+            AuthorizationException ex,
+            HttpServletRequest request) {
+        
+        log.warn("Authorization failed: errorCode={}, message={}, path={}",
+                ex.getErrorCode(), ex.getMessage(), request.getRequestURI());
+        
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.FORBIDDEN.value())
+                .error(HttpStatus.FORBIDDEN.getReasonPhrase())
+                .errorCode(ex.getErrorCode())
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .build();
+        
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
+    }
+    
+    // 重複リソース
+    @ExceptionHandler(DuplicateResourceException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateResourceException(
+            DuplicateResourceException ex,
+            HttpServletRequest request) {
+        
+        log.warn("Duplicate resource: errorCode={}, message={}, path={}",
+                ex.getErrorCode(), ex.getMessage(), request.getRequestURI());
+        
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.CONFLICT.value())
+                .error(HttpStatus.CONFLICT.getReasonPhrase())
+                .errorCode(ex.getErrorCode())
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .build();
+        
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(errorResponse);
+    }
+    
+    // データアクセス例外（JPA/Hibernate）
+    @ExceptionHandler({DataAccessException.class, PersistenceException.class})
+    public ResponseEntity<ErrorResponse> handleDataAccessException(
+            Exception ex,
+            HttpServletRequest request) {
+        
+        log.error("Data access error: path={}", request.getRequestURI(), ex);
+        
+        String message = "A database error occurred";
+        if (ex instanceof DataIntegrityViolationException) {
+            message = "Data integrity violation: " + ex.getCause().getMessage();
+        }
+        
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.CONFLICT.value())
+                .error(HttpStatus.CONFLICT.getReasonPhrase())
+                .errorCode("DATA_ACCESS_ERROR")
+                .message(message)
+                .path(request.getRequestURI())
+                .build();
+        
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(errorResponse);
+    }
+    
+    // その他の予期しない例外
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleGenericException(
+            Exception ex,
+            HttpServletRequest request) {
+        
+        log.error("Unexpected error: path={}", request.getRequestURI(), ex);
+        
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                .error(HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase())
+                .errorCode("INTERNAL_SERVER_ERROR")
+                .message(INTERNAL_SERVER_ERROR_MESSAGE)
+                .path(request.getRequestURI())
+                .build();
+        
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+    }
+    
+    // 例外の種類に応じてHTTPステータスを決定
+    private HttpStatus determineHttpStatus(BusinessException ex) {
+        if (ex instanceof ResourceNotFoundException) {
+            return HttpStatus.NOT_FOUND;
+        } else if (ex instanceof ValidationException) {
+            return HttpStatus.BAD_REQUEST;
+        } else if (ex instanceof AuthenticationException) {
+            return HttpStatus.UNAUTHORIZED;
+        } else if (ex instanceof AuthorizationException) {
+            return HttpStatus.FORBIDDEN;
+        } else if (ex instanceof DuplicateResourceException) {
+            return HttpStatus.CONFLICT;
+        } else {
+            return HttpStatus.INTERNAL_SERVER_ERROR;
+        }
+    }
+}
+```
+
+### サービスクラスでの例外の使用例
+
+```java
+@Service
+@Transactional
+public class UserService {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    public User findUserById(Long id) {
+        return userRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User", id));
+    }
+    
+    public User createUser(UserCreateRequest request) {
+        // 重複チェック
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new DuplicateResourceException("User", request.getEmail());
+        }
+        
+        // バリデーション
+        Map<String, String> errors = validateUserRequest(request);
+        if (!errors.isEmpty()) {
+            throw new ValidationException("User validation failed", errors);
+        }
+        
+        User user = new User();
+        user.setName(request.getName());
+        user.setEmail(request.getEmail());
+        return userRepository.save(user);
+    }
+    
+    public User updateUser(Long id, UserUpdateRequest request) {
+        User user = findUserById(id);  // ResourceNotFoundExceptionがスローされる可能性がある
+        
+        if (request.getName() != null) {
+            user.setName(request.getName());
+        }
+        if (request.getEmail() != null) {
+            if (!user.getEmail().equals(request.getEmail()) && 
+                userRepository.existsByEmail(request.getEmail())) {
+                throw new DuplicateResourceException("User", request.getEmail());
+            }
+            user.setEmail(request.getEmail());
+        }
+        
+        return userRepository.save(user);
+    }
+    
+    private Map<String, String> validateUserRequest(UserCreateRequest request) {
+        Map<String, String> errors = new HashMap<>();
+        
+        if (request.getName() == null || request.getName().trim().isEmpty()) {
+            errors.put("name", "Name is required");
+        }
+        
+        if (request.getEmail() == null || !isValidEmail(request.getEmail())) {
+            errors.put("email", "Valid email is required");
+        }
+        
+        return errors;
+    }
+    
+    private boolean isValidEmail(String email) {
+        return email.matches("^[A-Za-z0-9+_.-]+@(.+)$");
+    }
+}
+```
+
+### エラーメッセージの国際化（i18n）
+
+エラーメッセージを多言語対応にする場合。
+
+```java
+@Component
+public class ErrorMessageResolver {
+    
+    @Autowired
+    private MessageSource messageSource;
+    
+    public String resolve(String errorCode, Object... args) {
+        try {
+            return messageSource.getMessage(errorCode, args, LocaleContextHolder.getLocale());
+        } catch (NoSuchMessageException e) {
+            return errorCode;
+        }
+    }
+}
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+    
+    @Autowired
+    private ErrorMessageResolver errorMessageResolver;
+    
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<ErrorResponse> handleBusinessException(
+            BusinessException ex,
+            HttpServletRequest request) {
+        
+        String localizedMessage = errorMessageResolver.resolve(
+                ex.getErrorCode(), 
+                ex.getArgs() != null ? ex.getArgs() : new Object[0]
+        );
+        
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
+                .errorCode(ex.getErrorCode())
+                .message(localizedMessage)
+                .path(request.getRequestURI())
+                .build();
+        
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    }
+}
+```
+
+### ロギングの改善
+
+詳細なエラー情報をログに記録します。
+
+```java
+@RestControllerAdvice
+@Slf4j
+public class GlobalExceptionHandler {
+    
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleGenericException(
+            Exception ex,
+            HttpServletRequest request) {
+        
+        // リクエスト情報を含めてログに記録
+        MDC.put("requestId", UUID.randomUUID().toString());
+        MDC.put("path", request.getRequestURI());
+        MDC.put("method", request.getMethod());
+        
+        log.error("Unexpected error occurred: requestId={}, path={}, method={}, error={}",
+                MDC.get("requestId"),
+                request.getRequestURI(),
+                request.getMethod(),
+                ex.getClass().getName(),
+                ex);
+        
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                .error(HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase())
+                .errorCode("INTERNAL_SERVER_ERROR")
+                .message(INTERNAL_SERVER_ERROR_MESSAGE)
+                .path(request.getRequestURI())
+                .build();
+        
+        MDC.clear();
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+    }
+}
+```
+
+### 例外ハンドリングの設計判断
+
+#### チェック例外 vs 実行時例外
+
+**Javaの例外設計の歴史:**
+
+```java
+// Java 1.0: チェック例外が推奨されていた
+public void readFile(String filename) throws IOException {
+    // 呼び出し側が必ず例外を処理する必要がある
+    FileReader reader = new FileReader(filename);
+}
+
+// 問題: チェック例外の過度な使用
+public void processData() throws IOException, SQLException, ParseException {
+    // 問題: 呼び出し側が多くの例外を処理する必要がある
+    // 問題: 例外の伝播が複雑になる
+}
+
+// 現代のJava: 実行時例外が推奨
+public void readFile(String filename) {
+    try {
+        FileReader reader = new FileReader(filename);
+    } catch (IOException e) {
+        // 実行時例外にラップ
+        throw new FileReadException("Failed to read file: " + filename, e);
+    }
+}
+
+// 設計原則:
+// 1. チェック例外: 呼び出し側が回復可能な場合のみ使用
+// 2. 実行時例外: 通常は実行時例外を使用（コードが簡潔になる）
+```
+
+#### 例外の伝播戦略
+
+**例外の伝播の判断:**
+
+```java
+// 問題のあるコード: 例外を不適切にキャッチ
+public User findUser(Long id) {
+    try {
+        return userRepository.findById(id).orElseThrow();
+    } catch (Exception e) {
+        // 問題: すべての例外をキャッチして無視
+        log.error("Error", e);
+        return null;  // 呼び出し側がnullチェックが必要
+    }
+}
+
+// 解決1: 例外を伝播させる（推奨）
+public User findUser(Long id) {
+    // 例外をそのまま伝播させる
+    return userRepository.findById(id)
+        .orElseThrow(() -> new UserNotFoundException(id));
+    // 呼び出し側が適切に処理できる
+}
+
+// 解決2: 例外を変換する
+public User findUser(Long id) {
+    try {
+        return userRepository.findById(id).orElseThrow();
+    } catch (DataAccessException e) {
+        // 技術的例外をビジネス例外に変換
+        throw new UserNotFoundException(id, e);
+    }
+}
+
+// 解決3: 例外をログに記録してから伝播
+public void processOrder(OrderRequest request) {
+    try {
+        orderService.create(request);
+    } catch (OrderCreationException e) {
+        // ログに記録してから再スロー
+        log.error("Failed to create order: request={}", request, e);
+        throw e;  // 呼び出し側に処理を委譲
+    }
+}
+```
+
+#### 例外ハンドリングのパターン
+
+**1. Fail-Fastパターン:**
+
+```java
+// 早期に例外を投げる
+public void createOrder(OrderRequest request) {
+    // バリデーションを最初に実行
+    validateOrderRequest(request);
+    
+    // 問題があれば即座に例外を投げる
+    if (request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+        throw new ValidationException("Amount must be greater than 0");
+    }
+    
+    // バリデーション通過後のみ処理を続行
+    Order order = orderRepository.save(createOrder(request));
+}
+```
+
+**2. Try-Resourceパターン:**
+
+```java
+// リソース管理と例外ハンドリングを統合
+public void processFile(String filename) {
+    try (BufferedReader reader = Files.newBufferedReader(Paths.get(filename))) {
+        String line;
+        while ((line = reader.readLine()) != null) {
+            processLine(line);
+        }
+    } catch (IOException e) {
+        // リソースは自動的にクローズされる
+        throw new FileProcessingException("Failed to process file: " + filename, e);
+    }
+}
+```
+
+**3. Circuit Breakerパターン:**
+
+```java
+// 外部サービスの障害から保護
+@Component
+public class ExternalServiceClient {
+    private final CircuitBreaker circuitBreaker;
+    private int failureCount = 0;
+    private long lastFailureTime = 0;
+    
+    public ExternalServiceClient() {
+        this.circuitBreaker = CircuitBreaker.of("external-service", 
+            CircuitBreakerConfig.custom()
+                .failureRateThreshold(50)
+                .waitDurationInOpenState(Duration.ofSeconds(30))
+                .build());
+    }
+    
+    public String callExternalService(String data) {
+        return circuitBreaker.executeSupplier(() -> {
+            try {
+                return externalService.call(data);
+            } catch (Exception e) {
+                failureCount++;
+                lastFailureTime = System.currentTimeMillis();
+                
+                // 失敗率が閾値を超えたら回路を開く
+                if (failureCount > 10) {
+                    throw new CircuitBreakerOpenException("Circuit breaker is open");
+                }
+                
+                throw new ExternalServiceException("External service call failed", e);
+            }
+        });
+    }
+}
+```
+
+### エラーレスポンス設計の意思決定
+
+#### RESTful APIのエラーレスポンス設計
+
+**HTTPステータスコードの選択:**
+
+```java
+// 適切なHTTPステータスコードの選択
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+    
+    // 400 Bad Request: クライアントのリクエストが不正
+    @ExceptionHandler(ValidationException.class)
+    public ResponseEntity<ErrorResponse> handleValidation(ValidationException ex) {
+        return ResponseEntity.badRequest()
+            .body(createErrorResponse(ex, HttpStatus.BAD_REQUEST));
+    }
+    
+    // 401 Unauthorized: 認証が必要
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ErrorResponse> handleAuthentication(AuthenticationException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+            .body(createErrorResponse(ex, HttpStatus.UNAUTHORIZED));
+    }
+    
+    // 403 Forbidden: 認証済みだが権限がない
+    @ExceptionHandler(AuthorizationException.class)
+    public ResponseEntity<ErrorResponse> handleAuthorization(AuthorizationException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+            .body(createErrorResponse(ex, HttpStatus.FORBIDDEN));
+    }
+    
+    // 404 Not Found: リソースが見つからない
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(createErrorResponse(ex, HttpStatus.NOT_FOUND));
+    }
+    
+    // 409 Conflict: リソースの競合（重複など）
+    @ExceptionHandler(DuplicateResourceException.class)
+    public ResponseEntity<ErrorResponse> handleConflict(DuplicateResourceException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(createErrorResponse(ex, HttpStatus.CONFLICT));
+    }
+    
+    // 429 Too Many Requests: レート制限
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ErrorResponse> handleRateLimit(RateLimitExceededException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+            .header("Retry-After", String.valueOf(ex.getRetryAfterSeconds()))
+            .body(createErrorResponse(ex, HttpStatus.TOO_MANY_REQUESTS));
+    }
+    
+    // 500 Internal Server Error: サーバー側のエラー
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleGeneric(Exception ex) {
+        // 本番環境では詳細なエラー情報を返さない
+        String message = isProduction() 
+            ? "An internal error occurred" 
+            : ex.getMessage();
+        
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+            .body(ErrorResponse.builder()
+                .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                .error("Internal Server Error")
+                .message(message)
+                .build());
+    }
+}
+```
+
+#### エラーレスポンスの構造設計
+
+**統一されたエラーレスポンス形式:**
+
+```java
+// エラーレスポンスの設計原則
+public class ErrorResponse {
+    // 1. HTTPステータスコード（必須）
+    private int status;
+    
+    // 2. エラーコード（アプリケーション固有、必須）
+    private String errorCode;
+    
+    // 3. エラーメッセージ（人間が読める、必須）
+    private String message;
+    
+    // 4. 詳細情報（オプション）
+    private Map<String, Object> details;
+    
+    // 5. フィールドレベルのエラー（バリデーションエラー用）
+    private Map<String, String> fieldErrors;
+    
+    // 6. タイムスタンプ（デバッグ用）
+    private LocalDateTime timestamp;
+    
+    // 7. リクエストパス（デバッグ用）
+    private String path;
+    
+    // 8. トレースID（ログと関連付けるため）
+    private String traceId;
+}
+
+// 使用例
+{
+    "status": 400,
+    "errorCode": "VALIDATION_ERROR",
+    "message": "Validation failed",
+    "fieldErrors": {
+        "email": "Invalid email format",
+        "age": "Age must be between 18 and 100"
+    },
+    "timestamp": "2024-01-15T10:30:00",
+    "path": "/api/users",
+    "traceId": "abc123"
+}
+```
+
+### まとめ
+
+例外ハンドリングの深い理解において重要なポイント：
+
+1. **例外の階層設計**: ビジネス例外と技術的例外を適切に分離
+2. **例外の情報設計**: デバッグに必要な情報を適切に含める
+3. **例外の伝播戦略**: 適切な層で例外を処理する
+4. **エラーレスポンス設計**: 統一された形式でエラー情報を提供
+5. **HTTPステータスコード**: RESTful APIの原則に従った適切な選択
+
+**シニアエンジニアとして考慮すべき点:**
+
+- **ユーザー体験**: エラーメッセージがユーザーにとって理解しやすいか
+- **デバッグの容易さ**: エラー情報がデバッグに十分か
+- **セキュリティ**: 機密情報がエラーレスポンスに含まれていないか
+- **一貫性**: アプリケーション全体で一貫したエラーハンドリングが実装されているか
+- **監視とアラート**: エラーが適切に監視され、アラートが設定されているか
+
+これらの実装により、統一されたエラーレスポンス形式で、詳細なエラー情報を提供できるようになります。これにより、フロントエンド開発者やAPI利用者がエラーを理解しやすくなり、デバッグも容易になります。
+

@@ -4,16 +4,271 @@ sidebar:
     label: 型定義
 ---
 
+## TypeScriptの型定義：実践的な理解
+
+TypeScriptの型システムは、単なる型注釈ではなく、アプリケーションの設計と保守性を向上させる強力なツールです。この章では、各型の本質的な意味と実践的なユースケースを深く解説します。
+
+### なぜ型定義が重要なのか
+
+#### 型安全性の本質的な価値
+
+**問題のあるコード（JavaScript）:**
+
+```javascript
+// 問題: 実行時までエラーが発見されない
+function calculateTotal(items) {
+  return items.reduce((sum, item) => sum + item.price, 0);
+}
+
+// 実行時にエラーが発生
+calculateTotal([{ price: 100 }, { price: "200" }]); // "100200" という文字列が返される
+calculateTotal(null); // TypeError: Cannot read property 'reduce' of null
+```
+
+**解決: TypeScriptの型定義**
+
+```typescript
+// 解決: コンパイル時にエラーを発見
+interface CartItem {
+  price: number;
+  name: string;
+}
+
+function calculateTotal(items: CartItem[]): number {
+  return items.reduce((sum, item) => sum + item.price, 0);
+}
+
+// コンパイル時にエラーが検出される
+calculateTotal([{ price: 100 }, { price: "200" }]); // エラー: priceはnumber型である必要がある
+calculateTotal(null); // エラー: nullは配列ではない
+```
+
+**型定義がもたらす価値:**
+
+1. **早期のバグ発見**: コンパイル時にエラーを検出
+2. **自己文書化**: コードが型情報を含むため、ドキュメントとして機能
+3. **IDE支援**: 自動補完、リファクタリングの安全性
+4. **チーム開発**: インターフェースが明確になり、コミュニケーションが向上
+
 ## 1. プリミティブ型と基本型 🧱
 
-TypeScriptの型定義の基本となるものです。
+TypeScriptの型定義の基本となるものです。各型の実践的な使い方を理解することが重要です。
 
-- `string`: 文字列型です。"hello"や"world"などのテキストデータに使用します。
-- `number`: 数値型です。100や3.14などの整数、浮動小数点数に使用します。
-- `boolean`: 真偽値型です。`true`または`false`のどちらかです。
-- `null` と `undefined`: それぞれ、`null`と`undefined`を表します。
-- `any`: どのような型でも受け入れます。型チェックを無効にするため、できるだけ使用を避けるべきです。
-- `void`: 関数の戻り値がないことを示します。
+### string: 文字列型
+
+**基本的な使い方:**
+
+```typescript
+const name: string = "Alice";
+const message: string = `Hello, ${name}!`;
+```
+
+**実践的なユースケース:**
+
+```typescript
+// ユースケース1: APIレスポンスの型定義
+interface ApiResponse {
+  status: string;  // "success" | "error"
+  message: string;
+  data: unknown;
+}
+
+// ユースケース2: リテラル型との組み合わせ
+type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
+
+function makeRequest(method: HttpMethod, url: string) {
+  // methodは特定の文字列のみを受け入れる
+  fetch(url, { method });
+}
+
+makeRequest("GET", "/api/users");  // OK
+makeRequest("PATCH", "/api/users");  // エラー: "PATCH"は許可されていない
+```
+
+### number: 数値型
+
+**基本的な使い方:**
+
+```typescript
+const age: number = 30;
+const price: number = 99.99;
+```
+
+**実践的なユースケース:**
+
+```typescript
+// ユースケース1: 金額の計算（精度が重要な場合）
+// 問題: 浮動小数点数の精度エラー
+const total = 0.1 + 0.2;  // 0.30000000000000004
+
+// 解決: 整数として扱う（セント単位）
+type Cents = number;  // セント単位の金額
+
+function addCents(a: Cents, b: Cents): Cents {
+  return a + b;
+}
+
+const totalCents = addCents(10, 20);  // 30セント
+
+// ユースケース2: 範囲を制限する型
+type Percentage = number & { readonly __brand: unique symbol };
+
+function createPercentage(value: number): Percentage {
+  if (value < 0 || value > 100) {
+    throw new Error("Percentage must be between 0 and 100");
+  }
+  return value as Percentage;
+}
+
+function applyDiscount(price: number, discount: Percentage): number {
+  return price * (1 - discount / 100);
+}
+```
+
+### boolean: 真偽値型
+
+**基本的な使い方:**
+
+```typescript
+const isActive: boolean = true;
+const isCompleted: boolean = false;
+```
+
+**実践的なユースケース:**
+
+```typescript
+// ユースケース1: フラグの管理
+interface User {
+  id: number;
+  name: string;
+  isActive: boolean;
+  isEmailVerified: boolean;
+}
+
+function canLogin(user: User): boolean {
+  return user.isActive && user.isEmailVerified;
+}
+
+// ユースケース2: 条件付き型との組み合わせ
+type NonNullable<T> = T extends null | undefined ? never : T;
+
+function processValue<T>(value: T): NonNullable<T> {
+  if (value === null || value === undefined) {
+    throw new Error("Value cannot be null or undefined");
+  }
+  return value;
+}
+```
+
+### null と undefined: 空値の表現
+
+**重要な区別:**
+
+```typescript
+// null: 意図的に空であることを示す
+let user: User | null = null;  // まだユーザーが設定されていない
+
+// undefined: 値が設定されていないことを示す
+let count: number | undefined;  // 初期化されていない
+
+// 実践的な使い分け
+interface ApiResponse<T> {
+  data: T | null;      // APIが明示的にnullを返す場合
+  error?: string;      // エラーはオプショナル（undefinedの可能性）
+}
+```
+
+**実践的なユースケース:**
+
+```typescript
+// ユースケース1: オプショナルチェーンとの組み合わせ
+interface User {
+  name: string;
+  address?: {
+    street: string;
+    city: string;
+  };
+}
+
+function getUserCity(user: User): string | undefined {
+  return user.address?.city;  // undefinedの可能性がある
+}
+
+// ユースケース2: null合体演算子との組み合わせ
+function getDisplayName(user: User | null): string {
+  return user?.name ?? "Guest";  // nullまたはundefinedの場合にデフォルト値を使用
+}
+```
+
+### any: 型チェックの回避（非推奨）
+
+**なぜanyを避けるべきか:**
+
+```typescript
+// 問題のあるコード: anyの使用
+function processData(data: any) {
+  return data.value + data.count;  // 実行時エラーの可能性
+}
+
+processData({ value: "hello", count: 5 });  // "hello5" という予期しない結果
+
+// 解決: 適切な型定義
+interface Data {
+  value: number;
+  count: number;
+}
+
+function processData(data: Data): number {
+  return data.value + data.count;  // 型安全
+}
+```
+
+**anyの代替手段:**
+
+```typescript
+// 1. unknownを使用（より安全）
+function processUnknown(data: unknown) {
+  if (typeof data === 'object' && data !== null && 'value' in data) {
+    // 型ガードで安全に処理
+    return (data as { value: number }).value;
+  }
+  throw new Error("Invalid data");
+}
+
+// 2. ジェネリクスを使用
+function processGeneric<T extends { value: number }>(data: T): number {
+  return data.value;
+}
+```
+
+### void: 戻り値がない関数
+
+**基本的な使い方:**
+
+```typescript
+function logMessage(message: string): void {
+  console.log(message);
+  // 明示的なreturnがない
+}
+```
+
+**実践的なユースケース:**
+
+```typescript
+// ユースケース1: イベントハンドラー
+type ClickHandler = (event: MouseEvent) => void;
+
+const handleClick: ClickHandler = (event) => {
+  console.log("Clicked", event.clientX, event.clientY);
+  // void型なので、戻り値は使用されない
+};
+
+// ユースケース2: 副作用のみの関数
+function updateLocalStorage(key: string, value: string): void {
+  localStorage.setItem(key, value);
+  // 戻り値は不要
+}
+```
 
 ## 2. 配列とオブジェクト 📦
 
@@ -121,51 +376,388 @@ interface Shape {
 
 ジェネリクスは、再利用可能なコンポーネントを作成するための強力なツールです。特定の型に縛られることなく、複数の型に対応できる関数やクラスを定義できます。これにより、コードの柔軟性と型安全性の両方を高めることができます。
 
-ジェネリクスは、通常、山括弧 `< >` を使って定義し、型を表すために大文字のアルファベット（例：`T`）を使用します。
+### なぜジェネリクスが必要なのか
 
-### 例：ジェネリクス関数
-
-以下の関数は、引数として受け取った値をそのまま返す関数ですが、ジェネリクスを使うことで、入力と出力の型を動的に設定できます。
+**問題のあるコード（型の重複）:**
 
 ```typescript
-function identity<T>(arg: T): T {
-  return arg;
+// 問題: 同じロジックを複数の型で重複定義
+function getFirstString(items: string[]): string {
+  return items[0];
 }
 
-// string 型として推論される
-let output1 = identity<string>("myString");
+function getFirstNumber(items: number[]): number {
+  return items[0];
+}
 
-// number 型として推論される
-let output2 = identity<number>(100);
+function getFirstUser(items: User[]): User {
+  return items[0];
+}
+
+// 解決: ジェネリクスで1つの関数に統一
+function getFirst<T>(items: T[]): T {
+  return items[0];
+}
+
+// すべての型で使用可能
+const firstString = getFirst<string>(["a", "b", "c"]);
+const firstNumber = getFirst<number>([1, 2, 3]);
+const firstUser = getFirst<User>([user1, user2]);
+```
+
+### 実践的なユースケース
+
+**ユースケース1: APIレスポンスの型安全な処理**
+
+```typescript
+// ジェネリクスでAPIレスポンスを型安全に
+interface ApiResponse<T> {
+  data: T;
+  status: number;
+  message: string;
+}
+
+async function fetchData<T>(url: string): Promise<ApiResponse<T>> {
+  const response = await fetch(url);
+  const json = await response.json();
+  return json as ApiResponse<T>;
+}
+
+// 使用例: 型が推論される
+interface User {
+  id: number;
+  name: string;
+}
+
+const userResponse = await fetchData<User>("/api/users/1");
+// userResponse.dataはUser型として推論される
+console.log(userResponse.data.name);  // 型安全
+```
+
+**ユースケース2: 状態管理ライブラリの実装**
+
+```typescript
+// ジェネリクスで型安全なストアを実装
+class Store<T> {
+  private state: T;
+  private listeners: Array<(state: T) => void> = [];
+
+  constructor(initialState: T) {
+    this.state = initialState;
+  }
+
+  getState(): T {
+    return this.state;
+  }
+
+  setState(newState: T): void {
+    this.state = newState;
+    this.listeners.forEach(listener => listener(this.state));
+  }
+
+  subscribe(listener: (state: T) => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
+  }
+}
+
+// 使用例: 型が推論される
+interface AppState {
+  user: User | null;
+  theme: "light" | "dark";
+}
+
+const store = new Store<AppState>({
+  user: null,
+  theme: "light"
+});
+
+// store.getState()はAppState型として推論される
+const state = store.getState();
+console.log(state.user?.name);  // 型安全
+```
+
+**ユースケース3: 制約付きジェネリクス**
+
+```typescript
+// ジェネリクスに制約を追加
+interface HasId {
+  id: number;
+}
+
+function updateById<T extends HasId>(items: T[], id: number, updates: Partial<T>): T[] {
+  return items.map(item => 
+    item.id === id ? { ...item, ...updates } : item
+  );
+}
+
+// 使用例: HasIdを実装している型のみ使用可能
+interface Product extends HasId {
+  name: string;
+  price: number;
+}
+
+const products: Product[] = [
+  { id: 1, name: "Laptop", price: 1000 },
+  { id: 2, name: "Mouse", price: 20 }
+];
+
+const updated = updateById(products, 1, { price: 900 });
+// updatedはProduct[]型として推論される
+```
+
+**ユースケース4: 複数の型パラメータ**
+
+```typescript
+// 複数の型パラメータを使用
+function mapArray<T, U>(
+  array: T[],
+  mapper: (item: T, index: number) => U
+): U[] {
+  return array.map(mapper);
+}
+
+// 使用例
+const numbers = [1, 2, 3];
+const strings = mapArray(numbers, (n) => n.toString());
+// stringsはstring[]型として推論される
+
+const users: User[] = [
+  { id: 1, name: "Alice" },
+  { id: 2, name: "Bob" }
+];
+const names = mapArray(users, (user) => user.name);
+// namesはstring[]型として推論される
+```
+
+**ユースケース5: デフォルト型パラメータ**
+
+```typescript
+// デフォルト型パラメータを使用
+interface CacheOptions<T = any> {
+  key: string;
+  value: T;
+  ttl?: number;
+}
+
+// デフォルト型を使用
+const cache1: CacheOptions = {
+  key: "user",
+  value: "any型"
+};
+
+// 明示的に型を指定
+const cache2: CacheOptions<User> = {
+  key: "user",
+  value: { id: 1, name: "Alice" }
+};
 ```
 
 ## 6. ユーティリティ型 (Utility Types) 🛠️
 
-TypeScriptが標準で提供するユーティリティ型は、既存の型を変換して新しい型を生成するのに役立ちます。
+TypeScriptが標準で提供するユーティリティ型は、既存の型を変換して新しい型を生成するのに役立ちます。これらを適切に使用することで、型の重複を避け、保守性の高いコードを書けます。
 
-- `Partial<T>`: `T`のすべてのプロパティをオプショナル（任意）にします。
-- `Required<T>`: `T`のすべてのプロパティを必須にします。
-- `Readonly<T>`: `T`のすべてのプロパティを読み取り専用にします。
-- `Pick<T, K>`: `T`のプロパティから、指定した`K`のプロパティだけを抜き取って新しい型を作成します。
+### Partial型: すべてのプロパティをオプショナルに
 
-### 例：Pickの使用
-
-`User`型から`id`と`name`だけを抜き取って`UserInfo`型を定義します。
+**実践的なユースケース:**
 
 ```typescript
-type User = {
+interface User {
   id: number;
   name: string;
+  email: string;
   age: number;
+}
+
+// ユースケース1: 更新用の型を作成
+type UserUpdate = Partial<User>;
+
+function updateUser(id: number, updates: UserUpdate): void {
+  // すべてのプロパティがオプショナルなので、部分的な更新が可能
+  // ...
+}
+
+updateUser(1, { name: "Bob" });  // OK: 名前だけを更新
+updateUser(1, { age: 30 });      // OK: 年齢だけを更新
+updateUser(1, {});                // OK: 空のオブジェクトも可能
+
+// ユースケース2: フォームの状態管理
+type UserFormState = Partial<User>;
+
+const formState: UserFormState = {
+  name: "Alice",
+  // emailとageはまだ入力されていない
+};
+```
+
+### Required型: すべてのプロパティを必須に
+
+**実践的なユースケース:**
+
+```typescript
+interface Config {
+  apiUrl?: string;
+  timeout?: number;
+  retries?: number;
+}
+
+// ユースケース: デフォルト値を適用した後、すべて必須にする
+function createConfig(partial: Partial<Config>): Required<Config> {
+  return {
+    apiUrl: partial.apiUrl ?? "https://api.example.com",
+    timeout: partial.timeout ?? 5000,
+    retries: partial.retries ?? 3
+  };
+}
+
+const config = createConfig({ apiUrl: "https://custom.api.com" });
+// configはすべてのプロパティが必須として扱われる
+console.log(config.timeout);  // 型安全: undefinedの可能性がない
+```
+
+### Readonly型: すべてのプロパティを読み取り専用に
+
+**実践的なユースケース:**
+
+```typescript
+interface MutableState {
+  count: number;
+  items: string[];
+}
+
+// ユースケース1: イミュータブルな状態を作成
+type ImmutableState = Readonly<MutableState>;
+
+function processState(state: ImmutableState): void {
+  // state.count = 10;  // エラー: 読み取り専用プロパティに割り当てできない
+  // state.items.push("new");  // エラー: 読み取り専用配列にpushできない
+}
+
+// ユースケース2: 設定オブジェクトを保護
+interface AppConfig {
+  apiUrl: string;
+  features: string[];
+}
+
+const config: Readonly<AppConfig> = {
+  apiUrl: "https://api.example.com",
+  features: ["feature1", "feature2"]
 };
 
-// User型からidとnameプロパティを抜き取る
-type UserInfo = Pick<User, 'id' | 'name'>;
+// config.apiUrl = "new";  // エラー: 読み取り専用
+```
 
-const userInfo: UserInfo = {
-  id: 1,
-  name: 'Alice',
+### Pick型: 特定のプロパティを選択
+
+**実践的なユースケース:**
+
+```typescript
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  password: string;
+  age: number;
+  createdAt: Date;
+}
+
+// ユースケース1: 公開用の型を作成（パスワードを除外）
+type PublicUser = Pick<User, 'id' | 'name' | 'email'>;
+
+function getUserPublicInfo(user: User): PublicUser {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email
+    // passwordは含まれない
+  };
+}
+
+// ユースケース2: フォーム用の型を作成
+type UserFormData = Pick<User, 'name' | 'email' | 'age'>;
+
+const formData: UserFormData = {
+  name: "Alice",
+  email: "alice@example.com",
+  age: 30
+  // idやpasswordは不要
 };
+```
+
+### Omit型: 特定のプロパティを除外
+
+**実践的なユースケース:**
+
+```typescript
+// ユースケース: パスワードを除外した型を作成
+type UserWithoutPassword = Omit<User, 'password'>;
+
+function sanitizeUser(user: User): UserWithoutPassword {
+  const { password, ...rest } = user;
+  return rest;
+}
+
+// ユースケース2: 更新用の型（idとcreatedAtを除外）
+type UserUpdate = Omit<User, 'id' | 'createdAt'>;
+
+function updateUser(id: number, updates: Partial<UserUpdate>): void {
+  // idとcreatedAtは更新できない
+  // ...
+}
+```
+
+### Record型: キーと値の型を指定したオブジェクト型
+
+**実践的なユースケース:**
+
+```typescript
+// ユースケース1: 辞書型の作成
+type Status = "pending" | "success" | "error";
+type StatusMessages = Record<Status, string>;
+
+const messages: StatusMessages = {
+  pending: "処理中...",
+  success: "成功しました",
+  error: "エラーが発生しました"
+};
+
+// ユースケース2: APIエンドポイントの型定義
+type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
+type ApiEndpoints = Record<string, HttpMethod>;
+
+const endpoints: ApiEndpoints = {
+  "/api/users": "GET",
+  "/api/users": "POST",
+  "/api/users/:id": "PUT",
+  "/api/users/:id": "DELETE"
+};
+```
+
+### Exclude型とExtract型
+
+**実践的なユースケース:**
+
+```typescript
+type AllStatus = "pending" | "success" | "error" | "cancelled";
+
+// Exclude: 特定の型を除外
+type ActiveStatus = Exclude<AllStatus, "cancelled">;
+// ActiveStatus = "pending" | "success" | "error"
+
+// Extract: 特定の型のみを抽出
+type FinalStatus = Extract<AllStatus, "success" | "error">;
+// FinalStatus = "success" | "error"
+
+// ユースケース: 状態遷移の型定義
+function canTransition(
+  from: ActiveStatus,
+  to: FinalStatus
+): boolean {
+  // 遷移ロジック
+  return true;
+}
 ```
 
 ## 7. 型推論 (Type Inference) と型アサーション (Type Assertion) 🧠
@@ -286,18 +878,220 @@ if (typeof value === 'string') {
 
 条件型は、ある型が別の型に割り当て可能であるかどうかに基づいて、異なる型を返すことができる高度な機能です。三項演算子に似た構文を使用します。これは、特にジェネリクスと組み合わせて使用され、非常に柔軟な型を定義する際に役立ちます。
 
-```typescript
-type IsString<T> = T extends string ? 'yes' : 'no';
+### なぜ条件型が必要なのか
 
-type Result1 = IsString<string>; // Result1 は 'yes' になる
-type Result2 = IsString<number>; // Result2 は 'no' になる
+**問題: 型に応じた処理の分岐**
+
+```typescript
+// 問題: 型に応じて異なる処理が必要
+function processValue(value: string | number) {
+  if (typeof value === 'string') {
+    return value.toUpperCase();
+  } else {
+    return value.toFixed(2);
+  }
+}
+
+// 問題: 戻り値の型が正確に推論されない
+const result = processValue("hello");  // string | string型（不正確）
+```
+
+**解決: 条件型で型を正確に推論**
+
+```typescript
+// 解決: 条件型で戻り値の型を正確に定義
+type ProcessResult<T> = T extends string ? string : number;
+
+function processValue<T extends string | number>(
+  value: T
+): ProcessResult<T> {
+  if (typeof value === 'string') {
+    return value.toUpperCase() as ProcessResult<T>;
+  } else {
+    return value.toFixed(2) as ProcessResult<T>;
+  }
+}
+
+const strResult = processValue("hello");  // string型として推論
+const numResult = processValue(123);      // number型として推論
+```
+
+### 実践的なユースケース
+
+**ユースケース1: APIレスポンスの型を条件付きで定義**
+
+```typescript
+// エンドポイントに応じてレスポンスの型を変更
+type ApiEndpoint = 
+  | { path: "/users"; method: "GET" }
+  | { path: "/users/:id"; method: "GET" }
+  | { path: "/users"; method: "POST" };
+
+type ApiResponse<T extends ApiEndpoint> = 
+  T extends { path: "/users"; method: "GET" }
+    ? User[]
+    : T extends { path: "/users/:id"; method: "GET" }
+    ? User
+    : T extends { path: "/users"; method: "POST" }
+    ? { id: number }
+    : never;
+
+async function apiCall<T extends ApiEndpoint>(
+  endpoint: T
+): Promise<ApiResponse<T>> {
+  // 実装
+  return {} as ApiResponse<T>;
+}
+
+// 型が正確に推論される
+const users = await apiCall({ path: "/users", method: "GET" });
+// usersはUser[]型
+
+const user = await apiCall({ path: "/users/:id", method: "GET" });
+// userはUser型
+```
+
+**ユースケース2: 配列と非配列の区別**
+
+```typescript
+// 配列かどうかで型を分岐
+type Flatten<T> = T extends (infer U)[] ? U : T;
+
+type StringArray = Flatten<string[]>;  // string
+type StringValue = Flatten<string>;     // string
+
+// 実践的な使用例
+function getFirst<T>(value: T | T[]): T {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+// 型が正確に推論される
+const first = getFirst([1, 2, 3]);  // number型
+const single = getFirst(42);        // number型
+```
+
+**ユースケース3: 関数の戻り値の型を抽出**
+
+```typescript
+// 関数型から戻り値の型を抽出
+type ReturnType<T> = T extends (...args: any[]) => infer R ? R : never;
+
+function getUser(): User {
+  return { id: 1, name: "Alice" };
+}
+
+type UserReturn = ReturnType<typeof getUser>;  // User型
+
+// 実践的な使用例: 非同期関数の戻り値
+type AsyncReturnType<T> = T extends (...args: any[]) => Promise<infer R>
+  ? R
+  : T extends (...args: any[]) => infer R
+  ? R
+  : never;
+
+async function fetchUser(): Promise<User> {
+  return { id: 1, name: "Alice" };
+}
+
+type FetchedUser = AsyncReturnType<typeof fetchUser>;  // User型
+```
+
+**ユースケース4: オプショナルプロパティの判定**
+
+```typescript
+// プロパティがオプショナルかどうかを判定
+type IsOptional<T, K extends keyof T> = 
+  {} extends Pick<T, K> ? true : false;
+
+interface User {
+  id: number;
+  name: string;
+  email?: string;
+}
+
+type IsEmailOptional = IsOptional<User, "email">;  // true
+type IsNameOptional = IsOptional<User, "name">;     // false
+```
+
+**ユースケース5: ネストした条件型**
+
+```typescript
+// 複雑な条件型の組み合わせ
+type NonNullable<T> = T extends null | undefined ? never : T;
+
+type DeepNonNullable<T> = T extends object
+  ? {
+      [P in keyof T]: T[P] extends (infer U)[]
+        ? DeepNonNullable<U>[]
+        : T[P] extends object
+        ? DeepNonNullable<T[P]>
+        : NonNullable<T[P]>;
+    }
+  : NonNullable<T>;
+
+interface Config {
+  apiUrl: string | null;
+  features: Array<{
+    name: string | undefined;
+    enabled: boolean | null;
+  }>;
+}
+
+type StrictConfig = DeepNonNullable<Config>;
+// すべてのnullとundefinedが除去された型
 ```
 
 この機能は、複雑なライブラリやフレームワークの型定義でよく見られます。
 
 ## 12. マッピング型 (Mapped Types) 🗺️
 
-マッピング型は、既存の型に基づいて新しい型を作成する際に使用されます。オブジェクトの各プロパティをループ処理し、新しい型に変換することができます。
+マッピング型は、既存の型に基づいて新しい型を作成する際に使用されます。オブジェクトの各プロパティをループ処理し、新しい型に変換することができます。これにより、型の変換を自動化し、型の重複を避けることができます。
+
+### なぜマッピング型が必要なのか
+
+**問題: 型の変換の重複**
+
+```typescript
+// 問題: 同じような型定義を繰り返し書く必要がある
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+interface ReadonlyUser {
+  readonly id: number;
+  readonly name: string;
+  readonly email: string;
+}
+
+interface OptionalUser {
+  id?: number;
+  name?: string;
+  email?: string;
+}
+
+// プロパティが増えるたびに、すべての型を更新する必要がある
+```
+
+**解決: マッピング型で自動変換**
+
+```typescript
+// 解決: マッピング型で自動的に変換
+type ReadonlyUser = {
+  readonly [P in keyof User]: User[P];
+};
+
+type OptionalUser = {
+  [P in keyof User]?: User[P];
+};
+
+// Userが変更されても、自動的に反映される
+```
+
+### 実践的なユースケース
+
+**ユースケース1: すべてのプロパティを読み取り専用にする**
 
 ```typescript
 type User = {
@@ -316,7 +1110,103 @@ const user: ReadonlyUser = {
 };
 
 // エラー: 'name' は読み取り専用プロパティであるため、割り当てできません。
-// user.name = 'Bob'; 
+// user.name = 'Bob';
+```
+
+**ユースケース2: すべてのプロパティをオプショナルにする**
+
+```typescript
+// Partial<T>の実装
+type MyPartial<T> = {
+  [P in keyof T]?: T[P];
+};
+
+type OptionalUser = MyPartial<User>;
+
+const partialUser: OptionalUser = {
+  name: "Alice"
+  // ageは省略可能
+};
+```
+
+**ユースケース3: 特定のプロパティのみを変換**
+
+```typescript
+// 文字列プロパティのみをオプショナルにする
+type OptionalStringProps<T> = {
+  [P in keyof T]: T[P] extends string ? T[P] | undefined : T[P];
+};
+
+interface Config {
+  apiUrl: string;
+  timeout: number;
+  retries: number;
+}
+
+type FlexibleConfig = OptionalStringProps<Config>;
+// apiUrlはstring | undefined、timeoutとretriesはnumberのまま
+```
+
+**ユースケース4: プロパティ名の変換**
+
+```typescript
+// プロパティ名にプレフィックスを追加
+type Prefixed<T, Prefix extends string> = {
+  [P in keyof T as `${Prefix}${Capitalize<string & P>}`]: T[P];
+};
+
+interface User {
+  name: string;
+  age: number;
+}
+
+type PrefixedUser = Prefixed<User, "user">;
+// { userName: string; userAge: number; }
+```
+
+**ユースケース5: 条件付きマッピング型**
+
+```typescript
+// 関数型のプロパティのみを抽出
+type FunctionPropertyNames<T> = {
+  [K in keyof T]: T[K] extends Function ? K : never;
+}[keyof T];
+
+type FunctionProperties<T> = Pick<T, FunctionPropertyNames<T>>;
+
+interface UserService {
+  id: number;
+  name: string;
+  getName(): string;
+  updateName(name: string): void;
+}
+
+type UserServiceMethods = FunctionProperties<UserService>;
+// { getName: () => string; updateName: (name: string) => void; }
+```
+
+**ユースケース6: ネストしたオブジェクトの変換**
+
+```typescript
+// 深い階層のオブジェクトも変換
+type DeepReadonly<T> = {
+  readonly [P in keyof T]: T[P] extends object
+    ? T[P] extends Function
+      ? T[P]
+      : DeepReadonly<T[P]>
+    : T[P];
+};
+
+interface Config {
+  api: {
+    url: string;
+    timeout: number;
+  };
+  features: string[];
+}
+
+type ReadonlyConfig = DeepReadonly<Config>;
+// すべてのプロパティが読み取り専用
 ```
 
 この例では、`Readonly<T>`ユーティリティ型を自作していますが、このように既存の型を変換する処理を一般化することができます。

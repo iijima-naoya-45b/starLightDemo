@@ -1,0 +1,1588 @@
+---
+title: "基本的なキーワード"
+label: "基本的なキーワード"
+---
+
+## Javaの基本的なキーワード
+
+Javaプログラミングで頻繁に使用される基本的なキーワードについて、具体例と実践的な解説を交えて詳しく説明します。
+
+### extends（継承）
+
+`extends`キーワードは、クラスが別のクラスを継承する際に使用します。**継承**とは、既存のクラスの機能を受け継いで、新しいクラスを作成する仕組みです。
+
+#### なぜ継承を使うのか？
+
+継承を使うことで、以下のメリットがあります：
+
+- **コードの再利用**: 親クラスのメソッドやフィールドを再利用できる
+- **一貫性の維持**: 共通の機能を親クラスに集約することで、変更時の影響範囲を限定できる
+- **多態性の実現**: 同じインターフェースで異なる実装を扱える
+
+#### 基本的な使い方
+
+Javaでは**単一継承のみ**サポートされています（1つのクラスからしか継承できない）。
+
+```java
+// 親クラス（スーパークラス）
+// Animalクラスは、すべての動物に共通する基本的な機能を定義します
+public class Animal {
+    // protected: サブクラスからアクセス可能だが、外部からはアクセス不可
+    protected String name;
+    protected int age;
+    
+    // コンストラクタ: オブジェクト作成時に初期化処理を実行
+    public Animal(String name) {
+        this.name = name;  // this.nameはフィールド、nameはパラメータ
+        this.age = 0;
+        System.out.println("Animal created: " + name);
+    }
+    
+    // すべての動物が持つ共通の動作
+    public void eat() {
+        System.out.println(name + " is eating.");
+    }
+    
+    public void sleep() {
+        System.out.println(name + " is sleeping.");
+    }
+    
+    // getterメソッド
+    public String getName() {
+        return name;
+    }
+    
+    public int getAge() {
+        return age;
+    }
+}
+
+// 子クラス（サブクラス）
+// DogクラスはAnimalクラスを継承し、犬特有の機能を追加します
+public class Dog extends Animal {
+    // 犬特有のフィールド
+    private String breed;  // 犬種
+    
+    // コンストラクタ: 親クラスのコンストラクタを呼び出す必要がある
+    public Dog(String name, String breed) {
+        super(name);  // 親クラスのコンストラクタを呼び出す（必須）
+        this.breed = breed;  // 子クラス独自の初期化
+        System.out.println("Dog created: " + name + ", breed: " + breed);
+    }
+    
+    // 犬特有のメソッド
+    public void bark() {
+        System.out.println(name + " is barking. Woof! Woof!");
+    }
+    
+    // 親クラスのメソッドをオーバーライド（上書き）
+    // 犬は動物なのでeat()メソッドを持つが、犬用の食べ物を食べる
+    @Override
+    public void eat() {
+        System.out.println(name + " is eating dog food.");
+    }
+    
+    // getterメソッド
+    public String getBreed() {
+        return breed;
+    }
+}
+
+// 使用例
+public class Main {
+    public static void main(String[] args) {
+        // Dogオブジェクトを作成
+        Dog myDog = new Dog("ポチ", "柴犬");
+        
+        // 親クラスから継承したメソッドを呼び出し
+        myDog.sleep();  // "ポチ is sleeping." と表示
+        
+        // オーバーライドしたメソッドを呼び出し
+        myDog.eat();  // "ポチ is eating dog food." と表示（親クラスの実装ではなく、子クラスの実装が実行される）
+        
+        // 子クラス独自のメソッドを呼び出し
+        myDog.bark();  // "ポチ is barking. Woof! Woof!" と表示
+        
+        // 親クラスのメソッドも使用可能
+        String name = myDog.getName();  // 継承したメソッド
+        System.out.println("Name: " + name);  // "Name: ポチ"
+    }
+}
+```
+
+#### 継承の動作を詳しく解説
+
+上記のコードの動作を詳しく見てみましょう：
+
+1. **オブジェクト作成時の流れ**:
+   ```
+   Dog myDog = new Dog("ポチ", "柴犬");
+   ↓
+   1. Dogクラスのコンストラクタが呼び出される
+   2. super(name)により、Animalクラスのコンストラクタが先に実行される
+   3. Animalクラスのコンストラクタで "Animal created: ポチ" が表示される
+   4. Dogクラスのコンストラクタの残りの処理が実行される
+   5. "Dog created: ポチ, breed: 柴犬" が表示される
+   ```
+
+2. **メソッドの呼び出し**:
+   ```java
+   myDog.eat();  // 子クラスでオーバーライドしたメソッドが呼び出される
+   // 出力: "ポチ is eating dog food."
+   
+   myDog.sleep();  // 親クラスのメソッドがそのまま呼び出される
+   // 出力: "ポチ is sleeping."
+   ```
+
+3. **フィールドへのアクセス**:
+   ```java
+   // nameフィールドはprotectedなので、サブクラスからアクセス可能
+   System.out.println(myDog.name);  // "ポチ" と表示（ただし、通常はgetterを使用）
+   
+   // breedフィールドはprivateなので、外部からは直接アクセス不可
+   // System.out.println(myDog.breed);  // コンパイルエラー
+   System.out.println(myDog.getBreed());  // getterメソッドを使用
+   ```
+
+#### 重要なポイント
+
+1. **単一継承のみ**: Javaでは1つのクラスからしか継承できません
+   ```java
+   // これはエラー: 複数のクラスを継承できない
+   // public class Dog extends Animal, Mammal { }
+   ```
+
+2. **Objectクラスの継承**: すべてのクラスは`Object`クラスを暗黙的に継承しています
+   ```java
+   public class MyClass { }
+   // 実際には以下と同じ意味
+   // public class MyClass extends Object { }
+   ```
+
+3. **protectedメンバー**: `protected`修飾子が付いたメンバーは、サブクラスからアクセス可能です
+   ```java
+   public class Animal {
+       protected String name;  // サブクラスからアクセス可能
+       private int age;        // サブクラスからアクセス不可
+   }
+   ```
+
+#### Spring Bootでの実践例
+
+```java
+// 基底エンティティクラス
+@MappedSuperclass
+public abstract class BaseEntity {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    protected Long id;
+    
+    @CreatedDate
+    protected LocalDateTime createdAt;
+    
+    @LastModifiedDate
+    protected LocalDateTime updatedAt;
+    
+    // getter/setter
+}
+
+// 継承して使用
+@Entity
+public class User extends BaseEntity {
+    private String name;
+    private String email;
+    // id, createdAt, updatedAtは自動的に継承される
+}
+
+@Entity
+public class Order extends BaseEntity {
+    private Long userId;
+    private BigDecimal totalAmount;
+    // 同様にid, createdAt, updatedAtが継承される
+}
+```
+
+#### よくある間違い
+
+```java
+// 悪い例: 継承を過度に使用
+public class User extends String { }  // Stringはfinalクラスなので継承不可
+
+// 良い例: 継承は「is-a」関係がある場合のみ使用
+public class AdminUser extends User { }  // AdminUserはUserの一種
+```
+
+### implements（インターフェースの実装）
+
+`implements`キーワードは、クラスがインターフェースを実装する際に使用します。**インターフェース**は、クラスが実装すべきメソッドの契約を定義します。
+
+#### なぜインターフェースを使うのか？
+
+インターフェースを使うことで、以下のメリットがあります：
+
+- **複数実装可能**: 複数のインターフェースを実装できる（多重継承の代替）
+- **契約の定義**: クラスが実装すべきメソッドを明確に定義できる
+- **疎結合**: 実装とインターフェースを分離することで、柔軟な設計が可能
+
+#### 基本的な使い方
+
+複数のインターフェースを実装できます（カンマ区切り）。
+
+```java
+// インターフェースの定義
+// Flyableインターフェース: 飛ぶことができる能力を定義
+public interface Flyable {
+    // 抽象メソッド: 実装はないが、実装クラスで必ず実装する必要がある
+    void fly();
+    int getMaxAltitude();  // 最大高度を返す
+    
+    // デフォルトメソッド（Java 8以降）: 実装を提供できる
+    default void takeOff() {
+        System.out.println("Taking off...");
+    }
+}
+
+// Swimmableインターフェース: 泳ぐことができる能力を定義
+public interface Swimmable {
+    void swim();
+    int getMaxDepth();  // 最大深度を返す
+}
+
+// インターフェースの実装
+// Duckクラスは、FlyableとSwimmableの両方を実装する
+// つまり、アヒルは「飛ぶことができる」かつ「泳ぐことができる」
+public class Duck implements Flyable, Swimmable {
+    private String name;
+    private int age;
+    
+    public Duck(String name) {
+        this.name = name;
+        this.age = 0;
+    }
+    
+    // Flyableインターフェースのメソッドを実装
+    @Override
+    public void fly() {
+        System.out.println(name + " is flying through the sky.");
+    }
+    
+    @Override
+    public int getMaxAltitude() {
+        return 1000;  // アヒルは最大1000メートルまで飛べる
+    }
+    
+    // Swimmableインターフェースのメソッドを実装
+    @Override
+    public void swim() {
+        System.out.println(name + " is swimming in the water.");
+    }
+    
+    @Override
+    public int getMaxDepth() {
+        return 5;  // アヒルは最大5メートルまで潜れる
+    }
+    
+    // Duckクラス独自のメソッド
+    public void quack() {
+        System.out.println(name + " says: Quack! Quack!");
+    }
+}
+
+// 使用例
+public class Main {
+    public static void main(String[] args) {
+        Duck donald = new Duck("ドナルド");
+        
+        // Flyableインターフェースのメソッドを呼び出し
+        donald.fly();  // "ドナルド is flying through the sky."
+        int maxAltitude = donald.getMaxAltitude();
+        System.out.println("Max altitude: " + maxAltitude + "m");
+        
+        // Swimmableインターフェースのメソッドを呼び出し
+        donald.swim();  // "ドナルド is swimming in the water."
+        int maxDepth = donald.getMaxDepth();
+        System.out.println("Max depth: " + maxDepth + "m");
+        
+        // デフォルトメソッドの使用
+        donald.takeOff();  // "Taking off..."
+        
+        // Duckクラス独自のメソッド
+        donald.quack();  // "ドナルド says: Quack! Quack!"
+        
+        // インターフェース型として扱うことも可能（多態性）
+        Flyable flyable = donald;
+        flyable.fly();  // Duckクラスの実装が呼び出される
+        
+        Swimmable swimmable = donald;
+        swimmable.swim();  // Duckクラスの実装が呼び出される
+    }
+}
+```
+
+#### インターフェース実装の動作を詳しく解説
+
+1. **複数インターフェースの実装**:
+   - Duckクラスは、FlyableとSwimmableの両方を実装している
+   - これにより、Duckオブジェクトは両方のインターフェース型として扱える
+
+2. **メソッドの実装義務**:
+   - インターフェースで定義されたすべてのメソッドを実装する必要がある
+   - 実装しないとコンパイルエラーになる
+
+3. **デフォルトメソッド**:
+   - Java 8以降、インターフェースにデフォルト実装を提供できる
+   - 実装クラスでオーバーライドしなくても使用可能
+
+#### 重要なポイント
+
+1. **複数実装可能**: クラスは複数のインターフェースを実装できます
+   ```java
+   public class Duck implements Flyable, Swimmable, Walkable {
+       // 3つのインターフェースを同時に実装
+   }
+   ```
+
+2. **すべてのメソッドを実装**: インターフェースで定義されたすべてのメソッドを実装する必要があります
+   ```java
+   public interface Flyable {
+       void fly();  // このメソッドを必ず実装する必要がある
+   }
+   ```
+
+3. **デフォルトメソッド**: Java 8以降、インターフェースにデフォルト実装を提供できます
+   ```java
+   public interface Flyable {
+       void fly();  // 抽象メソッド
+       
+       default void takeOff() {  // デフォルトメソッド（実装不要）
+           System.out.println("Taking off...");
+       }
+   }
+   ```
+
+#### Spring Bootでの実践例
+
+```java
+// サービスのインターフェース
+public interface UserService {
+    User findById(Long id);
+    User create(UserCreateRequest request);
+    User update(Long id, UserUpdateRequest request);
+    void delete(Long id);
+}
+
+// 実装クラス
+@Service
+public class UserServiceImpl implements UserService {
+    @Autowired
+    private UserRepository userRepository;
+    
+    @Override
+    public User findById(Long id) {
+        return userRepository.findById(id).orElseThrow();
+    }
+    
+    // 他のメソッドも実装...
+}
+
+// 別の実装（テスト用など）
+@Service
+@Profile("test")
+public class MockUserService implements UserService {
+    // モック実装
+}
+```
+
+#### extendsとimplementsの違い
+
+| 項目 | extends | implements |
+|------|---------|-----------|
+| **対象** | クラス | インターフェース |
+| **数** | 1つのみ | 複数可能 |
+| **実装** | メソッドの実装は任意 | すべてのメソッドを実装必須 |
+| **使用場面** | 「is-a」関係 | 「can-do」関係 |
+
+### @Override（オーバーライド）
+
+`@Override`アノテーションは、メソッドが親クラスまたはインターフェースのメソッドを**オーバーライド**（上書き）していることを明示します。
+
+#### オーバーライドとは？
+
+オーバーライドとは、親クラスで定義されたメソッドを、子クラスで再定義することです。これにより、同じメソッド名で異なる動作を実現できます。
+
+#### なぜ@Overrideを使うのか？
+
+`@Override`アノテーションを付けることで、以下のメリットがあります：
+
+- **コンパイル時の検証**: オーバーライドの誤りをコンパイル時に検出できる
+- **可読性の向上**: コードを読む人が、このメソッドがオーバーライドであることをすぐに理解できる
+- **リファクタリングの安全性**: 親クラスのメソッド名を変更した際に、エラーとして検出できる
+
+```java
+// 親クラス: Animal
+public class Animal {
+    protected String name;
+    
+    public Animal(String name) {
+        this.name = name;
+    }
+    
+    // すべての動物が持つ基本的な音を出すメソッド
+    public void makeSound() {
+        System.out.println(name + " makes some sound.");
+    }
+    
+    // 動物の情報を表示するメソッド
+    public void displayInfo() {
+        System.out.println("Animal name: " + name);
+    }
+}
+
+// 子クラス: Cat
+public class Cat extends Animal {
+    private String breed;  // 猫の品種
+    
+    public Cat(String name, String breed) {
+        super(name);  // 親クラスのコンストラクタを呼び出す
+        this.breed = breed;
+    }
+    
+    // オーバーライド: 親クラスのmakeSound()メソッドを上書き
+    // 猫は「ニャー」と鳴くので、親クラスの実装を変更する
+    @Override
+    public void makeSound() {
+        System.out.println(name + " says: Meow! Meow!");
+    }
+    
+    // オーバーライド: 親クラスのdisplayInfo()メソッドを拡張
+    @Override
+    public void displayInfo() {
+        super.displayInfo();  // 親クラスのメソッドを先に呼び出す
+        System.out.println("Breed: " + breed);  // 追加情報を表示
+    }
+    
+    // 猫特有のメソッド
+    public void purr() {
+        System.out.println(name + " is purring...");
+    }
+}
+
+// 使用例
+public class Main {
+    public static void main(String[] args) {
+        // 親クラスのオブジェクト
+        Animal animal = new Animal("Generic Animal");
+        animal.makeSound();  // "Generic Animal makes some sound."
+        animal.displayInfo();  // "Animal name: Generic Animal"
+        
+        System.out.println("---");
+        
+        // 子クラスのオブジェクト
+        Cat cat = new Cat("タマ", "スコティッシュフォールド");
+        cat.makeSound();  // "タマ says: Meow! Meow!" （オーバーライドしたメソッド）
+        cat.displayInfo();  
+        // 出力:
+        // "Animal name: タマ" （親クラスのメソッド）
+        // "Breed: スコティッシュフォールド" （追加情報）
+        
+        cat.purr();  // "タマ is purring..." （子クラス独自のメソッド）
+        
+        // 多態性: 親クラス型の変数に子クラスのオブジェクトを代入
+        Animal myPet = new Cat("ミケ", "アメリカンショートヘア");
+        myPet.makeSound();  // "ミケ says: Meow! Meow!" （Catクラスの実装が呼び出される）
+        // myPet.purr();  // エラー: 親クラス型では子クラス独自のメソッドにアクセスできない
+    }
+}
+```
+
+#### オーバーライドの動作を詳しく解説
+
+1. **メソッドの解決**:
+   - `cat.makeSound()`を呼び出すと、Catクラスでオーバーライドしたメソッドが実行される
+   - 親クラスの実装は実行されない（完全に置き換えられる）
+
+2. **superキーワードの使用**:
+   - `super.displayInfo()`により、親クラスのメソッドを呼び出せる
+   - これにより、親クラスの機能を拡張できる
+
+3. **多態性（ポリモーフィズム）**:
+   - 親クラス型の変数に子クラスのオブジェクトを代入できる
+   - 実行時には、実際のオブジェクトの型のメソッドが呼び出される
+
+#### オーバーライドの条件
+
+オーバーライドが成功するには、以下の条件を満たす必要があります：
+
+1. **メソッド名が同じ**: 親クラスと同じメソッド名であること
+2. **引数の型と数が同じ**: パラメータの型と数が完全に一致すること
+3. **戻り値の型が互換性がある**: 同じ型、またはサブタイプであること
+4. **アクセス修飾子が同じかより公開的**: privateよりpublicにすることはできない
+
+```java
+public class Animal {
+    public void makeSound() { }
+    protected String getName() { return ""; }
+}
+
+public class Cat extends Animal {
+    @Override
+    public void makeSound() {  // 正しい: メソッド名、引数、戻り値が一致
+        System.out.println("Meow");
+    }
+    
+    // @Override
+    // public void makeSound(String volume) { }  // エラー: 引数が異なる（オーバーロード）
+    
+    @Override
+    public String getName() {  // 正しい: アクセス修飾子をpublicに変更可能
+        return "Cat";
+    }
+}
+```
+
+#### よくある間違い
+
+```java
+public class Animal {
+    public void eat() { }
+}
+
+public class Dog extends Animal {
+    // 間違い: @Overrideがないと、タイポに気づけない
+    public void eet() {  // "eat"のタイポだが、コンパイルエラーにならない
+        // これは新しいメソッドとして扱われる
+    }
+    
+    // 正しい: @Overrideを付けると、タイポがコンパイルエラーになる
+    @Override
+    public void eat() {  // 親クラスのメソッドを正しくオーバーライド
+        System.out.println("Dog is eating");
+    }
+}
+```
+
+#### Spring Bootでの実践例
+
+```java
+// 基底サービスクラス
+public abstract class BaseService<T, ID> {
+    public T findById(ID id) {
+        // 共通の実装
+        return repository.findById(id).orElseThrow();
+    }
+    
+    public abstract void validate(T entity);
+}
+
+// 実装クラス
+@Service
+public class UserService extends BaseService<User, Long> {
+    @Override
+    public void validate(User user) {
+        // ユーザー固有のバリデーション
+        if (user.getEmail() == null) {
+            throw new ValidationException("Email is required");
+        }
+    }
+}
+```
+
+### abstract（抽象クラス・抽象メソッド）
+
+`abstract`キーワードは、**抽象クラス**や**抽象メソッド**を定義する際に使用します。抽象クラスは、インスタンス化できないクラスで、共通の機能を提供しつつ、一部の実装をサブクラスに委譲します。
+
+#### なぜ抽象クラスを使うのか？
+
+抽象クラスを使うことで、以下のメリットがあります：
+
+- **共通実装の提供**: 複数のサブクラスで共通の実装を提供できる
+- **強制実装**: 抽象メソッドにより、サブクラスで必ず実装すべきメソッドを強制できる
+- **テンプレートメソッドパターン**: 処理の流れを定義し、一部だけをサブクラスで実装できる
+
+```java
+// 抽象クラス: Shape（図形）
+// 図形という概念は存在するが、具体的な図形（円、四角形など）ではない
+// そのため、抽象クラスとして定義し、インスタンス化できないようにする
+public abstract class Shape {
+    protected String color;  // すべての図形に共通する属性
+    
+    // コンストラクタ: 抽象クラスでもコンストラクタは定義できる
+    public Shape(String color) {
+        this.color = color;
+        System.out.println("Shape created with color: " + color);
+    }
+    
+    // 抽象メソッド: 実装がない（サブクラスで必ず実装する必要がある）
+    // すべての図形は面積を持つが、計算方法は図形によって異なる
+    public abstract double getArea();
+    
+    // 抽象メソッド: 周囲の長さを計算する
+    public abstract double getPerimeter();
+    
+    // 具象メソッド: 実装がある（サブクラスでそのまま使用可能）
+    // 色を取得するメソッドは、すべての図形で同じ実装で良い
+    public String getColor() {
+        return color;
+    }
+    
+    // 具象メソッド: 図形の情報を表示する
+    public void displayInfo() {
+        System.out.println("Shape color: " + color);
+        System.out.println("Area: " + getArea());  // 抽象メソッドを呼び出し
+        System.out.println("Perimeter: " + getPerimeter());
+    }
+}
+
+// 抽象クラスの継承: Circle（円）
+// CircleクラスはShapeクラスを継承し、抽象メソッドを実装する
+public class Circle extends Shape {
+    private double radius;  // 円特有の属性: 半径
+    
+    public Circle(String color, double radius) {
+        super(color);  // 親クラスのコンストラクタを呼び出す
+        this.radius = radius;
+        System.out.println("Circle created with radius: " + radius);
+    }
+    
+    // 抽象メソッドの実装: 円の面積を計算
+    @Override
+    public double getArea() {
+        return Math.PI * radius * radius;  // π × r²
+    }
+    
+    // 抽象メソッドの実装: 円の周囲の長さを計算
+    @Override
+    public double getPerimeter() {
+        return 2 * Math.PI * radius;  // 2 × π × r
+    }
+    
+    // Circleクラス独自のメソッド
+    public double getDiameter() {
+        return 2 * radius;  // 直径 = 2 × 半径
+    }
+}
+
+// 別の実装クラス: Rectangle（四角形）
+public class Rectangle extends Shape {
+    private double width;
+    private double height;
+    
+    public Rectangle(String color, double width, double height) {
+        super(color);
+        this.width = width;
+        this.height = height;
+    }
+    
+    // 抽象メソッドの実装: 四角形の面積を計算
+    @Override
+    public double getArea() {
+        return width * height;  // 幅 × 高さ
+    }
+    
+    // 抽象メソッドの実装: 四角形の周囲の長さを計算
+    @Override
+    public double getPerimeter() {
+        return 2 * (width + height);  // 2 × (幅 + 高さ)
+    }
+}
+
+// 使用例
+public class Main {
+    public static void main(String[] args) {
+        // 抽象クラスはインスタンス化できない
+        // Shape shape = new Shape("red");  // コンパイルエラー
+        
+        // サブクラスはインスタンス化可能
+        Circle circle = new Circle("赤", 5.0);
+        // 出力:
+        // "Shape created with color: 赤"
+        // "Circle created with radius: 5.0"
+        
+        double area = circle.getArea();  // 約78.54
+        double perimeter = circle.getPerimeter();  // 約31.42
+        
+        circle.displayInfo();
+        // 出力:
+        // "Shape color: 赤"
+        // "Area: 78.53981633974483"
+        // "Perimeter: 31.41592653589793"
+        
+        // 多態性: 親クラス型の変数に子クラスのオブジェクトを代入
+        Shape rectangle = new Rectangle("青", 10.0, 5.0);
+        rectangle.displayInfo();
+        // 出力:
+        // "Shape color: 青"
+        // "Area: 50.0"
+        // "Perimeter: 30.0"
+        
+        // 異なる実装クラスを同じ方法で扱える
+        Shape[] shapes = {
+            new Circle("緑", 3.0),
+            new Rectangle("黄", 4.0, 6.0)
+        };
+        
+        for (Shape shape : shapes) {
+            System.out.println("Area: " + shape.getArea());
+            // 各図形の実装に応じた面積が計算される
+        }
+    }
+}
+```
+
+#### 抽象クラスの動作を詳しく解説
+
+1. **インスタンス化の制限**:
+   - 抽象クラスは直接インスタンス化できない
+   - これは、不完全なクラス（抽象メソッドがある）だから
+
+2. **抽象メソッドの実装義務**:
+   - サブクラスは、すべての抽象メソッドを実装する必要がある
+   - 実装しないとコンパイルエラーになる
+
+3. **テンプレートメソッドパターン**:
+   - `displayInfo()`メソッドは、抽象メソッド`getArea()`と`getPerimeter()`を呼び出している
+   - 処理の流れは親クラスで定義し、具体的な計算はサブクラスに委譲している
+
+#### 重要なポイント
+
+1. **インスタンス化不可**: 抽象クラスは直接インスタンス化できません
+   ```java
+   // Shape shape = new Shape("red");  // コンパイルエラー
+   Shape circle = new Circle("red", 5.0);  // サブクラスはインスタンス化可能
+   ```
+
+2. **抽象メソッドの実装必須**: 抽象メソッドは、サブクラスで必ず実装する必要があります
+   ```java
+   public class Rectangle extends Shape {
+       // getArea()とgetPerimeter()を実装しないとコンパイルエラー
+   }
+   ```
+
+3. **具象メソッドも定義可能**: 抽象クラスには、実装済みのメソッドも定義できます
+   ```java
+   public abstract class Shape {
+       public abstract double getArea();  // 抽象メソッド
+       
+       public String getColor() {  // 具象メソッド
+           return color;
+       }
+   }
+   ```
+
+#### 抽象クラスとインターフェースの違い
+
+| 項目 | 抽象クラス | インターフェース |
+|------|-----------|----------------|
+| **インスタンス化** | 不可 | 不可 |
+| **実装** | 具象メソッドを定義可能 | Java 8以降はデフォルトメソッド可能 |
+| **フィールド** | インスタンス変数を持てる | 定数のみ（public static final） |
+| **継承/実装** | extendsで継承 | implementsで実装 |
+| **数** | 単一継承のみ | 複数実装可能 |
+| **使用場面** | 共通実装を提供したい場合 | 契約を定義したい場合 |
+
+#### Spring Bootでの実践例
+
+```java
+// 抽象基底コントローラー
+public abstract class BaseController<T, ID> {
+    @Autowired
+    protected CrudRepository<T, ID> repository;
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<T> findById(@PathVariable ID id) {
+        T entity = repository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Resource", id));
+        return ResponseEntity.ok(entity);
+    }
+    
+    // 抽象メソッド: サブクラスで実装必須
+    protected abstract void validateBeforeCreate(T entity);
+    
+    @PostMapping
+    public ResponseEntity<T> create(@RequestBody T entity) {
+        validateBeforeCreate(entity);  // サブクラスで実装されたバリデーション
+        T saved = repository.save(entity);
+        return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+    }
+}
+
+// 実装クラス
+@RestController
+@RequestMapping("/api/users")
+public class UserController extends BaseController<User, Long> {
+    @Override
+    protected void validateBeforeCreate(User user) {
+        if (user.getEmail() == null) {
+            throw new ValidationException("Email is required");
+        }
+    }
+}
+```
+
+### final（変更不可）
+
+`final`キーワードは、変数、メソッド、クラスに対して使用でき、**変更や継承を防ぐ**ために使用します。`final`を付けることで、意図しない変更を防ぎ、コードの安全性を高めます。
+
+#### なぜfinalを使うのか？
+
+`final`を使うことで、以下のメリットがあります：
+
+- **不変性の保証**: 変数が変更されないことを保証できる
+- **セキュリティ**: 重要なメソッドやクラスが変更されないことを保証できる
+- **パフォーマンス**: コンパイラが最適化しやすくなる
+- **可読性**: 変更されないことが明確になり、コードが読みやすくなる
+
+```java
+// finalクラス（継承不可）
+public final class Constants {
+    // final変数（定数）
+    public static final double PI = 3.14159;
+    public static final int MAX_SIZE = 100;
+    
+    // finalメソッド（オーバーライド不可）
+    public final void importantMethod() {
+        // このメソッドはサブクラスでオーバーライドできない
+    }
+}
+
+// final変数の使用
+public class Example {
+    private final String name;  // finalフィールド（一度初期化すると変更不可）
+    
+    public Example(String name) {
+        this.name = name;  // コンストラクタで初期化
+    }
+    
+    public void method() {
+        final int localVar = 10;  // finalローカル変数
+        // localVar = 20;  // コンパイルエラー
+    }
+}
+```
+
+#### finalの使い分け
+
+1. **final変数**: 一度代入すると変更できない
+   ```java
+   final String name = "Java";
+   // name = "Python";  // コンパイルエラー
+   
+   final List<String> list = new ArrayList<>();
+   list.add("item");  // オブジェクト自体は変更可能
+   // list = new ArrayList<>();  // コンパイルエラー（参照の変更は不可）
+   ```
+
+2. **finalメソッド**: サブクラスでオーバーライドできない
+   ```java
+   public class Parent {
+       public final void importantMethod() {
+           // このメソッドはサブクラスで変更できない
+       }
+   }
+   ```
+
+3. **finalクラス**: 継承できない
+   ```java
+   public final class Constants {
+       // このクラスは継承できない
+   }
+   // public class ExtendedConstants extends Constants { }  // エラー
+   ```
+
+#### Spring Bootでの実践例
+
+```java
+// 不変な設定クラス
+@Configuration
+public class AppConfig {
+    // finalフィールドで設定値を保持
+    private final String apiKey;
+    private final String apiUrl;
+    
+    public AppConfig(
+            @Value("${api.key}") String apiKey,
+            @Value("${api.url}") String apiUrl) {
+        this.apiKey = apiKey;  // コンストラクタで一度だけ設定
+        this.apiUrl = apiUrl;
+    }
+    
+    // getterのみ提供（setterは提供しない）
+    public String getApiKey() {
+        return apiKey;
+    }
+}
+
+// サービスクラスでの使用
+@Service
+@RequiredArgsConstructor  // Lombok: finalフィールドのコンストラクタを自動生成
+public class UserService {
+    private final UserRepository userRepository;  // finalで不変性を保証
+    private final EmailService emailService;
+    
+    // finalフィールドはコンストラクタで一度だけ初期化される
+}
+```
+
+#### よくある間違い
+
+```java
+// 間違い: final変数を後で変更しようとする
+public void method() {
+    final int value;
+    value = 10;  // 1回目の代入はOK
+    value = 20;  // コンパイルエラー: 2回目の代入は不可
+}
+
+// 正しい: 初期化時に値を設定
+public void method() {
+    final int value = 10;  // 初期化時に設定
+}
+```
+
+### static（静的）
+
+`static`キーワードは、**クラスレベルで共有されるメンバー**を定義する際に使用します。`static`メンバーは、インスタンスを作成せずにアクセスできます。
+
+#### なぜstaticを使うのか？
+
+`static`を使うことで、以下のメリットがあります：
+
+- **インスタンス不要**: オブジェクトを作成せずにメソッドや変数にアクセスできる
+- **メモリ効率**: すべてのインスタンスで共有されるため、メモリを節約できる
+- **ユーティリティメソッド**: インスタンスに依存しない汎用的なメソッドを定義できる
+
+```java
+public class MathUtils {
+    // static変数（クラス変数）
+    private static int count = 0;
+    
+    // staticメソッド（クラスメソッド）
+    public static int add(int a, int b) {
+        return a + b;
+    }
+    
+    public static int subtract(int a, int b) {
+        return a - b;
+    }
+    
+    // staticブロック（クラスロード時に実行）
+    static {
+        System.out.println("MathUtils class loaded");
+    }
+    
+    // インスタンスメソッド
+    public void incrementCount() {
+        count++;  // static変数にアクセス可能
+    }
+    
+    public static int getCount() {
+        return count;
+    }
+}
+
+// 使用例
+public class Main {
+    public static void main(String[] args) {
+        // staticメソッドはインスタンスなしで呼び出せる
+        int sum = MathUtils.add(5, 3);
+        int diff = MathUtils.subtract(10, 4);
+        
+        // static変数にアクセス
+        int currentCount = MathUtils.getCount();
+    }
+}
+```
+
+#### 重要なポイント
+
+1. **インスタンス不要**: `static`メソッドや変数は、クラス名で直接アクセスできます
+   ```java
+   // インスタンスを作成せずに呼び出せる
+   int sum = MathUtils.add(5, 3);
+   ```
+
+2. **共有される**: `static`変数は、すべてのインスタンスで共有されます
+   ```java
+   public class Counter {
+       private static int count = 0;  // すべてのインスタンスで共有
+       
+       public void increment() {
+           count++;  // すべてのインスタンスで同じcountを参照
+       }
+   }
+   ```
+
+3. **インスタンスメンバーにアクセス不可**: `static`メソッドからは、インスタンス変数やメソッドに直接アクセスできません
+   ```java
+   public class Example {
+       private String name;  // インスタンス変数
+       
+       public static void staticMethod() {
+           // System.out.println(name);  // エラー: インスタンス変数にアクセス不可
+       }
+   }
+   ```
+
+#### Spring Bootでの実践例
+
+```java
+// ユーティリティクラス
+@Component
+public class DateUtils {
+    // staticメソッドでユーティリティ関数を提供
+    public static LocalDateTime now() {
+        return LocalDateTime.now();
+    }
+    
+    public static String format(LocalDateTime dateTime) {
+        return dateTime.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+    }
+}
+
+// 使用例
+@Service
+public class OrderService {
+    public void createOrder() {
+        LocalDateTime now = DateUtils.now();  // インスタンス不要
+        String formatted = DateUtils.format(now);
+    }
+}
+
+// 定数クラス
+public class Constants {
+    public static final String API_VERSION = "v1";
+    public static final int MAX_RETRY_COUNT = 3;
+    public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
+    
+    private Constants() { }  // インスタンス化を防ぐ
+}
+```
+
+#### よくある間違い
+
+```java
+// 間違い: staticメソッドからインスタンスメンバーにアクセス
+public class Example {
+    private String name;
+    
+    public static void printName() {
+        System.out.println(name);  // エラー: インスタンス変数にアクセス不可
+    }
+}
+
+// 正しい: インスタンスを引数として渡す
+public class Example {
+    private String name;
+    
+    public static void printName(Example instance) {
+        System.out.println(instance.name);  // OK: インスタンス経由でアクセス
+    }
+}
+```
+
+### thisとsuper
+
+`this`は**現在のインスタンス**を参照し、`super`は**親クラスのメンバー**を参照します。これらは、フィールド名の衝突を解決したり、親クラスのメソッドを呼び出したりする際に使用します。
+
+#### なぜthisとsuperを使うのか？
+
+`this`と`super`を使うことで、以下のメリットがあります：
+
+- **名前の衝突を解決**: フィールド名とパラメータ名が同じ場合に、どちらを指しているか明確にできる
+- **親クラスのメソッド呼び出し**: オーバーライドしたメソッドから、親クラスのメソッドを呼び出せる
+- **コンストラクタの連鎖**: 親クラスのコンストラクタを呼び出せる
+
+```java
+public class Parent {
+    protected String name;
+    
+    public Parent(String name) {
+        this.name = name;  // thisで現在のインスタンスのフィールドを参照
+    }
+    
+    public void display() {
+        System.out.println("Parent: " + name);
+    }
+}
+
+public class Child extends Parent {
+    private String name;  // 親クラスと同じ名前のフィールド
+    
+    public Child(String parentName, String childName) {
+        super(parentName);  // superで親クラスのコンストラクタを呼び出す
+        this.name = childName;  // thisで現在のクラスのフィールドを参照
+    }
+    
+    @Override
+    public void display() {
+        super.display();  // superで親クラスのメソッドを呼び出す
+        System.out.println("Child: " + this.name);
+    }
+    
+    public void showBoth() {
+        System.out.println("Parent name: " + super.name);  // 親クラスのフィールド
+        System.out.println("Child name: " + this.name);    // 現在のクラスのフィールド
+    }
+}
+```
+
+#### thisの使用例
+
+```java
+// Userクラス: ユーザー情報を管理するクラス
+public class User {
+    // フィールド（インスタンス変数）
+    private String name;
+    private String email;
+    private int age;
+    
+    // コンストラクタ: オブジェクト作成時に初期化
+    public User(String name, String email, int age) {
+        // this.nameはフィールド、nameはパラメータ
+        // thisキーワードにより、フィールドとパラメータを区別できる
+        this.name = name;   // フィールドnameにパラメータnameの値を代入
+        this.email = email; // フィールドemailにパラメータemailの値を代入
+        this.age = age;     // フィールドageにパラメータageの値を代入
+        
+        // もしthisを使わないと...
+        // name = name;  // これは意味がない（パラメータnameをパラメータnameに代入）
+        // フィールドnameは変更されないままになる
+    }
+    
+    // セッターメソッド: フィールドの値を変更する
+    public void setName(String name) {
+        // フィールドとパラメータの名前が同じ場合、thisが必要
+        this.name = name;  // フィールドnameを更新
+    }
+    
+    public void setEmail(String email) {
+        this.email = email;
+    }
+    
+    // ゲッターメソッド: フィールドの値を取得する
+    public String getName() {
+        return this.name;  // thisは省略可能だが、明示的に書くこともできる
+    }
+    
+    public String getEmail() {
+        return email;  // thisを省略しても問題ない（名前の衝突がないため）
+    }
+    
+    // メソッド内でthisを使用する例
+    public void updateUser(String name, String email) {
+        // 現在のオブジェクトのメソッドを呼び出す
+        this.setName(name);   // thisを明示的に使用
+        setEmail(email);      // thisを省略（同じ意味）
+        
+        // 現在のオブジェクトの情報を表示
+        System.out.println("Updated user: " + this.getName());
+    }
+}
+
+// 使用例
+public class Main {
+    public static void main(String[] args) {
+        // Userオブジェクトを作成
+        User user = new User("山田太郎", "yamada@example.com", 30);
+        
+        // ゲッターで情報を取得
+        System.out.println("Name: " + user.getName());   // "Name: 山田太郎"
+        System.out.println("Email: " + user.getEmail()); // "Email: yamada@example.com"
+        
+        // セッターで情報を更新
+        user.setName("山田花子");
+        user.updateUser("佐藤次郎", "sato@example.com");
+    }
+}
+```
+
+#### thisキーワードの動作を詳しく解説
+
+1. **名前の衝突の解決**:
+   ```java
+   public User(String name) {
+       this.name = name;  
+       // ↑フィールド  ↑パラメータ
+       // thisがないと、どちらを指しているかわからない
+   }
+   ```
+
+2. **メソッドチェーン**:
+   ```java
+   public class User {
+       private String name;
+       private String email;
+       
+       public User setName(String name) {
+           this.name = name;
+           return this;  // 自分自身を返すことで、メソッドチェーンが可能
+       }
+       
+       public User setEmail(String email) {
+           this.email = email;
+           return this;
+       }
+   }
+   
+   // 使用例
+   User user = new User()
+       .setName("太郎")
+       .setEmail("taro@example.com");  // メソッドチェーン
+   ```
+
+#### superの使用例
+
+```java
+// 親クラス: User（ユーザー）
+// すべてのユーザーに共通する基本的な情報と機能を定義
+public class User {
+    protected String name;      // protected: サブクラスからアクセス可能
+    protected String email;
+    protected LocalDateTime createdAt;
+    
+    // コンストラクタ
+    public User(String name, String email) {
+        this.name = name;  // thisで現在のインスタンスのフィールドを参照
+        this.email = email;
+        this.createdAt = LocalDateTime.now();
+        System.out.println("User created: " + name);
+    }
+    
+    // ユーザー情報を表示するメソッド
+    public void display() {
+        System.out.println("User name: " + name);
+        System.out.println("User email: " + email);
+        System.out.println("Created at: " + createdAt);
+    }
+    
+    // ユーザー情報を更新するメソッド
+    public void updateProfile(String name, String email) {
+        this.name = name;
+        this.email = email;
+        System.out.println("Profile updated: " + name);
+    }
+}
+
+// 子クラス: AdminUser（管理者ユーザー）
+// Userクラスを継承し、管理者特有の機能を追加
+public class AdminUser extends User {
+    private String name;        // 親クラスと同じ名前のフィールド（非推奨だが、例として）
+    private String adminLevel;  // 管理者レベル
+    private List<String> permissions;  // 権限リスト
+    
+    // コンストラクタ
+    public AdminUser(String name, String email, String adminLevel) {
+        // super()で親クラスのコンストラクタを呼び出す（必須）
+        // 親クラスの初期化処理を実行してから、子クラスの初期化を行う
+        super(name, email);
+        
+        // 子クラス独自の初期化
+        this.name = name;  // this.nameは子クラスのフィールド
+        this.adminLevel = adminLevel;
+        this.permissions = new ArrayList<>();
+        
+        System.out.println("AdminUser created: " + name + ", level: " + adminLevel);
+    }
+    
+    // オーバーライド: 親クラスのdisplay()メソッドを拡張
+    @Override
+    public void display() {
+        super.display();  // 親クラスのメソッドを先に呼び出す
+        // 出力:
+        // "User name: [親クラスのname]"
+        // "User email: [email]"
+        // "Created at: [createdAt]"
+        
+        // 子クラス独自の情報を追加表示
+        System.out.println("Admin level: " + adminLevel);
+        System.out.println("Permissions: " + permissions);
+    }
+    
+    // 親クラスと子クラスの両方のフィールドにアクセスする例
+    public void showBothNames() {
+        // super.name: 親クラスのnameフィールドにアクセス
+        System.out.println("Parent name (super.name): " + super.name);
+        
+        // this.name: 子クラスのnameフィールドにアクセス
+        System.out.println("Child name (this.name): " + this.name);
+        
+        // nameだけだと、子クラスのフィールドが優先される
+        System.out.println("Current name (name): " + name);  // 子クラスのname
+    }
+    
+    // オーバーライド: 親クラスのメソッドを拡張
+    @Override
+    public void updateProfile(String name, String email) {
+        // 親クラスのメソッドを呼び出す
+        super.updateProfile(name, email);
+        
+        // 子クラス独自の処理を追加
+        this.name = name;  // 子クラスのnameフィールドも更新
+        System.out.println("Admin profile updated with level: " + adminLevel);
+    }
+    
+    // 管理者特有のメソッド
+    public void addPermission(String permission) {
+        permissions.add(permission);
+    }
+    
+    public boolean hasPermission(String permission) {
+        return permissions.contains(permission);
+    }
+}
+
+// 使用例
+public class Main {
+    public static void main(String[] args) {
+        // 親クラスのオブジェクト
+        User regularUser = new User("一般ユーザー", "user@example.com");
+        regularUser.display();
+        // 出力:
+        // "User created: 一般ユーザー"
+        // "User name: 一般ユーザー"
+        // "User email: user@example.com"
+        // "Created at: 2024-01-01T10:00:00"
+        
+        System.out.println("---");
+        
+        // 子クラスのオブジェクト
+        AdminUser admin = new AdminUser("管理者", "admin@example.com", "Super Admin");
+        // 出力:
+        // "User created: 管理者"  （親クラスのコンストラクタが実行される）
+        // "AdminUser created: 管理者, level: Super Admin"  （子クラスのコンストラクタが実行される）
+        
+        admin.display();
+        // 出力:
+        // "User name: 管理者"  （親クラスのメソッド）
+        // "User email: admin@example.com"
+        // "Created at: 2024-01-01T10:00:00"
+        // "Admin level: Super Admin"  （子クラスで追加）
+        // "Permissions: []"
+        
+        admin.addPermission("DELETE_USER");
+        admin.addPermission("MODIFY_SETTINGS");
+        
+        admin.showBothNames();
+        // 出力:
+        // "Parent name (super.name): 管理者"
+        // "Child name (this.name): 管理者"
+        // "Current name (name): 管理者"
+        
+        // オーバーライドしたメソッドの呼び出し
+        admin.updateProfile("新しい管理者", "newadmin@example.com");
+        // 出力:
+        // "Profile updated: 新しい管理者"  （親クラスのメソッド）
+        // "Admin profile updated with level: Super Admin"  （子クラスで追加）
+    }
+}
+```
+
+#### superキーワードの動作を詳しく解説
+
+1. **コンストラクタの呼び出し**:
+   ```java
+   public AdminUser(String name, String email, String adminLevel) {
+       super(name, email);  // 親クラスのコンストラクタを呼び出す（必須）
+       // 親クラスの初期化が完了してから、子クラスの初期化が行われる
+       this.adminLevel = adminLevel;
+   }
+   ```
+
+2. **メソッドの呼び出し**:
+   ```java
+   @Override
+   public void display() {
+       super.display();  // 親クラスのメソッドを呼び出す
+       // 親クラスの処理を実行してから、子クラス独自の処理を追加
+   }
+   ```
+
+3. **フィールドへのアクセス**:
+   ```java
+   super.name  // 親クラスのnameフィールド
+   this.name   // 子クラスのnameフィールド
+   name        // 子クラスのnameフィールド（thisが省略された場合）
+   ```
+
+#### Spring Bootでの実践例
+
+```java
+// 基底エンティティ
+@MappedSuperclass
+public abstract class BaseEntity {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    protected Long id;
+    
+    @CreatedDate
+    protected LocalDateTime createdAt;
+    
+    public BaseEntity() {
+        this.createdAt = LocalDateTime.now();  // thisで現在のインスタンスを参照
+    }
+}
+
+// 継承クラス
+@Entity
+public class User extends BaseEntity {
+    private String name;
+    
+    public User(String name) {
+        super();  // 親クラスのコンストラクタを呼び出す
+        this.name = name;
+    }
+    
+    public void updateName(String name) {
+        this.name = name;  // フィールドとパラメータの区別
+    }
+}
+```
+
+### アクセス修飾子
+
+**アクセス修飾子**は、クラス、メソッド、フィールドの**アクセス範囲**を制御します。適切なアクセス修飾子を使用することで、カプセル化を実現し、コードの安全性を高めます。
+
+```java
+public class AccessModifiers {
+    // public: どこからでもアクセス可能
+    public int publicField = 1;
+    
+    // protected: 同じパッケージ内またはサブクラスからアクセス可能
+    protected int protectedField = 2;
+    
+    // デフォルト（package-private）: 同じパッケージ内からのみアクセス可能
+    int defaultField = 3;
+    
+    // private: 同じクラス内からのみアクセス可能
+    private int privateField = 4;
+    
+    public void publicMethod() {
+        // すべてのフィールドにアクセス可能
+        System.out.println(privateField);
+    }
+    
+    private void privateMethod() {
+        // プライベートメソッドは同じクラス内からのみ呼び出せる
+    }
+}
+```
+
+#### 各アクセス修飾子の詳細
+
+1. **private**: 同じクラス内からのみアクセス可能
+   ```java
+   public class User {
+       private String password;  // クラス外からアクセス不可
+       
+       public void setPassword(String password) {
+           this.password = password;  // クラス内からはアクセス可能
+       }
+   }
+   ```
+
+2. **デフォルト（package-private）**: 同じパッケージ内からのみアクセス可能
+   ```java
+   package com.example.service;
+   
+   class InternalService {  // デフォルトアクセス
+       // 同じパッケージ内からのみアクセス可能
+   }
+   ```
+
+3. **protected**: 同じパッケージ内またはサブクラスからアクセス可能
+   ```java
+   public class Animal {
+       protected String name;  // サブクラスからアクセス可能
+   }
+   
+   public class Dog extends Animal {
+       public void setName(String name) {
+           this.name = name;  // protectedメンバーにアクセス可能
+       }
+   }
+   ```
+
+4. **public**: どこからでもアクセス可能
+   ```java
+   public class User {
+       public String name;  // どこからでもアクセス可能
+   }
+   ```
+
+#### アクセス修飾子の比較表
+
+| 修飾子 | クラス内 | パッケージ内 | サブクラス | 外部 |
+|--------|---------|------------|-----------|------|
+| `private` | ○ | × | × | × |
+| デフォルト | ○ | ○ | × | × |
+| `protected` | ○ | ○ | ○ | × |
+| `public` | ○ | ○ | ○ | ○ |
+
+#### Spring Bootでの実践例
+
+```java
+// エンティティクラス
+@Entity
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;  // private: 外部から直接アクセス不可
+    
+    @Column(nullable = false)
+    private String name;  // private: カプセル化
+    
+    @Column(nullable = false)
+    private String email;
+    
+    // publicメソッドでアクセスを提供
+    public Long getId() {
+        return id;
+    }
+    
+    public String getName() {
+        return name;
+    }
+    
+    public void setName(String name) {
+        this.name = name;
+    }
+}
+
+// サービスクラス
+@Service
+public class UserService {
+    @Autowired
+    private UserRepository userRepository;  // private: 内部実装の詳細
+    
+    public User findById(Long id) {  // public: 外部から呼び出し可能
+        return userRepository.findById(id).orElseThrow();
+    }
+    
+    private void validateUser(User user) {  // private: 内部メソッド
+        // バリデーションロジック
+    }
+}
+```
+
+#### ベストプラクティス
+
+- **フィールドは原則private**: カプセル化を実現
+- **getter/setterを提供**: 必要に応じてアクセスを制御
+- **publicメソッドは最小限に**: 必要な機能のみを公開
+- **内部実装はprivate**: 実装の詳細を隠蔽
+
+### まとめ
+
+Javaの基本的なキーワードの使い方：
+
+- **`extends`**: クラスの継承（単一継承）
+- **`implements`**: インターフェースの実装（複数実装可能）
+- **`@Override`**: メソッドのオーバーライドを明示
+- **`abstract`**: 抽象クラス・抽象メソッドの定義
+- **`final`**: 変更不可の定義（クラス、メソッド、変数）
+- **`static`**: クラスレベルで共有されるメンバーの定義
+- **`this`**: 現在のインスタンスの参照
+- **`super`**: 親クラスのメンバーの参照
+
+これらのキーワードを適切に使用することで、オブジェクト指向プログラミングの原則に従ったコードを書くことができます。
+

@@ -1,0 +1,615 @@
+---
+title: "Jenkins"
+label: "Jenkins"
+---
+
+## JenkinsによるCI/CD
+
+Jenkinsは、オープンソースの自動化サーバーで、CI/CDパイプラインを構築・実行するための強力なツールです。この章では、Spring BootプロジェクトでのJenkinsの設定と使用方法について詳しく解説します。
+
+### Jenkinsとは
+
+Jenkinsは、以下の機能を提供する自動化サーバーです：
+
+- **継続的インテグレーション（CI）**: コードのビルドとテストの自動化
+- **継続的デプロイメント（CD）**: アプリケーションの自動デプロイ
+- **プラグインエコシステム**: 豊富なプラグインによる機能拡張
+- **分散ビルド**: 複数のエージェント（ノード）での並列ビルド
+
+### Jenkinsのインストール
+
+#### Dockerを使用したインストール（推奨）
+
+```bash
+# Jenkinsコンテナの起動
+docker run -d \
+  --name jenkins \
+  -p 8080:8080 \
+  -p 50000:50000 \
+  -v jenkins_home:/var/jenkins_home \
+  jenkins/jenkins:lts
+
+# 初期パスワードの確認
+docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+```
+
+#### スタンドアロンインストール
+
+**macOS:**
+```bash
+brew install jenkins-lts
+brew services start jenkins-lts
+```
+
+**Linux:**
+```bash
+# Jenkinsリポジトリの追加
+wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | sudo apt-key add -
+sudo sh -c 'echo deb https://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
+sudo apt-get update
+sudo apt-get install jenkins
+
+# Jenkinsの起動
+sudo systemctl start jenkins
+sudo systemctl enable jenkins
+```
+
+**Windows:**
+1. [Jenkins公式サイト](https://www.jenkins.io/download/)からWindowsインストーラーをダウンロード
+2. インストーラーを実行してインストール
+
+### 初期設定
+
+1. ブラウザで `http://localhost:8080` にアクセス
+2. 初期パスワードを入力
+3. 推奨プラグインをインストール
+4. 管理者アカウントを作成
+
+### 必要なプラグインのインストール
+
+Spring BootプロジェクトでJenkinsを使用する際に必要なプラグイン：
+
+- **Git Plugin**: Gitリポジトリとの連携
+- **Maven Integration Plugin**: Mavenプロジェクトのビルド
+- **Gradle Plugin**: Gradleプロジェクトのビルド
+- **Pipeline Plugin**: パイプラインの定義
+- **Docker Pipeline Plugin**: Dockerコンテナのビルドと実行
+- **Credentials Binding Plugin**: 認証情報の管理
+
+**プラグインのインストール方法:**
+1. Jenkinsの管理画面 → プラグインの管理
+2. 利用可能タブでプラグインを検索
+3. インストールするプラグインにチェックを入れる
+4. 「再起動せずにインストール」をクリック
+
+### Pipeline as Code（Jenkinsfile）
+
+Jenkinsfileを使用することで、パイプラインをコードとして管理できます。
+
+#### 基本的なJenkinsfile（Mavenプロジェクト）
+
+```groovy
+pipeline {
+    agent any
+    
+    tools {
+        maven 'Maven-3.8.5'
+        jdk 'JDK-17'
+    }
+    
+    environment {
+        JAVA_HOME = tool('JDK-17')
+        MAVEN_HOME = tool('Maven-3.8.5')
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage('Build') {
+            steps {
+                sh 'mvn clean compile'
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                sh 'mvn test'
+            }
+            post {
+                always {
+                    junit 'target/surefire-reports/*.xml'
+                }
+            }
+        }
+        
+        stage('Package') {
+            steps {
+                sh 'mvn package -DskipTests'
+            }
+            post {
+                success {
+                    archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            echo 'Pipeline succeeded!'
+        }
+        failure {
+            echo 'Pipeline failed!'
+        }
+    }
+}
+```
+
+#### Gradleプロジェクト用のJenkinsfile
+
+```groovy
+pipeline {
+    agent any
+    
+    tools {
+        gradle 'Gradle-8.0'
+        jdk 'JDK-17'
+    }
+    
+    environment {
+        JAVA_HOME = tool('JDK-17')
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage('Build') {
+            steps {
+                sh './gradlew clean build'
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                sh './gradlew test'
+            }
+            post {
+                always {
+                    junit 'build/test-results/test/*.xml'
+                }
+            }
+        }
+        
+        stage('Package') {
+            steps {
+                sh './gradlew bootJar'
+            }
+            post {
+                success {
+                    archiveArtifacts artifacts: 'build/libs/*.jar', fingerprint: true
+                }
+            }
+        }
+    }
+}
+```
+
+### Spring Bootアプリケーション用のJenkinsfile
+
+```groovy
+pipeline {
+    agent any
+    
+    tools {
+        maven 'Maven-3.8.5'
+        jdk 'JDK-17'
+    }
+    
+    environment {
+        APP_NAME = 'my-spring-boot-app'
+        DOCKER_IMAGE = 'my-registry/my-spring-boot-app'
+        DOCKER_TAG = "${env.BUILD_NUMBER}"
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage('Build') {
+            steps {
+                sh 'mvn clean package -DskipTests'
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                sh 'mvn test'
+            }
+            post {
+                always {
+                    junit 'target/surefire-reports/*.xml'
+                    publishTestResults testResultsPattern: 'target/surefire-reports/*.xml'
+                }
+            }
+        }
+        
+        stage('Docker Build') {
+            steps {
+                script {
+                    def dockerImage = docker.build("${DOCKER_IMAGE}:${DOCKER_TAG}")
+                    dockerImage.push()
+                    dockerImage.push("latest")
+                }
+            }
+        }
+        
+        stage('Deploy to Staging') {
+            when {
+                branch 'develop'
+            }
+            steps {
+                sh '''
+                    docker stop ${APP_NAME}-staging || true
+                    docker rm ${APP_NAME}-staging || true
+                    docker run -d \
+                      --name ${APP_NAME}-staging \
+                      -p 8080:8080 \
+                      ${DOCKER_IMAGE}:${DOCKER_TAG}
+                '''
+            }
+        }
+        
+        stage('Deploy to Production') {
+            when {
+                branch 'main'
+            }
+            steps {
+                input message: 'Deploy to production?', ok: 'Deploy'
+                sh '''
+                    docker stop ${APP_NAME}-prod || true
+                    docker rm ${APP_NAME}-prod || true
+                    docker run -d \
+                      --name ${APP_NAME}-prod \
+                      -p 8081:8080 \
+                      ${DOCKER_IMAGE}:${DOCKER_TAG}
+                '''
+            }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            emailext (
+                subject: "SUCCESS: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
+                body: "Build succeeded!",
+                to: "${env.CHANGE_AUTHOR_EMAIL}"
+            )
+        }
+        failure {
+            emailext (
+                subject: "FAILURE: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
+                body: "Build failed!",
+                to: "${env.CHANGE_AUTHOR_EMAIL}"
+            )
+        }
+    }
+}
+```
+
+### 認証情報の管理
+
+Jenkinsで認証情報（パスワード、APIキーなど）を安全に管理する方法：
+
+#### 認証情報の追加
+
+1. Jenkinsの管理画面 → 認証情報の管理
+2. グローバル → 認証情報を追加
+3. 認証情報の種類を選択（例: Username with password）
+4. 認証情報を入力して保存
+
+#### Jenkinsfileでの認証情報の使用
+
+```groovy
+pipeline {
+    agent any
+    
+    environment {
+        DOCKER_REGISTRY_CREDENTIALS = credentials('docker-registry-credentials')
+        AWS_CREDENTIALS = credentials('aws-credentials')
+    }
+    
+    stages {
+        stage('Deploy') {
+            steps {
+                script {
+                    // 環境変数として認証情報が自動的に設定される
+                    sh '''
+                        echo ${DOCKER_REGISTRY_CREDENTIALS_USR}
+                        echo ${DOCKER_REGISTRY_CREDENTIALS_PSW}
+                    '''
+                }
+            }
+        }
+    }
+}
+```
+
+### マルチブランチパイプライン
+
+複数のブランチに対して自動的にパイプラインを実行する設定：
+
+```groovy
+pipeline {
+    agent any
+    
+    tools {
+        maven 'Maven-3.8.5'
+        jdk 'JDK-17'
+    }
+    
+    stages {
+        stage('Build') {
+            steps {
+                sh 'mvn clean package'
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                sh 'mvn test'
+            }
+        }
+        
+        stage('Deploy') {
+            when {
+                branch 'main'  // mainブランチの場合のみ実行
+            }
+            steps {
+                sh 'mvn deploy'
+            }
+        }
+    }
+}
+```
+
+**マルチブランチパイプラインの設定:**
+1. 新しいアイテム → マルチブランチパイプライン
+2. ブランチソースを設定（Git）
+3. ビルド構成でJenkinsfileのパスを指定
+4. 保存
+
+### 並列実行と分散ビルド
+
+複数のジョブを並列に実行してビルド時間を短縮：
+
+```groovy
+pipeline {
+    agent any
+    
+    stages {
+        stage('Parallel Tests') {
+            parallel {
+                stage('Unit Tests') {
+                    steps {
+                        sh 'mvn test -Dtest=UnitTest*'
+                    }
+                }
+                stage('Integration Tests') {
+                    steps {
+                        sh 'mvn test -Dtest=IntegrationTest*'
+                    }
+                }
+                stage('E2E Tests') {
+                    steps {
+                        sh 'mvn test -Dtest=E2ETest*'
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+### 通知の設定
+
+ビルド結果をSlackやメールで通知：
+
+#### Slack通知の例
+
+```groovy
+pipeline {
+    agent any
+    
+    stages {
+        stage('Build') {
+            steps {
+                sh 'mvn clean package'
+            }
+        }
+    }
+    
+    post {
+        success {
+            slackSend(
+                channel: '#jenkins',
+                color: 'good',
+                message: "Build succeeded: ${env.JOB_NAME} - ${env.BUILD_NUMBER}"
+            )
+        }
+        failure {
+            slackSend(
+                channel: '#jenkins',
+                color: 'danger',
+                message: "Build failed: ${env.JOB_NAME} - ${env.BUILD_NUMBER}"
+            )
+        }
+    }
+}
+```
+
+### 環境変数の管理
+
+環境ごとに異なる設定を管理：
+
+```groovy
+pipeline {
+    agent any
+    
+    environment {
+        // 共通の環境変数
+        APP_NAME = 'my-app'
+        
+        // ブランチに応じた環境変数
+        ENV = "${env.BRANCH_NAME == 'main' ? 'production' : 'staging'}"
+        SERVER_URL = "${env.BRANCH_NAME == 'main' ? 'https://prod.example.com' : 'https://staging.example.com'}"
+    }
+    
+    stages {
+        stage('Deploy') {
+            steps {
+                sh '''
+                    echo "Deploying to ${ENV}"
+                    echo "Server URL: ${SERVER_URL}"
+                '''
+            }
+        }
+    }
+}
+```
+
+### Dockerfileとの連携
+
+Spring BootアプリケーションをDockerイメージとしてビルド：
+
+```groovy
+pipeline {
+    agent any
+    
+    environment {
+        DOCKER_IMAGE = 'my-registry/my-app'
+        DOCKER_TAG = "${env.BUILD_NUMBER}"
+    }
+    
+    stages {
+        stage('Build JAR') {
+            steps {
+                sh 'mvn clean package -DskipTests'
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    def dockerImage = docker.build("${DOCKER_IMAGE}:${DOCKER_TAG}")
+                    dockerImage.push()
+                }
+            }
+        }
+        
+        stage('Deploy') {
+            steps {
+                sh '''
+                    docker stop my-app || true
+                    docker rm my-app || true
+                    docker run -d \
+                      --name my-app \
+                      -p 8080:8080 \
+                      ${DOCKER_IMAGE}:${DOCKER_TAG}
+                '''
+            }
+        }
+    }
+}
+```
+
+### ベストプラクティス
+
+#### 1. Jenkinsfileをバージョン管理する
+
+Jenkinsfileはプロジェクトのリポジトリに含めて、バージョン管理します。
+
+```
+my-project/
+├── src/
+├── pom.xml
+└── Jenkinsfile  # リポジトリに含める
+```
+
+#### 2. ステージを適切に分割する
+
+各ステージは独立して実行できるように設計します。
+
+```groovy
+stages {
+    stage('Checkout') { /* ... */ }
+    stage('Build') { /* ... */ }
+    stage('Test') { /* ... */ }
+    stage('Package') { /* ... */ }
+    stage('Deploy') { /* ... */ }
+}
+```
+
+#### 3. エラーハンドリングを実装する
+
+```groovy
+post {
+    always {
+        // 常に実行される処理（クリーンアップなど）
+        cleanWs()
+    }
+    success {
+        // 成功時の処理
+        echo 'Build succeeded!'
+    }
+    failure {
+        // 失敗時の処理
+        echo 'Build failed!'
+        // 通知を送信
+    }
+    unstable {
+        // 不安定な状態の処理
+        echo 'Build is unstable!'
+    }
+}
+```
+
+#### 4. ビルド成果物を保存する
+
+```groovy
+post {
+    success {
+        archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+    }
+}
+```
+
+### まとめ
+
+JenkinsによるCI/CDの構築：
+
+- **Jenkinsfile**: パイプラインをコードとして管理
+- **ステージの分割**: ビルド、テスト、デプロイを明確に分離
+- **認証情報の管理**: 安全に認証情報を扱う
+- **マルチブランチ**: 複数のブランチで自動的にパイプラインを実行
+- **並列実行**: ビルド時間の短縮
+- **通知**: ビルド結果を適切に通知
+
+Jenkinsを使用することで、Spring BootアプリケーションのCI/CDパイプラインを効率的に構築・運用できます。
+

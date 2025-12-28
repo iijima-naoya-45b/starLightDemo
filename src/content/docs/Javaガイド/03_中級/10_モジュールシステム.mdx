@@ -1,0 +1,305 @@
+---
+title: "モジュールシステム（Java 9+）"
+label: "モジュールシステム"
+---
+
+## モジュールシステム（Java Platform Module System）
+
+Java 9で導入されたモジュールシステム（JPMS）は、アプリケーションをモジュールに分割して管理する機能です。この章では、モジュールシステムの使い方について詳しく解説します。
+
+### モジュールシステムとは
+
+モジュールシステムは、以下の問題を解決します：
+
+- **カプセル化**: パッケージレベルのアクセス制御
+- **依存関係の明確化**: モジュール間の依存関係を明示
+- **起動時間の短縮**: 必要なモジュールのみを読み込む
+- **JAR地獄の解決**: 依存関係の競合を解決
+
+### module-info.java
+
+モジュールは、`module-info.java`ファイルで定義されます。
+
+#### 基本的なモジュール定義
+
+```java
+// module-info.java
+module com.example.myapp {
+    // このモジュールが使用するモジュールを宣言
+    requires java.base;  // 暗黙的に含まれる
+    requires java.sql;
+    
+    // このモジュールが公開するパッケージ
+    exports com.example.myapp.api;
+    exports com.example.myapp.service;
+    
+    // パッケージの一部のみを公開（制限付きエクスポート）
+    exports com.example.myapp.internal to com.example.othermodule;
+}
+```
+
+#### モジュールの種類
+
+```java
+// 1. 名前付きモジュール（通常のモジュール）
+module com.example.myapp {
+    requires java.base;
+    exports com.example.myapp.api;
+}
+
+// 2. 自動モジュール（module-info.javaがないJAR）
+// META-INF/MANIFEST.MFのAutomatic-Module-Nameを使用
+
+// 3. 無名モジュール（クラスパス上のJAR）
+// module-info.javaがないJARは無名モジュールとして扱われる
+```
+
+### モジュール記述子の構文
+
+#### requires
+
+```java
+module com.example.myapp {
+    // 通常の依存関係
+    requires java.sql;
+    
+    // 推移的依存関係（このモジュールを使用するモジュールにも依存関係が伝播）
+    requires transitive java.logging;
+    
+    // 静的依存関係（コンパイル時のみ必要、実行時はオプション）
+    requires static com.example.optional;
+}
+```
+
+#### exports
+
+```java
+module com.example.myapp {
+    // パッケージを公開
+    exports com.example.myapp.api;
+    exports com.example.myapp.service;
+    
+    // 特定のモジュールにのみ公開（制限付きエクスポート）
+    exports com.example.myapp.internal to com.example.othermodule;
+}
+```
+
+#### opens
+
+```java
+module com.example.myapp {
+    // リフレクションアクセスを許可
+    opens com.example.myapp.model;
+    
+    // 特定のモジュールにのみリフレクションアクセスを許可
+    opens com.example.myapp.internal to com.example.testframework;
+    
+    // すべてのパッケージを開く（非推奨）
+    // opens com.example.myapp;
+}
+```
+
+#### provides / uses
+
+```java
+module com.example.myapp {
+    // サービスプロバイダーの実装を提供
+    provides com.example.service.ServiceInterface
+        with com.example.service.ServiceImpl;
+    
+    // サービスプロバイダーを使用
+    uses com.example.service.ServiceInterface;
+}
+```
+
+### 実践例
+
+#### モジュール化されたアプリケーション
+
+**プロジェクト構造:**
+
+```
+myapp/
+├── api/
+│   ├── src/main/java/
+│   │   └── com/example/api/
+│   │       └── Api.java
+│   └── src/main/java/
+│       └── module-info.java
+├── service/
+│   ├── src/main/java/
+│   │   └── com/example/service/
+│   │       └── Service.java
+│   └── src/main/java/
+│       └── module-info.java
+└── app/
+    ├── src/main/java/
+    │   └── com/example/app/
+    │       └── Main.java
+    └── src/main/java/
+        └── module-info.java
+```
+
+**api/module-info.java:**
+
+```java
+module com.example.api {
+    exports com.example.api;
+}
+```
+
+**service/module-info.java:**
+
+```java
+module com.example.service {
+    requires com.example.api;
+    exports com.example.service;
+}
+```
+
+**app/module-info.java:**
+
+```java
+module com.example.app {
+    requires com.example.api;
+    requires com.example.service;
+    
+    // メインメソッドを含むモジュール
+}
+```
+
+### モジュールのビルドと実行
+
+#### Mavenでのビルド
+
+```xml
+<!-- pom.xml -->
+<project>
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.example</groupId>
+    <artifactId>myapp</artifactId>
+    <version>1.0.0</version>
+    
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+    
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <release>17</release>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+```
+
+#### モジュールJARの作成
+
+```bash
+# モジュールJARを作成
+jar --create --file=myapp.jar --main-class=com.example.app.Main \
+    -C api/target/classes . \
+    -C service/target/classes . \
+    -C app/target/classes .
+```
+
+#### モジュールの実行
+
+```bash
+# モジュールパスで実行
+java --module-path myapp.jar --module com.example.app/com.example.app.Main
+
+# モジュールパスに複数のJARを含める
+java --module-path lib:myapp.jar --module com.example.app/com.example.app.Main
+
+# すべてのモジュールを許可（開発時のみ）
+java --add-modules ALL-MODULE-PATH --module com.example.app/com.example.app.Main
+```
+
+### モジュールの検証
+
+```bash
+# モジュールの情報を表示
+java --describe-module com.example.app
+
+# モジュールの依存関係を表示
+java --list-modules
+
+# モジュールの解決を検証
+java --validate-modules --module-path myapp.jar
+```
+
+### よくある問題と解決方法
+
+#### 問題1: モジュールが見つからない
+
+```bash
+# エラー: Error occurred during initialization of boot layer
+# java.lang.module.FindException: Module com.example.app not found
+
+# 解決方法: モジュールパスを指定
+java --module-path myapp.jar --module com.example.app/com.example.app.Main
+```
+
+#### 問題2: パッケージがエクスポートされていない
+
+```java
+// エラー: package com.example.api is not visible
+
+// 解決方法: module-info.javaでexportsを追加
+module com.example.api {
+    exports com.example.api;  // 追加
+}
+```
+
+#### 問題3: リフレクションアクセスエラー
+
+```java
+// エラー: Unable to make field accessible
+
+// 解決方法: module-info.javaでopensを追加
+module com.example.myapp {
+    opens com.example.myapp.model;  // 追加
+}
+```
+
+### モジュールとSpring Boot
+
+Spring Boot 2.1以降は、モジュールシステムをサポートしています。
+
+```java
+// module-info.java
+module com.example.myapp {
+    requires spring.boot;
+    requires spring.boot.autoconfigure;
+    requires spring.web;
+    requires spring.data.jpa;
+    
+    // Spring Bootの自動設定のために開く必要がある
+    opens com.example.myapp to spring.core;
+    opens com.example.myapp.model to spring.core, hibernate.core;
+}
+```
+
+### まとめ
+
+モジュールシステムのポイント：
+
+- **module-info.java**: モジュールの定義
+- **requires**: 依存関係の宣言
+- **exports**: パッケージの公開
+- **opens**: リフレクションアクセスの許可
+- **provides/uses**: サービスプロバイダーの定義
+- **モジュールパス**: モジュールの検索パス
+- **モジュールJAR**: モジュール化されたJARファイル
+
+モジュールシステムを適切に使用することで、より構造化されたアプリケーションを構築できます。
+

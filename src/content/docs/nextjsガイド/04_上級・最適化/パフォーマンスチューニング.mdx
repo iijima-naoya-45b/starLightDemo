@@ -3,14 +3,51 @@ title: "パフォーマンスチューニング"
 label: "パフォーマンスチューニング"
 ---
 
-Next.jsのパフォーマンスチューニング方法を以下に示します。
+## Next.jsのパフォーマンスチューニング
 
-## 画像最適化
+Next.jsアプリケーションのパフォーマンスを最適化するための実践的な手法について解説します。
 
-Next.jsの`next/image`コンポーネントを使用して、画像を最適化します。
+### なぜパフォーマンスが重要なのか
 
-```javascript
+#### パフォーマンスがビジネスに与える影響
+
+**実際のデータ:**
+
+```
+- ページ読み込み時間が1秒増加すると、コンバージョン率が7%低下
+- モバイルサイトの読み込み時間が3秒を超えると、53%のユーザーが離脱
+- ページ読み込み時間が1秒増加すると、バウンス率が32%増加
+```
+
+**パフォーマンス指標の意味:**
+
+```typescript
+// Core Web Vitalsの目標値
+// LCP (Largest Contentful Paint): < 2.5秒
+// FID (First Input Delay): < 100ms
+// CLS (Cumulative Layout Shift): < 0.1
+
+// これらの指標を改善することで:
+// 1. ユーザー体験の向上
+// 2. SEOスコアの向上
+// 3. コンバージョン率の向上
+// 4. サーバーコストの削減
+```
+
+### 画像最適化
+
+#### Next.js Imageコンポーネントの深い理解
+
+**画像最適化のメカニズム:**
+
+```typescript
 import Image from 'next/image';
+
+// Next.js Imageコンポーネントが自動的に行う最適化:
+// 1. 画像フォーマットの自動変換（WebP、AVIF）
+// 2. レスポンシブ画像の生成
+// 3. Lazy Loading
+// 4. レイアウトシフトの防止
 
 const MyImage = () => (
   <Image
@@ -18,20 +55,66 @@ const MyImage = () => (
     alt="Picture of the author"
     width={500}
     height={500}
+    priority  // LCP要素の場合に設定
+    placeholder="blur"  // ブラー効果でレイアウトシフトを防止
+    quality={85}  // 画質（デフォルト: 75）
   />
 );
 ```
 
-## 静的ファイルのキャッシュ
+**画像最適化の設定:**
 
-`next.config.js`でキャッシュヘッダーを設定します。
+```typescript
+// next.config.js
+module.exports = {
+  images: {
+    // 画像フォーマットの優先順位
+    formats: ['image/avif', 'image/webp'],
+    
+    // デバイスサイズ（レスポンシブ画像の生成）
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    
+    // 画像サイズ
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    
+    // 外部画像ドメインの許可
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'example.com',
+      },
+    ],
+    
+    // キャッシュの最小TTL（秒）
+    minimumCacheTTL: 60,
+  },
+};
+```
 
-```javascript
+### 静的ファイルのキャッシュ
+
+#### キャッシュ戦略の設計
+
+**適切なキャッシュヘッダーの設定:**
+
+```typescript
+// next.config.js
 module.exports = {
   async headers() {
     return [
       {
-        source: '/(.*)',
+        // 静的アセット（画像、フォントなど）
+        source: '/_next/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',  // 1年間キャッシュ
+          },
+        ],
+      },
+      {
+        // 画像ファイル
+        source: '/images/:path*',
         headers: [
           {
             key: 'Cache-Control',
@@ -39,7 +122,53 @@ module.exports = {
           },
         ],
       },
+      {
+        // APIルート（動的なデータ）
+        source: '/api/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'no-store, max-age=0',  // キャッシュしない
+          },
+        ],
+      },
     ];
   },
 };
 ```
+
+### バンドルサイズの最適化
+
+#### コード分割の実践
+
+```typescript
+// 動的インポートによるコード分割
+import dynamic from 'next/dynamic';
+
+// 重いコンポーネントを動的インポート
+const HeavyChart = dynamic(() => import('@/components/HeavyChart'), {
+  loading: () => <ChartSkeleton />,
+  ssr: false,  // サーバーサイドレンダリングを無効化
+});
+
+// 条件付きロード
+const AdminPanel = dynamic(() => import('@/components/AdminPanel'));
+
+export default function Dashboard({ isAdmin }: { isAdmin: boolean }) {
+  return (
+    <div>
+      <UserDashboard />
+      {isAdmin && <AdminPanel />}  // 必要な時だけロード
+    </div>
+  );
+}
+```
+
+### まとめ
+
+Next.jsのパフォーマンスチューニングのポイント：
+
+- **画像最適化**: Next.js Imageコンポーネントの適切な使用
+- **キャッシング**: 静的ファイルと動的コンテンツの適切なキャッシュ設定
+- **コード分割**: 動的インポートによるバンドルサイズの削減
+- **計測**: 実際のパフォーマンスデータに基づいた最適化

@@ -7,6 +7,48 @@ label: "デザインパターンと実践テクニック"
 
 TypeScriptは、単なるJavaScriptのスーパーセットではなく、アプリケーションの設計を改善するための多くの機能を提供します。ここでは、TypeScriptを最大限に活用するためのデザインパターンと実践的なテクニックを解説します。
 
+### なぜデザインパターンが重要なのか
+
+#### 型安全な設計の価値
+
+**問題のあるコード（型安全性の欠如）:**
+
+```typescript
+// 問題: 型情報が不足している
+function processOrder(order) {
+  if (order.status === "pending") {
+    return order.total * 0.1;  // 10%の手数料
+  }
+  return 0;
+}
+
+// 実行時エラーの可能性
+processOrder({ status: "completed", total: "100" });  // NaNが返される
+```
+
+**解決: 型安全な設計パターン**
+
+```typescript
+// 解決: 型安全な設計
+type OrderStatus = "pending" | "completed" | "cancelled";
+
+interface Order {
+  id: number;
+  status: OrderStatus;
+  total: number;
+}
+
+function processOrder(order: Order): number {
+  if (order.status === "pending") {
+    return order.total * 0.1;
+  }
+  return 0;
+}
+
+// コンパイル時にエラーが検出される
+processOrder({ status: "completed", total: "100" });  // エラー: totalはnumber型である必要がある
+```
+
 ### 1. インターフェースと型エイリアスの使い分け
 
 `interface`と`type`はどちらも型を定義できますが、それぞれの特性を理解して使い分けることが重要です。
@@ -77,4 +119,301 @@ function speak(pet: Pet) {
 
 `pet is Cat`という構文が、この関数が`true`を返す場合に`pet`が`Cat`型であることを保証します。
 
+**実践的なユースケース:**
+
+```typescript
+// ユースケース1: APIレスポンスの型ガード
+interface SuccessResponse<T> {
+  success: true;
+  data: T;
+}
+
+interface ErrorResponse {
+  success: false;
+  error: string;
+}
+
+type ApiResponse<T> = SuccessResponse<T> | ErrorResponse;
+
+function isSuccess<T>(response: ApiResponse<T>): response is SuccessResponse<T> {
+  return response.success === true;
+}
+
+async function fetchUser(id: number): Promise<ApiResponse<User>> {
+  const response = await fetch(`/api/users/${id}`);
+  return response.json();
+}
+
+const result = await fetchUser(1);
+if (isSuccess(result)) {
+  // ここではresultはSuccessResponse<User>型
+  console.log(result.data.name);  // 型安全
+} else {
+  // ここではresultはErrorResponse型
+  console.error(result.error);  // 型安全
+}
+```
+
+### 4. ブランド型（Nominal Typing）の実装
+
+TypeScriptは構造的部分型を採用していますが、時には名目型（Nominal Typing）が必要な場合があります。ブランド型を使用することで、同じ構造を持つ型を区別できます。
+
+**実践的なユースケース:**
+
+```typescript
+// ユースケース1: 単位の区別
+type USD = number & { readonly __brand: unique symbol };
+type EUR = number & { readonly __brand: unique symbol };
+
+function createUSD(amount: number): USD {
+  return amount as USD;
+}
+
+function createEUR(amount: number): EUR {
+  return amount as EUR;
+}
+
+function addUSD(a: USD, b: USD): USD {
+  return (a + b) as USD;
+}
+
+const usd1 = createUSD(100);
+const usd2 = createUSD(50);
+const eur1 = createEUR(100);
+
+addUSD(usd1, usd2);  // OK
+addUSD(usd1, eur1);   // エラー: EUR型はUSD型に割り当てられない
+
+// ユースケース2: IDの型安全性
+type UserId = number & { readonly __brand: unique symbol };
+type OrderId = number & { readonly __brand: unique symbol };
+
+function createUserId(id: number): UserId {
+  return id as UserId;
+}
+
+function getUserById(id: UserId): User {
+  // 実装
+  return {} as User;
+}
+
+const userId = createUserId(1);
+const orderId = 1 as OrderId;
+
+getUserById(userId);   // OK
+getUserById(orderId);  // エラー: OrderId型はUserId型に割り当てられない
+```
+
+### 5. 型安全なイベントシステム
+
+**実践的なユースケース:**
+
+```typescript
+// ユースケース: 型安全なイベントエミッター
+type EventMap = {
+  userCreated: { id: number; name: string };
+  userUpdated: { id: number; changes: Partial<User> };
+  userDeleted: { id: number };
+};
+
+class TypedEventEmitter {
+  private listeners: {
+    [K in keyof EventMap]?: Array<(data: EventMap[K]) => void>;
+  } = {};
+
+  on<K extends keyof EventMap>(
+    event: K,
+    listener: (data: EventMap[K]) => void
+  ): void {
+    if (!this.listeners[event]) {
+      this.listeners[event] = [];
+    }
+    this.listeners[event]!.push(listener);
+  }
+
+  emit<K extends keyof EventMap>(event: K, data: EventMap[K]): void {
+    const listeners = this.listeners[event];
+    if (listeners) {
+      listeners.forEach(listener => listener(data));
+    }
+  }
+}
+
+const emitter = new TypedEventEmitter();
+
+// 型安全なイベントリスナー
+emitter.on("userCreated", (data) => {
+  console.log(data.id, data.name);  // 型安全
+});
+
+emitter.on("userUpdated", (data) => {
+  console.log(data.id, data.changes);  // 型安全
+});
+
+// エラー: イベント名とデータの型が一致しない
+emitter.emit("userCreated", { id: 1, changes: {} });  // エラー
+```
+
+### 6. 型安全な状態管理パターン
+
+**実践的なユースケース:**
+
+```typescript
+// ユースケース: 型安全なステートマシン
+type State = 
+  | { type: "idle" }
+  | { type: "loading" }
+  | { type: "success"; data: User }
+  | { type: "error"; error: string };
+
+type StateType = State["type"];
+
+class StateMachine {
+  private state: State = { type: "idle" };
+
+  transition(newState: State): void {
+    this.state = newState;
+  }
+
+  getState(): State {
+    return this.state;
+  }
+
+  // 型安全な状態チェック
+  isIdle(): this is { state: { type: "idle" } } {
+    return this.state.type === "idle";
+  }
+
+  isSuccess(): this is { state: { type: "success"; data: User } } {
+    return this.state.type === "success";
+  }
+}
+
+const machine = new StateMachine();
+
+if (machine.isSuccess()) {
+  // ここではstate.dataがUser型として推論される
+  console.log(machine.getState().data.name);  // 型安全
+}
+```
+
+### 7. 型安全なビルダーパターン
+
+**実践的なユースケース:**
+
+```typescript
+// ユースケース: 型安全なクエリビルダー
+interface QueryBuilder<T> {
+  where<K extends keyof T>(
+    field: K,
+    operator: "eq" | "ne" | "gt" | "lt",
+    value: T[K]
+  ): QueryBuilder<T>;
+  orderBy<K extends keyof T>(field: K, direction: "asc" | "desc"): QueryBuilder<T>;
+  limit(count: number): QueryBuilder<T>;
+  build(): string;
+}
+
+class TypedQueryBuilder<T> implements QueryBuilder<T> {
+  private conditions: string[] = [];
+  private orderByClause: string = "";
+  private limitClause: string = "";
+
+  where<K extends keyof T>(
+    field: K,
+    operator: "eq" | "ne" | "gt" | "lt",
+    value: T[K]
+  ): this {
+    this.conditions.push(`${String(field)} ${operator} ${value}`);
+    return this;
+  }
+
+  orderBy<K extends keyof T>(field: K, direction: "asc" | "desc"): this {
+    this.orderByClause = `ORDER BY ${String(field)} ${direction}`;
+    return this;
+  }
+
+  limit(count: number): this {
+    this.limitClause = `LIMIT ${count}`;
+    return this;
+  }
+
+  build(): string {
+    const where = this.conditions.length > 0 
+      ? `WHERE ${this.conditions.join(" AND ")}` 
+      : "";
+    return [where, this.orderByClause, this.limitClause]
+      .filter(Boolean)
+      .join(" ");
+  }
+}
+
+interface User {
+  id: number;
+  name: string;
+  age: number;
+}
+
+const query = new TypedQueryBuilder<User>()
+  .where("age", "gt", 18)      // 型安全: ageはnumber型
+  .where("name", "eq", "Alice") // 型安全: nameはstring型
+  .orderBy("age", "desc")
+  .limit(10)
+  .build();
+```
+
+### 8. 型安全な依存性注入
+
+**実践的なユースケース:**
+
+```typescript
+// ユースケース: 型安全なDIコンテナ
+type Constructor<T> = new (...args: any[]) => T;
+
+class Container {
+  private services = new Map<Constructor<any>, any>();
+
+  register<T>(ctor: Constructor<T>, instance: T): void {
+    this.services.set(ctor, instance);
+  }
+
+  resolve<T>(ctor: Constructor<T>): T {
+    const instance = this.services.get(ctor);
+    if (!instance) {
+      throw new Error(`Service ${ctor.name} not found`);
+    }
+    return instance as T;
+  }
+}
+
+class UserService {
+  getUsers(): User[] {
+    return [];
+  }
+}
+
+class OrderService {
+  getOrders(): Order[] {
+    return [];
+  }
+}
+
+const container = new Container();
+container.register(UserService, new UserService());
+container.register(OrderService, new OrderService());
+
+// 型安全な解決
+const userService = container.resolve(UserService);
+const users = userService.getUsers();  // User[]型として推論
+```
+
+### まとめ
+
 これらの実践的なテクニックを習得することで、TypeScriptの強力な型システムをフル活用し、より堅牢で保守しやすいコードを記述できます。
+
+**シニアエンジニアとして考慮すべき点:**
+
+1. **型安全性と柔軟性のバランス**: 過度に厳格な型定義は開発速度を低下させる可能性がある
+2. **パフォーマンス**: 複雑な型はコンパイル時間に影響する可能性がある
+3. **チームの理解度**: チーム全体が理解できるレベルの型定義を心がける
+4. **段階的な導入**: 既存のコードベースに段階的に型安全性を追加する

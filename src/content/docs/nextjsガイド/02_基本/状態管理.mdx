@@ -7,6 +7,139 @@ label: "状態管理.mdx"
 
 状態管理は、アプリケーションのデータを一元的に管理し、複数のコンポーネント間で共有・更新する仕組みです。これにより、コンポーネントツリーを深く辿ってデータを渡す**「Props Drilling」**の問題が解決され、アプリケーションのデータフローが予測可能になります。
 
+### なぜ状態管理が重要なのか
+
+#### Props Drillingの問題
+
+**問題のあるコード:**
+
+```typescript
+// 問題: Propsを何層にも渡す必要がある
+function App() {
+  const [user, setUser] = useState(null);
+  
+  return <Layout user={user} setUser={setUser} />;
+}
+
+function Layout({ user, setUser }: { user: User | null; setUser: (user: User) => void }) {
+  return <Header user={user} setUser={setUser} />;
+}
+
+function Header({ user, setUser }: { user: User | null; setUser: (user: User) => void }) {
+  return <UserMenu user={user} setUser={setUser} />;
+}
+
+function UserMenu({ user, setUser }: { user: User | null; setUser: (user: User) => void }) {
+  // ようやく使用できる
+  return <div>{user?.name}</div>;
+}
+
+// 問題点:
+// - 中間コンポーネントが不要なpropsを受け取る
+// - コードが冗長になる
+// - 型定義が複雑になる
+// - リファクタリングが困難
+```
+
+**解決: 状態管理ライブラリの使用**
+
+```typescript
+// 解決: Zustandを使用
+import { create } from 'zustand';
+
+interface UserStore {
+  user: User | null;
+  setUser: (user: User) => void;
+}
+
+const useUserStore = create<UserStore>((set) => ({
+  user: null,
+  setUser: (user) => set({ user }),
+}));
+
+// どのコンポーネントからでも直接アクセス可能
+function UserMenu() {
+  const user = useUserStore((state) => state.user);
+  return <div>{user?.name}</div>;
+}
+```
+
+#### 状態管理の本質的な価値
+
+**1. データの単一の真実の源（Single Source of Truth）**
+
+```typescript
+// 問題: 状態が複数の場所に散在
+function ComponentA() {
+  const [cart, setCart] = useState([]);
+  // ...
+}
+
+function ComponentB() {
+  const [cart, setCart] = useState([]);  // 同じ状態が重複
+  // ...
+}
+
+// 解決: グローバルストアで一元管理
+const useCartStore = create((set) => ({
+  items: [],
+  addItem: (item) => set((state) => ({ items: [...state.items, item] })),
+}));
+
+// すべてのコンポーネントが同じ状態を参照
+function ComponentA() {
+  const items = useCartStore((state) => state.items);
+  // ...
+}
+
+function ComponentB() {
+  const items = useCartStore((state) => state.items);  // 同じ状態
+  // ...
+}
+```
+
+**2. 予測可能なデータフロー**
+
+```typescript
+// 問題: 状態の更新が予測困難
+function Component() {
+  const [data, setData] = useState(null);
+  
+  useEffect(() => {
+    // 複数の場所で状態を更新
+    fetchData1().then(setData);
+    fetchData2().then(setData);  // 競合状態の可能性
+  }, []);
+}
+
+// 解決: 一元化された更新ロジック
+const useDataStore = create((set) => ({
+  data: null,
+  fetchData: async () => {
+    const data1 = await fetchData1();
+    const data2 = await fetchData2();
+    set({ data: { ...data1, ...data2 } });  // 予測可能な更新
+  },
+}));
+```
+
+**3. パフォーマンス最適化**
+
+```typescript
+// 問題: 不要な再レンダリング
+function ExpensiveComponent({ user }: { user: User }) {
+  // userが変更されると再レンダリング
+  return <ExpensiveRender user={user} />;
+}
+
+// 解決: 必要な部分だけを購読
+function ExpensiveComponent() {
+  // user.nameだけを購読（userオブジェクト全体の変更には反応しない）
+  const userName = useUserStore((state) => state.user?.name);
+  return <ExpensiveRender userName={userName} />;
+}
+```
+
 ### 1. Zustand
 
 Zustandは、シンプルでミニマリストな状態管理ライブラリです。フックAPIをベースにしており、ボイラープレートが非常に少ないのが特徴です。
@@ -45,3 +178,303 @@ Jotai（ジョタイ）は、日本語の「状態」から名付けられたラ
 - **大規模開発**: Reduxは、厳格なルールと予測可能性が求められる大規模なエンタープライズアプリケーションに向いています。
 
 - **Reactとの親和性**: RecoilとJotaiは、アトミックなアプローチにより、コンポーネントベースのReact開発と相性が良いです。特にJotaiは、よりミニマルなAPIを好む開発者におすすめです。
+
+### 状態管理ライブラリの選択判断
+
+#### サーバー状態 vs クライアント状態
+
+**重要な区別:**
+
+```typescript
+// サーバー状態: APIから取得したデータ
+// - キャッシュが必要
+// - 再取得が必要
+// - 同期が必要
+// → React Query / SWR が適している
+
+import { useQuery } from '@tanstack/react-query';
+
+function UserProfile({ userId }: { userId: string }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+    staleTime: 5 * 60 * 1000,  // 5分間は新鮮
+    cacheTime: 10 * 60 * 1000,  // 10分間キャッシュ
+  });
+  
+  if (isLoading) return <Loading />;
+  if (error) return <Error />;
+  return <div>{data.name}</div>;
+}
+
+// クライアント状態: UIの状態
+// - モーダルの開閉
+// - フォームの入力値
+// - グローバルなUI状態
+// → Zustand / Jotai / Redux が適している
+
+import { create } from 'zustand';
+
+interface UIStore {
+  isModalOpen: boolean;
+  openModal: () => void;
+  closeModal: () => void;
+}
+
+const useUIStore = create<UIStore>((set) => ({
+  isModalOpen: false,
+  openModal: () => set({ isModalOpen: true }),
+  closeModal: () => set({ isModalOpen: false }),
+}));
+```
+
+#### 状態管理ライブラリの詳細比較
+
+**Zustandの適用範囲:**
+
+```typescript
+// Zustandが適している場合:
+// 1. シンプルなグローバル状態
+// 2. ミドルウェアが不要
+// 3. 学習コストを抑えたい
+
+import { create } from 'zustand';
+import { devtools, persist } from 'zustand/middleware';
+
+interface CartStore {
+  items: CartItem[];
+  addItem: (item: CartItem) => void;
+  removeItem: (id: string) => void;
+}
+
+const useCartStore = create<CartStore>()(
+  devtools(
+    persist(
+      (set) => ({
+        items: [],
+        addItem: (item) => set((state) => ({
+          items: [...state.items, item]
+        })),
+        removeItem: (id) => set((state) => ({
+          items: state.items.filter(item => item.id !== id)
+        })),
+      }),
+      { name: 'cart-storage' }  // localStorageに永続化
+    )
+  )
+);
+
+// メリット:
+// - シンプルで理解しやすい
+// - ボイラープレートが少ない
+// - TypeScriptとの統合が良い
+
+// デメリット:
+// - 複雑な状態遷移には不向き
+// - タイムトラベルデバッグがない
+```
+
+**Reduxの適用範囲:**
+
+```typescript
+// Reduxが適している場合:
+// 1. 複雑な状態遷移
+// 2. タイムトラベルデバッグが必要
+// 3. 厳格な状態管理が必要
+// 4. 大規模なエンタープライズアプリケーション
+
+import { createSlice, configureStore } from '@reduxjs/toolkit';
+
+const cartSlice = createSlice({
+  name: 'cart',
+  initialState: { items: [] },
+  reducers: {
+    addItem: (state, action) => {
+      state.items.push(action.payload);
+    },
+    removeItem: (state, action) => {
+      state.items = state.items.filter(item => item.id !== action.payload);
+    },
+  },
+});
+
+export const store = configureStore({
+  reducer: {
+    cart: cartSlice.reducer,
+  },
+});
+
+// メリット:
+// - 予測可能な状態管理
+// - 優秀なデバッグツール
+// - ミドルウェアのエコシステム
+
+// デメリット:
+// - 学習コストが高い
+// - ボイラープレートが多い
+// - 小規模プロジェクトには過剰
+```
+
+**Jotaiの適用範囲:**
+
+```typescript
+// Jotaiが適している場合:
+// 1. アトミックな状態管理
+// 2. 細かい粒度での最適化が必要
+// 3. Reactの思想に近い状態管理
+
+import { atom, useAtom } from 'jotai';
+
+// アトミックな状態
+const userAtom = atom<User | null>(null);
+const cartAtom = atom<CartItem[]>([]);
+
+// 派生状態
+const cartCountAtom = atom((get) => get(cartAtom).length);
+
+function CartButton() {
+  const [cart] = useAtom(cartAtom);
+  const count = useAtomValue(cartCountAtom);  // カウントだけを購読
+  
+  return <button>Cart ({count})</button>;
+}
+
+// メリット:
+// - 非常に細かい粒度での最適化
+// - useStateに近い感覚
+// - ボトムアップで状態を構築
+
+// デメリット:
+// - 複雑な状態遷移には不向き
+// - エコシステムが小さい
+```
+
+#### 実践的な選択指針
+
+**プロジェクト規模による選択:**
+
+```typescript
+// 小規模プロジェクト（< 50コンポーネント）
+// → Zustand + React Query
+// 理由: シンプル、学習コストが低い、十分な機能
+
+// 中規模プロジェクト（50-200コンポーネント）
+// → Zustand + React Query + Context API
+// 理由: 機能ごとに状態を分離、グローバル状態はZustand
+
+// 大規模プロジェクト（200+コンポーネント）
+// → Redux Toolkit + React Query
+// 理由: 厳格な状態管理、タイムトラベルデバッグ、複雑な状態遷移
+```
+
+**状態の種類による選択:**
+
+```typescript
+// サーバー状態 → React Query
+const { data } = useQuery({
+  queryKey: ['users'],
+  queryFn: fetchUsers,
+});
+
+// UI状態 → Zustand
+const useUIStore = create((set) => ({
+  isModalOpen: false,
+  toggleModal: () => set((state) => ({ isModalOpen: !state.isModalOpen })),
+}));
+
+// フォーム状態 → React Hook Form（状態管理ライブラリではないが）
+const { register, handleSubmit } = useForm();
+
+// グローバルなビジネスロジック → Redux / Zustand
+const useOrderStore = create((set) => ({
+  orders: [],
+  createOrder: async (orderData) => {
+    const order = await createOrderAPI(orderData);
+    set((state) => ({ orders: [...state.orders, order] }));
+  },
+}));
+```
+
+### 状態管理のアンチパターン
+
+#### よくある間違い
+
+**間違い1: すべての状態をグローバルストアに配置**
+
+```typescript
+// 悪い例: ローカル状態をグローバルストアに
+const useFormStore = create((set) => ({
+  inputValue: '',  // 問題: 1つのコンポーネントでしか使用しない
+  setInputValue: (value: string) => set({ inputValue: value }),
+}));
+
+// 良い例: ローカル状態はuseStateを使用
+function Form() {
+  const [inputValue, setInputValue] = useState('');  // ローカル状態
+  return <input value={inputValue} onChange={(e) => setInputValue(e.target.value)} />;
+}
+```
+
+**間違い2: サーバー状態をクライアント状態管理ライブラリで管理**
+
+```typescript
+// 悪い例: Zustandでサーバー状態を管理
+const useUsersStore = create((set) => ({
+  users: [],
+  fetchUsers: async () => {
+    const users = await fetch('/api/users').then(res => res.json());
+    set({ users });
+  },
+}));
+
+// 問題:
+// - キャッシュ機能がない
+// - 再取得のロジックが複雑
+// - エラーハンドリングが不十分
+
+// 良い例: React Queryでサーバー状態を管理
+const { data: users } = useQuery({
+  queryKey: ['users'],
+  queryFn: () => fetch('/api/users').then(res => res.json()),
+  staleTime: 5 * 60 * 1000,
+});
+```
+
+**間違い3: Props Drillingを過度に避ける**
+
+```typescript
+// 悪い例: 2-3層のProps Drillingを避けるためにグローバルストアを使用
+// 親 → 子 → 孫 の3層だけなのにグローバルストアを使用
+
+// 良い例: Context APIで十分な場合
+const UserContext = createContext<User | null>(null);
+
+function App() {
+  const [user, setUser] = useState<User | null>(null);
+  return (
+    <UserContext.Provider value={user}>
+      <Layout />
+    </UserContext.Provider>
+  );
+}
+
+// 判断基準:
+// - 2-3層のProps Drilling → Context API
+// - 4層以上、または複数のブランチ → 状態管理ライブラリ
+```
+
+### まとめ
+
+状態管理の深い理解において重要なポイント：
+
+1. **状態の種類を理解**: サーバー状態 vs クライアント状態
+2. **適切なライブラリの選択**: プロジェクト規模と要件に応じて
+3. **状態の配置判断**: グローバル vs ローカル vs Context
+4. **アンチパターンの回避**: 過度なグローバル化を避ける
+
+**シニアエンジニアとして考慮すべき点:**
+
+- **状態のスコープ**: 状態が必要な範囲を正確に判断
+- **パフォーマンス**: 不要な再レンダリングを避ける
+- **保守性**: 長期的に保守可能な状態管理設計
+- **チームの合意**: チーム全体で統一された状態管理戦略

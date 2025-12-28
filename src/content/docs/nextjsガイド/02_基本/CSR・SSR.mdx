@@ -221,6 +221,101 @@ export default function AddToCartButton({ productId }: { productId: string }) {
 
 Next.jsは、このハイブリッドなアプローチによって、ウェブ開発のベストプラクティスを簡単に適用できるようにしています。
 
+### なぜレンダリング戦略が重要なのか
+
+#### レンダリング戦略の本質的な違い
+
+**パフォーマンスへの影響:**
+
+```typescript
+// CSRの問題: 初期表示までの時間
+// 1. HTMLのダウンロード: 50ms
+// 2. JavaScriptのダウンロード: 200ms
+// 3. JavaScriptの実行: 100ms
+// 4. API呼び出し: 300ms
+// 5. DOMの構築: 50ms
+// 合計: 700ms（この間、ユーザーは白い画面を見る）
+
+// SSRの利点: 即座にコンテンツが表示される
+// 1. HTMLのダウンロード: 50ms（コンテンツが含まれている）
+// 2. JavaScriptのダウンロード: 200ms（並行実行）
+// 3. ハイドレーション: 100ms
+// 合計: 350ms（ユーザーはすぐにコンテンツを見られる）
+
+// 実際のパフォーマンス指標への影響
+// CSR: FCP (First Contentful Paint) = 700ms
+// SSR: FCP = 50ms（約14倍の改善）
+```
+
+**SEOへの影響:**
+
+```typescript
+// CSRの問題: 検索エンジンがコンテンツを認識できない
+// 1. クローラーがHTMLを取得 → 空のdivのみ
+// 2. JavaScriptを実行（時間がかかる、失敗する可能性）
+// 3. コンテンツが表示される（遅延、または失敗）
+
+// SSRの利点: 検索エンジンが即座にコンテンツを認識
+// 1. クローラーがHTMLを取得 → 完全なコンテンツが含まれている
+// 2. インデックス可能
+
+// 実際のSEOスコアへの影響
+// CSR: SEOスコア = 60/100（コンテンツが認識されない）
+// SSR: SEOスコア = 95/100（コンテンツが完全に認識される）
+```
+
+#### レンダリング戦略の選択判断
+
+**判断フレームワーク:**
+
+```typescript
+// 判断基準1: コンテンツの更新頻度
+// 静的コンテンツ → SSG
+export async function generateStaticParams() {
+  const posts = await getPosts();
+  return posts.map(post => ({ slug: post.slug }));
+}
+
+// 動的コンテンツ → SSR
+export default async function Page() {
+  const data = await fetch('https://api.example.com/data', {
+    cache: 'no-store'
+  });
+  return <div>{data.title}</div>;
+}
+
+// 判断基準2: ユーザー固有かどうか
+// ユーザー固有 → SSR
+export default async function Dashboard() {
+  const user = await getCurrentUser();
+  const data = await getUserData(user.id);
+  return <Dashboard data={data} />;
+}
+
+// 全ユーザー共通 → SSG / ISR
+export default async function BlogPost({ params }: { params: { slug: string } }) {
+  const post = await getPost(params.slug);
+  return <Article post={post} />;
+}
+
+// 判断基準3: SEOの重要性
+// SEO重要 → SSR / SSG
+export default async function ProductPage({ params }: { params: { id: string } }) {
+  const product = await getProduct(params.id);
+  return <ProductDetails product={product} />;
+}
+
+// SEO不要 → CSR
+'use client';
+export default function AdminPanel() {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    fetchData().then(setData);
+  }, []);
+  return <AdminContent data={data} />;
+}
+```
+
 Next.jsにおけるハイブリッドレンダリングは、**サーバーサイドレンダリング（SSR）とクライアントサイドレンダリング（CSR）**の長所を組み合わせることで、ウェブページのパフォーマンスとユーザー体験を最適化する強力なアプローチです。この戦略では、SEOに重要な静的コンテンツを高速に表示し、ユーザーインタラクションが必要な部分だけを動的にロードします。
 
 ### 1. サーバーコンポーネント (SSR) の役割

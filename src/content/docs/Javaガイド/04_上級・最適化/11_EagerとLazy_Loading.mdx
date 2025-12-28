@@ -1,0 +1,565 @@
+---
+title: "EagerとLazy Loading"
+label: "EagerとLazy Loading"
+---
+
+## Eager LoadingとLazy Loading
+
+JPAにおける**Eager Loading（積極的ローディング）**と**Lazy Loading（遅延ローディング）**は、関連エンティティの取得戦略です。適切に使い分けることで、パフォーマンスを最適化できます。
+
+### フェッチ戦略の基本
+
+#### Eager Loading（積極的ローディング）
+
+Eager Loadingは、**親エンティティを取得する際に、関連エンティティも同時に取得**する戦略です。
+
+```java
+@Entity
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    
+    // EAGER: ユーザーを取得する際に、注文も同時に取得される
+    @OneToMany(fetch = FetchType.EAGER, mappedBy = "user")
+    private List<Order> orders = new ArrayList<>();
+}
+
+@Entity
+public class Order {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @ManyToOne(fetch = FetchType.EAGER)  // EAGER: 注文を取得する際に、ユーザーも同時に取得
+    @JoinColumn(name = "user_id")
+    private User user;
+}
+```
+
+**動作の流れ:**
+
+```java
+// Userを取得すると、関連するOrderも自動的に取得される
+User user = userRepository.findById(1L).orElseThrow();
+
+// 以下のSQLが実行される:
+// 1. SELECT * FROM users WHERE id = 1
+// 2. SELECT * FROM orders WHERE user_id = 1  （自動的に実行される）
+
+// トランザクション外でもアクセス可能
+List<Order> orders = user.getOrders();  // 既にロードされているため、追加のクエリは発生しない
+```
+
+#### Lazy Loading（遅延ローディング）
+
+Lazy Loadingは、**関連エンティティを実際にアクセスするまで取得しない**戦略です。
+
+```java
+@Entity
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    
+    // LAZY: ユーザーを取得する際は、注文は取得しない
+    @OneToMany(fetch = FetchType.LAZY, mappedBy = "user")
+    private List<Order> orders = new ArrayList<>();
+}
+
+@Entity
+public class Order {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @ManyToOne(fetch = FetchType.LAZY)  // LAZY: 注文を取得する際は、ユーザーは取得しない
+    @JoinColumn(name = "user_id")
+    private User user;
+}
+```
+
+**動作の流れ:**
+
+```java
+// Userを取得（Orderはまだ取得されない）
+User user = userRepository.findById(1L).orElseThrow();
+// SQL: SELECT * FROM users WHERE id = 1  （Orderのクエリは実行されない）
+
+// Orderにアクセスした時点で取得される
+List<Order> orders = user.getOrders();  
+// SQL: SELECT * FROM orders WHERE user_id = 1  （この時点で実行される）
+```
+
+### N+1問題の詳細解説
+
+#### N+1問題とは？
+
+N+1問題は、**1回のクエリで親エンティティを取得し、その後N回のクエリで関連エンティティを取得する**問題です。
+
+#### 問題のコード（Eager Loadingの場合）
+
+```java
+@Entity
+public class User {
+    @OneToMany(fetch = FetchType.EAGER)
+    private List<Order> orders;
+}
+
+// サービスクラス
+@Service
+public class UserService {
+    public void displayAllUsers() {
+        // 1回のクエリ: すべてのユーザーを取得
+        List<User> users = userRepository.findAll();
+        // SQL: SELECT * FROM users
+        
+        // 各ユーザーごとにOrderを取得（N+1問題）
+        for (User user : users) {
+            // ユーザーごとにOrderを取得するクエリが実行される
+            List<Order> orders = user.getOrders();
+            // SQL: SELECT * FROM orders WHERE user_id = ?
+            // これがユーザー数分（N回）実行される
+        }
+        
+        // 合計: 1 + N回のクエリが実行される
+    }
+}
+```
+
+**実行されるSQL:**
+```sql
+-- 1回目: すべてのユーザーを取得
+SELECT * FROM users;
+
+-- 2回目以降: 各ユーザーの注文を取得（ユーザー数分実行される）
+SELECT * FROM orders WHERE user_id = 1;
+SELECT * FROM orders WHERE user_id = 2;
+SELECT * FROM orders WHERE user_id = 3;
+-- ... ユーザー数分繰り返される
+```
+
+#### 問題のコード（Lazy Loadingの場合）
+
+```java
+@Entity
+public class User {
+    @OneToMany(fetch = FetchType.LAZY)
+    private List<Order> orders;
+}
+
+@Service
+@Transactional
+public class UserService {
+    public void displayAllUsers() {
+        // 1回のクエリ: すべてのユーザーを取得
+        List<User> users = userRepository.findAll();
+        // SQL: SELECT * FROM users
+        
+        // トランザクション内でOrderにアクセス
+        for (User user : users) {
+            // 各ユーザーごとにOrderを取得するクエリが実行される（N+1問題）
+            List<Order> orders = user.getOrders();
+            // SQL: SELECT * FROM orders WHERE user_id = ?
+            // これがユーザー数分（N回）実行される
+        }
+    }
+}
+```
+
+### N+1問題の解決方法
+
+#### 1. JOIN FETCHを使用
+
+```java
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    // JOIN FETCHで関連エンティティを一度に取得
+    @Query("SELECT DISTINCT u FROM User u JOIN FETCH u.orders")
+    List<User> findAllWithOrders();
+    
+    // 特定のユーザーのみ取得する場合
+    @Query("SELECT u FROM User u JOIN FETCH u.orders WHERE u.id = :id")
+    Optional<User> findByIdWithOrders(@Param("id") Long id);
+}
+
+// 使用例
+@Service
+public class UserService {
+    public void displayAllUsers() {
+        // 1回のクエリでユーザーと注文を同時に取得
+        List<User> users = userRepository.findAllWithOrders();
+        // SQL: SELECT u.*, o.* FROM users u 
+        //      LEFT JOIN orders o ON u.id = o.user_id
+        
+        // 追加のクエリは発生しない
+        for (User user : users) {
+            List<Order> orders = user.getOrders();  // 既にロード済み
+        }
+    }
+}
+```
+
+#### 2. @EntityGraphを使用
+
+```java
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    // @EntityGraphで関連エンティティを指定
+    @EntityGraph(attributePaths = {"orders"})
+    List<User> findAll();
+    
+    @EntityGraph(attributePaths = {"orders", "orders.orderItems"})
+    Optional<User> findById(Long id);
+    
+    // 複数の関連エンティティを指定
+    @EntityGraph(attributePaths = {"orders", "profile", "address"})
+    List<User> findByName(String name);
+}
+
+// 使用例
+@Service
+public class UserService {
+    public void displayAllUsers() {
+        // 1回のクエリでユーザーと注文を同時に取得
+        List<User> users = userRepository.findAll();
+        // SQL: SELECT u.*, o.* FROM users u 
+        //      LEFT JOIN orders o ON u.id = o.user_id
+        
+        // 追加のクエリは発生しない
+        for (User user : users) {
+            List<Order> orders = user.getOrders();  // 既にロード済み
+        }
+    }
+}
+```
+
+#### 3. 複数レベルの関連を取得
+
+```java
+@Entity
+public class User {
+    @OneToMany(fetch = FetchType.LAZY)
+    private List<Order> orders;
+}
+
+@Entity
+public class Order {
+    @OneToMany(fetch = FetchType.LAZY)
+    private List<OrderItem> orderItems;
+}
+
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    // 2レベル深い関連も一度に取得
+    @Query("SELECT DISTINCT u FROM User u " +
+           "JOIN FETCH u.orders o " +
+           "JOIN FETCH o.orderItems")
+    List<User> findAllWithOrdersAndItems();
+    
+    // @EntityGraphでも可能
+    @EntityGraph(attributePaths = {"orders", "orders.orderItems"})
+    List<User> findAll();
+}
+```
+
+### Eager LoadingとLazy Loadingの比較
+
+| 項目 | Eager Loading | Lazy Loading |
+|------|--------------|--------------|
+| **取得タイミング** | 親エンティティ取得時 | 関連エンティティアクセス時 |
+| **初期クエリ** | 複数のクエリが実行される可能性 | 1回のクエリ |
+| **後続クエリ** | 不要（既に取得済み） | 必要（アクセス時に実行） |
+| **トランザクション** | トランザクション外でもアクセス可能 | トランザクション内でのみアクセス可能 |
+| **メモリ使用量** | 多い（すべて取得するため） | 少ない（必要な分だけ取得） |
+| **N+1問題** | 発生しやすい | 発生しやすい（適切な対策が必要） |
+| **使用場面** | 常に必要な関連データ | 条件によって必要な関連データ |
+
+### 実践的な使い分け
+
+#### Eager Loadingが適している場合
+
+```java
+// 1. 常に必要な関連データ
+@Entity
+public class Order {
+    @ManyToOne(fetch = FetchType.EAGER)  // 注文には常にユーザー情報が必要
+    private User user;
+}
+
+// 2. 小さな関連データ
+@Entity
+public class User {
+    @OneToOne(fetch = FetchType.EAGER)  // プロフィールは常に必要で、サイズも小さい
+    private UserProfile profile;
+}
+```
+
+#### Lazy Loadingが適している場合
+
+```java
+// 1. 大きなコレクション
+@Entity
+public class User {
+    @OneToMany(fetch = FetchType.LAZY)  // 注文は大量にある可能性がある
+    private List<Order> orders;
+}
+
+// 2. 条件によって必要なデータ
+@Entity
+public class Product {
+    @OneToMany(fetch = FetchType.LAZY)  // レビューは必要な時だけ取得
+    private List<Review> reviews;
+}
+```
+
+### パフォーマンス最適化のテクニック
+
+#### 1. バッチサイズの設定
+
+```java
+@Entity
+public class User {
+    @OneToMany(fetch = FetchType.LAZY)
+    @BatchSize(size = 50)  // 50件ずつバッチで取得
+    private List<Order> orders;
+}
+
+// application.properties
+spring.jpa.properties.hibernate.jdbc.batch_size=50
+```
+
+**動作:**
+```java
+// 100人のユーザーを取得
+List<User> users = userRepository.findAll();
+// SQL: SELECT * FROM users
+
+// 最初のユーザーの注文にアクセス
+users.get(0).getOrders();
+// SQL: SELECT * FROM orders WHERE user_id IN (1, 2, 3, ..., 50)
+// 50件ずつバッチで取得される
+```
+
+#### 2. サブセレクトの使用
+
+```java
+@Entity
+public class User {
+    @OneToMany(fetch = FetchType.LAZY)
+    @Fetch(FetchMode.SUBSELECT)  // サブクエリで一括取得
+    private List<Order> orders;
+}
+```
+
+**動作:**
+```java
+List<User> users = userRepository.findAll();
+// SQL: SELECT * FROM users
+
+users.get(0).getOrders();
+// SQL: SELECT * FROM orders 
+//      WHERE user_id IN (SELECT id FROM users)
+// すべてのユーザーの注文を一度に取得
+```
+
+#### 3. 動的なフェッチ戦略
+
+```java
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    // デフォルトはLAZYだが、必要に応じてEAGERで取得
+    @EntityGraph(attributePaths = {"orders"})
+    Optional<User> findByIdWithOrders(Long id);
+    
+    // 通常の取得（LAZY）
+    Optional<User> findById(Long id);
+}
+
+// 使用例
+@Service
+public class UserService {
+    public UserDTO getUserBasic(Long id) {
+        // 注文情報は不要な場合
+        User user = userRepository.findById(id).orElseThrow();
+        return convertToBasicDTO(user);
+    }
+    
+    public UserDTO getUserWithOrders(Long id) {
+        // 注文情報も必要な場合
+        User user = userRepository.findByIdWithOrders(id).orElseThrow();
+        return convertToFullDTO(user);
+    }
+}
+```
+
+### よくある問題と解決策
+
+#### 問題1: LazyInitializationException
+
+```java
+// 問題のコード
+@Service
+public class UserService {
+    public UserDTO getUser(Long id) {
+        User user = userRepository.findById(id).orElseThrow();
+        // トランザクションが終了
+        
+        // トランザクション外でLazy Loadingを試みる
+        List<Order> orders = user.getOrders();  
+        // LazyInitializationExceptionが発生
+    }
+}
+```
+
+**解決策1: @Transactionalを使用**
+
+```java
+@Service
+@Transactional(readOnly = true)
+public class UserService {
+    public UserDTO getUser(Long id) {
+        User user = userRepository.findById(id).orElseThrow();
+        // トランザクション内でLazy Loading
+        List<Order> orders = user.getOrders();  // OK
+        return convertToDTO(user, orders);
+    }
+}
+```
+
+**解決策2: JOIN FETCHを使用**
+
+```java
+@Service
+public class UserService {
+    public UserDTO getUser(Long id) {
+        // JOIN FETCHで一度に取得
+        User user = userRepository.findByIdWithOrders(id).orElseThrow();
+        // 既にロード済みなので、トランザクション外でもアクセス可能
+        List<Order> orders = user.getOrders();  // OK
+        return convertToDTO(user, orders);
+    }
+}
+```
+
+#### 問題2: 過度なEager Loading
+
+```java
+// 問題のコード: すべてEAGERに設定
+@Entity
+public class User {
+    @OneToMany(fetch = FetchType.EAGER)
+    private List<Order> orders;
+    
+    @OneToMany(fetch = FetchType.EAGER)
+    private List<Address> addresses;
+    
+    @OneToMany(fetch = FetchType.EAGER)
+    private List<Review> reviews;
+}
+
+// Userを1件取得するだけで、大量のデータが取得される
+User user = userRepository.findById(1L).orElseThrow();
+// 実行されるSQL:
+// SELECT * FROM users WHERE id = 1
+// SELECT * FROM orders WHERE user_id = 1
+// SELECT * FROM addresses WHERE user_id = 1
+// SELECT * FROM reviews WHERE user_id = 1
+```
+
+**解決策: 必要に応じて動的に取得**
+
+```java
+@Entity
+public class User {
+    // すべてLAZYに設定
+    @OneToMany(fetch = FetchType.LAZY)
+    private List<Order> orders;
+    
+    @OneToMany(fetch = FetchType.LAZY)
+    private List<Address> addresses;
+    
+    @OneToMany(fetch = FetchType.LAZY)
+    private List<Review> reviews;
+}
+
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    // 必要に応じてJOIN FETCH
+    @Query("SELECT u FROM User u JOIN FETCH u.orders WHERE u.id = :id")
+    Optional<User> findByIdWithOrders(@Param("id") Long id);
+    
+    @Query("SELECT u FROM User u JOIN FETCH u.addresses WHERE u.id = :id")
+    Optional<User> findByIdWithAddresses(@Param("id") Long id);
+}
+```
+
+### ベストプラクティス
+
+#### 1. デフォルトはLAZY、必要に応じてEAGER
+
+```java
+@Entity
+public class User {
+    // デフォルトでLAZY（推奨）
+    @OneToMany(fetch = FetchType.LAZY)
+    private List<Order> orders;
+    
+    // 常に必要な場合はEAGER
+    @OneToOne(fetch = FetchType.EAGER)
+    private UserProfile profile;
+}
+```
+
+#### 2. JOIN FETCHや@EntityGraphを積極的に使用
+
+```java
+// 必要な関連データを明示的に指定
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    @EntityGraph(attributePaths = {"orders"})
+    List<User> findAll();
+}
+```
+
+#### 3. バッチサイズの設定
+
+```java
+// コレクションに@BatchSizeを設定
+@OneToMany(fetch = FetchType.LAZY)
+@BatchSize(size = 50)
+private List<Order> orders;
+```
+
+#### 4. パフォーマンステストの実施
+
+```java
+@Test
+public void testQueryPerformance() {
+    long startTime = System.currentTimeMillis();
+    
+    List<User> users = userRepository.findAll();
+    for (User user : users) {
+        user.getOrders().size();  // Lazy Loadingをトリガー
+    }
+    
+    long duration = System.currentTimeMillis() - startTime;
+    assertThat(duration).isLessThan(1000);  // 1秒以内に完了すること
+}
+```
+
+### まとめ
+
+Eager LoadingとLazy Loadingの使い分け：
+
+- **Eager Loading**: 常に必要な小さな関連データに使用
+- **Lazy Loading**: 大きなコレクションや条件によって必要なデータに使用（デフォルト推奨）
+- **N+1問題の解決**: JOIN FETCHや@EntityGraphを使用
+- **パフォーマンス最適化**: バッチサイズの設定、動的なフェッチ戦略
+
+適切なフェッチ戦略を選択することで、パフォーマンスを最適化し、N+1問題を回避できます。
+

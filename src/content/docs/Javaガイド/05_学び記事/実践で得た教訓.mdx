@@ -1,0 +1,455 @@
+---
+title: "実践で得た教訓"
+label: "実践で得た教訓"
+---
+
+## 実践で得た教訓
+
+実際のSpring Bootプロジェクト開発で得た経験と教訓をまとめます。
+
+### 1. トランザクション管理の重要性
+
+#### 問題: 自己呼び出しでトランザクションが効かない
+
+**問題のコード:**
+
+```java
+@Service
+@Transactional
+public class UserService {
+    
+    public void processUser(Long userId) {
+        // トランザクションが効かない
+        updateUserStatus(userId, UserStatus.PROCESSING);
+    }
+    
+    @Transactional
+    public void updateUserStatus(Long userId, UserStatus status) {
+        // このメソッドはトランザクション外で実行される
+        User user = userRepository.findById(userId).orElseThrow();
+        user.setStatus(status);
+        userRepository.save(user);
+    }
+}
+```
+
+**解決策:**
+
+```java
+@Service
+@Transactional
+public class UserService {
+    
+    @Autowired
+    private ApplicationContext applicationContext;
+    
+    public void processUser(Long userId) {
+        // プロキシ経由で呼び出すことでトランザクションが効く
+        UserService self = applicationContext.getBean(UserService.class);
+        self.updateUserStatus(userId, UserStatus.PROCESSING);
+    }
+    
+    @Transactional
+    public void updateUserStatus(Long userId, UserStatus status) {
+        // トランザクション内で実行される
+        User user = userRepository.findById(userId).orElseThrow();
+        user.setStatus(status);
+        userRepository.save(user);
+    }
+}
+```
+
+**教訓:** 同じクラス内のメソッド呼び出しでは、`@Transactional`が効かない。プロキシ経由で呼び出すか、別のサービスクラスに分離する。
+
+### 2. N+1問題の回避
+
+#### 問題: 関連エンティティの取得でN+1問題が発生
+
+**問題のコード:**
+
+```java
+@Service
+public class OrderService {
+    
+    public List<OrderDTO> findAllOrders() {
+        List<Order> orders = orderRepository.findAll();
+        return orders.stream()
+            .map(order -> {
+                // 各OrderごとにUserを取得（N+1問題）
+                User user = userRepository.findById(order.getUserId()).orElseThrow();
+                return convertToDTO(order, user);
+            })
+            .collect(Collectors.toList());
+    }
+}
+```
+
+**解決策:**
+
+```java
+@Service
+public class OrderService {
+    
+    public List<OrderDTO> findAllOrders() {
+        // JOIN FETCHを使用して一度に取得
+        List<Order> orders = orderRepository.findAllWithUser();
+        return orders.stream()
+            .map(this::convertToDTO)
+            .collect(Collectors.toList());
+    }
+}
+
+@Repository
+public interface OrderRepository extends JpaRepository<Order, Long> {
+    // JOIN FETCHで関連エンティティを一度に取得
+    @Query("SELECT o FROM Order o JOIN FETCH o.user")
+    List<Order> findAllWithUser();
+    
+    // または@EntityGraphを使用
+    @EntityGraph(attributePaths = {"user"})
+    List<Order> findAll();
+}
+```
+
+**教訓:** 関連エンティティを取得する際は、`JOIN FETCH`や`@EntityGraph`を使用してN+1問題を回避する。
+
+### 3. 例外ハンドリングの統一
+
+#### 問題: 例外処理が分散している
+
+**問題のコード:**
+
+```java
+@RestController
+public class UserController {
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<UserDTO> getUser(@PathVariable Long id) {
+        try {
+            UserDTO user = userService.findById(id);
+            return ResponseEntity.ok(user);
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+}
+```
+
+**解決策:**
+
+```java
+@RestController
+public class UserController {
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<UserDTO> getUser(@PathVariable Long id) {
+        // 例外処理は@ControllerAdviceに委譲
+        UserDTO user = userService.findById(id);
+        return ResponseEntity.ok(user);
+    }
+}
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+    
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleResourceNotFound(
+            ResourceNotFoundException ex) {
+        ErrorResponse error = new ErrorResponse(
+            HttpStatus.NOT_FOUND.value(),
+            "Resource not found",
+            ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+    }
+}
+```
+
+**教訓:** 例外処理は`@ControllerAdvice`で一元管理し、コントローラーをシンプルに保つ。
+
+### 4. DTOの活用
+
+#### 問題: エンティティを直接APIレスポンスとして返す
+
+**問題のコード:**
+
+```java
+@RestController
+public class UserController {
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<User> getUser(@PathVariable Long id) {
+        // エンティティを直接返す（非推奨）
+        User user = userRepository.findById(id).orElseThrow();
+        return ResponseEntity.ok(user);
+    }
+}
+```
+
+**解決策:**
+
+```java
+@RestController
+public class UserController {
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<UserDTO> getUser(@PathVariable Long id) {
+        // DTOを返す（推奨）
+        UserDTO user = userService.findById(id);
+        return ResponseEntity.ok(user);
+    }
+}
+
+@Service
+public class UserService {
+    
+    public UserDTO findById(Long id) {
+        User user = userRepository.findById(id).orElseThrow();
+        return convertToDTO(user);
+    }
+    
+    private UserDTO convertToDTO(User user) {
+        UserDTO dto = new UserDTO();
+        dto.setId(user.getId());
+        dto.setName(user.getName());
+        dto.setEmail(user.getEmail());
+        // パスワードなどの機密情報は含めない
+        return dto;
+    }
+}
+```
+
+**教訓:** エンティティを直接APIレスポンスとして返さず、DTOを使用して必要な情報のみを公開する。
+
+### 5. バリデーションの実装
+
+#### 問題: バリデーションロジックが分散している
+
+**問題のコード:**
+
+```java
+@RestController
+public class UserController {
+    
+    @PostMapping
+    public ResponseEntity<UserDTO> createUser(@RequestBody UserCreateRequest request) {
+        // バリデーションロジックがコントローラーに混在
+        if (request.getName() == null || request.getName().isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (request.getEmail() == null || !isValidEmail(request.getEmail())) {
+            return ResponseEntity.badRequest().build();
+        }
+        // ...
+    }
+}
+```
+
+**解決策:**
+
+```java
+public class UserCreateRequest {
+    @NotBlank(message = "Name is required")
+    @Size(min = 1, max = 100, message = "Name must be between 1 and 100 characters")
+    private String name;
+    
+    @NotBlank(message = "Email is required")
+    @Email(message = "Email must be valid")
+    private String email;
+    
+    @NotBlank(message = "Password is required")
+    @Size(min = 8, message = "Password must be at least 8 characters")
+    private String password;
+    
+    // getter/setter
+}
+
+@RestController
+public class UserController {
+    
+    @PostMapping
+    public ResponseEntity<UserDTO> createUser(
+            @Valid @RequestBody UserCreateRequest request) {
+        // @Validアノテーションで自動的にバリデーション
+        UserDTO createdUser = userService.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(createdUser);
+    }
+}
+```
+
+**教訓:** バリデーションはBean Validationアノテーションを使用して、リクエストクラスに定義する。
+
+### 6. ロギングの適切な使用
+
+#### 問題: ログレベルが不適切
+
+**問題のコード:**
+
+```java
+@Service
+public class UserService {
+    
+    public UserDTO findById(Long id) {
+        System.out.println("Finding user: " + id);  // 非推奨
+        User user = userRepository.findById(id).orElseThrow();
+        System.out.println("User found: " + user.getName());  // 非推奨
+        return convertToDTO(user);
+    }
+}
+```
+
+**解決策:**
+
+```java
+@Service
+@Slf4j
+public class UserService {
+    
+    public UserDTO findById(Long id) {
+        log.debug("Finding user: id={}", id);
+        User user = userRepository.findById(id).orElseThrow();
+        log.info("User found: id={}, name={}", id, user.getName());
+        return convertToDTO(user);
+    }
+    
+    public UserDTO create(UserCreateRequest request) {
+        log.info("Creating user: email={}", request.getEmail());
+        try {
+            UserDTO createdUser = // 作成処理
+            log.info("User created successfully: id={}", createdUser.getId());
+            return createdUser;
+        } catch (Exception e) {
+            log.error("Failed to create user: email={}", request.getEmail(), e);
+            throw e;
+        }
+    }
+}
+```
+
+**教訓:** 
+- `System.out.println`ではなく、適切なロギングフレームワーク（SLF4J + Logback）を使用する
+- ログレベルを適切に使い分ける（DEBUG: デバッグ情報、INFO: 重要な処理、ERROR: エラー）
+- 機密情報（パスワード、トークンなど）はログに出力しない
+
+### 7. 設定ファイルの管理
+
+#### 問題: 機密情報がソースコードに含まれている
+
+**問題のコード:**
+
+```properties
+# application.properties
+spring.datasource.password=mysecretpassword
+api.key=secret-api-key
+```
+
+**解決策:**
+
+```properties
+# application.properties
+spring.datasource.password=${DB_PASSWORD}
+api.key=${API_KEY}
+```
+
+**環境変数の設定:**
+
+```bash
+# macOS/Linux
+export DB_PASSWORD=mysecretpassword
+export API_KEY=secret-api-key
+
+# Windows
+set DB_PASSWORD=mysecretpassword
+set API_KEY=secret-api-key
+```
+
+**教訓:** 機密情報は環境変数や設定サーバーで管理し、ソースコードに含めない。
+
+### 8. テストの書き方
+
+#### 問題: テストが統合テストのみ
+
+**問題のコード:**
+
+```java
+@SpringBootTest
+class UserServiceTest {
+    
+    @Autowired
+    private UserService userService;
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    @Test
+    void testFindById() {
+        // データベースに依存したテスト（統合テスト）
+        User user = userRepository.save(createTestUser());
+        UserDTO result = userService.findById(user.getId());
+        assertThat(result).isNotNull();
+    }
+}
+```
+
+**解決策:**
+
+```java
+// ユニットテスト（高速）
+@ExtendWith(MockitoExtension.class)
+class UserServiceUnitTest {
+    
+    @Mock
+    private UserRepository userRepository;
+    
+    @InjectMocks
+    private UserService userService;
+    
+    @Test
+    void testFindById() {
+        // モックを使用した高速なテスト
+        when(userRepository.findById(1L)).thenReturn(Optional.of(createTestUser()));
+        UserDTO result = userService.findById(1L);
+        assertThat(result).isNotNull();
+    }
+}
+
+// 統合テスト（データベースを使用）
+@SpringBootTest
+@Transactional
+class UserServiceIntegrationTest {
+    
+    @Autowired
+    private UserService userService;
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    @Test
+    void testCreateUser() {
+        // データベースを使用した統合テスト
+        UserCreateRequest request = createTestRequest();
+        UserDTO result = userService.create(request);
+        assertThat(result).isNotNull();
+    }
+}
+```
+
+**教訓:** テストピラミッドに従い、ユニットテストを多数、統合テストを中程度、E2Eテストを少数作成する。
+
+### まとめ
+
+実践で得た主な教訓：
+
+1. **トランザクション管理**: 自己呼び出しではプロキシ経由で呼び出す
+2. **N+1問題**: JOIN FETCHや@EntityGraphを使用して回避
+3. **例外ハンドリング**: @ControllerAdviceで一元管理
+4. **DTOの活用**: エンティティを直接返さず、DTOを使用
+5. **バリデーション**: Bean Validationアノテーションを活用
+6. **ロギング**: 適切なログレベルとフレームワークを使用
+7. **設定管理**: 機密情報は環境変数で管理
+8. **テスト戦略**: テストピラミッドに従ったテスト設計
+
+これらの教訓を踏まえることで、保守性が高く、堅牢なSpring Bootアプリケーションを構築できます。
+

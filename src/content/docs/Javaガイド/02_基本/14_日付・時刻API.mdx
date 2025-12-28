@@ -1,0 +1,346 @@
+---
+title: "日付・時刻API（java.time）"
+label: "日付・時刻API"
+---
+
+## 日付・時刻API（java.time）
+
+Java 8で導入された`java.time`パッケージは、日付と時刻を扱うためのモダンなAPIです。この章では、`java.time`の使い方について詳しく解説します。
+
+### java.timeパッケージの概要
+
+**主なクラス:**
+- `LocalDate`: 日付のみ（年、月、日）
+- `LocalTime`: 時刻のみ（時、分、秒）
+- `LocalDateTime`: 日付と時刻
+- `ZonedDateTime`: タイムゾーン付きの日時
+- `Instant`: エポック秒（UTC）
+- `Duration`: 時間の間隔
+- `Period`: 日付の間隔
+- `DateTimeFormatter`: 日時のフォーマット
+
+### LocalDate
+
+日付のみを扱うクラスです。
+
+```java
+// 現在の日付を取得
+LocalDate today = LocalDate.now();
+System.out.println(today);  // 2024-01-15
+
+// 特定の日付を指定
+LocalDate date1 = LocalDate.of(2024, 1, 15);
+LocalDate date2 = LocalDate.of(2024, Month.JANUARY, 15);
+
+// 文字列から解析
+LocalDate date3 = LocalDate.parse("2024-01-15");
+
+// カスタムフォーマットで解析
+DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd");
+LocalDate date4 = LocalDate.parse("2024/01/15", formatter);
+
+// 年、月、日の取得
+int year = today.getYear();  // 2024
+int month = today.getMonthValue();  // 1
+int day = today.getDayOfMonth();  // 15
+DayOfWeek dayOfWeek = today.getDayOfWeek();  // MONDAY
+
+// 日付の計算
+LocalDate tomorrow = today.plusDays(1);
+LocalDate nextWeek = today.plusWeeks(1);
+LocalDate nextMonth = today.plusMonths(1);
+LocalDate nextYear = today.plusYears(1);
+
+LocalDate yesterday = today.minusDays(1);
+LocalDate lastWeek = today.minusWeeks(1);
+
+// 日付の比較
+boolean isAfter = today.isAfter(date1);
+boolean isBefore = today.isBefore(date1);
+boolean isEqual = today.isEqual(date1);
+
+// うるう年の判定
+boolean isLeapYear = today.isLeapYear();
+```
+
+### LocalTime
+
+時刻のみを扱うクラスです。
+
+```java
+// 現在の時刻を取得
+LocalTime now = LocalTime.now();
+System.out.println(now);  // 14:30:45.123
+
+// 特定の時刻を指定
+LocalTime time1 = LocalTime.of(14, 30);
+LocalTime time2 = LocalTime.of(14, 30, 45);
+LocalTime time3 = LocalTime.of(14, 30, 45, 123000000);
+
+// 文字列から解析
+LocalTime time4 = LocalTime.parse("14:30:45");
+
+// 時、分、秒の取得
+int hour = now.getHour();  // 14
+int minute = now.getMinute();  // 30
+int second = now.getSecond();  // 45
+int nano = now.getNano();  // 123000000
+
+// 時刻の計算
+LocalTime plusHours = now.plusHours(2);
+LocalTime plusMinutes = now.plusMinutes(30);
+LocalTime plusSeconds = now.plusSeconds(10);
+
+LocalTime minusHours = now.minusHours(1);
+
+// 時刻の比較
+boolean isAfter = now.isAfter(time1);
+boolean isBefore = now.isBefore(time1);
+```
+
+### LocalDateTime
+
+日付と時刻を扱うクラスです。
+
+```java
+// 現在の日時を取得
+LocalDateTime now = LocalDateTime.now();
+System.out.println(now);  // 2024-01-15T14:30:45.123
+
+// 特定の日時を指定
+LocalDateTime dateTime1 = LocalDateTime.of(2024, 1, 15, 14, 30);
+LocalDateTime dateTime2 = LocalDateTime.of(2024, Month.JANUARY, 15, 14, 30, 45);
+
+// LocalDateとLocalTimeから作成
+LocalDate date = LocalDate.of(2024, 1, 15);
+LocalTime time = LocalTime.of(14, 30);
+LocalDateTime dateTime3 = LocalDateTime.of(date, time);
+
+// 文字列から解析
+LocalDateTime dateTime4 = LocalDateTime.parse("2024-01-15T14:30:45");
+
+// 日時の計算
+LocalDateTime tomorrow = now.plusDays(1);
+LocalDateTime nextHour = now.plusHours(1);
+LocalDateTime nextMinute = now.plusMinutes(30);
+
+// LocalDateとLocalTimeに変換
+LocalDate datePart = now.toLocalDate();
+LocalTime timePart = now.toLocalTime();
+```
+
+### ZonedDateTime
+
+タイムゾーン付きの日時を扱うクラスです。
+
+```java
+// 現在の日時（システムのタイムゾーン）
+ZonedDateTime now = ZonedDateTime.now();
+System.out.println(now);  // 2024-01-15T14:30:45.123+09:00[Asia/Tokyo]
+
+// 特定のタイムゾーンを指定
+ZonedDateTime tokyo = ZonedDateTime.now(ZoneId.of("Asia/Tokyo"));
+ZonedDateTime newYork = ZonedDateTime.now(ZoneId.of("America/New_York"));
+ZonedDateTime london = ZonedDateTime.now(ZoneId.of("Europe/London"));
+
+// LocalDateTimeとZoneIdから作成
+LocalDateTime localDateTime = LocalDateTime.of(2024, 1, 15, 14, 30);
+ZonedDateTime zoned = ZonedDateTime.of(localDateTime, ZoneId.of("Asia/Tokyo"));
+
+// タイムゾーンの変換
+ZonedDateTime tokyoTime = ZonedDateTime.now(ZoneId.of("Asia/Tokyo"));
+ZonedDateTime newYorkTime = tokyoTime.withZoneSameInstant(ZoneId.of("America/New_York"));
+
+// タイムゾーンの取得
+ZoneId zone = now.getZone();
+System.out.println(zone);  // Asia/Tokyo
+```
+
+### Instant
+
+エポック秒（1970-01-01T00:00:00Zからの経過秒数）を扱うクラスです。
+
+```java
+// 現在のエポック秒を取得
+Instant now = Instant.now();
+System.out.println(now);  // 2024-01-15T05:30:45.123Z
+
+// エポック秒から作成
+Instant instant1 = Instant.ofEpochSecond(1705289445);
+Instant instant2 = Instant.ofEpochMilli(1705289445123L);
+
+// LocalDateTimeと相互変換
+LocalDateTime localDateTime = LocalDateTime.of(2024, 1, 15, 14, 30);
+Instant instant = localDateTime.atZone(ZoneId.systemDefault()).toInstant();
+
+LocalDateTime converted = LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
+
+// エポック秒の取得
+long epochSecond = now.getEpochSecond();
+long epochMilli = now.toEpochMilli();
+```
+
+### Duration
+
+時間の間隔を扱うクラスです（秒、ナノ秒単位）。
+
+```java
+// Durationの作成
+Duration duration1 = Duration.ofHours(2);
+Duration duration2 = Duration.ofMinutes(30);
+Duration duration3 = Duration.ofSeconds(45);
+Duration duration4 = Duration.parse("PT2H30M45S");  // 2時間30分45秒
+
+// LocalTime間のDuration
+LocalTime start = LocalTime.of(9, 0);
+LocalTime end = LocalTime.of(17, 30);
+Duration workDuration = Duration.between(start, end);
+System.out.println(workDuration);  // PT8H30M
+
+// Instant間のDuration
+Instant startInstant = Instant.now();
+Thread.sleep(1000);
+Instant endInstant = Instant.now();
+Duration elapsed = Duration.between(startInstant, endInstant);
+
+// Durationの計算
+Duration plus = duration1.plus(duration2);
+Duration minus = duration1.minus(duration2);
+
+// 時間の取得
+long hours = workDuration.toHours();  // 8
+long minutes = workDuration.toMinutes();  // 510
+long seconds = workDuration.getSeconds();  // 30600
+```
+
+### Period
+
+日付の間隔を扱うクラスです（年、月、日単位）。
+
+```java
+// Periodの作成
+Period period1 = Period.ofYears(1);
+Period period2 = Period.ofMonths(6);
+Period period3 = Period.ofDays(30);
+Period period4 = Period.parse("P1Y6M30D");  // 1年6ヶ月30日
+
+// LocalDate間のPeriod
+LocalDate start = LocalDate.of(2023, 1, 15);
+LocalDate end = LocalDate.of(2024, 7, 15);
+Period period = Period.between(start, end);
+System.out.println(period);  // P1Y6M
+
+// Periodの計算
+Period plus = period1.plus(period2);
+Period minus = period1.minus(period2);
+
+// 期間の取得
+int years = period.getYears();  // 1
+int months = period.getMonths();  // 6
+int days = period.getDays();  // 0
+```
+
+### DateTimeFormatter
+
+日時のフォーマットとパースを行うクラスです。
+
+```java
+// 標準フォーマッター
+LocalDateTime now = LocalDateTime.now();
+
+DateTimeFormatter isoFormatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+String formatted1 = now.format(isoFormatter);
+LocalDateTime parsed1 = LocalDateTime.parse(formatted1, isoFormatter);
+
+// カスタムフォーマッター
+DateTimeFormatter customFormatter = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss");
+String formatted2 = now.format(customFormatter);
+LocalDateTime parsed2 = LocalDateTime.parse(formatted2, customFormatter);
+
+// ロケールを指定
+DateTimeFormatter japaneseFormatter = DateTimeFormatter.ofPattern("yyyy年MM月dd日", Locale.JAPANESE);
+String formatted3 = now.format(japaneseFormatter);
+
+// よく使うパターン
+DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss");
+DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+```
+
+### 実践例
+
+#### ユーザーの生年月日から年齢を計算
+
+```java
+public class UserService {
+    
+    public int calculateAge(LocalDate birthDate) {
+        LocalDate today = LocalDate.now();
+        Period period = Period.between(birthDate, today);
+        return period.getYears();
+    }
+    
+    public boolean isAdult(LocalDate birthDate) {
+        return calculateAge(birthDate) >= 18;
+    }
+    
+    public long daysUntilBirthday(LocalDate birthDate) {
+        LocalDate today = LocalDate.now();
+        LocalDate nextBirthday = birthDate.withYear(today.getYear());
+        
+        if (nextBirthday.isBefore(today) || nextBirthday.isEqual(today)) {
+            nextBirthday = nextBirthday.plusYears(1);
+        }
+        
+        return ChronoUnit.DAYS.between(today, nextBirthday);
+    }
+}
+```
+
+#### 営業時間のチェック
+
+```java
+public class BusinessHoursChecker {
+    
+    private static final LocalTime OPEN_TIME = LocalTime.of(9, 0);
+    private static final LocalTime CLOSE_TIME = LocalTime.of(18, 0);
+    
+    public boolean isBusinessHours(LocalDateTime dateTime) {
+        LocalTime time = dateTime.toLocalTime();
+        DayOfWeek dayOfWeek = dateTime.getDayOfWeek();
+        
+        // 平日のみ
+        if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) {
+            return false;
+        }
+        
+        return !time.isBefore(OPEN_TIME) && time.isBefore(CLOSE_TIME);
+    }
+    
+    public Duration getRemainingBusinessHours(LocalDateTime dateTime) {
+        if (!isBusinessHours(dateTime)) {
+            return Duration.ZERO;
+        }
+        
+        LocalTime time = dateTime.toLocalTime();
+        LocalTime endOfDay = LocalTime.of(18, 0);
+        return Duration.between(time, endOfDay);
+    }
+}
+```
+
+### まとめ
+
+日付・時刻APIのポイント：
+
+- **LocalDate**: 日付のみ
+- **LocalTime**: 時刻のみ
+- **LocalDateTime**: 日付と時刻
+- **ZonedDateTime**: タイムゾーン付き日時
+- **Instant**: エポック秒
+- **Duration**: 時間の間隔
+- **Period**: 日付の間隔
+- **DateTimeFormatter**: フォーマットとパース
+
+`java.time`パッケージを使用することで、日付と時刻を安全かつ効率的に扱えます。
+

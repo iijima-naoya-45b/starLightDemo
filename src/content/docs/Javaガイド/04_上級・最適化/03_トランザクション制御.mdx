@@ -1,0 +1,891 @@
+---
+title: "トランザクション制御"
+label: "トランザクション制御"
+---
+
+## トランザクション制御
+
+トランザクション管理は、エンタープライズアプリケーションにおいて最も重要な設計決定の一つです。この章では、トランザクション制御の深い理解と実践的な意思決定について解説します。
+
+### なぜトランザクション管理が重要なのか
+
+#### トランザクションの本質的な価値
+
+**ACID特性の実践的な意味:**
+
+```java
+// Atomicity（原子性）: すべて成功するか、すべて失敗するか
+@Transactional
+public void transferMoney(Long fromAccountId, Long toAccountId, BigDecimal amount) {
+    // 問題のあるコード: 部分的な成功が発生する可能性
+    accountService.debit(fromAccountId, amount);
+    // ここで例外が発生すると、借方のみが実行される（不整合）
+    accountService.credit(toAccountId, amount);
+}
+
+// 解決: @Transactionalにより、例外発生時に自動的にロールバック
+@Transactional
+public void transferMoney(Long fromAccountId, Long toAccountId, BigDecimal amount) {
+    accountService.debit(fromAccountId, amount);
+    accountService.credit(toAccountId, amount);
+    // 例外が発生すると、両方の操作がロールバックされる
+}
+
+// Consistency（一貫性）: データの整合性が保たれる
+@Transactional
+public void createOrderWithInventory(OrderRequest request) {
+    Order order = orderRepository.save(createOrder(request));
+    // 在庫が不足している場合、注文も作成されない（一貫性が保たれる）
+    inventoryService.reduceStock(order.getItems());
+}
+
+// Isolation（分離性）: 同時実行時の干渉を防ぐ
+@Transactional(isolation = Isolation.READ_COMMITTED)
+public void updateBalance(Long accountId, BigDecimal amount) {
+    // 他のトランザクションからの未コミットの変更は見えない
+    Account account = accountRepository.findById(accountId);
+    account.setBalance(account.getBalance().add(amount));
+    accountRepository.save(account);
+}
+
+// Durability（永続性）: コミットされた変更は失われない
+@Transactional
+public void saveCriticalData(CriticalData data) {
+    // コミット後、システム障害が発生してもデータは保持される
+    criticalDataRepository.save(data);
+}
+```
+
+#### トランザクション境界の設計判断
+
+**トランザクション境界をどこに置くべきか:**
+
+```java
+// 問題のあるコード: トランザクション境界が不適切
+@Service
+public class OrderService {
+    
+    // 問題1: トランザクションが細かすぎる
+    @Transactional
+    public void createOrder(OrderRequest request) {
+        Order order = orderRepository.save(createOrder(request));
+        // 問題: 各操作が別のトランザクション
+        processPayment(order.getId(), request.getAmount());  // 別トランザクション
+        updateInventory(order.getItems());  // 別トランザクション
+    }
+    
+    @Transactional
+    public void processPayment(Long orderId, BigDecimal amount) {
+        // 独立したトランザクション
+    }
+    
+    // 問題2: トランザクションが大きすぎる
+    @Transactional
+    public void processMonthlyReport() {
+        // 問題: 長時間実行される処理をトランザクション内で実行
+        List<Order> orders = orderRepository.findAll();  // 10万件取得
+        for (Order order : orders) {
+            processOrder(order);  // 各処理に時間がかかる
+        }
+        // 結果: 長時間ロックが保持され、他のトランザクションがブロック
+    }
+}
+
+// 解決: 適切なトランザクション境界の設計
+@Service
+public class OrderService {
+    
+    // 解決1: ビジネストランザクションとして1つのトランザクションにまとめる
+    @Transactional
+    public void createOrder(OrderRequest request) {
+        Order order = orderRepository.save(createOrder(request));
+        
+        // 同じトランザクション内で実行
+        processPaymentInternal(order.getId(), request.getAmount());
+        updateInventoryInternal(order.getItems());
+        
+        // すべて成功するか、すべて失敗するか
+    }
+    
+    // 内部メソッド（トランザクションを新規作成しない）
+    private void processPaymentInternal(Long orderId, BigDecimal amount) {
+        // 親トランザクションに参加
+    }
+    
+    // 解決2: 長時間実行される処理はトランザクション外で実行
+    @Transactional
+    public void processMonthlyReport() {
+        // 1. データを取得（短いトランザクション）
+        List<Long> orderIds = orderRepository.findAllIds();
+        
+        // 2. トランザクション外で処理
+        processOrdersInBatches(orderIds);
+    }
+    
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void processOrdersInBatches(List<Long> orderIds) {
+        // バッチごとに独立したトランザクション
+        int batchSize = 1000;
+        for (int i = 0; i < orderIds.size(); i += batchSize) {
+            List<Long> batch = orderIds.subList(i, Math.min(i + batchSize, orderIds.size()));
+            processBatch(batch);
+        }
+    }
+    
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void processBatch(List<Long> orderIds) {
+        // 各バッチは独立したトランザクション
+        // 1つのバッチが失敗しても、他のバッチには影響しない
+    }
+}
+```
+
+## トランザクション制御
+
+Spring Frameworkのトランザクション管理は、アプリケーションのデータ整合性を保証するための重要な機能です。この章では、Springのトランザクション制御の詳細な設定方法とベストプラクティスについて解説します。
+
+### @Transactionalアノテーションの基本
+
+`@Transactional`アノテーションは、メソッドやクラスにトランザクション管理を適用します。
+
+```java
+@Service
+@Transactional
+public class UserService {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    public User createUser(User user) {
+        return userRepository.save(user);
+    }
+}
+```
+
+### トランザクションの伝播動作（Propagation）
+
+トランザクションの伝播動作は、既存のトランザクションコンテキストがある場合の動作を制御します。
+
+```java
+@Service
+public class UserService {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    @Autowired
+    private OrderService orderService;
+    
+    // REQUIRED: 既存のトランザクションがあれば参加、なければ新規作成（デフォルト）
+    @Transactional(propagation = Propagation.REQUIRED)
+    public User createUserWithOrder(User user, Order order) {
+        User savedUser = userRepository.save(user);
+        orderService.createOrder(order);  // 同じトランザクション内で実行
+        return savedUser;
+    }
+    
+    // REQUIRES_NEW: 常に新しいトランザクションを作成
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void logUserActivity(Long userId, String activity) {
+        // このメソッドは独立したトランザクションで実行される
+        // 外側のトランザクションがロールバックされても、このログは保存される
+        activityLogRepository.save(new ActivityLog(userId, activity));
+    }
+    
+    // SUPPORTS: 既存のトランザクションがあれば参加、なければトランザクションなしで実行
+    @Transactional(propagation = Propagation.SUPPORTS)
+    public User findUser(Long id) {
+        return userRepository.findById(id).orElse(null);
+    }
+    
+    // NOT_SUPPORTED: トランザクションを一時停止し、トランザクションなしで実行
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void sendEmail(String to, String subject, String body) {
+        // トランザクション外で実行されるため、長時間かかる処理に適している
+        emailService.send(to, subject, body);
+    }
+    
+    // MANDATORY: 既存のトランザクションが必須。なければ例外をスロー
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void updateUserStatus(Long userId, UserStatus status) {
+        // トランザクション内で呼び出されることを前提とする
+        User user = userRepository.findById(userId).orElseThrow();
+        user.setStatus(status);
+        userRepository.save(user);
+    }
+    
+    // NEVER: トランザクションが存在してはいけない。存在すれば例外をスロー
+    @Transactional(propagation = Propagation.NEVER)
+    public void performNonTransactionalOperation() {
+        // トランザクション外で実行される必要がある処理
+    }
+    
+    // NESTED: ネストされたトランザクションを作成（一部のデータベースのみ対応）
+    @Transactional(propagation = Propagation.NESTED)
+    public void processOrderWithNestedTransaction(Order order) {
+        // 外側のトランザクションがロールバックされても、
+        // このメソッド内の処理は個別にロールバック可能
+    }
+}
+```
+
+### トランザクションの分離レベル（Isolation）
+
+分離レベルは、トランザクション間でのデータの可視性を制御します。
+
+```java
+@Service
+public class UserService {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    // READ_UNCOMMITTED: 未コミットのデータも読み取り可能（最低レベル）
+    @Transactional(isolation = Isolation.READ_UNCOMMITTED)
+    public User findUserUncommitted(Long id) {
+        return userRepository.findById(id).orElse(null);
+    }
+    
+    // READ_COMMITTED: コミット済みのデータのみ読み取り可能（デフォルト）
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public User findUserCommitted(Long id) {
+        return userRepository.findById(id).orElse(null);
+    }
+    
+    // REPEATABLE_READ: 同じトランザクション内で同じクエリを実行しても同じ結果
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
+    public User findUserRepeatable(Long id) {
+        return userRepository.findById(id).orElse(null);
+    }
+    
+    // SERIALIZABLE: 最高レベル。完全に分離される
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public void performCriticalOperation() {
+        // 最も厳格な分離レベルが必要な処理
+    }
+}
+```
+
+### 読み取り専用トランザクション
+
+読み取り専用トランザクションは、パフォーマンスの最適化と意図の明確化に役立ちます。
+
+```java
+@Service
+public class UserService {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    // 読み取り専用トランザクション
+    @Transactional(readOnly = true)
+    public List<User> findAllUsers() {
+        return userRepository.findAll();
+    }
+    
+    @Transactional(readOnly = true)
+    public User findUserById(Long id) {
+        return userRepository.findById(id).orElseThrow();
+    }
+    
+    // 書き込み可能なトランザクション
+    @Transactional(readOnly = false)
+    public User createUser(User user) {
+        return userRepository.save(user);
+    }
+}
+```
+
+### タイムアウト設定
+
+トランザクションのタイムアウトを設定することで、長時間実行されるトランザクションを防止できます。
+
+```java
+@Service
+public class UserService {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    // タイムアウトを10秒に設定
+    @Transactional(timeout = 10)
+    public void processLargeBatch(List<User> users) {
+        for (User user : users) {
+            userRepository.save(user);
+        }
+    }
+    
+    // デフォルトのタイムアウト設定（application.properties）
+    // spring.transaction.default-timeout=30
+}
+```
+
+### ロールバック設定
+
+特定の例外が発生した場合のロールバック動作を制御できます。
+
+```java
+@Service
+public class UserService {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    // デフォルト: RuntimeExceptionとErrorでロールバック
+    @Transactional
+    public User createUser(User user) {
+        return userRepository.save(user);
+    }
+    
+    // 特定の例外でロールバック
+    @Transactional(rollbackFor = {IllegalArgumentException.class, NullPointerException.class})
+    public User createUserWithValidation(User user) {
+        if (user == null) {
+            throw new IllegalArgumentException("User cannot be null");
+        }
+        return userRepository.save(user);
+    }
+    
+    // チェック例外でもロールバック
+    @Transactional(rollbackFor = Exception.class)
+    public User createUserWithCheckedException(User user) throws UserCreationException {
+        try {
+            return userRepository.save(user);
+        } catch (Exception e) {
+            throw new UserCreationException("Failed to create user", e);
+        }
+    }
+    
+    // 特定の例外でロールバックしない
+    @Transactional(noRollbackFor = {DuplicateUserException.class})
+    public User createUserIgnoreDuplicate(User user) {
+        try {
+            return userRepository.save(user);
+        } catch (DuplicateUserException e) {
+            // この例外ではロールバックしない
+            return findUserByEmail(user.getEmail());
+        }
+    }
+}
+```
+
+### プログラム的なトランザクション制御
+
+アノテーションではなく、プログラム的にトランザクションを制御する場合。
+
+```java
+@Service
+public class UserService {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    @Autowired
+    private TransactionTemplate transactionTemplate;
+    
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+    
+    // TransactionTemplateを使用
+    public User createUserWithTemplate(User user) {
+        return transactionTemplate.execute(status -> {
+            try {
+                return userRepository.save(user);
+            } catch (Exception e) {
+                status.setRollbackOnly();
+                throw e;
+            }
+        });
+    }
+    
+    // PlatformTransactionManagerを直接使用
+    public User createUserWithManager(User user) {
+        TransactionDefinition definition = new DefaultTransactionDefinition();
+        TransactionStatus status = transactionManager.getTransaction(definition);
+        
+        try {
+            User savedUser = userRepository.save(user);
+            transactionManager.commit(status);
+            return savedUser;
+        } catch (Exception e) {
+            transactionManager.rollback(status);
+            throw e;
+        }
+    }
+}
+```
+
+### トランザクションのベストプラクティス
+
+#### 1. サービスクラスレベルでの設定
+
+```java
+@Service
+@Transactional(
+    readOnly = true,                    // デフォルトを読み取り専用に
+    timeout = 30,                       // デフォルトタイムアウト
+    isolation = Isolation.READ_COMMITTED  // デフォルト分離レベル
+)
+public class UserService {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    // 読み取り専用（クラスレベルの設定を継承）
+    public List<User> findAllUsers() {
+        return userRepository.findAll();
+    }
+    
+    // 書き込み可能（メソッドレベルで上書き）
+    @Transactional(readOnly = false)
+    public User createUser(User user) {
+        return userRepository.save(user);
+    }
+}
+```
+
+#### 2. トランザクション境界の適切な配置
+
+```java
+// 良い例: サービスクラスにトランザクションを配置
+@Service
+@Transactional
+public class UserService {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    public User createUserWithOrders(User user, List<Order> orders) {
+        User savedUser = userRepository.save(user);
+        for (Order order : orders) {
+            order.setUser(savedUser);
+            orderRepository.save(order);
+        }
+        return savedUser;
+    }
+}
+
+// 悪い例: リポジトリにトランザクションを配置
+@Repository
+@Transactional  // リポジトリ層にトランザクションを配置しない
+public interface UserRepository extends JpaRepository<User, Long> {
+    // ...
+}
+```
+
+#### 3. 自己呼び出しの問題
+
+```java
+@Service
+@Transactional
+public class UserService {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    // 問題: 同じクラス内のメソッド呼び出しでは@Transactionalが効かない
+    public void processUser(Long userId) {
+        updateUserStatus(userId, UserStatus.PROCESSING);  // トランザクションが効かない
+    }
+    
+    @Transactional
+    public void updateUserStatus(Long userId, UserStatus status) {
+        User user = userRepository.findById(userId).orElseThrow();
+        user.setStatus(status);
+        userRepository.save(user);
+    }
+    
+    // 解決策1: 別のサービスクラスに分離
+    // 解決策2: ApplicationContextから取得したプロキシを使用
+    @Autowired
+    private ApplicationContext applicationContext;
+    
+    public void processUserFixed(Long userId) {
+        UserService self = applicationContext.getBean(UserService.class);
+        self.updateUserStatus(userId, UserStatus.PROCESSING);  // トランザクションが効く
+    }
+    
+    // 解決策3: @Asyncと組み合わせる
+    @Async
+    @Transactional
+    public CompletableFuture<Void> updateUserStatusAsync(Long userId, UserStatus status) {
+        updateUserStatus(userId, status);
+        return CompletableFuture.completedFuture(null);
+    }
+}
+```
+
+#### 4. 複数データソースのトランザクション管理
+
+```java
+@Configuration
+public class TransactionConfig {
+    
+    @Bean
+    @Primary
+    public PlatformTransactionManager primaryTransactionManager(
+            @Qualifier("primaryDataSource") DataSource dataSource) {
+        return new DataSourceTransactionManager(dataSource);
+    }
+    
+    @Bean
+    public PlatformTransactionManager secondaryTransactionManager(
+            @Qualifier("secondaryDataSource") DataSource dataSource) {
+        return new DataSourceTransactionManager(dataSource);
+    }
+}
+
+@Service
+public class UserService {
+    
+    @Autowired
+    @Qualifier("primaryTransactionManager")
+    private PlatformTransactionManager primaryTransactionManager;
+    
+    @Autowired
+    @Qualifier("secondaryTransactionManager")
+    private PlatformTransactionManager secondaryTransactionManager;
+    
+    @Transactional(transactionManager = "primaryTransactionManager")
+    public User createUserInPrimary(User user) {
+        return userRepository.save(user);
+    }
+    
+    @Transactional(transactionManager = "secondaryTransactionManager")
+    public void logInSecondary(String message) {
+        logRepository.save(new Log(message));
+    }
+    
+    // チャンクトランザクション（複数データソース）
+    public void createUserWithLog(User user, String logMessage) {
+        TransactionTemplate primaryTemplate = new TransactionTemplate(primaryTransactionManager);
+        TransactionTemplate secondaryTemplate = new TransactionTemplate(secondaryTransactionManager);
+        
+        primaryTemplate.execute(status -> {
+            userRepository.save(user);
+            secondaryTemplate.execute(s -> {
+                logRepository.save(new Log(logMessage));
+                return null;
+            });
+            return null;
+        });
+    }
+}
+```
+
+#### 5. トランザクションイベントの活用
+
+```java
+@Service
+@Transactional
+public class UserService {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    @Autowired
+    private ApplicationEventPublisher eventPublisher;
+    
+    public User createUser(User user) {
+        User savedUser = userRepository.save(user);
+        
+        // トランザクションコミット後にイベントを発行
+        TransactionSynchronizationManager.registerSynchronization(
+            new TransactionSynchronizationAdapter() {
+                @Override
+                public void afterCommit() {
+                    eventPublisher.publishEvent(new UserCreatedEvent(savedUser.getId()));
+                }
+            }
+        );
+        
+        return savedUser;
+    }
+}
+
+// または@TransactionalEventListenerを使用
+@Component
+public class UserEventListener {
+    
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void handleUserCreated(UserCreatedEvent event) {
+        // トランザクションコミット後に実行される
+        System.out.println("User created: " + event.getUserId());
+    }
+}
+```
+
+### デバッグとモニタリング
+
+```java
+@Service
+@Transactional
+public class UserService {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    public User createUser(User user) {
+        // トランザクションの状態を確認
+        boolean isActive = TransactionSynchronizationManager.isActualTransactionActive();
+        boolean isReadOnly = TransactionSynchronizationManager.isCurrentTransactionReadOnly();
+        String transactionName = TransactionSynchronizationManager.getCurrentTransactionName();
+        
+        System.out.println("Transaction active: " + isActive);
+        System.out.println("Transaction read-only: " + isReadOnly);
+        System.out.println("Transaction name: " + transactionName);
+        
+        return userRepository.save(user);
+    }
+}
+```
+
+### トランザクション設計の意思決定フレームワーク
+
+#### トランザクション境界の設計判断
+
+**判断基準:**
+
+```java
+// 1. ビジネストランザクションの単位を特定
+// 「この操作は、すべて成功するか、すべて失敗するべきか？」
+
+// 例: 注文作成
+// - 注文の作成
+// - 在庫の減少
+// - 決済処理
+// → これらは1つのビジネストランザクションとして扱うべき
+
+@Transactional
+public Order createOrder(OrderRequest request) {
+    // すべて成功するか、すべて失敗するか
+    Order order = orderRepository.save(createOrder(request));
+    inventoryService.reduceStock(order.getItems());
+    paymentService.processPayment(order.getId(), request.getAmount());
+    return order;
+}
+
+// 2. トランザクションのサイズを最適化
+// 「このトランザクションはどのくらいの時間がかかるか？」
+
+// 問題のあるコード: 長時間実行されるトランザクション
+@Transactional
+public void processLargeBatch(List<Data> dataList) {
+    for (Data data : dataList) {  // 10万件
+        processData(data);  // 各処理に10ms
+        // 合計: 1000秒（16分以上）
+        // 問題: 長時間ロックが保持される
+    }
+}
+
+// 解決: バッチ処理に分割
+public void processLargeBatchOptimized(List<Data> dataList) {
+    int batchSize = 1000;
+    for (int i = 0; i < dataList.size(); i += batchSize) {
+        List<Data> batch = dataList.subList(i, Math.min(i + batchSize, dataList.size()));
+        processBatch(batch);  // 各バッチは独立したトランザクション
+    }
+}
+
+@Transactional(propagation = Propagation.REQUIRES_NEW)
+public void processBatch(List<Data> batch) {
+    for (Data data : batch) {
+        processData(data);
+    }
+    // 各バッチは10秒程度で完了
+}
+```
+
+#### 分離レベルの選択判断
+
+**分離レベルのトレードオフ:**
+
+| 分離レベル | ダーティリード | ノンリピータブルリード | ファントムリード | パフォーマンス | 適用範囲 |
+|-----------|--------------|-------------------|---------------|-------------|---------|
+| **READ_UNCOMMITTED** | 可能 | 可能 | 可能 | 最高 | 非推奨 |
+| **READ_COMMITTED** | 不可 | 可能 | 可能 | 高い | 一般的 |
+| **REPEATABLE_READ** | 不可 | 不可 | 可能 | 中程度 | 重要なデータ |
+| **SERIALIZABLE** | 不可 | 不可 | 不可 | 低い | 最高の一貫性が必要 |
+
+**実践的な選択指針:**
+
+```java
+// READ_COMMITTEDを選ぶべき場合（デフォルト、推奨）
+// - ほとんどのWebアプリケーション
+// - パフォーマンスと一貫性のバランスが重要
+@Transactional(isolation = Isolation.READ_COMMITTED)
+public void updateUserBalance(Long userId, BigDecimal amount) {
+    // 他のトランザクションの未コミット変更は見えない
+    // コミット済みの変更は見える
+}
+
+// REPEATABLE_READを選ぶべき場合
+// - 金融取引など、高い一貫性が必要
+// - 同じデータを複数回読み取る必要がある
+@Transactional(isolation = Isolation.REPEATABLE_READ)
+public void calculateAccountBalance(Long accountId) {
+    // 1回目の読み取り
+    Account account1 = accountRepository.findById(accountId);
+    
+    // 何らかの処理
+    doSomething();
+    
+    // 2回目の読み取り（同じ値が保証される）
+    Account account2 = accountRepository.findById(accountId);
+    // account1.getBalance() == account2.getBalance() が保証される
+}
+
+// SERIALIZABLEを選ぶべき場合
+// - 非常に重要なデータ（例: 在庫管理）
+// - パフォーマンスよりも一貫性を優先
+@Transactional(isolation = Isolation.SERIALIZABLE)
+public void reserveInventory(Long productId, int quantity) {
+    Product product = productRepository.findById(productId);
+    if (product.getStock() < quantity) {
+        throw new InsufficientStockException();
+    }
+    product.setStock(product.getStock() - quantity);
+    productRepository.save(product);
+    // 他のトランザクションからの干渉が完全に防がれる
+}
+```
+
+#### 伝播動作の選択判断
+
+**伝播動作の実践的な使い分け:**
+
+```java
+@Service
+public class OrderService {
+    
+    // REQUIRED（デフォルト）: 通常のビジネスロジック
+    @Transactional(propagation = Propagation.REQUIRED)
+    public Order createOrder(OrderRequest request) {
+        // 既存のトランザクションがあれば参加、なければ新規作成
+        return orderRepository.save(createOrder(request));
+    }
+    
+    // REQUIRES_NEW: ログや監査など、独立して実行すべき処理
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void logOrderCreation(Long orderId) {
+        // 注文作成が失敗しても、ログは保存される
+        auditLogRepository.save(new AuditLog("ORDER_CREATED", orderId));
+    }
+    
+    // SUPPORTS: 読み取り専用の処理（トランザクションがあれば最適化）
+    @Transactional(propagation = Propagation.SUPPORTS, readOnly = true)
+    public Order findOrder(Long id) {
+        // トランザクションがあれば参加（読み取り専用最適化）
+        // なければトランザクションなしで実行
+        return orderRepository.findById(id).orElse(null);
+    }
+    
+    // NOT_SUPPORTED: トランザクションを一時停止する必要がある場合
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void sendNotification(Long orderId) {
+        // トランザクションを一時停止して実行
+        // 長時間かかる外部API呼び出しなど
+        notificationService.send(orderId);
+    }
+    
+    // MANDATORY: トランザクション内で呼び出されることを前提とする
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void updateOrderStatus(Long orderId, OrderStatus status) {
+        // トランザクション外から呼び出されると例外
+        // 設計上の制約を明確にする
+        Order order = orderRepository.findById(orderId).orElseThrow();
+        order.setStatus(status);
+        orderRepository.save(order);
+    }
+}
+```
+
+#### 分散トランザクションの代替パターン
+
+**Sagaパターンの実装:**
+
+```java
+// 問題: マイクロサービス間での分散トランザクションは非推奨
+// 解決: Sagaパターンで結果整合性を保つ
+
+public class OrderSaga {
+    
+    private final OrderService orderService;
+    private final PaymentService paymentService;
+    private final InventoryService inventoryService;
+    
+    @Transactional
+    public void execute(OrderRequest request) {
+        SagaContext context = new SagaContext();
+        
+        try {
+            // Step 1: 注文作成
+            Order order = orderService.create(request);
+            context.setOrderId(order.getId());
+            
+            // Step 2: 決済処理
+            Payment payment = paymentService.process(order.getId(), request.getAmount());
+            context.setPaymentId(payment.getId());
+            
+            // Step 3: 在庫更新
+            inventoryService.reduceStock(order.getItems());
+            context.setInventoryReduced(true);
+            
+            // すべて成功
+            context.setCompleted(true);
+            
+        } catch (Exception e) {
+            // 補償トランザクションの実行
+            compensate(context);
+            throw new SagaExecutionException("Order creation failed", e);
+        }
+    }
+    
+    private void compensate(SagaContext context) {
+        // 逆順で補償処理を実行
+        if (context.isInventoryReduced()) {
+            try {
+                inventoryService.restoreStock(context.getOrderId());
+            } catch (Exception e) {
+                log.error("Failed to restore stock", e);
+            }
+        }
+        
+        if (context.getPaymentId() != null) {
+            try {
+                paymentService.refund(context.getPaymentId());
+            } catch (Exception e) {
+                log.error("Failed to refund payment", e);
+            }
+        }
+        
+        if (context.getOrderId() != null) {
+            try {
+                orderService.cancel(context.getOrderId());
+            } catch (Exception e) {
+                log.error("Failed to cancel order", e);
+            }
+        }
+    }
+}
+```
+
+### まとめ
+
+トランザクション制御の深い理解において重要なポイント：
+
+1. **ACID特性の実践的な意味**: 各特性が実際のアプリケーションでどのように機能するか
+2. **トランザクション境界の設計**: ビジネストランザクションの単位を適切に定義
+3. **分離レベルの選択**: パフォーマンスと一貫性のトレードオフを理解
+4. **伝播動作の使い分け**: 各伝播動作の実践的な適用範囲
+5. **分散トランザクションの代替**: Sagaパターンなど、結果整合性を保つ方法
+
+適切なトランザクション制御により、データの整合性を保ちながら、パフォーマンスも最適化できます。プロジェクトの要件に応じて、最適な設定を選択することが重要です。
+
+**シニアエンジニアとして考慮すべき点:**
+
+- **コンテキストに応じた選択**: アプリケーションの特性に応じて最適なトランザクション戦略を選択
+- **トレードオフの理解**: 一貫性、パフォーマンス、複雑性のバランス
+- **計測に基づく最適化**: 推測ではなく、実際のパフォーマンスデータに基づいて判断
+- **長期的な保守性**: 短期的な最適化ではなく、長期的に保守可能な設計を選択
+

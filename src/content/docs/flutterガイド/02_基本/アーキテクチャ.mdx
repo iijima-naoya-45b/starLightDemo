@@ -4,9 +4,152 @@ sidebar:
     label: フォルダ構成
 ---
 ___
-# フォルダ構成
+# Flutterアーキテクチャとフォルダ構成
 
 Flutterプロジェクトのフォルダ構成は、アプリケーションの開発効率とメンテナンス性を向上させるために重要です。以下に、主要なフォルダの役割を紹介します。
+
+## なぜアーキテクチャが重要なのか
+
+### 問題のあるコード（アーキテクチャがない場合）
+
+**問題のあるコード:**
+
+```dart
+// 問題: すべてのロジックが1つのファイルに混在
+class HomePage extends StatefulWidget {
+  @override
+  _HomePageState createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  List<User> users = [];
+  
+  @override
+  void initState() {
+    super.initState();
+    // 問題: API呼び出しがWidget内にある
+    fetchUsers();
+  }
+  
+  // 問題: ビジネスロジックがWidget内にある
+  Future<void> fetchUsers() async {
+    final response = await http.get(Uri.parse('https://api.example.com/users'));
+    final data = json.decode(response.body);
+    setState(() {
+      users = (data as List).map((json) => User.fromJson(json)).toList();
+    });
+  }
+  
+  // 問題: UIロジックとビジネスロジックが混在
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: ListView.builder(
+        itemCount: users.length,
+        itemBuilder: (context, index) {
+          return ListTile(
+            title: Text(users[index].name),
+            // 問題: データ変換ロジックがWidget内にある
+            subtitle: Text('${users[index].email} (${users[index].age}歳)'),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// 問題点:
+// 1. テストが困難（Widget、API、ビジネスロジックが混在）
+// 2. 再利用性が低い（他の画面で同じロジックを使えない）
+// 3. 責務が不明確（どこを変更すべきか分からない）
+// 4. 状態管理が複雑（setStateが散在）
+```
+
+**解決: 適切なアーキテクチャ**
+
+```dart
+// 解決: レイヤーごとに分離
+// models/user.dart
+class User {
+  final int id;
+  final String name;
+  final String email;
+  final int age;
+  
+  User({required this.id, required this.name, required this.email, required this.age});
+  
+  factory User.fromJson(Map<String, dynamic> json) {
+    return User(
+      id: json['id'],
+      name: json['name'],
+      email: json['email'],
+      age: json['age'],
+    );
+  }
+}
+
+// services/user_service.dart
+class UserService {
+  Future<List<User>> getUsers() async {
+    final response = await http.get(Uri.parse('https://api.example.com/users'));
+    final data = json.decode(response.body);
+    return (data as List).map((json) => User.fromJson(json)).toList();
+  }
+}
+
+// providers/user_provider.dart
+class UserProvider with ChangeNotifier {
+  final UserService _userService = UserService();
+  List<User> _users = [];
+  bool _isLoading = false;
+  
+  List<User> get users => _users;
+  bool get isLoading => _isLoading;
+  
+  Future<void> fetchUsers() async {
+    _isLoading = true;
+    notifyListeners();
+    
+    _users = await _userService.getUsers();
+    
+    _isLoading = false;
+    notifyListeners();
+  }
+}
+
+// screens/home_page.dart
+class HomePage extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<UserProvider>(
+      builder: (context, userProvider, child) {
+        if (userProvider.isLoading) {
+          return CircularProgressIndicator();
+        }
+        
+        return ListView.builder(
+          itemCount: userProvider.users.length,
+          itemBuilder: (context, index) {
+            final user = userProvider.users[index];
+            return ListTile(
+              title: Text(user.name),
+              subtitle: Text('${user.email} (${user.age}歳)'),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// メリット:
+// 1. 各レイヤーを独立してテスト可能
+// 2. ビジネスロジックの再利用が容易
+// 3. 責務が明確（変更箇所が明確）
+// 4. 状態管理が一元化される
+```
+
+## フォルダ構成
 
 ## 主要フォルダの役割
 
@@ -65,5 +208,118 @@ Web版アプリ用の設定を管理します。
 - **依存関係の管理**: 依存関係が複雑になる場合、`pubspec.yaml`を適切に管理し、不要な依存関係を削除します。
 
 - **プラットフォーム固有のコードの管理**: プラットフォーム固有のコードは、`android/`や`ios/`フォルダに分けて管理し、共通コードと分離します。
+
+## アーキテクチャパターンの選択
+
+### Provider vs Riverpod vs Bloc vs GetX
+
+**Provider（推奨）:**
+
+```dart
+// シンプルで学習コストが低い
+class UserProvider with ChangeNotifier {
+  List<User> _users = [];
+  List<User> get users => _users;
+  
+  Future<void> fetchUsers() async {
+    _users = await userService.getUsers();
+    notifyListeners();
+  }
+}
+
+// 使用例
+Consumer<UserProvider>(
+  builder: (context, provider, child) {
+    return Text('${provider.users.length} users');
+  },
+)
+```
+
+**Riverpod（次世代Provider）:**
+
+```dart
+// より型安全で、コンパイル時にエラーを検出
+final userProvider = FutureProvider<List<User>>((ref) async {
+  return await userService.getUsers();
+});
+
+// 使用例
+Consumer(
+  builder: (context, ref, child) {
+    final users = ref.watch(userProvider);
+    return users.when(
+      data: (users) => Text('${users.length} users'),
+      loading: () => CircularProgressIndicator(),
+      error: (error, stack) => Text('Error: $error'),
+    );
+  },
+)
+```
+
+**Bloc（複雑な状態管理）:**
+
+```dart
+// イベント駆動の状態管理
+class UserEvent {}
+class FetchUsers extends UserEvent {}
+
+class UserState {}
+class UserLoading extends UserState {}
+class UserLoaded extends UserState {
+  final List<User> users;
+  UserLoaded(this.users);
+}
+
+class UserBloc extends Bloc<UserEvent, UserState> {
+  UserBloc() : super(UserLoading()) {
+    on<FetchUsers>((event, emit) async {
+      emit(UserLoading());
+      final users = await userService.getUsers();
+      emit(UserLoaded(users));
+    });
+  }
+}
+```
+
+**判断基準:**
+
+| ライブラリ | 学習コスト | 型安全性 | 適用範囲 | 推奨度 |
+|-----------|-----------|---------|---------|--------|
+| **Provider** | 低い | 中程度 | 小〜中規模 | ⭐⭐⭐⭐ |
+| **Riverpod** | 中程度 | 高い | 中〜大規模 | ⭐⭐⭐⭐⭐ |
+| **Bloc** | 高い | 高い | 大規模 | ⭐⭐⭐ |
+| **GetX** | 低い | 低い | 小規模 | ⭐⭐ |
+
+**実践的な選択指針:**
+
+```dart
+// 小規模プロジェクト: Provider
+// - シンプルで学習コストが低い
+// - 迅速な開発が可能
+
+// 中規模プロジェクト: Riverpod
+// - 型安全性が高い
+// - コンパイル時にエラーを検出
+
+// 大規模プロジェクト: Bloc
+// - 複雑な状態遷移に対応
+// - イベント駆動の設計
+```
+
+### まとめ
+
+Flutterアプリケーションのアーキテクチャ設計において重要なポイント：
+
+1. **レイヤー分離**: UI、ビジネスロジック、データアクセスを明確に分離
+2. **状態管理**: プロジェクト規模に応じた適切な状態管理ライブラリの選択
+3. **テスト容易性**: 各レイヤーを独立してテストできるように設計
+4. **スケーラビリティ**: プロジェクトの成長を見据えた設計
+
+**シニアエンジニアとして考慮すべき点:**
+
+1. **プロジェクト規模**: 小規模ならシンプルに、大規模なら構造化
+2. **チームのスキル**: チーム全体が理解できるアーキテクチャを選択
+3. **将来の拡張性**: プロジェクトの成長を見据えた設計
+4. **一貫性**: プロジェクト全体で統一されたアーキテクチャを維持
 
 

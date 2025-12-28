@@ -1,0 +1,553 @@
+---
+title: "ジェネリクス"
+label: "ジェネリクス"
+---
+
+## ジェネリクス（Generics）
+
+ジェネリクスは、型安全性を向上させ、コードの再利用性を高めるための機能です。この章では、ジェネリクスの詳細な使い方について解説します。
+
+### なぜジェネリクスが必要だったのか
+
+#### ジェネリクス導入前の問題
+
+Java 5以前では、コレクションは`Object`型を使用していました。これにより、以下の問題が発生していました：
+
+**問題1: 型安全性の欠如**
+
+```java
+// Java 5以前: 型安全性がない
+List list = new ArrayList();
+list.add("Hello");
+list.add(123);  // コンパイルエラーにならない
+list.add(new Date());  // コンパイルエラーにならない
+
+// 実行時にClassCastExceptionが発生する可能性
+String first = (String) list.get(0);  // OK
+String second = (String) list.get(1);  // ClassCastException!
+```
+
+**問題2: キャストの多発**
+
+```java
+// すべての要素取得時にキャストが必要
+List users = new ArrayList();
+users.add(new User("Alice"));
+users.add(new User("Bob"));
+
+// 毎回キャストが必要（冗長でエラーが起きやすい）
+User user1 = (User) users.get(0);
+User user2 = (User) users.get(1);
+
+// ループでもキャストが必要
+for (Object obj : users) {
+    User user = (User) obj;  // 毎回キャスト
+    System.out.println(user.getName());
+}
+```
+
+**問題3: コードの意図が不明確**
+
+```java
+// このListには何が入るのか？String? Integer? User?
+List list = new ArrayList();
+
+// メソッドの戻り値の型が不明確
+public List getUsers() {
+    // Userのリストなのか、それとも他の型？
+}
+```
+
+#### ジェネリクスが解決する問題
+
+**解決1: コンパイル時の型チェック**
+
+```java
+// ジェネリクス: コンパイル時に型エラーを検出
+List<String> list = new ArrayList<>();
+list.add("Hello");
+// list.add(123);  // コンパイルエラー！
+// list.add(new Date());  // コンパイルエラー！
+
+String first = list.get(0);  // キャスト不要
+```
+
+**解決2: キャストの不要化**
+
+```java
+// ジェネリクス: キャストが不要
+List<User> users = new ArrayList<>();
+users.add(new User("Alice"));
+users.add(new User("Bob"));
+
+User user1 = users.get(0);  // キャスト不要
+User user2 = users.get(1);  // キャスト不要
+
+// ループでもキャスト不要
+for (User user : users) {
+    System.out.println(user.getName());  // 直接使用可能
+}
+```
+
+**解決3: コードの意図が明確**
+
+```java
+// ジェネリクス: 型が明確
+List<String> stringList = new ArrayList<>();  // Stringのリスト
+List<Integer> intList = new ArrayList<>();  // Integerのリスト
+List<User> userList = new ArrayList<>();  // Userのリスト
+
+// メソッドの戻り値の型が明確
+public List<User> getUsers() {
+    // Userのリストであることが明確
+}
+```
+
+### ジェネリクスの本質
+
+ジェネリクスは、**型パラメータ（Type Parameter）**を使用して、クラスやメソッドを型に依存しない形で定義できるようにする機能です。
+
+**設計思想:**
+
+1. **型安全性（Type Safety）**: コンパイル時に型エラーを検出
+2. **コードの再利用性（Code Reusability）**: 同じコードを異なる型で使用
+3. **意図の明確化（Intent Clarity）**: コードの意図を明確に表現
+
+**ジェネリクスの本質的な価値:**
+
+```java
+// ジェネリクスなし: 型安全性がない
+public class Box {
+    private Object value;
+    
+    public void setValue(Object value) {
+        this.value = value;
+    }
+    
+    public Object getValue() {
+        return value;  // 常にキャストが必要
+    }
+}
+
+// 使用例
+Box box = new Box();
+box.setValue("Hello");
+String value = (String) box.getValue();  // キャストが必要
+// box.setValue(123);  // コンパイルエラーにならない（問題）
+
+// ジェネリクスあり: 型安全
+public class Box<T> {
+    private T value;
+    
+    public void setValue(T value) {
+        this.value = value;
+    }
+    
+    public T getValue() {
+        return value;  // キャスト不要
+    }
+}
+
+// 使用例
+Box<String> stringBox = new Box<>();
+stringBox.setValue("Hello");
+String value = stringBox.getValue();  // キャスト不要
+// stringBox.setValue(123);  // コンパイルエラー（型安全）
+```
+
+### ジェネリクスとは
+
+ジェネリクスを使用することで、**型をパラメータ化**して、異なる型に対して同じコードを再利用できます。
+
+**メリット:**
+- 型安全性の向上（コンパイル時に型エラーを検出）
+- キャストの不要化
+- コードの再利用性向上
+- コードの意図の明確化
+
+### 基本的な使い方
+
+#### ジェネリッククラス
+
+```java
+// ジェネリッククラスの定義
+public class Box<T> {
+    private T value;
+    
+    public void setValue(T value) {
+        this.value = value;
+    }
+    
+    public T getValue() {
+        return value;
+    }
+}
+
+// 使用例
+Box<String> stringBox = new Box<>();
+stringBox.setValue("Hello");
+String value = stringBox.getValue();  // キャスト不要
+
+Box<Integer> intBox = new Box<>();
+intBox.setValue(123);
+Integer number = intBox.getValue();  // キャスト不要
+```
+
+#### ジェネリックメソッド
+
+```java
+public class Util {
+    
+    // ジェネリックメソッド
+    public static <T> void swap(List<T> list, int i, int j) {
+        T temp = list.get(i);
+        list.set(i, list.get(j));
+        list.set(j, temp);
+    }
+    
+    // 複数の型パラメータ
+    public static <T, U> U convert(T value, Function<T, U> converter) {
+        return converter.apply(value);
+    }
+}
+
+// 使用例
+List<String> list = Arrays.asList("a", "b", "c");
+Util.swap(list, 0, 2);  // [c, b, a]
+
+String number = "123";
+Integer result = Util.convert(number, Integer::parseInt);  // 123
+```
+
+#### ジェネリックインターフェース
+
+```java
+// ジェネリックインターフェース
+public interface Comparable<T> {
+    int compareTo(T other);
+}
+
+// 実装例
+public class Person implements Comparable<Person> {
+    private String name;
+    private int age;
+    
+    @Override
+    public int compareTo(Person other) {
+        return Integer.compare(this.age, other.age);
+    }
+}
+```
+
+### 境界付き型パラメータ（Bounded Type Parameters）
+
+#### 上限境界（Upper Bounded）
+
+型パラメータを特定の型のサブタイプに制限します。
+
+```java
+// Numberのサブタイプのみを受け入れる
+public class NumberBox<T extends Number> {
+    private T value;
+    
+    public void setValue(T value) {
+        this.value = value;
+    }
+    
+    public T getValue() {
+        return value;
+    }
+    
+    // Numberのメソッドを使用可能
+    public double getDoubleValue() {
+        return value.doubleValue();
+    }
+}
+
+// 使用例
+NumberBox<Integer> intBox = new NumberBox<>();  // OK
+NumberBox<Double> doubleBox = new NumberBox<>();  // OK
+// NumberBox<String> stringBox = new NumberBox<>();  // コンパイルエラー
+```
+
+#### 複数の境界
+
+```java
+// 複数の境界を指定（クラスは1つ、インターフェースは複数可）
+public class MultiBounded<T extends Number & Comparable<T> & Serializable> {
+    private T value;
+    
+    public int compare(T other) {
+        return value.compareTo(other);
+    }
+}
+```
+
+#### 下限境界（Lower Bounded）
+
+`super`キーワードを使用して下限を指定します（主にワイルドカードで使用）。
+
+```java
+// Integerのスーパータイプのみを受け入れる
+public void addNumbers(List<? super Integer> list) {
+    list.add(1);
+    list.add(2);
+    list.add(3);
+}
+
+// 使用例
+List<Number> numberList = new ArrayList<>();
+addNumbers(numberList);  // OK
+
+List<Object> objectList = new ArrayList<>();
+addNumbers(objectList);  // OK
+
+// List<String> stringList = new ArrayList<>();
+// addNumbers(stringList);  // コンパイルエラー
+```
+
+### ワイルドカード（Wildcards）
+
+#### 非境界ワイルドカード（Unbounded Wildcard）
+
+`?`を使用して、任意の型を受け入れます。
+
+```java
+public void printList(List<?> list) {
+    for (Object item : list) {
+        System.out.println(item);
+    }
+}
+
+// 使用例
+List<String> stringList = Arrays.asList("a", "b", "c");
+printList(stringList);  // OK
+
+List<Integer> intList = Arrays.asList(1, 2, 3);
+printList(intList);  // OK
+```
+
+#### 上限境界ワイルドカード（Upper Bounded Wildcard）
+
+`? extends T`で、Tまたはそのサブタイプを受け入れます。
+
+```java
+// Numberまたはそのサブタイプのリストを受け入れる
+public double sumNumbers(List<? extends Number> numbers) {
+    double sum = 0.0;
+    for (Number number : numbers) {
+        sum += number.doubleValue();
+    }
+    return sum;
+}
+
+// 使用例
+List<Integer> integers = Arrays.asList(1, 2, 3);
+double sum1 = sumNumbers(integers);  // 6.0
+
+List<Double> doubles = Arrays.asList(1.5, 2.5, 3.5);
+double sum2 = sumNumbers(doubles);  // 7.5
+```
+
+#### 下限境界ワイルドカード（Lower Bounded Wildcard）
+
+`? super T`で、Tまたはそのスーパータイプを受け入れます。
+
+```java
+// Integerまたはそのスーパータイプのリストを受け入れる
+public void addIntegers(List<? super Integer> list) {
+    list.add(1);
+    list.add(2);
+    list.add(3);
+}
+
+// 使用例
+List<Number> numberList = new ArrayList<>();
+addIntegers(numberList);  // OK
+
+List<Object> objectList = new ArrayList<>();
+addIntegers(objectList);  // OK
+```
+
+### PECS原則（Producer Extends, Consumer Super）
+
+**PECS原則:**
+- **Producer（生産者）**: データを読み取るだけ → `? extends T`
+- **Consumer（消費者）**: データを書き込むだけ → `? super T`
+
+```java
+// Producer: 読み取り専用
+public void processNumbers(List<? extends Number> numbers) {
+    for (Number number : numbers) {
+        System.out.println(number.doubleValue());
+    }
+    // numbers.add(1);  // コンパイルエラー（書き込み不可）
+}
+
+// Consumer: 書き込み専用
+public void fillList(List<? super Integer> list) {
+    list.add(1);
+    list.add(2);
+    list.add(3);
+    // Integer value = list.get(0);  // コンパイルエラー（読み取りはObject型）
+}
+
+// 両方: 読み書き両方
+public void swapElements(List<?> list, int i, int j) {
+    // ヘルパーメソッドを使用
+    swapHelper(list, i, j);
+}
+
+private <T> void swapHelper(List<T> list, int i, int j) {
+    T temp = list.get(i);
+    list.set(i, list.get(j));
+    list.set(j, temp);
+}
+```
+
+### 型消去（Type Erasure）
+
+Javaのジェネリクスは、**型消去**によって実装されています。実行時には型情報が消去され、すべて`Object`として扱われます。
+
+```java
+// コンパイル時
+List<String> stringList = new ArrayList<>();
+stringList.add("Hello");
+
+// 実行時（型消去後）
+List stringList = new ArrayList();  // 型情報が消去される
+stringList.add("Hello");
+```
+
+**型消去の影響:**
+
+```java
+// これはコンパイルエラー（型消去のため実行時に区別できない）
+public void method(List<String> list) { }
+public void method(List<Integer> list) { }  // エラー: 同じシグネチャ
+
+// これはOK（型消去後も区別できる）
+public void method(List<String> list) { }
+public void method(List<Integer> list, int value) { }  // OK: シグネチャが異なる
+```
+
+### 実践例
+
+#### ジェネリックリポジトリ
+
+```java
+public interface Repository<T, ID> {
+    T findById(ID id);
+    List<T> findAll();
+    T save(T entity);
+    void deleteById(ID id);
+}
+
+public class UserRepository implements Repository<User, Long> {
+    @Override
+    public User findById(Long id) {
+        // 実装
+        return null;
+    }
+    
+    @Override
+    public List<User> findAll() {
+        // 実装
+        return null;
+    }
+    
+    @Override
+    public User save(User entity) {
+        // 実装
+        return null;
+    }
+    
+    @Override
+    public void deleteById(Long id) {
+        // 実装
+    }
+}
+```
+
+#### ジェネリックユーティリティクラス
+
+```java
+public class CollectionUtils {
+    
+    // リストの最大値を取得
+    public static <T extends Comparable<T>> T max(List<T> list) {
+        if (list.isEmpty()) {
+            throw new IllegalArgumentException("List is empty");
+        }
+        T max = list.get(0);
+        for (T item : list) {
+            if (item.compareTo(max) > 0) {
+                max = item;
+            }
+        }
+        return max;
+    }
+    
+    // リストをシャッフル
+    public static <T> void shuffle(List<T> list) {
+        Random random = new Random();
+        for (int i = list.size() - 1; i > 0; i--) {
+            int j = random.nextInt(i + 1);
+            T temp = list.get(i);
+            list.set(i, list.get(j));
+            list.set(j, temp);
+        }
+    }
+    
+    // リストを逆順にする
+    public static <T> List<T> reverse(List<T> list) {
+        List<T> result = new ArrayList<>(list);
+        Collections.reverse(result);
+        return result;
+    }
+}
+```
+
+### よくある問題と解決方法
+
+#### 問題1: ジェネリック配列の作成
+
+```java
+// これはコンパイルエラー
+// T[] array = new T[10];
+
+// 解決方法1: キャストを使用（警告が出る）
+@SuppressWarnings("unchecked")
+T[] array = (T[]) new Object[10];
+
+// 解決方法2: リストを使用（推奨）
+List<T> list = new ArrayList<>();
+```
+
+#### 問題2: 型パラメータの推論
+
+```java
+// 型パラメータを明示的に指定
+List<String> list = new ArrayList<String>();
+
+// ダイヤモンド演算子（Java 7以降）
+List<String> list = new ArrayList<>();  // 型推論
+
+// メソッドの型推論
+List<String> list = Collections.emptyList();  // 型推論が効かない場合
+List<String> list2 = Collections.<String>emptyList();  // 明示的に指定
+```
+
+### まとめ
+
+ジェネリクスのポイント：
+
+- **型安全性**: コンパイル時に型エラーを検出
+- **境界付き型パラメータ**: `extends`で上限、`super`で下限を指定
+- **ワイルドカード**: `?`、`? extends T`、`? super T`
+- **PECS原則**: Producer Extends, Consumer Super
+- **型消去**: 実行時には型情報が消去される
+- **ダイヤモンド演算子**: `<>`で型推論
+
+ジェネリクスを適切に使用することで、型安全で再利用可能なコードを書けます。
+
