@@ -1,0 +1,1459 @@
+---
+title: Javaのアノテーションの書き方
+sidebar:
+    label: Javaのアノテーションの書き方
+---
+
+# Javaのアノテーションの書き方
+
+Spring Boot開発で頻繁に使用されるアノテーションを、頻出度とユースケース別に詳しく解説します。
+
+## アノテーションとは
+
+アノテーションは、Javaコードにメタデータを追加するための機能です。Spring Bootでは、アノテーションを使用して設定を簡潔に記述し、フレームワークの機能を活用できます。
+
+## 頻出度の凡例
+
+- ★★★★★: ほぼすべてのプロジェクトで使用（必須レベル）
+- ★★★★☆: 多くのプロジェクトで使用（推奨レベル）
+- ★★★☆☆: 特定の機能で使用（中頻度）
+- ★★☆☆☆: 特殊なケースで使用（低頻度）
+- ★☆☆☆☆: まれに使用（参考レベル）
+
+---
+
+## Spring Framework基本アノテーション
+
+### @Component ★★★★★
+
+**用途:** SpringコンテナにBeanとして登録する汎用的なアノテーション
+
+**ユースケース:**
+- カスタムユーティリティクラス
+- 設定クラス
+- 汎用的なサービスコンポーネント
+
+**実践例:**
+
+```java
+@Component
+public class EmailValidator {
+    
+    public boolean isValid(String email) {
+        return email != null && email.contains("@");
+    }
+}
+
+// 使用例
+@Service
+public class UserService {
+    
+    @Autowired
+    private EmailValidator emailValidator;  // 自動注入される
+    
+    public void registerUser(String email) {
+        if (emailValidator.isValid(email)) {
+            // ユーザー登録処理
+        }
+    }
+}
+```
+
+**注意点:**
+- `@Service`、`@Repository`、`@Controller`は`@Component`の特殊版
+- より具体的なアノテーションがある場合は、そちらを使用する
+
+---
+
+### @Service ★★★★★
+
+**用途:** ビジネスロジックを実装するサービス層のクラスに使用
+
+**ユースケース:**
+- ビジネスロジックの実装
+- 複数のRepositoryを組み合わせた処理
+- トランザクション管理が必要な処理
+
+**実践例:**
+
+```java
+@Service
+@Transactional
+public class UserService {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    @Autowired
+    private EmailService emailService;
+    
+    public User createUser(UserCreateRequest request) {
+        // ビジネスロジック: ユーザー作成
+        User user = new User();
+        user.setName(request.getName());
+        user.setEmail(request.getEmail());
+        
+        User savedUser = userRepository.save(user);
+        
+        // メール送信
+        emailService.sendWelcomeEmail(savedUser.getEmail());
+        
+        return savedUser;
+    }
+    
+    public User findById(Long id) {
+        return userRepository.findById(id)
+            .orElseThrow(() -> new UserNotFoundException("User not found: " + id));
+    }
+}
+```
+
+**よくある使い方:**
+- `@Transactional`と組み合わせてトランザクション管理
+- 複数のRepositoryを呼び出して複雑なビジネスロジックを実装
+
+---
+
+### @Repository ★★★★★
+
+**用途:** データアクセス層のクラスに使用。JPAの例外をSpringの例外に変換
+
+**ユースケース:**
+- JPAリポジトリのインターフェース
+- カスタムデータアクセス実装
+
+**実践例:**
+
+```java
+// インターフェース（Spring Data JPA）
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    
+    // メソッド名からクエリを自動生成
+    List<User> findByName(String name);
+    
+    // カスタムクエリ
+    @Query("SELECT u FROM User u WHERE u.email = :email")
+    Optional<User> findByEmail(@Param("email") String email);
+}
+
+// カスタム実装クラス
+@Repository
+public class CustomUserRepositoryImpl implements CustomUserRepository {
+    
+    @PersistenceContext
+    private EntityManager entityManager;
+    
+    @Override
+    public List<User> findUsersWithCustomLogic() {
+        // カスタム実装
+        return entityManager.createQuery(
+            "SELECT u FROM User u", User.class
+        ).getResultList();
+    }
+}
+```
+
+**注意点:**
+- Spring Data JPAを使用する場合、インターフェースに`@Repository`は省略可能（自動的に認識される）
+- カスタム実装クラスには明示的に`@Repository`を付与
+
+---
+
+### @Controller ★★★★★
+
+**用途:** MVCパターンのコントローラー層。主にHTMLビューを返す場合に使用
+
+**ユースケース:**
+- サーバーサイドレンダリング（Thymeleaf、JSPなど）
+- フォーム処理
+- リダイレクト処理
+
+**実践例:**
+
+```java
+@Controller
+@RequestMapping("/users")
+public class UserController {
+    
+    @Autowired
+    private UserService userService;
+    
+    // GET /users - ユーザー一覧ページ
+    @GetMapping
+    public String listUsers(Model model) {
+        List<User> users = userService.findAll();
+        model.addAttribute("users", users);
+        return "users/list";  // templates/users/list.html
+    }
+    
+    // GET /users/{id} - ユーザー詳細ページ
+    @GetMapping("/{id}")
+    public String showUser(@PathVariable Long id, Model model) {
+        User user = userService.findById(id);
+        model.addAttribute("user", user);
+        return "users/detail";
+    }
+    
+    // GET /users/new - ユーザー作成フォーム
+    @GetMapping("/new")
+    public String newUserForm(Model model) {
+        model.addAttribute("user", new User());
+        return "users/form";
+    }
+    
+    // POST /users - ユーザー作成処理
+    @PostMapping
+    public String createUser(@ModelAttribute User user) {
+        userService.createUser(user);
+        return "redirect:/users";  // リダイレクト
+    }
+}
+```
+
+**@RestControllerとの違い:**
+- `@Controller`: HTMLビューを返す
+- `@RestController`: JSON/XMLなどのデータを返す（REST API）
+
+---
+
+### @RestController ★★★★★
+
+**用途:** REST APIのエンドポイントを提供するコントローラー
+
+**ユースケース:**
+- RESTful APIの実装
+- JSON/XMLレスポンスの返却
+- フロントエンド（React、Vue.jsなど）との連携
+
+**実践例:**
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserRestController {
+    
+    @Autowired
+    private UserService userService;
+    
+    // GET /api/users - ユーザー一覧取得
+    @GetMapping
+    public ResponseEntity<List<UserDTO>> getUsers() {
+        List<UserDTO> users = userService.findAll()
+            .stream()
+            .map(UserDTO::fromEntity)
+            .collect(Collectors.toList());
+        return ResponseEntity.ok(users);
+    }
+    
+    // GET /api/users/{id} - ユーザー詳細取得
+    @GetMapping("/{id}")
+    public ResponseEntity<UserDTO> getUser(@PathVariable Long id) {
+        User user = userService.findById(id);
+        return ResponseEntity.ok(UserDTO.fromEntity(user));
+    }
+    
+    // POST /api/users - ユーザー作成
+    @PostMapping
+    public ResponseEntity<UserDTO> createUser(
+            @Valid @RequestBody UserCreateRequest request) {
+        User user = userService.createUser(request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(UserDTO.fromEntity(user));
+    }
+    
+    // PUT /api/users/{id} - ユーザー更新
+    @PutMapping("/{id}")
+    public ResponseEntity<UserDTO> updateUser(
+            @PathVariable Long id,
+            @Valid @RequestBody UserUpdateRequest request) {
+        User user = userService.updateUser(id, request);
+        return ResponseEntity.ok(UserDTO.fromEntity(user));
+    }
+    
+    // DELETE /api/users/{id} - ユーザー削除
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
+        userService.deleteUser(id);
+        return ResponseEntity.noContent().build();
+    }
+}
+```
+
+**よくある使い方:**
+- `@RequestMapping`でベースパスを指定
+- `@GetMapping`、`@PostMapping`などでHTTPメソッドを指定
+- `@RequestBody`でJSONリクエストを受け取る
+- `ResponseEntity`でHTTPステータスコードを制御
+
+---
+
+### @Autowired ★★★★★
+
+**用途:** 依存性注入（DI）。SpringコンテナからBeanを自動的に注入
+
+**ユースケース:**
+- サービス層への依存注入
+- リポジトリへの依存注入
+- 設定クラスへの依存注入
+
+**実践例:**
+
+```java
+@Service
+public class UserService {
+    
+    // フィールドインジェクション（非推奨）
+    @Autowired
+    private UserRepository userRepository;
+    
+    // コンストラクタインジェクション（推奨）
+    private final EmailService emailService;
+    
+    @Autowired
+    public UserService(EmailService emailService) {
+        this.emailService = emailService;
+    }
+    
+    // セッターインジェクション
+    private NotificationService notificationService;
+    
+    @Autowired
+    public void setNotificationService(NotificationService notificationService) {
+        this.notificationService = notificationService;
+    }
+}
+
+// コンストラクタインジェクション（@Autowired省略可能 - Spring 4.3以降）
+@Service
+public class OrderService {
+    
+    private final OrderRepository orderRepository;
+    private final PaymentService paymentService;
+    
+    // @Autowiredは省略可能
+    public OrderService(OrderRepository orderRepository, 
+                       PaymentService paymentService) {
+        this.orderRepository = orderRepository;
+        this.paymentService = paymentService;
+    }
+}
+```
+
+**推奨される使い方:**
+- **コンストラクタインジェクション**を推奨（不変性、テスト容易性、必須依存関係の明確化）
+- フィールドインジェクションは避ける（テストが困難、不変性が保証されない）
+
+**注意点:**
+- 複数のBean候補がある場合は`@Qualifier`を使用
+- オプショナルな依存関係には`@Autowired(required = false)`を使用
+
+---
+
+### @Value ★★★★☆
+
+**用途:** プロパティファイルや環境変数から値を注入
+
+**ユースケース:**
+- アプリケーション設定値の注入
+- 環境変数の読み込み
+- デフォルト値の設定
+
+**実践例:**
+
+```java
+@Service
+public class EmailService {
+    
+    // application.propertiesから値を読み込み
+    @Value("${email.smtp.host}")
+    private String smtpHost;
+    
+    @Value("${email.smtp.port:587}")  // デフォルト値587
+    private int smtpPort;
+    
+    @Value("${email.from:noreply@example.com}")  // デフォルト値
+    private String fromAddress;
+    
+    // SpEL（Spring Expression Language）を使用
+    @Value("#{systemProperties['user.name']}")
+    private String systemUser;
+    
+    @Value("#{T(java.lang.Math).random() * 100}")
+    private double randomValue;
+    
+    // リストやマップの注入
+    @Value("${app.allowed.ips:127.0.0.1,localhost}")
+    private List<String> allowedIps;
+}
+
+// application.properties
+// email.smtp.host=smtp.gmail.com
+// email.smtp.port=587
+// email.from=admin@example.com
+// app.allowed.ips=192.168.1.1,192.168.1.2
+```
+
+**よくある使い方:**
+- 設定値の外部化
+- 環境別の設定（dev、staging、prod）
+- デフォルト値の指定
+
+---
+
+## Spring Webアノテーション
+
+### @RequestMapping ★★★★★
+
+**用途:** コントローラークラスやメソッドにURLマッピングを定義
+
+**ユースケース:**
+- ベースパスの定義
+- 複数のHTTPメソッドに対応
+- 共通のパス設定
+
+**実践例:**
+
+```java
+@RestController
+@RequestMapping("/api/v1/users")  // ベースパス
+public class UserController {
+    
+    // GET /api/v1/users
+    @RequestMapping(method = RequestMethod.GET)
+    public List<User> getUsers() {
+        return userService.findAll();
+    }
+    
+    // GET /api/v1/users/{id}
+    @RequestMapping(value = "/{id}", method = RequestMethod.GET)
+    public User getUser(@PathVariable Long id) {
+        return userService.findById(id);
+    }
+    
+    // POST /api/v1/users
+    @RequestMapping(method = RequestMethod.POST, 
+                   consumes = MediaType.APPLICATION_JSON_VALUE,
+                   produces = MediaType.APPLICATION_JSON_VALUE)
+    public User createUser(@RequestBody User user) {
+        return userService.createUser(user);
+    }
+}
+```
+
+**よくある使い方:**
+- クラスレベルでベースパスを定義
+- メソッドレベルで具体的なパスとHTTPメソッドを指定
+- `@GetMapping`、`@PostMapping`などのショートカットアノテーションを使用
+
+---
+
+### @GetMapping ★★★★★
+
+**用途:** GETリクエストのマッピング（`@RequestMapping(method = RequestMethod.GET)`のショートカット）
+
+**ユースケース:**
+- リソースの取得
+- 一覧取得
+- 詳細取得
+
+**実践例:**
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    // GET /api/users
+    @GetMapping
+    public List<UserDTO> getUsers(
+            @RequestParam(required = false) String name,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return userService.findUsers(name, page, size);
+    }
+    
+    // GET /api/users/{id}
+    @GetMapping("/{id}")
+    public UserDTO getUser(@PathVariable Long id) {
+        return userService.findById(id);
+    }
+    
+    // GET /api/users/{id}/orders
+    @GetMapping("/{id}/orders")
+    public List<OrderDTO> getUserOrders(@PathVariable Long id) {
+        return orderService.findByUserId(id);
+    }
+    
+    // 複数のパスパターン
+    @GetMapping({"/list", "/all"})
+    public List<UserDTO> getAllUsers() {
+        return userService.findAll();
+    }
+}
+```
+
+---
+
+### @PostMapping ★★★★★
+
+**用途:** POSTリクエストのマッピング
+
+**ユースケース:**
+- リソースの作成
+- フォーム送信
+- ファイルアップロード
+
+**実践例:**
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    // POST /api/users
+    @PostMapping
+    public ResponseEntity<UserDTO> createUser(
+            @Valid @RequestBody UserCreateRequest request) {
+        UserDTO user = userService.createUser(request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .header("Location", "/api/users/" + user.getId())
+            .body(user);
+    }
+    
+    // POST /api/users/{id}/activate
+    @PostMapping("/{id}/activate")
+    public ResponseEntity<Void> activateUser(@PathVariable Long id) {
+        userService.activateUser(id);
+        return ResponseEntity.ok().build();
+    }
+    
+    // ファイルアップロード
+    @PostMapping(value = "/{id}/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Void> uploadAvatar(
+            @PathVariable Long id,
+            @RequestParam("file") MultipartFile file) {
+        userService.uploadAvatar(id, file);
+        return ResponseEntity.ok().build();
+    }
+}
+```
+
+---
+
+### @PutMapping ★★★★☆
+
+**用途:** PUTリクエストのマッピング（リソースの完全置換）
+
+**ユースケース:**
+- リソースの更新
+- リソースの置換
+
+**実践例:**
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    // PUT /api/users/{id}
+    @PutMapping("/{id}")
+    public ResponseEntity<UserDTO> updateUser(
+            @PathVariable Long id,
+            @Valid @RequestBody UserUpdateRequest request) {
+        UserDTO user = userService.updateUser(id, request);
+        return ResponseEntity.ok(user);
+    }
+}
+```
+
+**PUTとPATCHの違い:**
+- PUT: リソースの完全置換
+- PATCH: リソースの部分更新（`@PatchMapping`を使用）
+
+---
+
+### @DeleteMapping ★★★★☆
+
+**用途:** DELETEリクエストのマッピング
+
+**ユースケース:**
+- リソースの削除
+- 論理削除のトリガー
+
+**実践例:**
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    // DELETE /api/users/{id}
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
+        userService.deleteUser(id);
+        return ResponseEntity.noContent().build();
+    }
+    
+    // DELETE /api/users/{id}/soft
+    @DeleteMapping("/{id}/soft")
+    public ResponseEntity<Void> softDeleteUser(@PathVariable Long id) {
+        userService.softDeleteUser(id);
+        return ResponseEntity.ok().build();
+    }
+}
+```
+
+---
+
+### @PathVariable ★★★★★
+
+**用途:** URLパスから変数を取得
+
+**ユースケース:**
+- RESTful APIのリソースID取得
+- 階層的なリソースの取得
+
+**実践例:**
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    // GET /api/users/123
+    @GetMapping("/{id}")
+    public UserDTO getUser(@PathVariable Long id) {
+        return userService.findById(id);
+    }
+    
+    // パス変数名を明示的に指定
+    @GetMapping("/{userId}/orders/{orderId}")
+    public OrderDTO getOrder(
+            @PathVariable("userId") Long userId,
+            @PathVariable("orderId") Long orderId) {
+        return orderService.findByUserIdAndOrderId(userId, orderId);
+    }
+    
+    // 正規表現でバリデーション
+    @GetMapping("/{id:[0-9]+}")
+    public UserDTO getUserWithValidation(@PathVariable Long id) {
+        return userService.findById(id);
+    }
+    
+    // オプショナルなパス変数
+    @GetMapping({"/{id}", ""})
+    public ResponseEntity<?> getUserOrList(@PathVariable(required = false) Long id) {
+        if (id != null) {
+            return ResponseEntity.ok(userService.findById(id));
+        } else {
+            return ResponseEntity.ok(userService.findAll());
+        }
+    }
+}
+```
+
+---
+
+### @RequestParam ★★★★★
+
+**用途:** クエリパラメータやフォームデータから値を取得
+
+**ユースケース:**
+- 検索条件の取得
+- ページネーション
+- フィルタリング
+
+**実践例:**
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    // GET /api/users?name=John&age=30
+    @GetMapping
+    public List<UserDTO> searchUsers(
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) Integer age,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return userService.searchUsers(name, age, page, size);
+    }
+    
+    // パラメータ名を明示的に指定
+    @GetMapping("/search")
+    public List<UserDTO> search(
+            @RequestParam("q") String query,
+            @RequestParam(value = "sort", defaultValue = "name") String sortBy) {
+        return userService.search(query, sortBy);
+    }
+    
+    // リストや配列の取得
+    @GetMapping("/filter")
+    public List<UserDTO> filterUsers(
+            @RequestParam("ids") List<Long> ids) {
+        return userService.findByIds(ids);
+    }
+    
+    // 必須パラメータ
+    @GetMapping("/required")
+    public UserDTO getUserRequired(
+            @RequestParam(required = true) Long id) {
+        return userService.findById(id);
+    }
+}
+```
+
+---
+
+### @RequestBody ★★★★★
+
+**用途:** HTTPリクエストボディ（JSON、XMLなど）をJavaオブジェクトに変換
+
+**ユースケース:**
+- REST APIでのJSONリクエストの受け取り
+- 複雑なオブジェクトの受け取り
+
+**実践例:**
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    // POST /api/users
+    // Request Body: {"name": "John", "email": "john@example.com"}
+    @PostMapping
+    public ResponseEntity<UserDTO> createUser(
+            @Valid @RequestBody UserCreateRequest request) {
+        UserDTO user = userService.createUser(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(user);
+    }
+    
+    // PUT /api/users/{id}
+    @PutMapping("/{id}")
+    public ResponseEntity<UserDTO> updateUser(
+            @PathVariable Long id,
+            @Valid @RequestBody UserUpdateRequest request) {
+        UserDTO user = userService.updateUser(id, request);
+        return ResponseEntity.ok(user);
+    }
+}
+
+// DTOクラス
+public class UserCreateRequest {
+    @NotBlank(message = "名前は必須です")
+    @Size(max = 100, message = "名前は100文字以内で入力してください")
+    private String name;
+    
+    @NotBlank(message = "メールアドレスは必須です")
+    @Email(message = "有効なメールアドレスを入力してください")
+    private String email;
+    
+    // getters and setters
+}
+```
+
+**よくある使い方:**
+- `@Valid`と組み合わせてバリデーション
+- DTOクラスでリクエストデータを受け取る
+- `@JsonIgnore`で不要なフィールドを無視
+
+---
+
+## Spring Data JPAアノテーション
+
+### @Entity ★★★★★
+
+**用途:** JPAエンティティクラスであることを示す
+
+**ユースケース:**
+- データベーステーブルに対応するエンティティクラス
+- ORMマッピング
+
+**実践例:**
+
+```java
+@Entity
+@Table(name = "users")
+public class User {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @Column(name = "user_name", nullable = false, length = 100)
+    private String name;
+    
+    @Column(unique = true, nullable = false)
+    private String email;
+    
+    @Column(name = "created_at")
+    @CreationTimestamp
+    private LocalDateTime createdAt;
+    
+    @Column(name = "updated_at")
+    @UpdateTimestamp
+    private LocalDateTime updatedAt;
+    
+    // getters and setters
+}
+```
+
+---
+
+### @Table ★★★★☆
+
+**用途:** エンティティがマッピングされるテーブル名を指定
+
+**ユースケース:**
+- テーブル名がクラス名と異なる場合
+- スキーマ名の指定
+- インデックスの定義
+
+**実践例:**
+
+```java
+@Entity
+@Table(
+    name = "user_accounts",
+    schema = "public",
+    uniqueConstraints = {
+        @UniqueConstraint(columnNames = {"email"}),
+        @UniqueConstraint(columnNames = {"username"})
+    },
+    indexes = {
+        @Index(name = "idx_email", columnList = "email"),
+        @Index(name = "idx_created_at", columnList = "created_at")
+    }
+)
+public class User {
+    // ...
+}
+```
+
+---
+
+### @Id ★★★★★
+
+**用途:** プライマリキーを指定
+
+**実践例:**
+
+```java
+@Entity
+public class User {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    // ...
+}
+```
+
+---
+
+### @GeneratedValue ★★★★★
+
+**用途:** プライマリキーの生成戦略を指定
+
+**実践例:**
+
+```java
+@Entity
+public class User {
+    
+    // AUTO: データベースに依存（推奨）
+    @Id
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    private Long id;
+    
+    // IDENTITY: データベースの自動増分（MySQL、PostgreSQL）
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    // SEQUENCE: シーケンスを使用（Oracle、PostgreSQL）
+    @Id
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "user_seq")
+    @SequenceGenerator(name = "user_seq", sequenceName = "user_sequence", allocationSize = 1)
+    private Long id;
+    
+    // TABLE: テーブルを使用（非推奨）
+    @Id
+    @GeneratedValue(strategy = GenerationType.TABLE, generator = "user_gen")
+    @TableGenerator(name = "user_gen", table = "id_generator", pkColumnName = "gen_name", valueColumnName = "gen_value")
+    private Long id;
+}
+```
+
+---
+
+### @Column ★★★★☆
+
+**用途:** カラムの詳細設定
+
+**実践例:**
+
+```java
+@Entity
+public class User {
+    
+    @Column(
+        name = "user_name",           // カラム名
+        nullable = false,              // NOT NULL制約
+        unique = true,                // ユニーク制約
+        length = 100,                 // 文字列の長さ
+        precision = 10,               // 数値の精度（小数点を含む）
+        scale = 2,                    // 小数点以下の桁数
+        columnDefinition = "VARCHAR(100) DEFAULT 'Unknown'"  // カラム定義
+    )
+    private String name;
+    
+    @Column(updatable = false)  // 更新不可
+    private LocalDateTime createdAt;
+    
+    @Column(insertable = false)  // 挿入不可
+    private LocalDateTime updatedAt;
+}
+```
+
+---
+
+## Spring Validationアノテーション
+
+### @Valid ★★★★★
+
+**用途:** オブジェクトのバリデーションを有効化
+
+**ユースケース:**
+- リクエストデータの検証
+- ネストされたオブジェクトの検証
+
+**実践例:**
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    @PostMapping
+    public ResponseEntity<UserDTO> createUser(
+            @Valid @RequestBody UserCreateRequest request) {
+        // バリデーションエラーがある場合は自動的に400 Bad Requestが返される
+        UserDTO user = userService.createUser(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(user);
+    }
+}
+
+// DTOクラス
+public class UserCreateRequest {
+    
+    @NotBlank(message = "名前は必須です")
+    @Size(min = 1, max = 100, message = "名前は1文字以上100文字以内で入力してください")
+    private String name;
+    
+    @NotBlank(message = "メールアドレスは必須です")
+    @Email(message = "有効なメールアドレスを入力してください")
+    private String email;
+    
+    @Min(value = 0, message = "年齢は0以上である必要があります")
+    @Max(value = 150, message = "年齢は150以下である必要があります")
+    private Integer age;
+    
+    @Valid  // ネストされたオブジェクトのバリデーション
+    @NotNull
+    private AddressDTO address;
+}
+```
+
+---
+
+### @NotNull ★★★★★
+
+**用途:** nullでないことを検証
+
+**実践例:**
+
+```java
+public class UserCreateRequest {
+    
+    @NotNull(message = "IDは必須です")
+    private Long id;
+    
+    @NotNull(message = "年齢は必須です")
+    @Min(0)
+    @Max(150)
+    private Integer age;
+}
+```
+
+---
+
+### @NotBlank ★★★★★
+
+**用途:** 文字列がnull、空文字、空白のみでないことを検証
+
+**実践例:**
+
+```java
+public class UserCreateRequest {
+    
+    @NotBlank(message = "名前は必須です")
+    private String name;
+    
+    @NotBlank(message = "メールアドレスは必須です")
+    @Email
+    private String email;
+}
+```
+
+---
+
+### @Size ★★★★☆
+
+**用途:** 文字列やコレクションのサイズを検証
+
+**実践例:**
+
+```java
+public class UserCreateRequest {
+    
+    @Size(min = 1, max = 100, message = "名前は1文字以上100文字以内で入力してください")
+    private String name;
+    
+    @Size(min = 1, max = 10, message = "タグは1個以上10個以内で入力してください")
+    private List<String> tags;
+}
+```
+
+---
+
+### @Email ★★★★☆
+
+**用途:** メールアドレスの形式を検証
+
+**実践例:**
+
+```java
+public class UserCreateRequest {
+    
+    @NotBlank(message = "メールアドレスは必須です")
+    @Email(message = "有効なメールアドレスを入力してください")
+    private String email;
+}
+```
+
+---
+
+## Spring Transactionアノテーション
+
+### @Transactional ★★★★★
+
+**用途:** メソッドやクラスにトランザクション管理を適用
+
+**ユースケース:**
+- データベース操作のトランザクション管理
+- 複数のデータベース操作の原子性保証
+- ロールバック制御
+
+**実践例:**
+
+```java
+@Service
+@Transactional  // クラス全体に適用
+public class UserService {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    @Autowired
+    private OrderRepository orderRepository;
+    
+    // デフォルト設定（読み取り専用でない、REQUIRED伝播）
+    public User createUser(UserCreateRequest request) {
+        User user = new User();
+        user.setName(request.getName());
+        return userRepository.save(user);
+    }
+    
+    // 読み取り専用トランザクション
+    @Transactional(readOnly = true)
+    public User findById(Long id) {
+        return userRepository.findById(id)
+            .orElseThrow(() -> new UserNotFoundException("User not found: " + id));
+    }
+    
+    // 新しいトランザクションを開始
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void logUserActivity(Long userId, String activity) {
+        // ログ記録処理（独立したトランザクション）
+    }
+    
+    // 特定の例外でロールバックしない
+    @Transactional(noRollbackFor = {IllegalArgumentException.class})
+    public void updateUserWithValidation(Long id, UserUpdateRequest request) {
+        // バリデーションエラーでもロールバックしない
+    }
+    
+    // トランザクションのタイムアウト設定（秒）
+    @Transactional(timeout = 30)
+    public void processLargeData() {
+        // 30秒でタイムアウト
+    }
+}
+```
+
+**よくある使い方:**
+- サービス層のメソッドに適用
+- `readOnly = true`で読み取り専用トランザクション
+- 例外発生時のロールバック制御
+
+---
+
+## Lombokアノテーション
+
+### @Data ★★★★★
+
+**用途:** `@Getter`、`@Setter`、`@ToString`、`@EqualsAndHashCode`、`@RequiredArgsConstructor`をまとめて適用
+
+**実践例:**
+
+```java
+@Data
+@Entity
+public class User {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    private String email;
+    
+    // 以下のコードが自動生成される:
+    // - getter/setter
+    // - toString()
+    // - equals()/hashCode()
+    // - 全フィールドを引数に持つコンストラクタ（finalフィールドのみ）
+}
+```
+
+---
+
+### @Getter / @Setter ★★★★★
+
+**用途:** getter/setterメソッドを自動生成
+
+**実践例:**
+
+```java
+@Entity
+public class User {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Getter  // getterのみ生成
+    private Long id;
+    
+    @Getter
+    @Setter
+    private String name;
+    
+    @Getter
+    @Setter
+    private String email;
+}
+```
+
+---
+
+### @Builder ★★★★☆
+
+**用途:** ビルダーパターンを自動生成
+
+**実践例:**
+
+```java
+@Builder
+@Entity
+public class User {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    private String email;
+    
+    // 使用例
+    // User user = User.builder()
+    //     .name("John")
+    //     .email("john@example.com")
+    //     .build();
+}
+```
+
+---
+
+### @NoArgsConstructor / @AllArgsConstructor ★★★★☆
+
+**用途:** コンストラクタを自動生成
+
+**実践例:**
+
+```java
+@Entity
+@NoArgsConstructor  // 引数なしコンストラクタ
+@AllArgsConstructor  // 全フィールドを引数に持つコンストラクタ
+public class User {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    private String email;
+}
+```
+
+---
+
+### @Slf4j ★★★★★
+
+**用途:** ロガー（`log`）を自動生成
+
+**実践例:**
+
+```java
+@Service
+@Slf4j
+public class UserService {
+    
+    public void createUser(UserCreateRequest request) {
+        log.info("Creating user: {}", request.getName());
+        
+        try {
+            // ユーザー作成処理
+            log.debug("User created successfully");
+        } catch (Exception e) {
+            log.error("Failed to create user", e);
+            throw e;
+        }
+    }
+}
+```
+
+---
+
+## その他の重要なアノテーション
+
+### @Override ★★★★★
+
+**用途:** メソッドがスーパークラスまたはインターフェースのメソッドをオーバーライドしていることを明示
+
+**実践例:**
+
+```java
+public class UserService implements UserServiceInterface {
+    
+    @Override
+    public User findById(Long id) {
+        // インターフェースのメソッドを実装
+        return userRepository.findById(id).orElse(null);
+    }
+}
+```
+
+---
+
+### @Deprecated ★★★☆☆
+
+**用途:** 非推奨のメソッドやクラスにマーク
+
+**実践例:**
+
+```java
+@Service
+public class UserService {
+    
+    @Deprecated
+    public User findUserById(Long id) {
+        // このメソッドは非推奨。findById()を使用してください
+        return findById(id);
+    }
+    
+    public User findById(Long id) {
+        // 新しいメソッド
+        return userRepository.findById(id).orElse(null);
+    }
+}
+```
+
+---
+
+### @Configuration ★★★★☆
+
+**用途:** 設定クラスであることを示す
+
+**実践例:**
+
+```java
+@Configuration
+public class AppConfig {
+    
+    @Bean
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
+    
+    @Bean
+    public ObjectMapper objectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        return mapper;
+    }
+}
+```
+
+---
+
+### @Bean ★★★★☆
+
+**用途:** メソッドの戻り値をSpring Beanとして登録
+
+**実践例:**
+
+```java
+@Configuration
+public class AppConfig {
+    
+    @Bean
+    @Primary  // 複数のBeanがある場合の優先Bean
+    public RestTemplate restTemplate() {
+        RestTemplate restTemplate = new RestTemplate();
+        restTemplate.setRequestFactory(new HttpComponentsClientHttpRequestFactory());
+        return restTemplate;
+    }
+    
+    @Bean(name = "customRestTemplate")
+    public RestTemplate customRestTemplate() {
+        // カスタム設定
+        return new RestTemplate();
+    }
+}
+```
+
+---
+
+## アノテーションの組み合わせパターン
+
+### よくある組み合わせ
+
+```java
+// REST APIコントローラー
+@RestController
+@RequestMapping("/api/users")
+@Validated
+@Slf4j
+public class UserController {
+    
+    private final UserService userService;
+    
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<UserDTO> getUser(@PathVariable Long id) {
+        log.info("Getting user: {}", id);
+        UserDTO user = userService.findById(id);
+        return ResponseEntity.ok(user);
+    }
+}
+
+// サービス層
+@Service
+@Transactional
+@Slf4j
+public class UserService {
+    
+    private final UserRepository userRepository;
+    
+    public UserService(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+    
+    @Transactional(readOnly = true)
+    public UserDTO findById(Long id) {
+        log.debug("Finding user by id: {}", id);
+        User user = userRepository.findById(id)
+            .orElseThrow(() -> new UserNotFoundException("User not found: " + id));
+        return UserDTO.fromEntity(user);
+    }
+}
+
+// エンティティ
+@Entity
+@Table(name = "users")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class User {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @Column(nullable = false, length = 100)
+    private String name;
+    
+    @Column(unique = true, nullable = false)
+    private String email;
+    
+    @Column(name = "created_at", updatable = false)
+    @CreationTimestamp
+    private LocalDateTime createdAt;
+}
+```
+
+---
+
+## まとめ
+
+### 頻出度別アノテーション一覧
+
+**★★★★★（必須レベル）:**
+- `@Service`、`@Repository`、`@Controller`、`@RestController`
+- `@Autowired`、`@Component`
+- `@GetMapping`、`@PostMapping`、`@PathVariable`、`@RequestParam`、`@RequestBody`
+- `@Entity`、`@Id`、`@GeneratedValue`
+- `@Valid`、`@NotNull`、`@NotBlank`
+- `@Transactional`
+- `@Data`、`@Slf4j`（Lombok）
+
+**★★★★☆（推奨レベル）:**
+- `@Value`、`@RequestMapping`
+- `@PutMapping`、`@DeleteMapping`
+- `@Table`、`@Column`
+- `@Size`、`@Email`
+- `@Getter`、`@Setter`、`@Builder`（Lombok）
+- `@Configuration`、`@Bean`
+
+**★★★☆☆（中頻度）:**
+- `@PatchMapping`
+- `@Deprecated`
+- `@NoArgsConstructor`、`@AllArgsConstructor`（Lombok）
+
+### ベストプラクティス
+
+1. **適切なアノテーションの選択**: より具体的なアノテーションを優先（`@Service` > `@Component`）
+2. **コンストラクタインジェクション**: `@Autowired`のフィールドインジェクションは避ける
+3. **バリデーション**: `@Valid`と組み合わせてリクエストデータを検証
+4. **トランザクション管理**: サービス層で`@Transactional`を使用
+5. **ロギング**: Lombokの`@Slf4j`を使用してロガーを自動生成
+
+これらのアノテーションを適切に使用することで、保守性の高いSpring Bootアプリケーションを構築できます。

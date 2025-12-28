@@ -1,0 +1,465 @@
+---
+title: "Spring Security"
+label: "Spring Security"
+---
+
+## Spring Security
+
+Spring Securityは、Springアプリケーションの認証・認可を実装するためのフレームワークです。この章では、Spring Securityの基本的な設定から、JWT認証、OAuth2などの高度な機能まで詳しく解説します。
+
+### Spring Securityの基本設定
+
+#### 依存関係の追加
+
+**Maven:**
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-security</artifactId>
+</dependency>
+```
+
+**Gradle:**
+```groovy
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+}
+```
+
+#### 基本的なセキュリティ設定
+
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+    
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/public/**").permitAll()
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                .anyRequest().authenticated()
+            )
+            .httpBasic(Customizer.withDefaults())
+            .csrf(csrf -> csrf.disable());  // REST APIの場合はCSRFを無効化
+        
+        return http.build();
+    }
+    
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+}
+```
+
+### ユーザー認証の実装
+
+#### UserDetailsServiceの実装
+
+```java
+@Service
+public class CustomUserDetailsService implements UserDetailsService {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    @Override
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        User user = userRepository.findByUsername(username)
+            .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
+        
+        return org.springframework.security.core.userdetails.User.builder()
+            .username(user.getUsername())
+            .password(user.getPassword())
+            .roles(user.getRole().name())
+            .build();
+    }
+}
+```
+
+#### 認証エンドポイントの実装
+
+```java
+@RestController
+@RequestMapping("/api/auth")
+public class AuthController {
+    
+    @Autowired
+    private AuthenticationManager authenticationManager;
+    
+    @Autowired
+    private JwtTokenProvider jwtTokenProvider;
+    
+    @Autowired
+    private UserDetailsService userDetailsService;
+    
+    @PostMapping("/login")
+    public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
+        try {
+            Authentication authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(
+                    request.getUsername(),
+                    request.getPassword()
+                )
+            );
+            
+            String token = jwtTokenProvider.generateToken(authentication);
+            
+            return ResponseEntity.ok(new AuthResponse(token));
+        } catch (AuthenticationException e) {
+            throw new BadCredentialsException("Invalid username or password");
+        }
+    }
+}
+```
+
+### JWT認証の実装
+
+#### JWTトークンプロバイダー
+
+```java
+@Component
+public class JwtTokenProvider {
+    
+    @Value("${jwt.secret}")
+    private String secret;
+    
+    @Value("${jwt.expiration}")
+    private long expiration;
+    
+    public String generateToken(Authentication authentication) {
+        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+        Date now = new Date();
+        Date expiryDate = new Date(now.getTime() + expiration);
+        
+        return Jwts.builder()
+            .setSubject(userDetails.getUsername())
+            .setIssuedAt(now)
+            .setExpiration(expiryDate)
+            .signWith(SignatureAlgorithm.HS512, secret)
+            .compact();
+    }
+    
+    public String getUsernameFromToken(String token) {
+        Claims claims = Jwts.parser()
+            .setSigningKey(secret)
+            .parseClaimsJws(token)
+            .getBody();
+        
+        return claims.getSubject();
+    }
+    
+    public boolean validateToken(String token) {
+        try {
+            Jwts.parser().setSigningKey(secret).parseClaimsJws(token);
+            return true;
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+}
+```
+
+#### JWT認証フィルター
+
+```java
+@Component
+public class JwtAuthenticationFilter extends OncePerRequestFilter {
+    
+    @Autowired
+    private JwtTokenProvider tokenProvider;
+    
+    @Autowired
+    private CustomUserDetailsService userDetailsService;
+    
+    @Override
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain) throws ServletException, IOException {
+        
+        String token = getTokenFromRequest(request);
+        
+        if (token != null && tokenProvider.validateToken(token)) {
+            String username = tokenProvider.getUsernameFromToken(token);
+            UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+            
+            UsernamePasswordAuthenticationToken authentication = 
+                new UsernamePasswordAuthenticationToken(
+                    userDetails, null, userDetails.getAuthorities()
+                );
+            authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+            
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+        }
+        
+        filterChain.doFilter(request, response);
+    }
+    
+    private String getTokenFromRequest(HttpServletRequest request) {
+        String bearerToken = request.getHeader("Authorization");
+        if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
+            return bearerToken.substring(7);
+        }
+        return null;
+    }
+}
+```
+
+#### セキュリティ設定でのJWTフィルターの追加
+
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+    
+    @Autowired
+    private JwtAuthenticationFilter jwtAuthenticationFilter;
+    
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+            .csrf(csrf -> csrf.disable())
+            .sessionManagement(session -> 
+                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+            )
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/auth/**").permitAll()
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                .anyRequest().authenticated()
+            )
+            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        
+        return http.build();
+    }
+}
+```
+
+### 認可の実装
+
+#### メソッドレベルのセキュリティ
+
+```java
+@Configuration
+@EnableMethodSecurity
+public class MethodSecurityConfig {
+    // メソッドレベルのセキュリティを有効化
+}
+
+@Service
+public class UserService {
+    
+    @PreAuthorize("hasRole('ADMIN')")
+    public void deleteUser(Long id) {
+        // 管理者のみ実行可能
+    }
+    
+    @PreAuthorize("hasRole('USER') and #userId == authentication.principal.id")
+    public User getUser(Long userId) {
+        // ユーザーは自分の情報のみ取得可能
+    }
+    
+    @Secured("ROLE_ADMIN")
+    public void updateUser(User user) {
+        // ADMINロールのみ実行可能
+    }
+}
+```
+
+#### カスタムアクセス制御
+
+```java
+@Component
+public class CustomAccessDecisionVoter implements AccessDecisionVoter<FilterInvocation> {
+    
+    @Override
+    public int vote(
+            Authentication authentication,
+            FilterInvocation object,
+            Collection<ConfigAttribute> attributes) {
+        
+        // カスタムロジックでアクセスを制御
+        if (authentication == null) {
+            return ACCESS_DENIED;
+        }
+        
+        // カスタムロジック...
+        return ACCESS_GRANTED;
+    }
+    
+    @Override
+    public boolean supports(ConfigAttribute attribute) {
+        return true;
+    }
+    
+    @Override
+    public boolean supports(Class<?> clazz) {
+        return FilterInvocation.class.isAssignableFrom(clazz);
+    }
+}
+```
+
+### OAuth2の実装
+
+#### OAuth2クライアント設定
+
+```java
+@Configuration
+@EnableWebSecurity
+public class OAuth2SecurityConfig {
+    
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+            .oauth2Login(oauth2 -> oauth2
+                .userInfoEndpoint(userInfo -> userInfo
+                    .userService(customOAuth2UserService())
+                )
+                .successHandler(oAuth2AuthenticationSuccessHandler())
+            )
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/public/**").permitAll()
+                .anyRequest().authenticated()
+            );
+        
+        return http.build();
+    }
+    
+    @Bean
+    public OAuth2UserService<OAuth2UserRequest, OAuth2User> customOAuth2UserService() {
+        return new CustomOAuth2UserService();
+    }
+    
+    @Bean
+    public AuthenticationSuccessHandler oAuth2AuthenticationSuccessHandler() {
+        return new CustomOAuth2AuthenticationSuccessHandler();
+    }
+}
+```
+
+**application.properties:**
+
+```properties
+spring.security.oauth2.client.registration.google.client-id=your-client-id
+spring.security.oauth2.client.registration.google.client-secret=your-client-secret
+spring.security.oauth2.client.registration.google.scope=profile,email
+```
+
+### パスワードエンコーディング
+
+```java
+@Service
+public class PasswordService {
+    
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+    
+    public String encodePassword(String rawPassword) {
+        return passwordEncoder.encode(rawPassword);
+    }
+    
+    public boolean matches(String rawPassword, String encodedPassword) {
+        return passwordEncoder.matches(rawPassword, encodedPassword);
+    }
+}
+
+// ユーザー作成時の使用例
+@Service
+public class UserService {
+    
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    public User createUser(UserCreateRequest request) {
+        User user = new User();
+        user.setUsername(request.getUsername());
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        return userRepository.save(user);
+    }
+}
+```
+
+### CORS設定
+
+```java
+@Configuration
+public class CorsConfig {
+    
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000", "https://example.com"));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(Arrays.asList("*"));
+        configuration.setAllowCredentials(true);
+        
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+}
+
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+    
+    @Autowired
+    private CorsConfigurationSource corsConfigurationSource;
+    
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+            .cors(cors -> cors.configurationSource(corsConfigurationSource))
+            // その他の設定...
+        
+        return http.build();
+    }
+}
+```
+
+### セキュリティヘッダーの設定
+
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+    
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+            .headers(headers -> headers
+                .contentSecurityPolicy(csp -> csp
+                    .policyDirectives("default-src 'self'")
+                )
+                .frameOptions(frame -> frame.deny())
+                .httpStrictTransportSecurity(hsts -> hsts
+                    .maxAgeInSeconds(31536000)
+                    .includeSubdomains(true)
+                )
+            );
+        
+        return http.build();
+    }
+}
+```
+
+### まとめ
+
+Spring Securityの主要な機能：
+
+- **基本設定**: SecurityFilterChainによる設定
+- **ユーザー認証**: UserDetailsServiceの実装
+- **JWT認証**: トークンベースの認証
+- **認可**: メソッドレベルのセキュリティ
+- **OAuth2**: サードパーティ認証
+- **パスワードエンコーディング**: BCryptPasswordEncoder
+- **CORS設定**: クロスオリジンリクエストの制御
+- **セキュリティヘッダー**: セキュリティの強化
+
+これらの機能を適切に実装することで、安全なSpring Bootアプリケーションを構築できます。
+

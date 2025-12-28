@@ -1,0 +1,438 @@
+---
+title: "データベースマイグレーション"
+label: "データベースマイグレーション"
+---
+
+## データベースマイグレーション（Flyway・Liquibase）
+
+データベーススキーマの変更をバージョン管理し、安全に適用するためのマイグレーションツールについて解説します。
+
+### マイグレーションツールとは
+
+データベーススキーマの変更をSQLファイルや設定ファイルとして管理し、バージョンごとに適用するツールです。
+
+**メリット:**
+- スキーマ変更の履歴管理
+- 環境間での一貫性の確保
+- ロールバック機能
+- チーム開発での競合回避
+
+### Flyway
+
+#### Flywayの基本概念
+
+Flywayは、SQLベースのマイグレーションツールです。バージョン番号を含むSQLファイルを順番に実行します。
+
+**特徴:**
+- シンプルで理解しやすい
+- SQLファイルベース
+- バージョン管理が明確
+
+#### Flywayのセットアップ
+
+**Maven依存関係の追加:**
+
+```xml
+<dependency>
+    <groupId>org.flywaydb</groupId>
+    <artifactId>flyway-core</artifactId>
+</dependency>
+
+<dependency>
+    <groupId>org.flywaydb</groupId>
+    <artifactId>flyway-database-postgresql</artifactId>
+</dependency>
+```
+
+**Gradle依存関係の追加:**
+
+```groovy
+dependencies {
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+}
+```
+
+#### application.propertiesの設定
+
+```properties
+# Flywayの有効化
+spring.flyway.enabled=true
+
+# マイグレーションファイルの場所
+spring.flyway.locations=classpath:db/migration
+
+# ベースライン（既存データベースがある場合）
+spring.flyway.baseline-on-migrate=true
+spring.flyway.baseline-version=0
+
+# 検証（チェックサムの検証）
+spring.flyway.validate-on-migrate=true
+
+# クリーン（本番環境では無効化）
+spring.flyway.clean-disabled=true
+```
+
+#### マイグレーションファイルの作成
+
+**ディレクトリ構造:**
+
+```
+src/main/resources/
+└── db/
+    └── migration/
+        ├── V1__Create_users_table.sql
+        ├── V2__Add_email_column.sql
+        ├── V3__Create_orders_table.sql
+        └── V4__Add_indexes.sql
+```
+
+**命名規則:**
+- `V{バージョン番号}__{説明}.sql`
+- バージョン番号は連番（1, 2, 3...）
+- 2つのアンダースコア（`__`）で区切る
+
+**V1__Create_users_table.sql:**
+
+```sql
+-- ユーザーテーブルの作成
+CREATE TABLE users (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- インデックスの作成
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_created_at ON users(created_at);
+```
+
+**V2__Add_email_column.sql:**
+
+```sql
+-- 既存のテーブルにカラムを追加
+ALTER TABLE users ADD COLUMN phone VARCHAR(20);
+
+-- コメントの追加
+COMMENT ON COLUMN users.phone IS '電話番号';
+```
+
+**V3__Create_orders_table.sql:**
+
+```sql
+-- 注文テーブルの作成
+CREATE TABLE orders (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    total_amount DECIMAL(10, 2) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- インデックスの作成
+CREATE INDEX idx_orders_user_id ON orders(user_id);
+CREATE INDEX idx_orders_status ON orders(status);
+```
+
+#### リピータブルマイグレーション
+
+同じファイルを何度でも実行できるリピータブルマイグレーションも使用できます。
+
+**命名規則:**
+- `R__{説明}.sql`
+- `R`で始まるファイルは、チェックサムが変更された場合に再実行される
+
+**R__Update_updated_at_trigger.sql:**
+
+```sql
+-- 更新日時を自動更新するトリガー
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_orders_updated_at BEFORE UPDATE ON orders
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+```
+
+#### Flywayのコマンド
+
+```bash
+# マイグレーションの実行（アプリケーション起動時に自動実行）
+./mvnw spring-boot:run
+
+# Flywayの状態確認
+./mvnw flyway:info
+
+# マイグレーションの実行（手動）
+./mvnw flyway:migrate
+
+# マイグレーションの検証
+./mvnw flyway:validate
+
+# ベースラインの設定（既存データベースがある場合）
+./mvnw flyway:baseline
+
+# クリーン（開発環境のみ、注意して使用）
+./mvnw flyway:clean
+```
+
+#### Flywayの状態確認
+
+```java
+@SpringBootApplication
+public class MyAppApplication {
+    
+    public static void main(String[] args) {
+        SpringApplication.run(MyAppApplication.class, args);
+    }
+    
+    @Bean
+    public CommandLineRunner flywayInfo(Flyway flyway) {
+        return args -> {
+            MigrationInfo[] migrations = flyway.info().all();
+            System.out.println("Applied migrations:");
+            for (MigrationInfo migration : migrations) {
+                System.out.println("  " + migration.getVersion() + ": " + migration.getDescription());
+            }
+        };
+    }
+}
+```
+
+### Liquibase
+
+#### Liquibaseの基本概念
+
+Liquibaseは、XML、YAML、JSON、SQLなど複数の形式をサポートするマイグレーションツールです。
+
+**特徴:**
+- 複数のフォーマットに対応
+- ロールバック機能が充実
+- 変更セットの概念
+
+#### Liquibaseのセットアップ
+
+**Maven依存関係の追加:**
+
+```xml
+<dependency>
+    <groupId>org.liquibase</groupId>
+    <artifactId>liquibase-core</artifactId>
+</dependency>
+```
+
+**Gradle依存関係の追加:**
+
+```groovy
+dependencies {
+    implementation 'org.liquibase:liquibase-core'
+}
+```
+
+#### application.propertiesの設定
+
+```properties
+# Liquibaseの有効化
+spring.liquibase.enabled=true
+
+# チェンジログファイルの場所
+spring.liquibase.change-log=classpath:db/changelog/db.changelog-master.xml
+
+# デフォルトスキーマ
+spring.liquibase.default-schema=public
+
+# 検証
+spring.liquibase.validate-on-migrate=true
+```
+
+#### チェンジログファイルの作成
+
+**db.changelog-master.xml:**
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+    
+    <!-- 変更セットのインクルード -->
+    <include file="db/changelog/changes/V1__Create_users_table.xml"/>
+    <include file="db/changelog/changes/V2__Add_email_column.xml"/>
+    <include file="db/changelog/changes/V3__Create_orders_table.xml"/>
+    
+</databaseChangeLog>
+```
+
+**V1__Create_users_table.xml:**
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+    
+    <changeSet id="1" author="developer">
+        <createTable tableName="users">
+            <column name="id" type="BIGSERIAL">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="name" type="VARCHAR(100)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="email" type="VARCHAR(255)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="created_at" type="TIMESTAMP" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMP" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        
+        <createIndex indexName="idx_users_email" tableName="users">
+            <column name="email"/>
+        </createIndex>
+        
+        <rollback>
+            <dropTable tableName="users"/>
+        </rollback>
+    </changeSet>
+    
+</databaseChangeLog>
+```
+
+**V2__Add_email_column.xml:**
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+    
+    <changeSet id="2" author="developer">
+        <addColumn tableName="users">
+            <column name="phone" type="VARCHAR(20)"/>
+        </addColumn>
+        
+        <rollback>
+            <dropColumn tableName="users" columnName="phone"/>
+        </rollback>
+    </changeSet>
+    
+</databaseChangeLog>
+```
+
+#### YAML形式のチェンジログ
+
+**db.changelog-master.yaml:**
+
+```yaml
+databaseChangeLog:
+  - include:
+      file: db/changelog/changes/V1__Create_users_table.yaml
+  - include:
+      file: db/changelog/changes/V2__Add_email_column.yaml
+```
+
+**V1__Create_users_table.yaml:**
+
+```yaml
+databaseChangeLog:
+  - changeSet:
+      id: 1
+      author: developer
+      changes:
+        - createTable:
+            tableName: users
+            columns:
+              - column:
+                  name: id
+                  type: BIGSERIAL
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: email
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+                    unique: true
+        - createIndex:
+            indexName: idx_users_email
+            tableName: users
+            columns:
+              - column:
+                  name: email
+      rollback:
+        - dropTable:
+            tableName: users
+```
+
+### Flyway vs Liquibase
+
+| 特徴 | Flyway | Liquibase |
+|------|--------|-----------|
+| フォーマット | SQL | XML、YAML、JSON、SQL |
+| 学習曲線 | 低い | 中程度 |
+| ロールバック | 手動 | 自動（変更セットに定義） |
+| 複雑な変更 | SQLで記述 | 宣言的に記述可能 |
+| パフォーマンス | 高速 | やや遅い |
+| コミュニティ | 大きい | 大きい |
+
+### ベストプラクティス
+
+1. **バージョン番号の管理**
+   - 連番を使用（1, 2, 3...）
+   - チームで共有する
+
+2. **マイグレーションファイルの命名**
+   - 明確な説明を含める
+   - 変更内容が分かる名前
+
+3. **ロールバックの準備**
+   - 本番環境でのロールバック手順を準備
+   - テスト環境で事前に検証
+
+4. **データマイグレーション**
+   - スキーマ変更とデータ移行を分離
+   - 大量データの移行は慎重に
+
+5. **環境別の管理**
+   - 開発環境では`ddl-auto=update`を使用可能
+   - 本番環境ではマイグレーションツールを使用
+
+### まとめ
+
+データベースマイグレーションのポイント：
+
+- **Flyway**: SQLベースでシンプル
+- **Liquibase**: 複数フォーマット対応、ロールバック機能が充実
+- **バージョン管理**: スキーマ変更を履歴として管理
+- **環境間の一貫性**: すべての環境で同じスキーマを適用
+- **安全性**: ロールバック機能で問題発生時の復旧が可能
+
+適切なマイグレーションツールの使用により、データベーススキーマの変更を安全に管理できます。
+

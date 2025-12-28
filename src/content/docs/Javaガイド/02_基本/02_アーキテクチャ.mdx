@@ -1,0 +1,666 @@
+---
+title: "アーキテクチャ"
+label: "アーキテクチャ"
+---
+
+## Spring Bootアプリケーションのアーキテクチャ
+
+Spring Bootアプリケーションは、**レイヤードアーキテクチャ**に基づいて設計されることが一般的です。この章では、Spring Bootにおけるアーキテクチャパターンとその実装方法について詳しく解説します。
+
+### レイヤードアーキテクチャの概要
+
+レイヤードアーキテクチャは、アプリケーションを**階層（レイヤー）**に分割し、各レイヤーが明確な責務を持つ設計パターンです。
+
+```
+┌─────────────────────────────────┐
+│      Controller Layer           │  ← HTTPリクエスト/レスポンスの処理
+├─────────────────────────────────┤
+│      Service Layer              │  ← ビジネスロジックの実装
+├─────────────────────────────────┤
+│      Repository Layer           │  ← データアクセス
+├─────────────────────────────────┤
+│      Model/Entity Layer         │  ← データモデル
+└─────────────────────────────────┘
+```
+
+### 各レイヤーの詳細
+
+#### 1. Controller層（プレゼンテーション層）
+
+**責務:**
+- HTTPリクエストの受け取り
+- リクエストデータの検証
+- サービス層の呼び出し
+- HTTPレスポンスの生成
+
+**実装例:**
+
+```java
+@RestController
+@RequestMapping("/api/users")
+@Validated
+public class UserController {
+    
+    private final UserService userService;
+    
+    // コンストラクタインジェクション（推奨）
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<UserDTO> getUser(@PathVariable Long id) {
+        UserDTO user = userService.findById(id);
+        return ResponseEntity.ok(user);
+    }
+    
+    @PostMapping
+    public ResponseEntity<UserDTO> createUser(
+            @Valid @RequestBody UserCreateRequest request) {
+        UserDTO createdUser = userService.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(createdUser);
+    }
+    
+    @PutMapping("/{id}")
+    public ResponseEntity<UserDTO> updateUser(
+            @PathVariable Long id,
+            @Valid @RequestBody UserUpdateRequest request) {
+        UserDTO updatedUser = userService.update(id, request);
+        return ResponseEntity.ok(updatedUser);
+    }
+    
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
+        userService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+}
+```
+
+#### 2. Service層（ビジネスロジック層）
+
+**責務:**
+- ビジネスロジックの実装
+- トランザクション管理
+- 複数のリポジトリの協調
+- データの変換（Entity ↔ DTO）
+
+**実装例:**
+
+```java
+@Service
+@Transactional(readOnly = true)
+public class UserService {
+    
+    private final UserRepository userRepository;
+    private final EmailService emailService;
+    
+    public UserService(UserRepository userRepository, EmailService emailService) {
+        this.userRepository = userRepository;
+        this.emailService = emailService;
+    }
+    
+    public UserDTO findById(Long id) {
+        User user = userRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("User", id));
+        return convertToDTO(user);
+    }
+    
+    @Transactional
+    public UserDTO create(UserCreateRequest request) {
+        // 重複チェック
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new DuplicateResourceException("User", request.getEmail());
+        }
+        
+        // エンティティの作成
+        User user = new User();
+        user.setName(request.getName());
+        user.setEmail(request.getEmail());
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        
+        // 保存
+        User savedUser = userRepository.save(user);
+        
+        // メール送信（非同期）
+        emailService.sendWelcomeEmail(savedUser.getEmail());
+        
+        return convertToDTO(savedUser);
+    }
+    
+    @Transactional
+    public UserDTO update(Long id, UserUpdateRequest request) {
+        User user = userRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("User", id));
+        
+        if (request.getName() != null) {
+            user.setName(request.getName());
+        }
+        if (request.getEmail() != null && !user.getEmail().equals(request.getEmail())) {
+            if (userRepository.existsByEmail(request.getEmail())) {
+                throw new DuplicateResourceException("User", request.getEmail());
+            }
+            user.setEmail(request.getEmail());
+        }
+        
+        User updatedUser = userRepository.save(user);
+        return convertToDTO(updatedUser);
+    }
+    
+    @Transactional
+    public void delete(Long id) {
+        if (!userRepository.existsById(id)) {
+            throw new ResourceNotFoundException("User", id);
+        }
+        userRepository.deleteById(id);
+    }
+    
+    private UserDTO convertToDTO(User user) {
+        UserDTO dto = new UserDTO();
+        dto.setId(user.getId());
+        dto.setName(user.getName());
+        dto.setEmail(user.getEmail());
+        return dto;
+    }
+}
+```
+
+#### 3. Repository層（データアクセス層）
+
+**責務:**
+- データベースへのアクセス
+- CRUD操作の実装
+- カスタムクエリの定義
+
+**実装例:**
+
+```java
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    
+    // メソッド名によるクエリ生成
+    Optional<User> findByEmail(String email);
+    boolean existsByEmail(String email);
+    List<User> findByNameContaining(String name);
+    
+    // カスタムクエリ
+    @Query("SELECT u FROM User u WHERE u.email = :email AND u.active = true")
+    Optional<User> findActiveUserByEmail(@Param("email") String email);
+    
+    // ページング
+    Page<User> findByNameContaining(String name, Pageable pageable);
+}
+```
+
+#### 4. Model/Entity層（データモデル層）
+
+**責務:**
+- データベーステーブルとのマッピング
+- エンティティ間の関連定義
+- バリデーションルールの定義
+
+**実装例:**
+
+```java
+@Entity
+@Table(name = "users")
+public class User {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @Column(nullable = false, length = 100)
+    private String name;
+    
+    @Column(unique = true, nullable = false, length = 255)
+    @Email
+    private String email;
+    
+    @Column(nullable = false)
+    private String password;
+    
+    @Column(nullable = false)
+    private Boolean active = true;
+    
+    @CreatedDate
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+    
+    @LastModifiedDate
+    @Column(nullable = false)
+    private LocalDateTime updatedAt;
+    
+    // getter/setter
+}
+```
+
+### DTO（Data Transfer Object）パターン
+
+エンティティを直接APIレスポンスとして返すのではなく、**DTO**を使用することで、以下のメリットがあります：
+
+- エンティティの内部構造を隠蔽
+- 必要な情報のみを公開
+- APIのバージョン管理が容易
+
+**実装例:**
+
+```java
+public class UserDTO {
+    private Long id;
+    private String name;
+    private String email;
+    
+    // コンストラクタ、getter/setter
+    public UserDTO() {}
+    
+    public UserDTO(Long id, String name, String email) {
+        this.id = id;
+        this.name = name;
+        this.email = email;
+    }
+    
+    // getter/setter
+}
+
+public class UserCreateRequest {
+    @NotBlank(message = "Name is required")
+    @Size(min = 1, max = 100, message = "Name must be between 1 and 100 characters")
+    private String name;
+    
+    @NotBlank(message = "Email is required")
+    @Email(message = "Email must be valid")
+    private String email;
+    
+    @NotBlank(message = "Password is required")
+    @Size(min = 8, message = "Password must be at least 8 characters")
+    private String password;
+    
+    // getter/setter
+}
+```
+
+### 依存性注入（Dependency Injection）
+
+Spring Bootでは、**依存性注入**により、オブジェクト間の結合を緩和し、テスト容易性を向上させます。
+
+**フィールドインジェクション（非推奨）:**
+
+```java
+@Service
+public class UserService {
+    @Autowired
+    private UserRepository userRepository;  // 非推奨
+}
+```
+
+**コンストラクタインジェクション（推奨）:**
+
+```java
+@Service
+public class UserService {
+    private final UserRepository userRepository;
+    
+    public UserService(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+}
+```
+
+**Lombokを使用した簡潔な記述:**
+
+```java
+@Service
+@RequiredArgsConstructor
+public class UserService {
+    private final UserRepository userRepository;
+    private final EmailService emailService;
+}
+```
+
+### 例外処理の統合
+
+各レイヤーで適切に例外を処理し、グローバル例外ハンドラーで統一します。
+
+```java
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+    
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleResourceNotFound(
+            ResourceNotFoundException ex) {
+        ErrorResponse error = new ErrorResponse(
+            HttpStatus.NOT_FOUND.value(),
+            "Resource not found",
+            ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+    }
+}
+```
+
+### アーキテクチャのベストプラクティス
+
+#### 1. 単一責任の原則
+
+各クラスは一つの責務のみを持ちます。
+
+```java
+// 良い例: ユーザー管理のみを担当
+@Service
+public class UserService {
+    // ユーザー関連のビジネスロジックのみ
+}
+
+// 悪い例: ユーザー管理とメール送信を混在
+@Service
+public class UserService {
+    // ユーザー管理
+    // メール送信（別のサービスに分離すべき）
+}
+```
+
+#### 2. 依存関係の方向
+
+依存関係は一方向に流れます：
+
+```
+Controller → Service → Repository → Entity
+```
+
+下位レイヤーは上位レイヤーに依存しません。
+
+#### 3. インターフェースの活用
+
+サービス層やリポジトリ層でインターフェースを定義し、実装を抽象化します。
+
+```java
+public interface UserService {
+    UserDTO findById(Long id);
+    UserDTO create(UserCreateRequest request);
+}
+
+@Service
+public class UserServiceImpl implements UserService {
+    // 実装
+}
+```
+
+#### 4. トランザクション境界の明確化
+
+トランザクションはサービス層で管理します。
+
+```java
+@Service
+@Transactional  // クラスレベルでデフォルト設定
+public class UserService {
+    
+    @Transactional(readOnly = true)  // 読み取り専用メソッド
+    public UserDTO findById(Long id) {
+        // ...
+    }
+    
+    @Transactional  // 書き込みメソッド
+    public UserDTO create(UserCreateRequest request) {
+        // ...
+    }
+}
+```
+
+### アーキテクチャの進化と意思決定
+
+#### いつレイヤードアーキテクチャを選ぶべきか
+
+**レイヤードアーキテクチャが適している場合:**
+
+```java
+// 1. 中規模から大規模のエンタープライズアプリケーション
+// 2. CRUD操作が中心のアプリケーション
+// 3. チームが明確に分離されている場合
+// 4. 既存のSpring Bootエコシステムを活用したい場合
+
+// 判断基準:
+// - ビジネスロジックが比較的シンプル
+// - 開発速度を優先する
+// - チームがSpring Bootに慣れ親しんでいる
+```
+
+**レイヤードアーキテクチャが適さない場合:**
+
+```java
+// 1. 非常に複雑なビジネスロジックがある場合
+//    → ドメイン駆動設計（DDD）やヘキサゴナルアーキテクチャを検討
+
+// 2. マイクロサービスアーキテクチャの場合
+//    → サービスごとに最適なアーキテクチャを選択
+
+// 3. イベント駆動アーキテクチャの場合
+//    → イベントソーシングやCQRSパターンを検討
+```
+
+#### レイヤー間の責務境界の明確化
+
+**よくある問題: 責務の漏れ**
+
+```java
+// 問題のあるコード: Controller層にビジネスロジックが漏れている
+@RestController
+public class OrderController {
+    
+    @PostMapping("/orders")
+    public ResponseEntity<OrderDTO> createOrder(@RequestBody OrderRequest request) {
+        // 問題: ビジネスロジックがController層にある
+        if (request.getAmount() < 1000) {
+            throw new IllegalArgumentException("Minimum order amount is 1000");
+        }
+        
+        // 問題: データ変換ロジックがController層にある
+        Order order = new Order();
+        order.setCustomerId(request.getCustomerId());
+        order.setAmount(request.getAmount());
+        // ...
+        
+        Order saved = orderRepository.save(order);
+        return ResponseEntity.ok(convertToDTO(saved));
+    }
+}
+
+// 解決: 責務を適切な層に配置
+@RestController
+public class OrderController {
+    private final OrderService orderService;
+    
+    @PostMapping("/orders")
+    public ResponseEntity<OrderDTO> createOrder(@RequestBody OrderCreateRequest request) {
+        // Controller層: HTTPリクエストの受け取りとレスポンスの生成のみ
+        OrderDTO order = orderService.createOrder(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(order);
+    }
+}
+
+@Service
+public class OrderService {
+    
+    @Transactional
+    public OrderDTO createOrder(OrderCreateRequest request) {
+        // Service層: ビジネスロジックとバリデーション
+        validateOrderRequest(request);
+        
+        Order order = orderMapper.toEntity(request);
+        Order saved = orderRepository.save(order);
+        
+        return orderMapper.toDTO(saved);
+    }
+    
+    private void validateOrderRequest(OrderCreateRequest request) {
+        if (request.getAmount() < 1000) {
+            throw new InvalidOrderException("Minimum order amount is 1000");
+        }
+        // その他のビジネスルール
+    }
+}
+```
+
+#### 依存関係の方向性と循環参照の回避
+
+**依存関係の原則:**
+
+```
+Controller → Service → Repository → Entity
+     ↓         ↓          ↓
+    DTO     Domain    Database
+```
+
+**循環参照の根本原因と解決:**
+
+```java
+// 問題: 循環参照の根本原因は設計の問題
+@Service
+public class UserService {
+    private final OrderService orderService;  // UserService → OrderService
+    
+    public void createUser(UserCreateRequest request) {
+        User user = userRepository.save(convertToEntity(request));
+        // 問題: UserServiceがOrderServiceに依存している
+        orderService.initializeUserOrders(user.getId());
+    }
+}
+
+@Service
+public class OrderService {
+    private final UserService userService;  // OrderService → UserService（循環）
+    
+    public void createOrder(OrderCreateRequest request) {
+        // 問題: OrderServiceがUserServiceに依存している
+        User user = userService.findById(request.getUserId());
+        // ...
+    }
+}
+
+// 解決1: 依存関係の方向を一方向にする
+@Service
+public class UserService {
+    // OrderServiceへの依存を削除
+    public void createUser(UserCreateRequest request) {
+        User user = userRepository.save(convertToEntity(request));
+        // イベントを発行して、OrderServiceに通知
+        eventPublisher.publishEvent(new UserCreatedEvent(user.getId()));
+    }
+}
+
+@Service
+public class OrderService {
+    // UserServiceへの依存を削除
+    @EventListener
+    public void handleUserCreated(UserCreatedEvent event) {
+        // イベントを受信して処理
+        initializeUserOrders(event.getUserId());
+    }
+    
+    public void createOrder(OrderCreateRequest request) {
+        // UserServiceに直接依存しない
+        // 必要な情報はリクエストに含めるか、Repositoryから取得
+        User user = userRepository.findById(request.getUserId())
+            .orElseThrow(() -> new UserNotFoundException(request.getUserId()));
+        // ...
+    }
+}
+
+// 解決2: 共通のサービス層を作成
+@Service
+public class UserOrderService {
+    private final UserRepository userRepository;
+    private final OrderRepository orderRepository;
+    
+    // UserとOrderの両方にアクセスできる共通サービス
+    public void createUserWithInitialOrder(UserCreateRequest userRequest, 
+                                          OrderCreateRequest orderRequest) {
+        User user = userRepository.save(convertToEntity(userRequest));
+        Order order = orderRepository.save(createInitialOrder(user.getId(), orderRequest));
+    }
+}
+```
+
+### スケーラビリティの考慮
+
+#### 水平スケーリング vs 垂直スケーリング
+
+**水平スケーリング（スケールアウト）:**
+
+```java
+// ステートレスな設計が重要
+@RestController
+public class StatelessController {
+    // 良い例: セッション情報をサーバーに保存しない
+    @GetMapping("/user")
+    public ResponseEntity<UserDTO> getCurrentUser(@RequestHeader("Authorization") String token) {
+        // トークンからユーザー情報を取得（ステートレス）
+        UserDTO user = userService.getUserFromToken(token);
+        return ResponseEntity.ok(user);
+    }
+}
+
+// 悪い例: セッションに依存している
+@RestController
+public class StatefulController {
+    // 問題: セッションが特定のサーバーに紐づく
+    @GetMapping("/user")
+    public ResponseEntity<UserDTO> getCurrentUser(HttpSession session) {
+        // セッションからユーザー情報を取得
+        // 問題: ロードバランサーで別のサーバーにルーティングされると失敗
+        UserDTO user = (UserDTO) session.getAttribute("user");
+        return ResponseEntity.ok(user);
+    }
+}
+```
+
+**垂直スケーリング（スケールアップ）の限界:**
+
+```java
+// 問題: 単一サーバーのリソースには限界がある
+// 解決: 水平スケーリングを前提とした設計
+
+// データベース接続プールの最適化
+@Configuration
+public class DataSourceConfig {
+    
+    @Bean
+    public DataSource dataSource() {
+        HikariConfig config = new HikariConfig();
+        
+        // スレッドプールサイズに応じて接続プールサイズを設定
+        // 経験則: 接続プールサイズ = スレッドプールサイズ × 2
+        int threadPoolSize = 20;
+        config.setMaximumPoolSize(threadPoolSize * 2);  // 40
+        config.setMinimumIdle(threadPoolSize);  // 20
+        
+        // 接続のタイムアウト設定
+        config.setConnectionTimeout(30000);  // 30秒
+        config.setIdleTimeout(600000);  // 10分
+        config.setMaxLifetime(1800000);  // 30分
+        
+        return new HikariDataSource(config);
+    }
+}
+```
+
+### まとめ
+
+Spring Bootアプリケーションのアーキテクチャは、以下の原則に基づいています：
+
+- **レイヤードアーキテクチャ**: 責務の明確な分離
+- **依存性注入**: 疎結合な設計
+- **DTOパターン**: エンティティとAPIの分離
+- **単一責任の原則**: 各クラスの責務の明確化
+- **依存関係の方向性**: 一方向の依存関係を維持
+- **ステートレスな設計**: 水平スケーリングを可能にする
+
+**シニアエンジニアとして考慮すべき点:**
+
+1. **コンテキストに応じた選択**: プロジェクトの規模、チーム、要件に応じて最適なアーキテクチャを選択
+2. **トレードオフの理解**: すべての選択にはメリットとデメリットがある
+3. **進化的な設計**: 完璧なアーキテクチャを最初から作ろうとせず、必要に応じて進化させる
+4. **チームの合意**: 技術的な選択は、チーム全体で理解し、維持できるものを選ぶ
+
+これらの原則に従うことで、保守性が高く、テストしやすく、スケーラブルなアプリケーションを構築できます。
+

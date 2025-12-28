@@ -1,0 +1,927 @@
+---
+title: "ラムダ式とストリームAPI"
+label: "ラムダ式とストリームAPI"
+---
+
+## ラムダ式とストリームAPI
+
+Java 8で導入されたラムダ式とストリームAPIは、関数型プログラミングの要素をJavaに取り入れた重要な機能です。この章では、これらの機能について詳しく解説します。
+
+### なぜラムダ式とストリームAPIが必要だったのか
+
+#### 歴史的背景と問題点
+
+Java 8以前のJavaでは、以下のような問題がありました：
+
+**1. 匿名クラスの冗長性**
+
+```java
+// Java 8以前: 匿名クラスでイベントハンドラーを実装
+button.addActionListener(new ActionListener() {
+    @Override
+    public void actionPerformed(ActionEvent e) {
+        System.out.println("Button clicked");
+    }
+});
+
+// 問題点:
+// - ボイラープレートコードが多すぎる
+// - 本質的な処理（System.out.println）が埋もれる
+// - 可読性が低い
+```
+
+**2. コレクション操作の複雑さ**
+
+```java
+// Java 8以前: ユーザーリストからアクティブなユーザーを抽出
+List<User> activeUsers = new ArrayList<>();
+for (User user : allUsers) {
+    if (user.isActive() && user.getAge() >= 18) {
+        activeUsers.add(user);
+    }
+}
+
+// 問題点:
+// - 手続き的なコード（何をしたいかではなく、どうやるかを書く）
+// - エラーが起きやすい（インデックス管理、nullチェックなど）
+// - 並列化が困難
+```
+
+**3. 関数を値として扱えない**
+
+```java
+// Java 8以前: 関数を引数として渡すには匿名クラスが必要
+Collections.sort(users, new Comparator<User>() {
+    @Override
+    public int compare(User u1, User u2) {
+        return u1.getName().compareTo(u2.getName());
+    }
+});
+
+// 問題点:
+// - 関数を再利用できない
+// - 関数の組み合わせが困難
+// - 関数型プログラミングのパラダイムが使えない
+```
+
+#### ラムダ式とストリームAPIが解決する問題
+
+**1. コードの簡潔性と可読性**
+
+```java
+// ラムダ式: 本質的な処理に集中できる
+button.addActionListener(e -> System.out.println("Button clicked"));
+
+// ストリームAPI: 何をしたいかが明確
+List<User> activeUsers = allUsers.stream()
+    .filter(User::isActive)
+    .filter(u -> u.getAge() >= 18)
+    .collect(Collectors.toList());
+```
+
+**2. 関数の再利用性**
+
+```java
+// 関数を変数として定義し、再利用可能
+Predicate<User> isAdult = u -> u.getAge() >= 18;
+Predicate<User> isActive = User::isActive;
+
+// 組み合わせて使用
+List<User> activeAdults = allUsers.stream()
+    .filter(isActive.and(isAdult))
+    .collect(Collectors.toList());
+```
+
+**3. 並列処理の簡易化**
+
+```java
+// 並列処理が簡単に
+List<User> processedUsers = allUsers.parallelStream()
+    .filter(User::isActive)
+    .map(this::processUser)
+    .collect(Collectors.toList());
+```
+
+### ラムダ式（Lambda Expressions）
+
+#### ラムダ式の本質
+
+ラムダ式は、**関数を第一級オブジェクト（First-Class Object）として扱う**ことを可能にします。これは、関数を変数に代入したり、引数として渡したり、戻り値として返したりできることを意味します。
+
+**関数型プログラミングの思想:**
+
+関数型プログラミングでは、以下の原則が重要です：
+
+1. **不変性（Immutability）**: データを変更せず、新しいデータを作成する
+2. **純粋関数（Pure Functions）**: 副作用がない関数
+3. **高階関数（Higher-Order Functions）**: 関数を引数や戻り値として扱う関数
+
+```java
+// 不変性の例: 元のリストは変更されない
+List<Integer> original = Arrays.asList(1, 2, 3, 4, 5);
+List<Integer> doubled = original.stream()
+    .map(n -> n * 2)  // 新しいリストを作成
+    .collect(Collectors.toList());
+// originalは変更されない: [1, 2, 3, 4, 5]
+// doubledは新しいリスト: [2, 4, 6, 8, 10]
+
+// 純粋関数の例: 副作用がない
+Function<Integer, Integer> square = n -> n * n;
+int result = square.apply(5);  // 25（副作用なし）
+
+// 高階関数の例: 関数を引数として受け取る
+public <T> List<T> filter(List<T> list, Predicate<T> predicate) {
+    return list.stream()
+        .filter(predicate)
+        .collect(Collectors.toList());
+}
+```
+
+#### ラムダ式とは
+
+ラムダ式は、**関数を値として扱える**ようにする機能です。匿名クラスを簡潔に記述できます。
+
+**基本的な構文:**
+
+```java
+(引数リスト) -> { 処理 }
+```
+
+**構文の詳細:**
+
+```java
+// 1. 引数が1つの場合、括弧は省略可能
+Function<String, Integer> length1 = s -> s.length();
+Function<String, Integer> length2 = (s) -> s.length();  // 同じ
+
+// 2. 処理が1行の場合、波括弧とreturnは省略可能
+Function<Integer, Integer> square1 = n -> n * n;
+Function<Integer, Integer> square2 = n -> { return n * n; };  // 同じ
+
+// 3. 引数がない場合、空の括弧が必要
+Supplier<String> supplier = () -> "Hello";
+
+// 4. 複数の引数の場合、括弧が必要
+BiFunction<Integer, Integer, Integer> add = (a, b) -> a + b;
+
+// 5. 型を明示的に指定可能（通常は推論される）
+Function<String, Integer> length = (String s) -> s.length();
+```
+
+#### 関数型インターフェース
+
+ラムダ式は、**関数型インターフェース**（抽象メソッドが1つだけのインターフェース）の実装として使用されます。
+
+**よく使う関数型インターフェース:**
+
+```java
+// 1. Function<T, R>: 引数Tを受け取り、Rを返す
+Function<String, Integer> stringToLength = s -> s.length();
+int length = stringToLength.apply("Hello");  // 5
+
+// 2. Predicate<T>: 引数Tを受け取り、booleanを返す
+Predicate<Integer> isEven = n -> n % 2 == 0;
+boolean result = isEven.test(4);  // true
+
+// 3. Consumer<T>: 引数Tを受け取り、何も返さない
+Consumer<String> printer = s -> System.out.println(s);
+printer.accept("Hello");  // "Hello"を出力
+
+// 4. Supplier<T>: 引数なしで、Tを返す
+Supplier<String> supplier = () -> "Hello";
+String value = supplier.get();  // "Hello"
+
+// 5. BiFunction<T, U, R>: 引数TとUを受け取り、Rを返す
+BiFunction<Integer, Integer, Integer> add = (a, b) -> a + b;
+int sum = add.apply(3, 5);  // 8
+```
+
+#### ラムダ式の実践例
+
+**コレクションの操作:**
+
+```java
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie", "David");
+
+// 匿名クラス（古い方法）
+names.forEach(new Consumer<String>() {
+    @Override
+    public void accept(String name) {
+        System.out.println(name);
+    }
+});
+
+// ラムダ式（新しい方法）
+names.forEach(name -> System.out.println(name));
+
+// メソッド参照（さらに簡潔）
+names.forEach(System.out::println);
+```
+
+**条件によるフィルタリング:**
+
+```java
+List<Integer> numbers = Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+
+// 偶数だけを抽出
+List<Integer> evens = numbers.stream()
+    .filter(n -> n % 2 == 0)
+    .collect(Collectors.toList());
+// [2, 4, 6, 8, 10]
+
+// 5より大きい数だけを抽出
+List<Integer> greaterThanFive = numbers.stream()
+    .filter(n -> n > 5)
+    .collect(Collectors.toList());
+// [6, 7, 8, 9, 10]
+```
+
+**ソート:**
+
+```java
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie", "David");
+
+// アルファベット順
+List<String> sorted = names.stream()
+    .sorted()
+    .collect(Collectors.toList());
+// [Alice, Bob, Charlie, David]
+
+// 文字列の長さでソート
+List<String> sortedByLength = names.stream()
+    .sorted((a, b) -> Integer.compare(a.length(), b.length()))
+    .collect(Collectors.toList());
+// [Bob, Alice, David, Charlie]
+
+// Comparatorを使用（推奨）
+List<String> sortedByLength2 = names.stream()
+    .sorted(Comparator.comparing(String::length))
+    .collect(Collectors.toList());
+```
+
+#### メソッド参照
+
+メソッド参照は、ラムダ式をさらに簡潔に記述する方法です。
+
+**種類:**
+
+```java
+// 1. 静的メソッド参照
+Function<String, Integer> parseInt = Integer::parseInt;
+int value = parseInt.apply("123");  // 123
+
+// 2. インスタンスメソッド参照
+String str = "Hello";
+Predicate<String> isEmpty = str::isEmpty;
+boolean result = isEmpty.test("");  // true
+
+// 3. 任意のオブジェクトのインスタンスメソッド参照
+Function<String, Integer> length = String::length;
+int len = length.apply("Hello");  // 5
+
+// 4. コンストラクタ参照
+Supplier<List<String>> listSupplier = ArrayList::new;
+List<String> list = listSupplier.get();
+```
+
+### ストリームAPI
+
+#### ストリームの設計思想
+
+ストリームAPIは、**宣言的プログラミング（Declarative Programming）**のパラダイムをJavaに導入しました。
+
+**命令的プログラミング vs 宣言的プログラミング:**
+
+```java
+// 命令的プログラミング（Imperative）: どうやるかを書く
+List<String> result = new ArrayList<>();
+for (String name : names) {
+    if (name.length() > 4) {
+        String upper = name.toUpperCase();
+        result.add(upper);
+    }
+}
+
+// 宣言的プログラミング（Declarative）: 何をしたいかを書く
+List<String> result = names.stream()
+    .filter(name -> name.length() > 4)
+    .map(String::toUpperCase)
+    .collect(Collectors.toList());
+```
+
+**ストリームAPIの設計原則:**
+
+1. **遅延評価（Lazy Evaluation）**: 必要な時まで処理を実行しない
+2. **パイプライン処理（Pipeline）**: 複数の操作を連鎖できる
+3. **内部イテレーション（Internal Iteration）**: ループを明示的に書かなくてよい
+4. **不変性（Immutability）**: 元のデータソースは変更されない
+
+#### ストリームとは
+
+ストリームは、コレクションや配列などのデータソースに対して、**関数型スタイルで操作**を行うためのAPIです。
+
+**ストリームの本質的な特徴:**
+
+```java
+// 1. 遅延評価: 終端操作が呼ばれるまで実行されない
+Stream<String> stream = names.stream()
+    .filter(name -> {
+        System.out.println("Filtering: " + name);  // この時点では実行されない
+        return name.length() > 4;
+    })
+    .map(name -> {
+        System.out.println("Mapping: " + name);  // この時点では実行されない
+        return name.toUpperCase();
+    });
+
+// 終端操作が呼ばれた時点で実行される
+List<String> result = stream.collect(Collectors.toList());
+// この時点で上記のprintlnが実行される
+
+// 2. 一度しか使用できない
+Stream<String> stream2 = names.stream();
+stream2.forEach(System.out::println);
+// stream2.forEach(System.out::println);  // IllegalStateException
+
+// 3. 元のデータソースは変更されない
+List<String> original = Arrays.asList("Alice", "Bob", "Charlie");
+List<String> upper = original.stream()
+    .map(String::toUpperCase)
+    .collect(Collectors.toList());
+// originalは変更されない: [Alice, Bob, Charlie]
+// upperは新しいリスト: [ALICE, BOB, CHARLIE]
+```
+
+**なぜ遅延評価が重要なのか:**
+
+```java
+// 遅延評価により、不要な処理を避けられる
+List<Integer> numbers = Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+
+// 最初の3つの偶数の2倍を取得
+List<Integer> result = numbers.stream()
+    .filter(n -> {
+        System.out.println("Filtering: " + n);
+        return n % 2 == 0;
+    })
+    .map(n -> {
+        System.out.println("Mapping: " + n);
+        return n * 2;
+    })
+    .limit(3)  // 3つ取得したら処理を停止
+    .collect(Collectors.toList());
+
+// 出力:
+// Filtering: 1
+// Filtering: 2
+// Mapping: 2
+// Filtering: 3
+// Filtering: 4
+// Mapping: 4
+// Filtering: 5
+// Filtering: 6
+// Mapping: 6
+// 7以降は処理されない（効率的）
+```
+
+#### ストリームの作成
+
+```java
+// 1. コレクションから作成
+List<String> list = Arrays.asList("a", "b", "c");
+Stream<String> stream = list.stream();
+
+// 2. 配列から作成
+String[] array = {"a", "b", "c"};
+Stream<String> stream2 = Arrays.stream(array);
+
+// 3. Stream.of()で作成
+Stream<String> stream3 = Stream.of("a", "b", "c");
+
+// 4. 範囲を指定して作成
+IntStream range = IntStream.range(1, 10);  // 1から9まで
+IntStream rangeClosed = IntStream.rangeClosed(1, 10);  // 1から10まで
+
+// 5. 無限ストリーム
+Stream<Integer> infinite = Stream.iterate(0, n -> n + 2);  // 0, 2, 4, 6, ...
+Stream<Double> random = Stream.generate(Math::random);  // ランダムな数値
+```
+
+#### 中間操作（Intermediate Operations）
+
+中間操作は、ストリームを変換する操作で、**遅延評価**されます。
+
+**主な中間操作:**
+
+```java
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie", "David", "Eve");
+
+// 1. filter: 条件に合う要素だけを抽出
+List<String> longNames = names.stream()
+    .filter(name -> name.length() > 4)
+    .collect(Collectors.toList());
+// [Alice, Charlie, David]
+
+// 2. map: 各要素を変換
+List<Integer> lengths = names.stream()
+    .map(String::length)
+    .collect(Collectors.toList());
+// [5, 3, 7, 5, 3]
+
+// 3. flatMap: ネストしたコレクションを平坦化
+List<List<String>> nested = Arrays.asList(
+    Arrays.asList("a", "b"),
+    Arrays.asList("c", "d")
+);
+List<String> flat = nested.stream()
+    .flatMap(List::stream)
+    .collect(Collectors.toList());
+// [a, b, c, d]
+
+// 4. distinct: 重複を除去
+List<Integer> numbers = Arrays.asList(1, 2, 2, 3, 3, 3, 4);
+List<Integer> unique = numbers.stream()
+    .distinct()
+    .collect(Collectors.toList());
+// [1, 2, 3, 4]
+
+// 5. sorted: ソート
+List<String> sorted = names.stream()
+    .sorted()
+    .collect(Collectors.toList());
+// [Alice, Bob, Charlie, David, Eve]
+
+// 6. limit: 最初のn個を取得
+List<String> firstThree = names.stream()
+    .limit(3)
+    .collect(Collectors.toList());
+// [Alice, Bob, Charlie]
+
+// 7. skip: 最初のn個をスキップ
+List<String> afterFirst = names.stream()
+    .skip(1)
+    .collect(Collectors.toList());
+// [Bob, Charlie, David, Eve]
+
+// 8. peek: デバッグ用（各要素を処理しながら通過）
+List<String> result = names.stream()
+    .peek(System.out::println)
+    .map(String::toUpperCase)
+    .collect(Collectors.toList());
+```
+
+#### 終端操作（Terminal Operations）
+
+終端操作は、ストリームを**実行**して結果を返します。終端操作が呼ばれるまで、中間操作は実行されません。
+
+**主な終端操作:**
+
+```java
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie", "David", "Eve");
+
+// 1. forEach: 各要素に対して処理を実行
+names.stream()
+    .forEach(System.out::println);
+
+// 2. collect: 結果をコレクションに集約
+List<String> upperCase = names.stream()
+    .map(String::toUpperCase)
+    .collect(Collectors.toList());
+
+// 3. toArray: 配列に変換
+String[] array = names.stream()
+    .toArray(String[]::new);
+
+// 4. reduce: 要素を結合して1つの値に集約
+Optional<String> concatenated = names.stream()
+    .reduce((a, b) -> a + ", " + b);
+// "Alice, Bob, Charlie, David, Eve"
+
+// 5. count: 要素の数を取得
+long count = names.stream()
+    .filter(name -> name.length() > 4)
+    .count();
+// 3
+
+// 6. anyMatch: いずれかの要素が条件を満たすか
+boolean hasLongName = names.stream()
+    .anyMatch(name -> name.length() > 10);
+// false
+
+// 7. allMatch: すべての要素が条件を満たすか
+boolean allShort = names.stream()
+    .allMatch(name -> name.length() < 10);
+// true
+
+// 8. noneMatch: どの要素も条件を満たさないか
+boolean noneLong = names.stream()
+    .noneMatch(name -> name.length() > 10);
+// true
+
+// 9. findFirst: 最初の要素を取得
+Optional<String> first = names.stream()
+    .filter(name -> name.length() > 4)
+    .findFirst();
+// Optional[Alice]
+
+// 10. findAny: 任意の要素を取得（並列処理で有用）
+Optional<String> any = names.stream()
+    .parallel()
+    .findAny();
+```
+
+#### Collectorsの詳細
+
+`Collectors`クラスは、ストリームの結果を様々な形式で集約するためのユーティリティです。
+
+```java
+List<Person> people = Arrays.asList(
+    new Person("Alice", 25),
+    new Person("Bob", 30),
+    new Person("Charlie", 25),
+    new Person("David", 30)
+);
+
+// 1. toList: Listに変換
+List<String> names = people.stream()
+    .map(Person::getName)
+    .collect(Collectors.toList());
+
+// 2. toSet: Setに変換
+Set<String> uniqueNames = people.stream()
+    .map(Person::getName)
+    .collect(Collectors.toSet());
+
+// 3. toMap: Mapに変換
+Map<String, Integer> nameToAge = people.stream()
+    .collect(Collectors.toMap(
+        Person::getName,
+        Person::getAge
+    ));
+
+// 4. groupingBy: グループ化
+Map<Integer, List<Person>> byAge = people.stream()
+    .collect(Collectors.groupingBy(Person::getAge));
+// {25=[Alice, Charlie], 30=[Bob, David]}
+
+// 5. partitioningBy: 2つのグループに分割
+Map<Boolean, List<Person>> byAge30 = people.stream()
+    .collect(Collectors.partitioningBy(p -> p.getAge() >= 30));
+// {false=[Alice, Charlie], true=[Bob, David]}
+
+// 6. joining: 文字列を結合
+String joined = people.stream()
+    .map(Person::getName)
+    .collect(Collectors.joining(", "));
+// "Alice, Bob, Charlie, David"
+
+// 7. counting: 要素の数をカウント
+Long count = people.stream()
+    .collect(Collectors.counting());
+
+// 8. averagingInt: 平均値を計算
+Double averageAge = people.stream()
+    .collect(Collectors.averagingInt(Person::getAge));
+// 27.5
+
+// 9. summingInt: 合計値を計算
+Integer totalAge = people.stream()
+    .collect(Collectors.summingInt(Person::getAge));
+// 110
+
+// 10. maxBy/minBy: 最大値/最小値を取得
+Optional<Person> oldest = people.stream()
+    .collect(Collectors.maxBy(Comparator.comparing(Person::getAge)));
+
+// 11. summarizingInt: 統計情報を取得
+IntSummaryStatistics stats = people.stream()
+    .collect(Collectors.summarizingInt(Person::getAge));
+// IntSummaryStatistics{count=4, sum=110, min=25, average=27.500000, max=30}
+```
+
+#### 並列ストリーム
+
+ストリームは、`parallel()`メソッドで並列処理に変換できます。
+
+```java
+List<Integer> numbers = IntStream.range(1, 1000000)
+    .boxed()
+    .collect(Collectors.toList());
+
+// シーケンシャル処理
+long start = System.currentTimeMillis();
+long sum1 = numbers.stream()
+    .mapToLong(Integer::longValue)
+    .sum();
+long sequentialTime = System.currentTimeMillis() - start;
+
+// 並列処理
+start = System.currentTimeMillis();
+long sum2 = numbers.parallelStream()
+    .mapToLong(Integer::longValue)
+    .sum();
+long parallelTime = System.currentTimeMillis() - start;
+
+System.out.println("Sequential: " + sequentialTime + "ms");
+System.out.println("Parallel: " + parallelTime + "ms");
+```
+
+**注意点:**
+- 並列ストリームは常に高速とは限らない
+- スレッドセーフでない操作には注意が必要
+- 小さなデータセットではオーバーヘッドが大きい
+
+### 実践的な問題解決シナリオ
+
+#### シナリオ1: Eコマースサイトの注文処理
+
+**要件:**
+- 注文リストから、金額が1000円以上で、ステータスが「処理済み」の注文を抽出
+- 顧客IDでグループ化
+- 各顧客の合計金額を計算
+- 金額の多い順にソート
+
+```java
+public class OrderService {
+    
+    // 従来の方法（命令的）
+    public Map<Long, Double> getCustomerTotalsOld(List<Order> orders) {
+        Map<Long, Double> totals = new HashMap<>();
+        
+        for (Order order : orders) {
+            if (order.getStatus() == OrderStatus.PROCESSED 
+                && order.getAmount() >= 1000) {
+                
+                Long customerId = order.getCustomerId();
+                totals.put(customerId, 
+                    totals.getOrDefault(customerId, 0.0) + order.getAmount());
+            }
+        }
+        
+        // ソートが複雑
+        List<Map.Entry<Long, Double>> sorted = new ArrayList<>(totals.entrySet());
+        sorted.sort((e1, e2) -> Double.compare(e2.getValue(), e1.getValue()));
+        
+        Map<Long, Double> result = new LinkedHashMap<>();
+        for (Map.Entry<Long, Double> entry : sorted) {
+            result.put(entry.getKey(), entry.getValue());
+        }
+        
+        return result;
+    }
+    
+    // ストリームAPIを使用（宣言的）
+    public Map<Long, Double> getCustomerTotals(List<Order> orders) {
+        return orders.stream()
+            .filter(order -> order.getStatus() == OrderStatus.PROCESSED)
+            .filter(order -> order.getAmount() >= 1000)
+            .collect(Collectors.groupingBy(
+                Order::getCustomerId,
+                Collectors.summingDouble(Order::getAmount)
+            ))
+            .entrySet().stream()
+            .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
+            .collect(Collectors.toMap(
+                Map.Entry::getKey,
+                Map.Entry::getValue,
+                (e1, e2) -> e1,
+                LinkedHashMap::new
+            ));
+    }
+}
+```
+
+**なぜストリームAPIが優れているか:**
+- **可読性**: 何をしたいかが明確
+- **保守性**: 要件変更に柔軟に対応
+- **バグの少なさ**: インデックス管理などのエラーが起きにくい
+
+#### シナリオ2: データ変換とバリデーション
+
+**要件:**
+- CSVファイルから読み込んだデータを変換
+- バリデーションを実行
+- エラーをログに記録
+- 有効なデータのみを処理
+
+```java
+public class DataProcessor {
+    
+    public List<ProcessedData> processData(List<RawData> rawDataList) {
+        return rawDataList.stream()
+            .peek(data -> log.debug("Processing: {}", data.getId()))
+            .map(this::validateAndTransform)
+            .filter(Optional::isPresent)
+            .map(Optional::get)
+            .peek(data -> log.info("Processed: {}", data.getId()))
+            .collect(Collectors.toList());
+    }
+    
+    private Optional<ProcessedData> validateAndTransform(RawData raw) {
+        try {
+            if (!isValid(raw)) {
+                log.warn("Invalid data: {}", raw.getId());
+                return Optional.empty();
+            }
+            return Optional.of(transform(raw));
+        } catch (Exception e) {
+            log.error("Error processing data: {}", raw.getId(), e);
+            return Optional.empty();
+        }
+    }
+    
+    // 関数を組み合わせて再利用可能なバリデーション
+    private final Predicate<RawData> isValidEmail = 
+        raw -> raw.getEmail() != null && raw.getEmail().contains("@");
+    
+    private final Predicate<RawData> isValidAge = 
+        raw -> raw.getAge() != null && raw.getAge() >= 0 && raw.getAge() <= 150;
+    
+    private boolean isValid(RawData raw) {
+        return isValidEmail.and(isValidAge).test(raw);
+    }
+}
+```
+
+#### シナリオ3: パフォーマンス最適化
+
+**問題:**
+大量のデータを処理する際、どのように最適化するか？
+
+```java
+public class PerformanceOptimization {
+    
+    // 非効率な例: 複数回ストリームを走査
+    public void inefficientProcessing(List<User> users) {
+        // 問題: ストリームを3回走査している
+        long activeCount = users.stream()
+            .filter(User::isActive)
+            .count();
+        
+        double averageAge = users.stream()
+            .filter(User::isActive)
+            .mapToInt(User::getAge)
+            .average()
+            .orElse(0.0);
+        
+        List<String> names = users.stream()
+            .filter(User::isActive)
+            .map(User::getName)
+            .collect(Collectors.toList());
+    }
+    
+    // 効率的な例: 1回の走査で複数の結果を取得
+    public void efficientProcessing(List<User> users) {
+        // 1回の走査で複数の結果を取得
+        List<User> activeUsers = users.stream()
+            .filter(User::isActive)
+            .collect(Collectors.toList());
+        
+        long activeCount = activeUsers.size();
+        double averageAge = activeUsers.stream()
+            .mapToInt(User::getAge)
+            .average()
+            .orElse(0.0);
+        List<String> names = activeUsers.stream()
+            .map(User::getName)
+            .collect(Collectors.toList());
+    }
+    
+    // さらに効率的: カスタムCollectorを使用
+    public class ActiveUserStats {
+        private long count;
+        private long totalAge;
+        private List<String> names = new ArrayList<>();
+        
+        // getters and setters
+    }
+    
+    public ActiveUserStats mostEfficientProcessing(List<User> users) {
+        return users.stream()
+            .filter(User::isActive)
+            .collect(Collectors.collectingAndThen(
+                Collectors.toList(),
+                activeUsers -> {
+                    ActiveUserStats stats = new ActiveUserStats();
+                    stats.setCount(activeUsers.size());
+                    stats.setTotalAge(activeUsers.stream()
+                        .mapToInt(User::getAge)
+                        .sum());
+                    stats.setNames(activeUsers.stream()
+                        .map(User::getName)
+                        .collect(Collectors.toList()));
+                    return stats;
+                }
+            ));
+    }
+}
+```
+
+### よくある間違いとその理由
+
+#### 間違い1: ストリーム内で副作用を起こす
+
+```java
+// 悪い例: ストリーム内で外部変数を変更
+List<String> result = new ArrayList<>();
+names.stream()
+    .filter(name -> name.length() > 4)
+    .forEach(name -> result.add(name));  // 副作用！
+
+// 良い例: collectを使用
+List<String> result = names.stream()
+    .filter(name -> name.length() > 4)
+    .collect(Collectors.toList());
+```
+
+**理由:** ストリームは不変性を前提としている。副作用があると並列処理で問題が起きる。
+
+#### 間違い2: ストリームを複数回使用
+
+```java
+// 悪い例: ストリームを複数回使用
+Stream<String> stream = names.stream();
+stream.filter(name -> name.length() > 4);
+stream.map(String::toUpperCase);  // IllegalStateException
+
+// 良い例: パイプラインとして連鎖
+List<String> result = names.stream()
+    .filter(name -> name.length() > 4)
+    .map(String::toUpperCase)
+    .collect(Collectors.toList());
+```
+
+**理由:** ストリームは一度しか使用できない。これは遅延評価の実装による制約。
+
+#### 間違い3: 並列ストリームの過度な使用
+
+```java
+// 悪い例: 小さなデータセットで並列ストリームを使用
+List<String> smallList = Arrays.asList("a", "b", "c");
+smallList.parallelStream()  // オーバーヘッドが大きい
+    .map(String::toUpperCase)
+    .collect(Collectors.toList());
+
+// 良い例: データサイズに応じて選択
+List<String> largeList = // 100万件のデータ
+largeList.parallelStream()  // 並列処理が有効
+    .map(String::toUpperCase)
+    .collect(Collectors.toList());
+```
+
+**理由:** 並列処理にはオーバーヘッドがある。小さなデータセットでは順次処理の方が速い。
+
+### 実践例
+
+#### ユーザーリストの処理
+
+```java
+public class UserService {
+    
+    public List<UserDTO> getActiveUsers(List<User> users) {
+        return users.stream()
+            .filter(User::isActive)
+            .filter(u -> u.getAge() >= 18)
+            .sorted(Comparator.comparing(User::getName))
+            .map(this::toDTO)
+            .collect(Collectors.toList());
+    }
+    
+    public Map<String, List<User>> groupByDepartment(List<User> users) {
+        return users.stream()
+            .collect(Collectors.groupingBy(User::getDepartment));
+    }
+    
+    public double getAverageAge(List<User> users) {
+        return users.stream()
+            .mapToInt(User::getAge)
+            .average()
+            .orElse(0.0);
+    }
+    
+    public Optional<User> findOldestUser(List<User> users) {
+        return users.stream()
+            .max(Comparator.comparing(User::getAge));
+    }
+    
+    private UserDTO toDTO(User user) {
+        return new UserDTO(user.getId(), user.getName(), user.getEmail());
+    }
+}
+```
+
+### まとめ
+
+ラムダ式とストリームAPIのポイント：
+
+- **ラムダ式**: 関数を値として扱える
+- **関数型インターフェース**: Function、Predicate、Consumer、Supplierなど
+- **メソッド参照**: ラムダ式をさらに簡潔に記述
+- **ストリームAPI**: 関数型スタイルでコレクションを操作
+- **中間操作**: filter、map、sortedなど（遅延評価）
+- **終端操作**: collect、forEach、reduceなど（実行）
+- **Collectors**: 様々な形式で結果を集約
+- **並列ストリーム**: 大規模データの並列処理
+
+これらの機能を適切に使用することで、より読みやすく、保守しやすいコードを書けます。
+

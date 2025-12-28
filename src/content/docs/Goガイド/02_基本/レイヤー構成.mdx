@@ -7,6 +7,127 @@ label: "Goのレイヤー構成"
 
 `Go`では、特定のアーキテクチャパターンは強制されませんが、役割ごとにコードを分けるレイヤードアーキテクチャが広く採用されています。これは`MVC`に似た考え方ですが、`Go`の設計哲学に沿ったよりシンプルで疎結合な構成です。
 
+### なぜレイヤードアーキテクチャが必要なのか
+
+#### 問題のあるコード（レイヤーがない場合）
+
+**問題のあるコード:**
+
+```go
+// 問題: すべてのロジックが1つのハンドラに混在
+func handleUserRequest(w http.ResponseWriter, r *http.Request) {
+    // HTTP処理
+    userID := r.URL.Query().Get("id")
+    
+    // データベース接続
+    db, _ := sql.Open("postgres", "connection string")
+    defer db.Close()
+    
+    // ビジネスロジック
+    var user User
+    err := db.QueryRow("SELECT * FROM users WHERE id = $1", userID).Scan(&user.ID, &user.Name)
+    if err != nil {
+        // エラーハンドリング
+        w.WriteHeader(http.StatusNotFound)
+        return
+    }
+    
+    // レスポンス生成
+    json.NewEncoder(w).Encode(user)
+}
+
+// 問題点:
+// 1. テストが困難（HTTP、DB、ビジネスロジックが混在）
+// 2. 再利用性が低い（他のハンドラで同じロジックを使えない）
+// 3. 責務が不明確（どこを変更すべきか分からない）
+// 4. スケーラビリティが低い（チーム開発が困難）
+```
+
+**解決: レイヤードアーキテクチャ**
+
+```go
+// 解決: レイヤーごとに責務を分離
+// Handler層: HTTP処理のみ
+func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+    userID := getUserIDFromRequest(r)
+    user, err := h.userService.GetUser(userID)
+    if err != nil {
+        h.respondError(w, err)
+        return
+    }
+    h.respondJSON(w, user)
+}
+
+// Service層: ビジネスロジック
+func (s *UserService) GetUser(id int) (*User, error) {
+    return s.repo.FindByID(id)
+}
+
+// Repository層: データアクセス
+func (r *UserRepository) FindByID(id int) (*User, error) {
+    // データベース操作
+}
+
+// メリット:
+// 1. 各レイヤーを独立してテスト可能
+// 2. ビジネスロジックの再利用が容易
+// 3. 責務が明確（変更箇所が明確）
+// 4. チーム開発が容易（レイヤーごとに担当を分けられる）
+```
+
+#### レイヤードアーキテクチャの本質的な価値
+
+**1. テスト容易性の向上**
+
+```go
+// レイヤー分離により、各レイヤーを独立してテスト可能
+func TestUserService_GetUser(t *testing.T) {
+    // モックリポジトリを使用
+    mockRepo := &MockUserRepository{}
+    service := NewUserService(mockRepo)
+    
+    // データベースなしでテスト可能
+    user, err := service.GetUser(1)
+    assert.NoError(t, err)
+    assert.Equal(t, 1, user.ID)
+}
+```
+
+**2. 変更への柔軟性**
+
+```go
+// データベースを変更しても、Service層は変更不要
+// PostgreSQL → MongoDB に変更する場合
+// Repository層の実装だけを変更すれば良い
+
+// PostgreSQL実装
+type PostgresUserRepository struct {
+    db *sql.DB
+}
+
+// MongoDB実装
+type MongoUserRepository struct {
+    collection *mongo.Collection
+}
+
+// Service層は変更不要（インターフェースに依存）
+type UserService struct {
+    repo UserRepository  // インターフェースに依存
+}
+```
+
+**3. チーム開発の効率化**
+
+```go
+// レイヤーごとに担当を分けられる
+// フロントエンドエンジニア: Handler層
+// バックエンドエンジニア: Service層、Repository層
+// インフラエンジニア: Infrastructure層
+
+// 並行開発が可能
+// Handler層とService層を同時に開発できる
+```
+
 ### 図解：`Go`のレイヤードアーキテクチャの概要
 
 ```mermaid
@@ -240,4 +361,179 @@ var (
 
 この構成では、`service`層は`repository`層の具体的なエラーを知る必要がなくなり、`domain`で定義されたエラーのみを扱います。これにより、各レイヤーが独立した責任を持つという原則が保たれます。
 
+### アーキテクチャパターンの選択判断
+
+#### レイヤードアーキテクチャ vs クリーンアーキテクチャ vs ヘキサゴナルアーキテクチャ
+
+**レイヤードアーキテクチャが適している場合:**
+
+```go
+// 適用範囲:
+// - 中規模から大規模のWebアプリケーション
+// - CRUD操作が中心のアプリケーション
+// - チームが明確に分離されている場合
+
+// 構造
+Handler → Service → Repository → Database
+```
+
+**メリット:**
+- 理解しやすい構造
+- チーム間の責務が明確
+- Goの標準的なパターンと相性が良い
+
+**デメリット:**
+- ビジネスロジックがService層に集中しがち
+- ドメインモデルが貧血症になりやすい
+
+**クリーンアーキテクチャが適している場合:**
+
+```go
+// 適用範囲:
+// - 複雑なビジネスロジックを持つアプリケーション
+// - ドメイン駆動設計（DDD）を採用する場合
+// - 長期的な保守性を最優先する場合
+
+// 構造
+┌─────────────────────────────────┐
+│      Handler (Interface)         │
+├─────────────────────────────────┤
+│      Use Case (Application)     │
+├─────────────────────────────────┤
+│      Domain (Business Logic)     │
+├─────────────────────────────────┤
+│      Repository (Interface)      │
+├─────────────────────────────────┤
+│      Infrastructure (Implementation) │
+└─────────────────────────────────┘
+```
+
+**実装例:**
+
+```go
+// Domain層: ビジネスロジックの核心
+package domain
+
+type User struct {
+    ID    int
+    Name  string
+    Email string
+}
+
+func (u *User) Validate() error {
+    if u.Email == "" {
+        return errors.New("email is required")
+    }
+    return nil
+}
+
+// Use Case層: アプリケーションロジック
+package usecase
+
+type UserRepository interface {
+    Save(user *domain.User) error
+    FindByID(id int) (*domain.User, error)
+}
+
+type CreateUserUseCase struct {
+    repo UserRepository
+}
+
+func (uc *CreateUserUseCase) Execute(name, email string) error {
+    user := &domain.User{Name: name, Email: email}
+    if err := user.Validate(); err != nil {
+        return err
+    }
+    return uc.repo.Save(user)
+}
+```
+
+**判断基準:**
+
+| 観点 | レイヤード | クリーンアーキテクチャ |
+|------|-----------|---------------------|
+| **学習コスト** | 低い | 高い |
+| **ビジネスロジックの表現力** | 中程度 | 高い |
+| **テスト容易性** | 高い | 非常に高い |
+| **適用範囲** | 中規模 | 大規模 |
+| **Goとの親和性** | 高い | 中程度 |
+
+**実践的な選択指針:**
+
+```go
+// レイヤードアーキテクチャを選ぶべき場合:
+// 1. チームがGoに慣れ親しんでいる
+// 2. ビジネスロジックが比較的シンプル
+// 3. 開発速度を優先する
+// 4. 中規模のCRUDアプリケーション
+
+// クリーンアーキテクチャを選ぶべき場合:
+// 1. 複雑なビジネスルールがある
+// 2. ドメインエキスパートと密接に協業する
+// 3. 長期的な保守性を最優先する
+// 4. 複数の外部システムと統合する必要がある
+```
+
+### 実践的な設計判断
+
+#### レイヤー間の責務境界の明確化
+
+**よくある問題: 責務の漏れ**
+
+```go
+// 問題のあるコード: Handler層にビジネスロジックが漏れている
+func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
+    var req CreateUserRequest
+    json.NewDecoder(r.Body).Decode(&req)
+    
+    // 問題: ビジネスロジックがHandler層にある
+    if req.Email == "" {
+        http.Error(w, "Email is required", http.StatusBadRequest)
+        return
+    }
+    
+    // 問題: データ変換ロジックがHandler層にある
+    user := &User{
+        Name:  req.Name,
+        Email: req.Email,
+    }
+    
+    h.repo.Save(user)
+    json.NewEncoder(w).Encode(user)
+}
+
+// 解決: 責務を適切な層に配置
+func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
+    var req CreateUserRequest
+    json.NewDecoder(r.Body).Decode(&req)
+    
+    // Handler層: HTTPリクエストの受け取りとレスポンスの生成のみ
+    user, err := h.userService.CreateUser(req.Name, req.Email)
+    if err != nil {
+        h.respondError(w, err)
+        return
+    }
+    
+    h.respondJSON(w, user)
+}
+
+// Service層: ビジネスロジックとバリデーション
+func (s *UserService) CreateUser(name, email string) (*User, error) {
+    // Service層: ビジネスロジックとバリデーション
+    if email == "" {
+        return nil, ErrEmailRequired
+    }
+    
+    user := &User{Name: name, Email: email}
+    return s.repo.Save(user)
+}
+```
+
 これらの概念を導入することで、`Go`のレイヤードアーキテクチャはさらに洗練され、長期的なプロジェクトのメンテナンス性が飛躍的に向上します。
+
+**シニアエンジニアとして考慮すべき点:**
+
+1. **プロジェクトの規模**: 小規模ならシンプルに、大規模なら構造化
+2. **チームの構成**: 機能チームなら機能ベース、専門チームならレイヤーベース
+3. **将来の拡張性**: プロジェクトの成長を見据えた設計
+4. **一貫性**: チーム全体で統一された構成を維持

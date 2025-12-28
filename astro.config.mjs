@@ -98,6 +98,12 @@ export default defineConfig({
                     autogenerate: { directory: 'infraガイド' },
                     badge: { text: '実験的', variant: 'caution' },
                 },
+                {
+                    label: 'Javaガイド',
+                    collapsed: true,
+                    autogenerate: { directory: 'Javaガイド' },
+                    badge: { text: '実験的', variant: 'caution' },
+                },
             ],
         }),
         react(),
