@@ -1,0 +1,406 @@
+---
+title: "ページ速度の最適化"
+label: "ページ速度の最適化"
+---
+
+## ページ速度の最適化
+
+ページ速度は、SEOにおいて重要な要素です。Googleは、ページ速度をランキング要因として使用しており、高速なページは検索結果で上位に表示されやすくなります。
+
+### なぜページ速度が重要なのか
+
+#### ページ速度の影響
+
+**実際のデータ:**
+
+- **ページの読み込み時間が1秒増加すると、コンバージョン率が7%低下する**（Amazonの調査）
+- **モバイルサイトの読み込み時間が3秒を超えると、53%のユーザーが離脱する**（Googleの調査）
+- **ページ速度が1秒遅くなると、モバイルでのコンバージョン率が約20%低下する**（Googleの調査）
+
+**SEOへの影響:**
+
+- **ランキング要因**: Googleは、ページ速度をランキング要因として使用
+- **ユーザー体験**: 高速なページは、ユーザー体験が良く、直帰率が低い
+- **クローラーの効率**: 高速なページは、クローラーが効率的にインデックスできる
+
+### Core Web Vitals
+
+#### 1. LCP（Largest Contentful Paint）
+
+**LCPとは:**
+
+LCPは、ページの主要なコンテンツが表示されるまでの時間を測定します。2.5秒以内が目標です。
+
+**問題のある実装:**
+
+```typescript
+// 悪いコード: 最適化されていない画像
+function HeroSection() {
+  return (
+    <div>
+      {/* 問題: 画像が最適化されていない */}
+      <img src="/hero-image.jpg" alt="Hero" />
+      <h1>メインタイトル</h1>
+    </div>
+  );
+}
+
+// 問題点:
+// - 画像が最適化されていない（サイズが大きい）
+// - 遅延読み込みがない
+// - レスポンシブ画像ではない
+```
+
+**改善された実装:**
+
+```typescript
+// 良いコード: Next.jsのImageコンポーネントを使用
+import Image from 'next/image';
+
+function HeroSection() {
+  return (
+    <div>
+      {/* 画像を最適化 */}
+      <Image
+        src="/hero-image.jpg"
+        alt="Hero"
+        width={1920}
+        height={1080}
+        priority // LCP要素なので優先読み込み
+        placeholder="blur"
+        blurDataURL="data:image/jpeg;base64,..."
+      />
+      <h1>メインタイトル</h1>
+    </div>
+  );
+}
+
+// メリット:
+// - 画像が自動的に最適化される
+// - WebP形式に変換される
+// - レスポンシブ画像が生成される
+// - LCPが改善される
+```
+
+#### 2. FID（First Input Delay）
+
+**FIDとは:**
+
+FIDは、ユーザーが最初に操作した際の応答速度を測定します。100ミリ秒以内が目標です。
+
+**問題のある実装:**
+
+```typescript
+// 悪いコード: 重いJavaScriptが初期読み込み時に実行される
+'use client';
+
+function ProductList() {
+  // 問題: 重いライブラリが初期読み込み時に読み込まれる
+  import('heavy-library').then(module => {
+    // 重い処理
+  });
+
+  return <div>商品一覧</div>;
+}
+
+// 問題点:
+// - 重いJavaScriptが初期読み込み時に実行される
+// - FIDが悪化する
+// - ユーザーの操作に応答できない
+```
+
+**改善された実装:**
+
+```typescript
+// 良いコード: コード分割と遅延読み込み
+'use client';
+
+import { lazy, Suspense } from 'react';
+
+// 重いコンポーネントを遅延読み込み
+const HeavyComponent = lazy(() => import('./HeavyComponent'));
+
+function ProductList() {
+  return (
+    <div>
+      <div>商品一覧</div>
+      {/* 必要になったときに読み込む */}
+      <Suspense fallback={<div>読み込み中...</div>}>
+        <HeavyComponent />
+      </Suspense>
+    </div>
+  );
+}
+
+// または、Next.jsの動的インポートを使用
+import dynamic from 'next/dynamic';
+
+const HeavyComponent = dynamic(() => import('./HeavyComponent'), {
+  loading: () => <div>読み込み中...</div>,
+  ssr: false, // サーバーサイドレンダリングを無効化
+});
+
+// メリット:
+// - 初期バンドルサイズが小さくなる
+// - FIDが改善される
+// - ユーザーの操作に迅速に応答できる
+```
+
+#### 3. CLS（Cumulative Layout Shift）
+
+**CLSとは:**
+
+CLSは、ページの読み込み中に予期せぬレイアウトのずれがないかを測定します。0.1以下が目標です。
+
+**問題のある実装:**
+
+```typescript
+// 悪いコード: 画像のサイズが指定されていない
+function ProductCard({ product }: { product: Product }) {
+  return (
+    <div>
+      {/* 問題: 画像のサイズが指定されていない */}
+      <img src={product.image} alt={product.name} />
+      <h3>{product.name}</h3>
+    </div>
+  );
+}
+
+// 問題点:
+// - 画像の読み込み時にレイアウトがずれる
+// - CLSが悪化する
+// - ユーザー体験が悪い
+```
+
+**改善された実装:**
+
+```typescript
+// 良いコード: 画像のサイズを指定
+import Image from 'next/image';
+
+function ProductCard({ product }: { product: Product }) {
+  return (
+    <div>
+      {/* 画像のサイズを指定 */}
+      <Image
+        src={product.image}
+        alt={product.name}
+        width={400}
+        height={300}
+        style={{ width: '100%', height: 'auto' }} // レスポンシブ
+      />
+      <h3>{product.name}</h3>
+    </div>
+  );
+}
+
+// または、アスペクト比を維持
+function ProductCard({ product }: { product: Product }) {
+  return (
+    <div style={{ aspectRatio: '4/3' }}>
+      <Image
+        src={product.image}
+        alt={product.name}
+        fill
+        style={{ objectFit: 'cover' }}
+      />
+      <h3>{product.name}</h3>
+    </div>
+  );
+}
+
+// メリット:
+// - レイアウトシフトが発生しない
+// - CLSが改善される
+// - ユーザー体験が向上する
+```
+
+### ページ速度の最適化手法
+
+#### 1. 画像の最適化
+
+**画像最適化の実装:**
+
+```typescript
+// Next.jsでの画像最適化
+import Image from 'next/image';
+
+function OptimizedImageGallery({ images }: { images: string[] }) {
+  return (
+    <div className="image-gallery">
+      {images.map((image, index) => (
+        <Image
+          key={index}
+          src={image}
+          alt={`Image ${index}`}
+          width={800}
+          height={600}
+          loading={index < 3 ? 'eager' : 'lazy'} // 最初の3枚は優先読み込み
+          placeholder="blur"
+          blurDataURL="data:image/jpeg;base64,..."
+          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+          quality={85}
+        />
+      ))}
+    </div>
+  );
+}
+
+// メリット:
+// - 画像が自動的に最適化される
+// - WebP形式に変換される
+// - 遅延読み込みで初期表示が高速
+// - レスポンシブ画像でモバイルでも高速
+```
+
+#### 2. コード分割
+
+**コード分割の実装:**
+
+```typescript
+// Next.jsでのコード分割
+import dynamic from 'next/dynamic';
+
+// 重いコンポーネントを動的インポート
+const Chart = dynamic(() => import('./Chart'), {
+  loading: () => <div>読み込み中...</div>,
+  ssr: false, // サーバーサイドレンダリングを無効化
+});
+
+function Dashboard() {
+  const [showChart, setShowChart] = useState(false);
+
+  return (
+    <div>
+      <button onClick={() => setShowChart(true)}>チャートを表示</button>
+      {showChart && <Chart />}
+    </div>
+  );
+}
+
+// メリット:
+// - 初期バンドルサイズが小さくなる
+// - 必要なときにのみ読み込む
+// - ページ速度が向上する
+```
+
+#### 3. フォントの最適化
+
+**フォント最適化の実装:**
+
+```typescript
+// Next.jsでのフォント最適化
+import { Inter } from 'next/font/google';
+
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap', // フォント読み込み中もテキストを表示
+  preload: true, // フォントをプリロード
+});
+
+export default function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="ja" className={inter.className}>
+      <body>{children}</body>
+    </html>
+  );
+}
+
+// メリット:
+// - フォントが自動的に最適化される
+// - 不要なフォントが読み込まれない
+// - フォント読み込み中の表示が改善される
+```
+
+#### 4. リソースの優先順位付け
+
+**リソース優先順位の実装:**
+
+```typescript
+// Next.jsでのリソース優先順位付け
+import Head from 'next/head';
+
+function ProductPage({ product }: { product: Product }) {
+  return (
+    <>
+      <Head>
+        {/* 重要なリソースをプリロード */}
+        <link rel="preload" href={product.image} as="image" />
+        <link rel="preconnect" href="https://api.example.com" />
+        <link rel="dns-prefetch" href="https://api.example.com" />
+      </Head>
+      <div>
+        <Image src={product.image} alt={product.name} priority />
+        <h1>{product.name}</h1>
+      </div>
+    </>
+  );
+}
+
+// メリット:
+// - 重要なリソースが優先的に読み込まれる
+// - ページ速度が向上する
+// - LCPが改善される
+```
+
+### パフォーマンス測定
+
+#### 1. Lighthouseの使用
+
+**Lighthouseでの測定:**
+
+```bash
+# Lighthouse CLIのインストール
+npm install -g lighthouse
+
+# パフォーマンススコアの測定
+lighthouse https://example.com --view
+```
+
+**Lighthouseの指標:**
+
+- **Performance Score**: パフォーマンススコア（0-100）
+- **LCP**: Largest Contentful Paint
+- **FID**: First Input Delay
+- **CLS**: Cumulative Layout Shift
+- **TTI**: Time to Interactive
+- **TBT**: Total Blocking Time
+
+#### 2. Web Vitalsの測定
+
+**Web Vitalsの実装:**
+
+```typescript
+// Next.jsでのWeb Vitals測定
+import { getCLS, getFID, getFCP, getLCP, getTTFB } from 'web-vitals';
+
+function reportWebVitals(metric: any) {
+  // メトリクスを送信（Google Analyticsなど）
+  if (typeof window !== 'undefined' && window.gtag) {
+    window.gtag('event', metric.name, {
+      value: Math.round(metric.value),
+      event_label: metric.id,
+      non_interaction: true,
+    });
+  }
+}
+
+export function onCLS(reportWebVitals);
+export function onFID(reportWebVitals);
+export function onFCP(reportWebVitals);
+export function onLCP(reportWebVitals);
+export function onTTFB(reportWebVitals);
+```
+
+### まとめ
+
+ページ速度の最適化のポイント：
+
+- **Core Web Vitals**: LCP、FID、CLSを最適化
+- **画像の最適化**: Next.jsのImageコンポーネントを使用
+- **コード分割**: 動的インポートでコード分割
+- **フォントの最適化**: next/fontを使用
+- **リソースの優先順位付け**: 重要なリソースをプリロード
+
+適切なページ速度の最適化により、SEOランキングを向上させ、ユーザー体験を改善できます。
+

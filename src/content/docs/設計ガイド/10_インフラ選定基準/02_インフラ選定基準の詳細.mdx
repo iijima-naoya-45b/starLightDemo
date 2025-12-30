@@ -1,0 +1,499 @@
+---
+title: "インフラ選定基準の詳細"
+label: "インフラ選定基準の詳細"
+---
+
+## インフラ選定基準の詳細
+
+各インフラコンポーネントの選定基準を詳しく解説します。
+
+### コンピューティングリソースの選定
+
+#### 1. サーバーの選定
+
+**選定基準:**
+
+- **CPU**: 処理能力、コア数
+- **メモリ**: 容量、速度
+- **ストレージ**: 容量、タイプ（SSD/HDD）、IOPS
+- **ネットワーク**: 帯域幅、レイテンシ
+
+**選定の実践例:**
+
+```typescript
+interface ServerSelectionCriteria {
+  // CPU要件
+  cpu: {
+    cores: number; // コア数
+    performance: 'low' | 'medium' | 'high'; // パフォーマンスレベル
+    architecture: 'x86' | 'arm'; // アーキテクチャ
+  };
+  
+  // メモリ要件
+  memory: {
+    size: number; // 容量（GB）
+    type: 'standard' | 'high-memory'; // タイプ
+  };
+  
+  // ストレージ要件
+  storage: {
+    size: number; // 容量（GB）
+    type: 'ssd' | 'hdd'; // タイプ
+    iops: number; // IOPS
+  };
+  
+  // ネットワーク要件
+  network: {
+    bandwidth: number; // 帯域幅（Gbps）
+    latency: number; // レイテンシ（ms）
+  };
+}
+
+// 選定例: Webサーバー
+const webServerCriteria: ServerSelectionCriteria = {
+  cpu: {
+    cores: 2,
+    performance: 'medium',
+    architecture: 'x86',
+  },
+  memory: {
+    size: 4,
+    type: 'standard',
+  },
+  storage: {
+    size: 20,
+    type: 'ssd',
+    iops: 3000,
+  },
+  network: {
+    bandwidth: 1,
+    latency: 1,
+  },
+};
+
+// AWS EC2の選定例
+// t3.medium: 2 vCPU, 4 GB RAM, ネットワークパフォーマンス: 最大5 Gbps
+// → 要件を満たす
+```
+
+**選定のポイント:**
+
+- **ワークロードの特性**: CPU集約型、メモリ集約型、I/O集約型を考慮
+- **スケーリング**: 垂直スケーリングと水平スケーリングのバランス
+- **コスト**: パフォーマンスとコストのバランス
+
+#### 2. コンテナの選定
+
+**選定基準:**
+
+- **オーケストレーション**: Kubernetes、ECS、EKSなど
+- **スケーリング**: 自動スケーリングの機能
+- **可用性**: 高可用性の機能
+- **管理**: 管理の容易さ
+
+**選定の実践例:**
+
+```typescript
+interface ContainerSelectionCriteria {
+  orchestration: {
+    type: 'kubernetes' | 'ecs' | 'eks' | 'gke' | 'aks';
+    features: string[]; // 必要な機能
+  };
+  
+  scaling: {
+    autoScaling: boolean; // 自動スケーリング
+    minReplicas: number; // 最小レプリカ数
+    maxReplicas: number; // 最大レプリカ数
+  };
+  
+  availability: {
+    multiAZ: boolean; // マルチAZ
+    healthCheck: boolean; // ヘルスチェック
+  };
+  
+  management: {
+    monitoring: boolean; // 監視
+    logging: boolean; // ログ
+    backup: boolean; // バックアップ
+  };
+}
+
+// 選定例: マイクロサービス
+const microserviceCriteria: ContainerSelectionCriteria = {
+  orchestration: {
+    type: 'kubernetes',
+    features: ['service-discovery', 'load-balancing', 'auto-scaling'],
+  },
+  scaling: {
+    autoScaling: true,
+    minReplicas: 2,
+    maxReplicas: 10,
+  },
+  availability: {
+    multiAZ: true,
+    healthCheck: true,
+  },
+  management: {
+    monitoring: true,
+    logging: true,
+    backup: true,
+  },
+};
+```
+
+**選定のポイント:**
+
+- **複雑さ**: オーケストレーションの複雑さと管理コスト
+- **エコシステム**: ツールやサポートの充実度
+- **学習コスト**: チームのスキルレベル
+
+### データベースの選定
+
+#### 1. リレーショナルデータベースの選定
+
+**選定基準:**
+
+- **データモデル**: リレーショナルデータの要件
+- **トランザクション**: ACID要件
+- **スケーラビリティ**: 読み書きのスケーラビリティ
+- **可用性**: 高可用性の機能
+
+**選定の実践例:**
+
+```typescript
+interface DatabaseSelectionCriteria {
+  type: 'relational' | 'nosql' | 'new-sql';
+  
+  // データ要件
+  data: {
+    structure: 'structured' | 'semi-structured' | 'unstructured';
+    relationships: boolean; // リレーションシップの必要性
+    consistency: 'strong' | 'eventual'; // 一貫性レベル
+  };
+  
+  // パフォーマンス要件
+  performance: {
+    readThroughput: number; // 読み取りスループット（ops/s）
+    writeThroughput: number; // 書き込みスループット（ops/s）
+    latency: number; // レイテンシ（ms）
+  };
+  
+  // 可用性要件
+  availability: {
+    uptime: number; // 稼働率（%）
+    multiAZ: boolean; // マルチAZ
+    backup: boolean; // バックアップ
+    replication: boolean; // レプリケーション
+  };
+  
+  // スケーラビリティ要件
+  scalability: {
+    dataSize: number; // データサイズ（GB）
+    growthRate: number; // 成長率（%/年）
+    horizontalScaling: boolean; // 水平スケーリング
+  };
+}
+
+// 選定例: ECサイトの商品データベース
+const productDBCriteria: DatabaseSelectionCriteria = {
+  type: 'relational',
+  data: {
+    structure: 'structured',
+    relationships: true,
+    consistency: 'strong',
+  },
+  performance: {
+    readThroughput: 10000,
+    writeThroughput: 1000,
+    latency: 10,
+  },
+  availability: {
+    uptime: 99.9,
+    multiAZ: true,
+    backup: true,
+    replication: true,
+  },
+  scalability: {
+    dataSize: 1000,
+    growthRate: 50,
+    horizontalScaling: false,
+  },
+};
+
+// AWS RDS PostgreSQLの選定例
+// db.r5.large: 2 vCPU, 16 GB RAM, Multi-AZ対応
+// → 要件を満たす
+```
+
+**選定のポイント:**
+
+- **データモデル**: データの構造とリレーションシップ
+- **一貫性**: 強い一貫性が必要か、結果整合性で十分か
+- **スケーラビリティ**: 垂直スケーリングと水平スケーリング
+
+#### 2. NoSQLデータベースの選定
+
+**選定基準:**
+
+- **データモデル**: ドキュメント、キー・バリュー、カラムファミリーなど
+- **スケーラビリティ**: 水平スケーリングの機能
+- **一貫性**: 結果整合性の許容度
+- **パフォーマンス**: 読み書きのパフォーマンス
+
+**選定の実践例:**
+
+```typescript
+// 選定例: ユーザーセッションデータ
+const sessionDBCriteria: DatabaseSelectionCriteria = {
+  type: 'nosql',
+  data: {
+    structure: 'semi-structured',
+    relationships: false,
+    consistency: 'eventual',
+  },
+  performance: {
+    readThroughput: 50000,
+    writeThroughput: 50000,
+    latency: 5,
+  },
+  availability: {
+    uptime: 99.9,
+    multiAZ: true,
+    backup: true,
+    replication: true,
+  },
+  scalability: {
+    dataSize: 100,
+    growthRate: 100,
+    horizontalScaling: true,
+  },
+};
+
+// AWS DynamoDBの選定例
+// オンデマンドモード: 自動スケーリング、高可用性
+// → 要件を満たす
+```
+
+**選定のポイント:**
+
+- **データアクセスパターン**: アクセスパターンに適したデータモデル
+- **スケーラビリティ**: 水平スケーリングの容易さ
+- **コスト**: 使用量に応じたコスト
+
+### ネットワークの選定
+
+#### 1. CDNの選定
+
+**選定基準:**
+
+- **カバレッジ**: エッジロケーションの数と分布
+- **パフォーマンス**: キャッシュの効率、レイテンシ
+- **機能**: セキュリティ、動的コンテンツのサポート
+- **コスト**: 転送量に応じたコスト
+
+**選定の実践例:**
+
+```typescript
+interface CDNSelectionCriteria {
+  coverage: {
+    edgeLocations: number; // エッジロケーション数
+    regions: string[]; // 対象リージョン
+  };
+  
+  performance: {
+    cacheHitRate: number; // キャッシュヒット率（%）
+    latency: number; // レイテンシ（ms）
+  };
+  
+  features: {
+    ssl: boolean; // SSL/TLSサポート
+    compression: boolean; // 圧縮
+    http2: boolean; // HTTP/2サポート
+    security: boolean; // セキュリティ機能（WAFなど）
+  };
+  
+  cost: {
+    dataTransfer: number; // データ転送料金（$/GB）
+    requests: number; // リクエスト料金（$/1000リクエスト）
+  };
+}
+
+// 選定例: グローバルWebサイト
+const globalCDNCriteria: CDNSelectionCriteria = {
+  coverage: {
+    edgeLocations: 200,
+    regions: ['us', 'eu', 'ap'],
+  },
+  performance: {
+    cacheHitRate: 90,
+    latency: 50,
+  },
+  features: {
+    ssl: true,
+    compression: true,
+    http2: true,
+    security: true,
+  },
+  cost: {
+    dataTransfer: 0.085,
+    requests: 0.0075,
+  },
+};
+
+// AWS CloudFrontの選定例
+// 200以上のエッジロケーション、WAF統合
+// → 要件を満たす
+```
+
+**選定のポイント:**
+
+- **グローバル展開**: グローバルなユーザーへの配信
+- **動的コンテンツ**: 動的コンテンツのサポート
+- **セキュリティ**: DDoS対策、WAFの統合
+
+#### 2. ロードバランサーの選定
+
+**選定基準:**
+
+- **タイプ**: Application Load Balancer、Network Load Balancerなど
+- **機能**: ヘルスチェック、SSL終端、セッションアフィニティ
+- **パフォーマンス**: スループット、レイテンシ
+- **可用性**: 高可用性の機能
+
+**選定の実践例:**
+
+```typescript
+interface LoadBalancerSelectionCriteria {
+  type: 'application' | 'network' | 'classic';
+  
+  features: {
+    healthCheck: boolean; // ヘルスチェック
+    sslTermination: boolean; // SSL終端
+    sessionAffinity: boolean; // セッションアフィニティ
+    pathBasedRouting: boolean; // パスベースルーティング
+  };
+  
+  performance: {
+    throughput: number; // スループット（Gbps）
+    latency: number; // レイテンシ（ms）
+    connections: number; // 同時接続数
+  };
+  
+  availability: {
+    multiAZ: boolean; // マルチAZ
+    healthCheck: boolean; // ヘルスチェック
+  };
+}
+
+// 選定例: Webアプリケーション
+const webAppLBCriteria: LoadBalancerSelectionCriteria = {
+  type: 'application',
+  features: {
+    healthCheck: true,
+    sslTermination: true,
+    sessionAffinity: true,
+    pathBasedRouting: true,
+  },
+  performance: {
+    throughput: 10,
+    latency: 10,
+    connections: 100000,
+  },
+  availability: {
+    multiAZ: true,
+    healthCheck: true,
+  },
+};
+
+// AWS Application Load Balancerの選定例
+// レイヤー7ロードバランシング、自動スケーリング
+// → 要件を満たす
+```
+
+**選定のポイント:**
+
+- **レイヤー**: レイヤー4（L4）かレイヤー7（L7）か
+- **機能**: 必要な機能（SSL終端、パスベースルーティングなど）
+- **パフォーマンス**: スループットとレイテンシの要件
+
+### ストレージの選定
+
+#### 1. オブジェクトストレージの選定
+
+**選定基準:**
+
+- **容量**: 無制限の容量
+- **耐久性**: データの耐久性
+- **可用性**: 高可用性
+- **コスト**: ストレージクラスに応じたコスト
+
+**選定の実践例:**
+
+```typescript
+interface ObjectStorageSelectionCriteria {
+  capacity: {
+    unlimited: boolean; // 無制限の容量
+    maxSize: number; // 最大ファイルサイズ（GB）
+  };
+  
+  durability: {
+    durability: number; // 耐久性（99.999999999%）
+    versioning: boolean; // バージョニング
+  };
+  
+  availability: {
+    uptime: number; // 稼働率（%）
+    multiRegion: boolean; // マルチリージョン
+  };
+  
+  cost: {
+    storage: number; // ストレージ料金（$/GB/月）
+    requests: number; // リクエスト料金（$/1000リクエスト）
+    dataTransfer: number; // データ転送料金（$/GB）
+  };
+}
+
+// 選定例: 静的ファイルストレージ
+const staticFileStorageCriteria: ObjectStorageSelectionCriteria = {
+  capacity: {
+    unlimited: true,
+    maxSize: 5,
+  },
+  durability: {
+    durability: 99.999999999,
+    versioning: true,
+  },
+  availability: {
+    uptime: 99.9,
+    multiRegion: false,
+  },
+  cost: {
+    storage: 0.023,
+    requests: 0.005,
+    dataTransfer: 0.09,
+  },
+};
+
+// AWS S3の選定例
+// Standardストレージクラス: 高耐久性、高可用性
+// → 要件を満たす
+```
+
+**選定のポイント:**
+
+- **ストレージクラス**: アクセスパターンに応じたストレージクラス
+- **ライフサイクル**: ライフサイクルポリシーの設定
+- **コスト最適化**: 使用頻度に応じたストレージクラスの選択
+
+### まとめ
+
+インフラ選定基準の詳細のポイント：
+
+- **コンピューティング**: ワークロードの特性に応じた選定
+- **データベース**: データモデルと一貫性要件に応じた選定
+- **ネットワーク**: グローバル展開とパフォーマンス要件に応じた選定
+- **ストレージ**: アクセスパターンとコスト要件に応じた選定
+- **総合的な評価**: 各コンポーネントを総合的に評価
+
+適切なインフラ選定により、システムのパフォーマンス、可用性、コストを最適化できます。
+

@@ -1,0 +1,225 @@
+---
+title: "モバイルファーストインデックス"
+label: "モバイルファーストインデックス"
+---
+
+## モバイルファーストインデックス
+
+Googleは、2019年からモバイルファーストインデックスを採用しています。これは、モバイル版のページを基準にインデックスとランキングを決定するというものです。モバイル対応は、SEOにおいて必須の要素です。
+
+### なぜモバイル対応が重要なのか
+
+#### モバイル検索の増加
+
+**実際のデータ:**
+
+- **モバイル検索が全体の約60%を占める**（Googleの調査）
+- **モバイル対応していないサイトは、検索順位が約30%低下**（Googleの調査）
+- **モバイルでの読み込み時間が3秒を超えると、53%のユーザーが離脱**（Googleの調査）
+
+**SEOへの影響:**
+
+- **モバイルファーストインデックス**: モバイル版のページが基準となる
+- **検索順位**: モバイル対応していないサイトは、検索順位が低下
+- **ユーザー体験**: モバイルでのユーザー体験が悪いと、直帰率が高くなる
+
+### モバイル対応の実装
+
+#### 1. レスポンシブデザイン
+
+**レスポンシブデザインの実装:**
+
+```typescript
+// Next.jsでのレスポンシブデザイン
+import Image from 'next/image';
+
+function ResponsiveLayout() {
+  return (
+    <div className="container">
+      {/* モバイルファーストのCSS */}
+      <style jsx>{`
+        .container {
+          padding: 1rem;
+        }
+        
+        @media (min-width: 768px) {
+          .container {
+            padding: 2rem;
+          }
+        }
+        
+        @media (min-width: 1024px) {
+          .container {
+            padding: 3rem;
+            max-width: 1200px;
+            margin: 0 auto;
+          }
+        }
+      `}</style>
+      
+      <Image
+        src="/hero-image.jpg"
+        alt="Hero"
+        width={1920}
+        height={1080}
+        sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+      />
+    </div>
+  );
+}
+```
+
+#### 2. ビューポートの設定
+
+**ビューポートの設定:**
+
+```typescript
+// app/layout.tsx
+export const metadata = {
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 5,
+    userScalable: true,
+  },
+};
+
+// または、HTMLで直接設定
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="ja">
+      <head>
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1, maximum-scale=5"
+        />
+      </head>
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+
+#### 3. タッチターゲットの最適化
+
+**タッチターゲットの最適化:**
+
+```typescript
+// 良いコード: 適切なタッチターゲットサイズ
+function MobileNavigation() {
+  return (
+    <nav>
+      <style jsx>{`
+        .nav-button {
+          /* タッチターゲットは最低44x44px */
+          min-width: 44px;
+          min-height: 44px;
+          padding: 12px;
+          /* タッチしやすい間隔 */
+          margin: 8px;
+        }
+      `}</style>
+      
+      <button className="nav-button">メニュー</button>
+      <button className="nav-button">検索</button>
+      <button className="nav-button">お気に入り</button>
+    </nav>
+  );
+}
+
+// 悪いコード: タッチターゲットが小さすぎる
+function BadNavigation() {
+  return (
+    <nav>
+      <style jsx>{`
+        .nav-button {
+          /* 問題: タッチターゲットが小さすぎる */
+          width: 20px;
+          height: 20px;
+          padding: 2px;
+        }
+      `}</style>
+      
+      <button className="nav-button">メニュー</button>
+    </nav>
+  );
+}
+```
+
+### モバイルパフォーマンスの最適化
+
+#### 1. 画像の最適化
+
+**モバイル向け画像最適化:**
+
+```typescript
+// Next.jsでのモバイル向け画像最適化
+import Image from 'next/image';
+
+function MobileOptimizedImage({ src, alt }: { src: string; alt: string }) {
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      width={800}
+      height={600}
+      sizes="(max-width: 768px) 100vw, 50vw"
+      quality={75} // モバイルでは品質を下げる
+      loading="lazy"
+      placeholder="blur"
+    />
+  );
+}
+```
+
+#### 2. フォントの最適化
+
+**モバイル向けフォント最適化:**
+
+```typescript
+// Next.jsでのフォント最適化
+import { Inter } from 'next/font/google';
+
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+  preload: true,
+  // モバイル向けの最適化
+  fallback: ['system-ui', 'arial'],
+});
+
+export default function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="ja" className={inter.className}>
+      <head>
+        {/* フォントのプリロード */}
+        <link
+          rel="preload"
+          href="/fonts/inter.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
+        />
+      </head>
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+
+### まとめ
+
+モバイルファーストインデックスのポイント：
+
+- **レスポンシブデザイン**: モバイルファーストのデザイン
+- **ビューポートの設定**: 適切なビューポートメタタグ
+- **タッチターゲット**: 適切なサイズのタッチターゲット
+- **パフォーマンス**: モバイルでのパフォーマンス最適化
+- **ユーザー体験**: モバイルでのユーザー体験の向上
+
+適切なモバイル対応により、モバイルファーストインデックスに対応し、検索順位を向上させられます。
+

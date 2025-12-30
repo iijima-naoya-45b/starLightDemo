@@ -182,6 +182,18 @@ export default defineConfig({
                     autogenerate: { directory: '認証ガイド' },
                     badge: { text: '重要', variant: 'success' },
                 },
+                {
+                    label: 'SEOガイド',
+                    collapsed: true,
+                    autogenerate: { directory: 'SEOガイド' },
+                    badge: { text: '重要', variant: 'success' },
+                },
+                {
+                    label: 'エンジニア用語集',
+                    collapsed: true,
+                    autogenerate: { directory: 'エンジニア用語集' },
+                    badge: { text: '参考', variant: 'note' },
+                },
             ],
         }),
         react(),

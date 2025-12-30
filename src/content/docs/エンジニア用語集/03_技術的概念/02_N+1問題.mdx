@@ -1,0 +1,154 @@
+---
+title: "N+1問題"
+label: "N+1問題"
+---
+
+## N+1問題
+
+### 定義
+
+N+1問題は、データベースクエリで、1回のクエリでN件のデータを取得した後、各データに対して追加のクエリを実行する問題です。結果として、1 + N回のクエリが実行されます。
+
+### なぜ重要なのか
+
+#### パフォーマンスへの影響
+
+**実際のデータ:**
+
+あるECサイトで、商品一覧ページを表示する際にN+1問題が発生しました：
+
+- **問題**: 100件の商品を表示する際に、101回のクエリが実行される
+- **影響**: ページの読み込み時間が5秒以上かかる
+- **解決後**: Eager Loadingにより、2回のクエリに削減し、読み込み時間が0.5秒に短縮
+
+**N+1問題の影響:**
+- **パフォーマンス**: クエリ数が増加し、パフォーマンスが低下
+- **スケーラビリティ**: データが増えると、問題が深刻化
+- **ユーザー体験**: ページの読み込み時間が長くなる
+
+### 問題のある実装
+
+**N+1問題の例:**
+
+```typescript
+// 悪いコード: N+1問題が発生
+async function getProducts() {
+  // 1回目のクエリ: 商品を取得
+  const products = await db.query('SELECT * FROM products LIMIT 100');
+  
+  // N回のクエリ: 各商品のカテゴリを取得
+  for (const product of products) {
+    const category = await db.query(
+      'SELECT * FROM categories WHERE id = ?',
+      [product.categoryId]
+    );
+    product.category = category;
+  }
+  
+  return products;
+}
+
+// 問題点:
+// - 100件の商品がある場合、101回のクエリが実行される
+// - パフォーマンスが大幅に低下する
+```
+
+### 解決方法
+
+#### 1. Eager Loading（積極的読み込み）
+
+**Eager Loadingの実装:**
+
+```typescript
+// 良いコード: Eager Loadingを使用
+async function getProducts() {
+  // JOINを使用して1回のクエリで取得
+  const products = await db.query(`
+    SELECT 
+      p.*,
+      c.name as category_name,
+      c.description as category_description
+    FROM products p
+    LEFT JOIN categories c ON p.category_id = c.id
+    LIMIT 100
+  `);
+  
+  return products;
+}
+
+// メリット:
+// - 1回のクエリで必要なデータを取得
+// - パフォーマンスが大幅に向上
+```
+
+#### 2. バッチ読み込み
+
+**バッチ読み込みの実装:**
+
+```typescript
+// 良いコード: バッチ読み込みを使用
+async function getProducts() {
+  // 1回目のクエリ: 商品を取得
+  const products = await db.query('SELECT * FROM products LIMIT 100');
+  
+  // 2回目のクエリ: 必要なカテゴリを一括取得
+  const categoryIds = [...new Set(products.map(p => p.categoryId))];
+  const categories = await db.query(
+    'SELECT * FROM categories WHERE id IN (?)',
+    [categoryIds]
+  );
+  
+  // メモリ上で結合
+  const categoryMap = new Map(categories.map(c => [c.id, c]));
+  products.forEach(product => {
+    product.category = categoryMap.get(product.categoryId);
+  });
+  
+  return products;
+}
+
+// メリット:
+// - 2回のクエリで必要なデータを取得
+// - パフォーマンスが向上
+```
+
+#### 3. ORMの使用
+
+**ORMでの実装:**
+
+```typescript
+// TypeORMでの実装
+@Entity()
+export class Product {
+  @ManyToOne(() => Category)
+  @JoinColumn({ name: 'category_id' })
+  category: Category;
+}
+
+// Eager Loadingを使用
+const products = await productRepository.find({
+  relations: ['category'],
+});
+
+// または、QueryBuilderを使用
+const products = await productRepository
+  .createQueryBuilder('product')
+  .leftJoinAndSelect('product.category', 'category')
+  .getMany();
+
+// メリット:
+// - ORMが自動的に最適化
+// - コードが簡潔
+```
+
+### まとめ
+
+N+1問題のポイント：
+
+- **問題**: 1 + N回のクエリが実行される
+- **影響**: パフォーマンスの低下、スケーラビリティの問題
+- **解決方法**: Eager Loading、バッチ読み込み、ORMの使用
+- **予防**: クエリログを監視し、N+1問題を早期に発見
+
+適切な解決方法により、N+1問題を解決し、パフォーマンスを向上させられます。
+
