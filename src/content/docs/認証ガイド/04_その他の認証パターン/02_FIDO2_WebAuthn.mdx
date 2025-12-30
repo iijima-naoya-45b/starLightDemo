@@ -1,0 +1,413 @@
+---
+title: "FIDO2/WebAuthn"
+label: "FIDO2/WebAuthn"
+---
+
+## FIDO2/WebAuthn
+
+FIDO2/WebAuthnは、パスワードレス認証を実現する標準プロトコルです。生体認証やハードウェアトークンを使用して、より安全で利便性の高い認証を提供します。
+
+### なぜFIDO2/WebAuthnが重要なのか
+
+#### パスワードレス認証の必要性
+
+**実際の事例:**
+
+ある企業で、パスワード関連のサポートコストが年間約5000万円でした：
+
+- **問題**: 
+  - パスワードのリセット要求が多発
+  - パスワードの使い回しによるセキュリティリスク
+  - サポートコストの増加
+
+**FIDO2/WebAuthn導入後の効果:**
+- パスワード関連のサポートコストが約80%削減
+- セキュリティインシデントが約90%減少
+- ユーザー満足度が向上
+
+**教訓:**
+- パスワードレス認証は、セキュリティと利便性の両方を向上させる
+- FIDO2/WebAuthnは、業界標準のパスワードレス認証プロトコル
+- 生体認証やハードウェアトークンで、より安全な認証を実現
+
+### FIDO2/WebAuthnの仕組み
+
+#### 1. 登録フロー
+
+**登録フローの実装:**
+
+```javascript
+// FIDO2/WebAuthn登録の実装
+class WebAuthnRegistration {
+  async register(userId, userName) {
+    // 1. チャレンジを生成
+    const challenge = this.generateChallenge();
+    
+    // 2. 公開鍵クレデンシャル作成オプションを生成
+    const publicKeyCredentialCreationOptions = {
+      challenge: challenge,
+      rp: {
+        name: 'MyApp',
+        id: 'example.com',
+      },
+      user: {
+        id: this.encodeUserId(userId),
+        name: userName,
+        displayName: userName,
+      },
+      pubKeyCredParams: [
+        { alg: -7, type: 'public-key' },  // ES256
+        { alg: -257, type: 'public-key' }, // RS256
+      ],
+      authenticatorSelection: {
+        authenticatorAttachment: 'platform',  // プラットフォーム認証器（指紋など）
+        userVerification: 'required',
+        requireResidentKey: false,
+      },
+      timeout: 60000,
+      attestation: 'direct',
+    };
+    
+    // 3. クレデンシャルを作成
+    const credential = await navigator.credentials.create({
+      publicKey: publicKeyCredentialCreationOptions,
+    });
+    
+    // 4. クレデンシャルをサーバーに送信
+    const response = await fetch('/api/webauthn/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        userId,
+        credential: {
+          id: credential.id,
+          rawId: this.arrayBufferToBase64(credential.rawId),
+          response: {
+            attestationObject: this.arrayBufferToBase64(
+              credential.response.attestationObject
+            ),
+            clientDataJSON: this.arrayBufferToBase64(
+              credential.response.clientDataJSON
+            ),
+          },
+          type: credential.type,
+        },
+        challenge,
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Registration failed');
+    }
+    
+    return await response.json();
+  }
+  
+  generateChallenge() {
+    // ランダムなチャレンジを生成
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    return this.arrayBufferToBase64(array);
+  }
+  
+  encodeUserId(userId) {
+    // ユーザーIDをUint8Arrayに変換
+    return new Uint8Array(Buffer.from(userId, 'utf8'));
+  }
+  
+  arrayBufferToBase64(buffer) {
+    // ArrayBufferをBase64に変換
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+}
+```
+
+#### 2. 認証フロー
+
+**認証フローの実装:**
+
+```javascript
+// FIDO2/WebAuthn認証の実装
+class WebAuthnAuthentication {
+  async authenticate(userId) {
+    // 1. ユーザーのクレデンシャルIDを取得
+    const credentials = await this.getUserCredentials(userId);
+    
+    if (credentials.length === 0) {
+      throw new Error('No credentials found');
+    }
+    
+    // 2. チャレンジを生成
+    const challenge = this.generateChallenge();
+    
+    // 3. 公開鍵クレデンシャル要求オプションを生成
+    const publicKeyCredentialRequestOptions = {
+      challenge: challenge,
+      allowCredentials: credentials.map(cred => ({
+        id: this.base64ToArrayBuffer(cred.credentialId),
+        type: 'public-key',
+        transports: ['internal', 'usb', 'nfc', 'ble'],
+      })),
+      timeout: 60000,
+      userVerification: 'required',
+    };
+    
+    // 4. クレデンシャルを取得
+    const assertion = await navigator.credentials.get({
+      publicKey: publicKeyCredentialRequestOptions,
+    });
+    
+    // 5. アサーションをサーバーに送信
+    const response = await fetch('/api/webauthn/authenticate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        userId,
+        assertion: {
+          id: assertion.id,
+          rawId: this.arrayBufferToBase64(assertion.rawId),
+          response: {
+            authenticatorData: this.arrayBufferToBase64(
+              assertion.response.authenticatorData
+            ),
+            clientDataJSON: this.arrayBufferToBase64(
+              assertion.response.clientDataJSON
+            ),
+            signature: this.arrayBufferToBase64(
+              assertion.response.signature
+            ),
+            userHandle: assertion.response.userHandle
+              ? this.arrayBufferToBase64(assertion.response.userHandle)
+              : null,
+          },
+          type: assertion.type,
+        },
+        challenge,
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Authentication failed');
+    }
+    
+    return await response.json();
+  }
+  
+  async getUserCredentials(userId) {
+    // ユーザーのクレデンシャルを取得
+    const response = await fetch(`/api/webauthn/credentials/${userId}`);
+    return await response.json();
+  }
+  
+  base64ToArrayBuffer(base64) {
+    // Base64をArrayBufferに変換
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+  }
+}
+```
+
+#### 3. サーバー側の実装
+
+**サーバー側の実装:**
+
+```javascript
+// FIDO2/WebAuthnサーバー側の実装
+const cbor = require('cbor');
+const { Fido2Lib } = require('fido2-lib');
+
+class WebAuthnServer {
+  constructor() {
+    this.f2l = new Fido2Lib({
+      timeout: 60000,
+      rpId: 'example.com',
+      rpName: 'MyApp',
+      rpIcon: 'https://example.com/icon.png',
+      challengeSize: 128,
+      attestation: 'direct',
+      cryptoParams: [-7, -257],
+      authenticatorAttachment: 'platform',
+      authenticatorRequireResidentKey: false,
+      userVerification: 'required',
+    });
+  }
+  
+  async register(userId, credential, challenge) {
+    // 1. クレデンシャルを検証
+    const attestationExpectations = {
+      challenge: challenge,
+      origin: 'https://example.com',
+      factor: 'either',
+    };
+    
+    const regResult = await this.f2l.attestationResult(
+      credential.response.attestationObject,
+      credential.response.clientDataJSON,
+      attestationExpectations
+    );
+    
+    // 2. クレデンシャルを保存
+    await db.webauthnCredentials.create({
+      userId,
+      credentialId: credential.id,
+      publicKey: regResult.authnrData.get('credentialPublicKey'),
+      counter: regResult.authnrData.get('counter'),
+      createdAt: new Date(),
+    });
+    
+    return { success: true };
+  }
+  
+  async authenticate(userId, assertion, challenge) {
+    // 1. ユーザーのクレデンシャルを取得
+    const credential = await db.webauthnCredentials.findOne({
+      userId,
+      credentialId: assertion.id,
+    });
+    
+    if (!credential) {
+      throw new Error('Credential not found');
+    }
+    
+    // 2. アサーションを検証
+    const assertionExpectations = {
+      challenge: challenge,
+      origin: 'https://example.com',
+      factor: 'either',
+      publicKey: credential.publicKey,
+      prevCounter: credential.counter,
+      userHandle: null,
+    };
+    
+    const authResult = await this.f2l.assertionResult(
+      assertion.response.authenticatorData,
+      assertion.response.clientDataJSON,
+      assertion.response.signature,
+      assertionExpectations
+    );
+    
+    // 3. カウンターを更新
+    await db.webauthnCredentials.update(credential.id, {
+      counter: authResult.authnrData.get('counter'),
+      lastUsedAt: new Date(),
+    });
+    
+    // 4. セッションを作成
+    const sessionToken = await this.createSession(userId);
+    
+    return {
+      success: true,
+      sessionToken,
+    };
+  }
+}
+```
+
+### FIDO2/WebAuthnのベストプラクティス
+
+#### 1. フォールバック認証
+
+**フォールバック認証の実装:**
+
+```javascript
+// フォールバック認証の実装
+class FallbackAuthentication {
+  async authenticate(userId, method) {
+    // WebAuthnが利用可能な場合
+    if (this.isWebAuthnSupported() && method === 'webauthn') {
+      try {
+        return await webAuthnAuth.authenticate(userId);
+      } catch (error) {
+        // WebAuthn認証が失敗した場合、フォールバック
+        console.error('WebAuthn authentication failed:', error);
+      }
+    }
+    
+    // パスワード認証にフォールバック
+    if (method === 'password') {
+      return await passwordAuth.authenticate(userId);
+    }
+    
+    // 多要素認証にフォールバック
+    if (method === 'mfa') {
+      return await mfaAuth.authenticate(userId);
+    }
+    
+    throw new Error('Authentication method not supported');
+  }
+  
+  isWebAuthnSupported() {
+    // WebAuthnがサポートされているか確認
+    return !!(
+      window.PublicKeyCredential &&
+      navigator.credentials &&
+      navigator.credentials.create
+    );
+  }
+}
+```
+
+#### 2. 複数の認証器の管理
+
+**複数の認証器の管理:**
+
+```javascript
+// 複数の認証器の管理
+class AuthenticatorManager {
+  async registerAuthenticator(userId, authenticatorInfo) {
+    // 認証器を登録
+    await db.authenticators.create({
+      userId,
+      credentialId: authenticatorInfo.credentialId,
+      name: authenticatorInfo.name,  // 例: "iPhoneの指紋認証"
+      type: authenticatorInfo.type,  // 例: "platform"
+      registeredAt: new Date(),
+    });
+  }
+  
+  async getUserAuthenticators(userId) {
+    // ユーザーの認証器一覧を取得
+    return await db.authenticators.find({ userId });
+  }
+  
+  async removeAuthenticator(userId, credentialId) {
+    // 認証器を削除
+    await db.authenticators.delete({
+      userId,
+      credentialId,
+    });
+    
+    // クレデンシャルも削除
+    await db.webauthnCredentials.delete({
+      userId,
+      credentialId,
+    });
+  }
+}
+```
+
+### まとめ
+
+FIDO2/WebAuthnのポイント：
+
+- **パスワードレス**: パスワード不要の認証
+- **セキュリティ**: 生体認証やハードウェアトークンで高いセキュリティ
+- **利便性**: ユーザー体験の向上
+- **標準プロトコル**: 業界標準のプロトコル
+- **フォールバック**: 複数の認証方法をサポート
+
+適切なFIDO2/WebAuthnの実装により、パスワードレスで安全な認証を提供できます。
+

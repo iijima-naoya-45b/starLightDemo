@@ -1,0 +1,385 @@
+---
+title: "セキュリティ監視とインシデント対応"
+label: "セキュリティ監視とインシデント対応"
+---
+
+## セキュリティ監視とインシデント対応
+
+セキュリティ監視とインシデント対応は、セキュリティインシデントを早期に発見し、迅速に対応するための重要なプロセスです。
+
+### なぜセキュリティ監視とインシデント対応が重要なのか
+
+#### 監視の不備による問題
+
+**実際の事例:**
+
+2021年、ある企業でセキュリティ監視が不十分でした：
+
+- **問題**: 不正アクセスが3ヶ月間発見されなかった
+- **結果**: 約100万人の個人情報が漏洩
+- **影響**: 
+  - 約30億円の損害賠償
+  - サービスの信頼失墜
+  - 法的責任が問われた
+
+**教訓:**
+- セキュリティ監視は必須
+- インシデント対応の準備が重要
+
+### セキュリティ監視
+
+#### 1. ログ監視
+
+**ログの収集と分析:**
+
+```javascript
+// セキュリティログの収集
+class SecurityLogging {
+  async logSecurityEvent(event) {
+    // セキュリティイベントをログに記録
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      eventType: event.type,
+      severity: event.severity,
+      userId: event.userId,
+      ipAddress: event.ipAddress,
+      userAgent: event.userAgent,
+      details: event.details,
+    };
+    
+    // ログを保存
+    await db.securityLogs.create(logEntry);
+    
+    // ログサービスに送信（ELK Stack、Splunkなど）
+    await this.sendToLogService(logEntry);
+    
+    // 重大なイベントの場合はアラート
+    if (event.severity === 'critical' || event.severity === 'high') {
+      await this.sendAlert(logEntry);
+    }
+  }
+  
+  async detectAnomalies() {
+    // 異常なアクセスパターンを検出
+    const recentLogs = await db.securityLogs.find({
+      timestamp: { $gte: new Date(Date.now() - 60 * 60 * 1000) },  // 過去1時間
+    });
+    
+    // 異常なログイン試行を検出
+    const failedLogins = recentLogs.filter(
+      log => log.eventType === 'login_failed'
+    );
+    
+    if (failedLogins.length > 10) {
+      // 異常なログイン試行をアラート
+      await this.sendAlert({
+        type: 'anomaly',
+        description: '異常なログイン試行が検出されました',
+        count: failedLogins.length,
+        logs: failedLogins,
+      });
+    }
+    
+    // 異常なアクセスパターンを検出
+    const accessPatterns = this.analyzeAccessPatterns(recentLogs);
+    const anomalies = this.detectPatternAnomalies(accessPatterns);
+    
+    if (anomalies.length > 0) {
+      await this.sendAlert({
+        type: 'anomaly',
+        description: '異常なアクセスパターンが検出されました',
+        anomalies,
+      });
+    }
+  }
+}
+```
+
+#### 2. 侵入検知システム（IDS）
+
+**IDSの実装:**
+
+```javascript
+// 侵入検知システム（IDS）の実装
+class IntrusionDetectionSystem {
+  async detectIntrusion(request) {
+    // 1. シグネチャベースの検知
+    const signatureMatch = await this.checkSignatures(request);
+    if (signatureMatch) {
+      await this.logIntrusion({
+        type: 'signature',
+        request,
+        signature: signatureMatch,
+      });
+      return true;
+    }
+    
+    // 2. 異常検知ベースの検知
+    const anomaly = await this.detectAnomaly(request);
+    if (anomaly) {
+      await this.logIntrusion({
+        type: 'anomaly',
+        request,
+        anomaly,
+      });
+      return true;
+    }
+    
+    return false;
+  }
+  
+  async checkSignatures(request) {
+    // 既知の攻撃パターンをチェック
+    const signatures = [
+      { pattern: /union.*select/i, type: 'sql_injection' },
+      { pattern: /<script.*>/i, type: 'xss' },
+      { pattern: /\.\.\//, type: 'path_traversal' },
+      { pattern: /eval\(/i, type: 'code_injection' },
+    ];
+    
+    for (const signature of signatures) {
+      if (signature.pattern.test(request.url) || 
+          signature.pattern.test(request.body)) {
+        return signature;
+      }
+    }
+    
+    return null;
+  }
+  
+  async detectAnomaly(request) {
+    // 異常なリクエストパターンを検出
+    const userHistory = await this.getUserHistory(request.userId);
+    
+    // 異常なアクセス時間
+    const hour = new Date().getHours();
+    if (hour < 6 || hour > 22) {
+      if (!userHistory.nightAccess) {
+        return { type: 'unusual_time', hour };
+      }
+    }
+    
+    // 異常なアクセス場所
+    const location = await this.getLocation(request.ipAddress);
+    if (location.country !== userHistory.commonCountry) {
+      return { type: 'unusual_location', location };
+    }
+    
+    // 異常なリクエスト頻度
+    const requestCount = await this.getRequestCount(
+      request.userId,
+      Date.now() - 60 * 1000  // 過去1分
+    );
+    if (requestCount > 100) {
+      return { type: 'unusual_frequency', count: requestCount };
+    }
+    
+    return null;
+  }
+}
+```
+
+#### 3. セキュリティ情報イベント管理（SIEM）
+
+**SIEMの実装:**
+
+```javascript
+// SIEMの実装
+class SIEM {
+  async collectEvents() {
+    // 複数のソースからイベントを収集
+    const events = await Promise.all([
+      this.collectApplicationLogs(),
+      this.collectNetworkLogs(),
+      this.collectSystemLogs(),
+      this.collectSecurityLogs(),
+    ]);
+    
+    // イベントを正規化
+    const normalizedEvents = events.flat().map(event => 
+      this.normalizeEvent(event)
+    );
+    
+    // イベントを相関分析
+    const correlatedEvents = await this.correlateEvents(normalizedEvents);
+    
+    // アラートを生成
+    await this.generateAlerts(correlatedEvents);
+    
+    return correlatedEvents;
+  }
+  
+  async correlateEvents(events) {
+    // イベントを相関分析
+    const correlations = [];
+    
+    // 同じIPアドレスからの複数の失敗したログイン試行
+    const failedLoginsByIP = this.groupBy(events, 'ipAddress')
+      .filter(group => 
+        group.events.some(e => e.type === 'login_failed')
+      );
+    
+    for (const group of failedLoginsByIP) {
+      if (group.events.length > 5) {
+        correlations.push({
+          type: 'brute_force_attack',
+          ipAddress: group.ipAddress,
+          events: group.events,
+          severity: 'high',
+        });
+      }
+    }
+    
+    // 異常なデータアクセスパターン
+    const dataAccessPatterns = this.analyzeDataAccess(events);
+    const anomalies = this.detectDataAccessAnomalies(dataAccessPatterns);
+    
+    for (const anomaly of anomalies) {
+      correlations.push({
+        type: 'data_exfiltration',
+        anomaly,
+        severity: 'critical',
+      });
+    }
+    
+    return correlations;
+  }
+  
+  async generateAlerts(correlations) {
+    // アラートを生成
+    for (const correlation of correlations) {
+      if (correlation.severity === 'critical' || 
+          correlation.severity === 'high') {
+        await this.sendAlert({
+          type: correlation.type,
+          severity: correlation.severity,
+          details: correlation,
+          timestamp: new Date(),
+        });
+      }
+    }
+  }
+}
+```
+
+### インシデント対応
+
+#### 1. インシデント対応計画
+
+**インシデント対応計画の作成:**
+
+```markdown
+# インシデント対応計画
+
+## 1. 準備
+- インシデント対応チームの編成
+- 連絡先リストの作成
+- ツールとリソースの準備
+
+## 2. 検知
+- 監視システムによる自動検知
+- ユーザーからの報告
+- 外部からの通知
+
+## 3. 分析
+- インシデントの種類の特定
+- 影響範囲の評価
+- 深刻度の評価
+
+## 4. 封じ込め
+- 影響範囲の限定
+- 攻撃者のアクセスを遮断
+- システムの隔離
+
+## 5. 根絶
+- 脆弱性の修正
+- マルウェアの削除
+- 不正アクセスの排除
+
+## 6. 復旧
+- システムの復旧
+- データの復元
+- サービスの再開
+
+## 7. 事後対応
+- インシデントレポートの作成
+- 再発防止策の実施
+- 改善点の特定
+```
+
+#### 2. インシデント対応の自動化
+
+**インシデント対応の自動化:**
+
+```javascript
+// インシデント対応の自動化
+class IncidentResponse {
+  async handleIncident(incident) {
+    // 1. インシデントの深刻度を評価
+    const severity = await this.assessSeverity(incident);
+    
+    // 2. インシデント対応チームに通知
+    await this.notifyTeam(incident, severity);
+    
+    // 3. 自動的な封じ込め
+    if (severity === 'critical' || severity === 'high') {
+      await this.automaticContainment(incident);
+    }
+    
+    // 4. インシデントレコードの作成
+    const incidentRecord = await this.createIncidentRecord(incident);
+    
+    // 5. フォローアップタスクの作成
+    await this.createFollowupTasks(incidentRecord);
+    
+    return incidentRecord;
+  }
+  
+  async automaticContainment(incident) {
+    // 自動的な封じ込め
+    switch (incident.type) {
+      case 'brute_force_attack':
+        // IPアドレスをブロック
+        await this.blockIPAddress(incident.ipAddress);
+        break;
+      
+      case 'malware':
+        // 影響を受けたシステムを隔離
+        await this.isolateSystem(incident.systemId);
+        break;
+      
+      case 'data_breach':
+        // 影響を受けたアカウントを無効化
+        await this.disableAffectedAccounts(incident.affectedAccounts);
+        break;
+    }
+  }
+  
+  async createIncidentRecord(incident) {
+    // インシデントレコードを作成
+    return await db.incidents.create({
+      id: this.generateIncidentId(),
+      type: incident.type,
+      severity: incident.severity,
+      status: 'open',
+      detectedAt: new Date(),
+      description: incident.description,
+      affectedSystems: incident.affectedSystems,
+      assignedTo: await this.assignIncident(incident),
+    });
+  }
+}
+```
+
+### まとめ
+
+セキュリティ監視とインシデント対応のポイント：
+
+- **ログ監視**: セキュリティイベントの記録と分析
+- **侵入検知**: シグネチャベースと異常検知ベースの検知
+- **SIEM**: 複数ソースからのイベント収集と相関分析
+- **インシデント対応計画**: 準備、検知、分析、封じ込め、根絶、復旧、事後対応
+- **自動化**: インシデント対応の自動化、迅速な対応
+
+適切なセキュリティ監視とインシデント対応により、セキュリティインシデントを早期に発見し、迅速に対応できます。
+

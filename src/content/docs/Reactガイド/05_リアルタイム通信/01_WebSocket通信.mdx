@@ -1,0 +1,588 @@
+---
+title: "WebSocket通信"
+label: "WebSocket通信"
+---
+
+## WebSocket通信
+
+WebSocketは、クライアントとサーバー間の双方向通信を実現するプロトコルです。Reactアプリケーションでリアルタイム通信を実装する際に使用します。
+
+### なぜWebSocketが必要なのか
+
+#### HTTPポーリングの課題
+
+**問題のあるHTTPポーリングの例:**
+
+```typescript
+// 問題のある実装: 定期的にサーバーにリクエスト
+useEffect(() => {
+  const interval = setInterval(() => {
+    fetch('/api/messages')
+      .then(response => response.json())
+      .then(data => setMessages(data));
+  }, 1000); // 1秒ごとにポーリング
+
+  return () => clearInterval(interval);
+}, []);
+
+// 問題点:
+// - 不要なリクエストが多い（サーバー負荷）
+// - リアルタイム性が低い（最大1秒の遅延）
+// - ネットワーク帯域の無駄
+// - バッテリー消費が大きい（モバイル）
+```
+
+**WebSocketの解決:**
+
+```typescript
+// 1回の接続で双方向通信
+const socket = new WebSocket('ws://localhost:3000');
+socket.onmessage = (event) => {
+  setMessages(JSON.parse(event.data));
+};
+
+// メリット:
+// - リアルタイム通信（低遅延）
+// - サーバーからクライアントへのプッシュが可能
+// - ネットワーク効率が良い
+// - 接続を維持するため、オーバーヘッドが少ない
+```
+
+### ReactでのWebSocket実装
+
+#### 1. 基本的なWebSocketフック
+
+**カスタムフックの実装:**
+
+```typescript
+// hooks/useWebSocket.ts
+import { useEffect, useRef, useState, useCallback } from 'react';
+
+interface UseWebSocketOptions {
+  url: string;
+  reconnect?: boolean;
+  reconnectInterval?: number;
+  onOpen?: () => void;
+  onClose?: () => void;
+  onError?: (error: Event) => void;
+}
+
+export function useWebSocket<T = any>(options: UseWebSocketOptions) {
+  const {
+    url,
+    reconnect = true,
+    reconnectInterval = 3000,
+    onOpen,
+    onClose,
+    onError,
+  } = options;
+
+  const [socket, setSocket] = useState<WebSocket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastMessage, setLastMessage] = useState<T | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
+  const socketRef = useRef<WebSocket | null>(null);
+
+  const connect = useCallback(() => {
+    try {
+      const ws = new WebSocket(url);
+      socketRef.current = ws;
+
+      ws.onopen = () => {
+        setIsConnected(true);
+        setSocket(ws);
+        onOpen?.();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data) as T;
+          setLastMessage(data);
+        } catch (error) {
+          console.error('Failed to parse WebSocket message:', error);
+        }
+      };
+
+      ws.onclose = () => {
+        setIsConnected(false);
+        setSocket(null);
+        onClose?.();
+
+        // 自動再接続
+        if (reconnect) {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connect();
+          }, reconnectInterval);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        onError?.(error);
+      };
+    } catch (error) {
+      console.error('Failed to create WebSocket:', error);
+    }
+  }, [url, reconnect, reconnectInterval, onOpen, onClose, onError]);
+
+  const sendMessage = useCallback((message: any) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify(message));
+    } else {
+      console.warn('WebSocket is not connected');
+    }
+  }, []);
+
+  const disconnect = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+    }
+    socketRef.current?.close();
+    setIsConnected(false);
+    setSocket(null);
+  }, []);
+
+  useEffect(() => {
+    connect();
+
+    return () => {
+      disconnect();
+    };
+  }, [connect, disconnect]);
+
+  return {
+    socket,
+    isConnected,
+    lastMessage,
+    sendMessage,
+    disconnect,
+    reconnect: connect,
+  };
+}
+```
+
+#### 2. WebSocketフックの使用例
+
+**チャットアプリケーションの実装:**
+
+```typescript
+// components/ChatApp.tsx
+import React, { useState, useRef, useEffect } from 'react';
+import { useWebSocket } from '../hooks/useWebSocket';
+
+interface Message {
+  id: string;
+  user: string;
+  text: string;
+  timestamp: number;
+}
+
+export function ChatApp() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const { isConnected, lastMessage, sendMessage } = useWebSocket<Message>({
+    url: 'ws://localhost:3000/chat',
+    reconnect: true,
+    reconnectInterval: 3000,
+    onOpen: () => {
+      console.log('WebSocket connected');
+    },
+    onClose: () => {
+      console.log('WebSocket disconnected');
+    },
+    onError: (error) => {
+      console.error('WebSocket error:', error);
+    },
+  });
+
+  // メッセージを受信したら追加
+  useEffect(() => {
+    if (lastMessage) {
+      setMessages((prev) => [...prev, lastMessage]);
+    }
+  }, [lastMessage]);
+
+  // メッセージリストを自動スクロール
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleSend = () => {
+    if (input.trim() && isConnected) {
+      sendMessage({
+        user: 'CurrentUser',
+        text: input,
+        timestamp: Date.now(),
+      });
+      setInput('');
+    }
+  };
+
+  return (
+    <div className="chat-app">
+      <div className="chat-header">
+        <h2>チャット</h2>
+        <div className={`status ${isConnected ? 'connected' : 'disconnected'}`}>
+          {isConnected ? '接続中' : '切断中'}
+        </div>
+      </div>
+
+      <div className="messages">
+        {messages.map((message) => (
+          <div key={message.id} className="message">
+            <div className="message-user">{message.user}</div>
+            <div className="message-text">{message.text}</div>
+            <div className="message-time">
+              {new Date(message.timestamp).toLocaleTimeString()}
+            </div>
+          </div>
+        ))}
+        <div ref={messagesEndRef} />
+      </div>
+
+      <div className="chat-input">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyPress={(e) => {
+            if (e.key === 'Enter') {
+              handleSend();
+            }
+          }}
+          placeholder="メッセージを入力..."
+          disabled={!isConnected}
+        />
+        <button onClick={handleSend} disabled={!isConnected || !input.trim()}>
+          送信
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+#### 3. Socket.ioを使用した実装
+
+**Socket.ioクライアントの実装:**
+
+```typescript
+// hooks/useSocketIO.ts
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { io, Socket } from 'socket.io-client';
+
+interface UseSocketIOOptions {
+  url: string;
+  options?: {
+    autoConnect?: boolean;
+    reconnection?: boolean;
+    reconnectionDelay?: number;
+    reconnectionAttempts?: number;
+  };
+}
+
+export function useSocketIO(options: UseSocketIOOptions) {
+  const { url, options: socketOptions } = options;
+  const socketRef = useRef<Socket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastMessage, setLastMessage] = useState<any>(null);
+
+  useEffect(() => {
+    // Socket.ioクライアントを作成
+    const socket = io(url, {
+      autoConnect: socketOptions?.autoConnect ?? true,
+      reconnection: socketOptions?.reconnection ?? true,
+      reconnectionDelay: socketOptions?.reconnectionDelay ?? 1000,
+      reconnectionAttempts: socketOptions?.reconnectionAttempts ?? Infinity,
+    });
+
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      setIsConnected(true);
+      console.log('Socket.io connected:', socket.id);
+    });
+
+    socket.on('disconnect', () => {
+      setIsConnected(false);
+      console.log('Socket.io disconnected');
+    });
+
+    socket.on('message', (data) => {
+      setLastMessage(data);
+    });
+
+    socket.on('error', (error) => {
+      console.error('Socket.io error:', error);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [url, socketOptions]);
+
+  const emit = useCallback((event: string, data?: any) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit(event, data);
+    } else {
+      console.warn('Socket.io is not connected');
+    }
+  }, []);
+
+  const on = useCallback((event: string, callback: (data: any) => void) => {
+    socketRef.current?.on(event, callback);
+  }, []);
+
+  const off = useCallback((event: string, callback?: (data: any) => void) => {
+    socketRef.current?.off(event, callback);
+  }, []);
+
+  return {
+    socket: socketRef.current,
+    isConnected,
+    lastMessage,
+    emit,
+    on,
+    off,
+  };
+}
+```
+
+**Socket.ioの使用例:**
+
+```typescript
+// components/RealtimeNotifications.tsx
+import React, { useEffect, useState } from 'react';
+import { useSocketIO } from '../hooks/useSocketIO';
+
+interface Notification {
+  id: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  message: string;
+  timestamp: number;
+}
+
+export function RealtimeNotifications() {
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  const { isConnected, emit, on, off } = useSocketIO({
+    url: 'http://localhost:3000',
+    options: {
+      autoConnect: true,
+      reconnection: true,
+    },
+  });
+
+  useEffect(() => {
+    // 通知イベントをリッスン
+    const handleNotification = (notification: Notification) => {
+      setNotifications((prev) => [notification, ...prev]);
+
+      // 5秒後に自動的に削除
+      setTimeout(() => {
+        setNotifications((prev) =>
+          prev.filter((n) => n.id !== notification.id)
+        );
+      }, 5000);
+    };
+
+    on('notification', handleNotification);
+
+    // クリーンアップ
+    return () => {
+      off('notification', handleNotification);
+    };
+  }, [on, off]);
+
+  const handleMarkAsRead = (id: string) => {
+    emit('markAsRead', { id });
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
+  return (
+    <div className="notifications">
+      <div className="notifications-header">
+        <h3>通知</h3>
+        <div className={`status ${isConnected ? 'connected' : 'disconnected'}`}>
+          {isConnected ? '接続中' : '切断中'}
+        </div>
+      </div>
+
+      <div className="notifications-list">
+        {notifications.map((notification) => (
+          <div
+            key={notification.id}
+            className={`notification notification-${notification.type}`}
+          >
+            <div className="notification-message">{notification.message}</div>
+            <div className="notification-time">
+              {new Date(notification.timestamp).toLocaleTimeString()}
+            </div>
+            <button onClick={() => handleMarkAsRead(notification.id)}>
+              閉じる
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+### WebSocketのベストプラクティス
+
+#### 1. 接続管理
+
+**接続管理の実装:**
+
+```typescript
+// hooks/useWebSocketManager.ts
+import { useCallback, useRef } from 'react';
+
+export function useWebSocketManager() {
+  const connectionsRef = useRef<Map<string, WebSocket>>(new Map());
+
+  const connect = useCallback((id: string, url: string) => {
+    // 既存の接続を閉じる
+    const existing = connectionsRef.current.get(id);
+    if (existing) {
+      existing.close();
+    }
+
+    // 新しい接続を作成
+    const ws = new WebSocket(url);
+    connectionsRef.current.set(id, ws);
+
+    return ws;
+  }, []);
+
+  const disconnect = useCallback((id: string) => {
+    const ws = connectionsRef.current.get(id);
+    if (ws) {
+      ws.close();
+      connectionsRef.current.delete(id);
+    }
+  }, []);
+
+  const disconnectAll = useCallback(() => {
+    connectionsRef.current.forEach((ws) => ws.close());
+    connectionsRef.current.clear();
+  }, []);
+
+  return {
+    connect,
+    disconnect,
+    disconnectAll,
+  };
+}
+```
+
+#### 2. エラーハンドリングとリトライ
+
+**エラーハンドリングとリトライの実装:**
+
+```typescript
+// hooks/useWebSocketWithRetry.ts
+import { useEffect, useRef, useState, useCallback } from 'react';
+
+interface RetryOptions {
+  maxRetries?: number;
+  retryDelay?: number;
+  exponentialBackoff?: boolean;
+}
+
+export function useWebSocketWithRetry<T = any>(
+  url: string,
+  retryOptions: RetryOptions = {}
+) {
+  const {
+    maxRetries = 5,
+    retryDelay = 1000,
+    exponentialBackoff = true,
+  } = retryOptions;
+
+  const [socket, setSocket] = useState<WebSocket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastMessage, setLastMessage] = useState<T | null>(null);
+  const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<NodeJS.Timeout>();
+
+  const connect = useCallback(() => {
+    try {
+      const ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        setIsConnected(true);
+        setSocket(ws);
+        retryCountRef.current = 0; // リトライカウントをリセット
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data) as T;
+          setLastMessage(data);
+        } catch (error) {
+          console.error('Failed to parse WebSocket message:', error);
+        }
+      };
+
+      ws.onclose = () => {
+        setIsConnected(false);
+        setSocket(null);
+
+        // リトライ
+        if (retryCountRef.current < maxRetries) {
+          const delay = exponentialBackoff
+            ? retryDelay * Math.pow(2, retryCountRef.current)
+            : retryDelay;
+
+          retryTimeoutRef.current = setTimeout(() => {
+            retryCountRef.current++;
+            connect();
+          }, delay);
+        } else {
+          console.error('Max retries reached');
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+    } catch (error) {
+      console.error('Failed to create WebSocket:', error);
+    }
+  }, [url, maxRetries, retryDelay, exponentialBackoff]);
+
+  useEffect(() => {
+    connect();
+
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+      socket?.close();
+    };
+  }, [connect, socket]);
+
+  return {
+    socket,
+    isConnected,
+    lastMessage,
+  };
+}
+```
+
+### まとめ
+
+ReactでのWebSocket通信のポイント：
+
+- **カスタムフック**: `useWebSocket`でWebSocket接続を管理
+- **自動再接続**: 接続が切断された場合の自動再接続機能
+- **Socket.io**: Socket.ioを使用したより高度な実装
+- **接続管理**: 複数のWebSocket接続の管理
+- **エラーハンドリング**: エラーハンドリングとリトライロジック
+
+適切なWebSocket実装により、リアルタイムな双方向通信を実現できます。
+

@@ -1,0 +1,494 @@
+---
+title: "OAuth 2.0詳細"
+label: "OAuth 2.0詳細"
+---
+
+## OAuth 2.0詳細
+
+OAuth 2.0は、サードパーティアプリケーションがユーザーのリソースにアクセスするための認可プロトコルです。認証にも使用でき、多くのWebアプリケーションで採用されています。
+
+### なぜOAuth 2.0が重要なのか
+
+#### OAuth 2.0の必要性
+
+**実際の事例:**
+
+あるSNSアプリケーションで、ユーザーがGoogleアカウントでログインできるようにしました：
+
+- **効果**: 
+  - 新規登録の手間が削減
+  - ユーザー登録率が30%向上
+  - パスワード管理の負担が軽減
+
+**教訓:**
+- OAuth 2.0は、ユーザー体験を向上させる
+- サードパーティ認証により、新規登録のハードルを下げる
+- セキュリティを確保しながら、利便性を提供
+
+### OAuth 2.0の仕組み
+
+#### 1. OAuth 2.0の認証フロー
+
+**認証コードフロー（Authorization Code Flow）:**
+
+```
+1. ユーザーがアプリケーションにアクセス
+   ↓
+2. アプリケーションが認証サーバーにリダイレクト
+   ↓
+3. ユーザーが認証サーバーで認証
+   ↓
+4. 認証サーバーが認証コードを発行
+   ↓
+5. ユーザーがアプリケーションに戻る（認証コード付き）
+   ↓
+6. アプリケーションが認証コードをトークンに交換
+   ↓
+7. アプリケーションがトークンを使用してリソースにアクセス
+```
+
+**実装例:**
+
+```javascript
+// OAuth 2.0認証サーバー（プロバイダー）の実装
+class OAuth2Provider {
+  async authorize(clientId, redirectUri, scope, state) {
+    // クライアントを検証
+    const client = await this.validateClient(clientId, redirectUri);
+    
+    // 認証コードを生成
+    const authCode = this.generateAuthCode();
+    
+    // 認証コードを保存
+    await db.authCodes.create({
+      code: authCode,
+      clientId,
+      redirectUri,
+      scope,
+      state,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),  // 10分
+    });
+    
+    // 認証URLを返す
+    return `${redirectUri}?code=${authCode}&state=${state}`;
+  }
+  
+  async exchangeToken(code, clientId, clientSecret, redirectUri) {
+    // 認証コードを検証
+    const authCode = await db.authCodes.findOne({
+      code,
+      clientId,
+      redirectUri,
+      expiresAt: { $gt: new Date() },
+      used: false,
+    });
+    
+    if (!authCode) {
+      throw new Error('Invalid or expired authorization code');
+    }
+    
+    // 認証コードを使用済みにする
+    await db.authCodes.update(authCode.id, { used: true });
+    
+    // アクセストークンとリフレッシュトークンを生成
+    const accessToken = this.generateAccessToken(authCode);
+    const refreshToken = this.generateRefreshToken(authCode);
+    
+    return {
+      access_token: accessToken,
+      token_type: 'Bearer',
+      expires_in: 3600,  // 1時間
+      refresh_token: refreshToken,
+      scope: authCode.scope,
+    };
+  }
+  
+  async validateToken(accessToken) {
+    // アクセストークンを検証
+    const token = await db.accessTokens.findOne({
+      token: accessToken,
+      expiresAt: { $gt: new Date() },
+      revoked: false,
+    });
+    
+    if (!token) {
+      throw new Error('Invalid or expired access token');
+    }
+    
+    return token;
+  }
+}
+```
+
+#### 2. クライアント側の実装
+
+**クライアント側の実装:**
+
+```javascript
+// OAuth 2.0クライアントの実装
+class OAuth2Client {
+  constructor(providerUrl, clientId, clientSecret, redirectUri) {
+    this.providerUrl = providerUrl;
+    this.clientId = clientId;
+    this.clientSecret = clientSecret;
+    this.redirectUri = redirectUri;
+  }
+  
+  async initiateLogin(scope = 'openid profile email') {
+    // stateを生成（CSRF対策）
+    const state = this.generateState();
+    
+    // stateをセッションに保存
+    await this.saveState(state);
+    
+    // 認証URLを生成
+    const authUrl = `${this.providerUrl}/authorize?` +
+      `client_id=${this.clientId}&` +
+      `redirect_uri=${encodeURIComponent(this.redirectUri)}&` +
+      `response_type=code&` +
+      `scope=${encodeURIComponent(scope)}&` +
+      `state=${state}`;
+    
+    // ブラウザをリダイレクト
+    window.location.href = authUrl;
+  }
+  
+  async handleCallback(code, state) {
+    // stateを検証（CSRF対策）
+    const storedState = await this.getStoredState();
+    if (state !== storedState) {
+      throw new Error('Invalid state parameter');
+    }
+    
+    // 認証コードをトークンに交換
+    const tokenResponse = await fetch(`${this.providerUrl}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${btoa(`${this.clientId}:${this.clientSecret}`)}`,
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: this.redirectUri,
+      }),
+    });
+    
+    if (!tokenResponse.ok) {
+      throw new Error('Failed to exchange token');
+    }
+    
+    const tokens = await tokenResponse.json();
+    
+    // トークンを保存
+    await this.saveTokens(tokens);
+    
+    return tokens;
+  }
+  
+  async refreshAccessToken(refreshToken) {
+    // リフレッシュトークンでアクセストークンを更新
+    const tokenResponse = await fetch(`${this.providerUrl}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${btoa(`${this.clientId}:${this.clientSecret}`)}`,
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+      }),
+    });
+    
+    if (!tokenResponse.ok) {
+      throw new Error('Failed to refresh token');
+    }
+    
+    const tokens = await tokenResponse.json();
+    
+    // トークンを更新
+    await this.updateTokens(tokens);
+    
+    return tokens;
+  }
+  
+  async getResource(accessToken, resourceUrl) {
+    // アクセストークンを使用してリソースにアクセス
+    const response = await fetch(resourceUrl, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+      },
+    });
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        // トークンが期限切れの場合、リフレッシュ
+        const refreshToken = await this.getRefreshToken();
+        const newTokens = await this.refreshAccessToken(refreshToken);
+        return await this.getResource(newTokens.access_token, resourceUrl);
+      }
+      throw new Error('Failed to get resource');
+    }
+    
+    return await response.json();
+  }
+}
+```
+
+### OAuth 2.0の認証フロー
+
+#### 1. 認証コードフロー（推奨）
+
+**特徴:**
+- 最も安全なフロー
+- Webアプリケーションで推奨
+- 認証コードをトークンに交換
+
+**使用例:**
+
+```javascript
+// 認証コードフローの使用例
+const oauthClient = new OAuth2Client(
+  'https://oauth.example.com',
+  'client-id',
+  'client-secret',
+  'https://app.example.com/auth/callback'
+);
+
+// ログインボタンをクリック
+document.getElementById('login-button').addEventListener('click', () => {
+  oauthClient.initiateLogin();
+});
+
+// コールバック処理
+const urlParams = new URLSearchParams(window.location.search);
+const code = urlParams.get('code');
+const state = urlParams.get('state');
+
+if (code && state) {
+  oauthClient.handleCallback(code, state)
+    .then(tokens => {
+      // ログイン成功
+      window.location.href = '/dashboard';
+    })
+    .catch(error => {
+      console.error('Login failed:', error);
+    });
+}
+```
+
+#### 2. インプリシットフロー
+
+**特徴:**
+- シンプルなフロー
+- モバイルアプリやSPAで使用
+- アクセストークンを直接取得
+
+**実装例:**
+
+```javascript
+// インプリシットフローの実装
+class ImplicitFlow {
+  async initiateLogin() {
+    const state = this.generateState();
+    await this.saveState(state);
+    
+    const authUrl = `${this.providerUrl}/authorize?` +
+      `client_id=${this.clientId}&` +
+      `redirect_uri=${encodeURIComponent(this.redirectUri)}&` +
+      `response_type=token&` +
+      `scope=openid profile email&` +
+      `state=${state}`;
+    
+    window.location.href = authUrl;
+  }
+  
+  async handleCallback() {
+    // URLフラグメントからトークンを取得
+    const hash = window.location.hash.substring(1);
+    const params = new URLSearchParams(hash);
+    
+    const accessToken = params.get('access_token');
+    const state = params.get('state');
+    const expiresIn = params.get('expires_in');
+    
+    // stateを検証
+    const storedState = await this.getStoredState();
+    if (state !== storedState) {
+      throw new Error('Invalid state');
+    }
+    
+    // トークンを保存
+    await this.saveTokens({
+      access_token: accessToken,
+      expires_in: parseInt(expiresIn),
+    });
+    
+    return { access_token: accessToken };
+  }
+}
+```
+
+#### 3. クライアントクレデンシャルフロー
+
+**特徴:**
+- サーバー間通信で使用
+- ユーザー認証不要
+- アプリケーション認証のみ
+
+**実装例:**
+
+```javascript
+// クライアントクレデンシャルフローの実装
+class ClientCredentialsFlow {
+  async getAccessToken() {
+    const response = await fetch(`${this.providerUrl}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${btoa(`${this.clientId}:${this.clientSecret}`)}`,
+      },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        scope: 'api:read api:write',
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to get access token');
+    }
+    
+    const tokens = await response.json();
+    
+    // トークンを保存
+    await this.saveTokens(tokens);
+    
+    return tokens;
+  }
+}
+```
+
+### OAuth 2.0のベストプラクティス
+
+#### 1. セキュリティ対策
+
+**セキュリティ対策の実装:**
+
+```javascript
+// OAuth 2.0セキュリティ対策の実装
+class OAuth2Security {
+  async validateClient(clientId, redirectUri) {
+    // クライアントを検証
+    const client = await db.clients.findById(clientId);
+    
+    if (!client) {
+      throw new Error('Invalid client ID');
+    }
+    
+    // リダイレクトURIを検証
+    if (!client.allowedRedirectUris.includes(redirectUri)) {
+      throw new Error('Invalid redirect URI');
+    }
+    
+    return client;
+  }
+  
+  async generateState() {
+    // CSRF対策用のstateを生成
+    return crypto.randomBytes(32).toString('hex');
+  }
+  
+  async generatePKCE() {
+    // PKCE（Proof Key for Code Exchange）を生成
+    const codeVerifier = crypto.randomBytes(32).toString('base64url');
+    const codeChallenge = crypto
+      .createHash('sha256')
+      .update(codeVerifier)
+      .digest('base64url');
+    
+    return {
+      codeVerifier,
+      codeChallenge,
+    };
+  }
+  
+  async validatePKCE(codeVerifier, codeChallenge) {
+    // PKCEを検証
+    const calculatedChallenge = crypto
+      .createHash('sha256')
+      .update(codeVerifier)
+      .digest('base64url');
+    
+    return calculatedChallenge === codeChallenge;
+  }
+}
+```
+
+#### 2. トークンの管理
+
+**トークン管理の実装:**
+
+```javascript
+// OAuth 2.0トークン管理の実装
+class TokenManager {
+  async saveTokens(tokens) {
+    // トークンを暗号化して保存
+    const encryptedAccessToken = await this.encrypt(tokens.access_token);
+    const encryptedRefreshToken = await this.encrypt(tokens.refresh_token);
+    
+    await db.tokens.create({
+      userId: this.getCurrentUserId(),
+      accessToken: encryptedAccessToken,
+      refreshToken: encryptedRefreshToken,
+      expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+      createdAt: new Date(),
+    });
+  }
+  
+  async getAccessToken() {
+    // アクセストークンを取得
+    const token = await db.tokens.findOne({
+      userId: this.getCurrentUserId(),
+      expiresAt: { $gt: new Date() },
+    });
+    
+    if (!token) {
+      // トークンが期限切れの場合、リフレッシュ
+      return await this.refreshToken();
+    }
+    
+    return await this.decrypt(token.accessToken);
+  }
+  
+  async refreshToken() {
+    // リフレッシュトークンでアクセストークンを更新
+    const token = await db.tokens.findOne({
+      userId: this.getCurrentUserId(),
+    });
+    
+    if (!token) {
+      throw new Error('No refresh token found');
+    }
+    
+    const refreshToken = await this.decrypt(token.refreshToken);
+    const newTokens = await oauthClient.refreshAccessToken(refreshToken);
+    
+    await this.saveTokens(newTokens);
+    
+    return newTokens.access_token;
+  }
+}
+```
+
+### まとめ
+
+OAuth 2.0のポイント：
+
+- **認証コードフロー**: 最も安全なフロー、Webアプリケーションで推奨
+- **インプリシットフロー**: シンプルなフロー、モバイルアプリやSPAで使用
+- **クライアントクレデンシャルフロー**: サーバー間通信で使用
+- **セキュリティ**: state、PKCE、適切なトークン管理
+- **トークン管理**: 暗号化、リフレッシュ、適切な有効期限
+
+適切なOAuth 2.0の実装により、セキュアな認証と認可を提供できます。
+

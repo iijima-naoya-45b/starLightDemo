@@ -1,0 +1,492 @@
+---
+title: "SSOとは"
+label: "SSOとは"
+---
+
+## SSO（Single Sign-On）とは
+
+SSO（Single Sign-On）は、1回のログインで複数のアプリケーションやサービスにアクセスできる認証方式です。ユーザーは1つの認証情報で、複数のシステムを利用できます。
+
+### なぜSSOが重要なのか
+
+#### SSOの必要性
+
+**実際の事例:**
+
+ある企業で、従業員が20以上の異なるシステムを使用していました：
+
+- **問題**: 各システムで別々の認証情報が必要
+- **結果**: 
+  - パスワードの管理が困難
+  - パスワードの使い回しが発生
+  - セキュリティリスクの増加
+  - サポートコストの増加
+
+**SSO導入後の効果:**
+- パスワード管理の負担が軽減
+- セキュリティリスクの減少
+- サポートコストの削減（約30%）
+- ユーザー満足度の向上
+
+**教訓:**
+- SSOは、複数システムを利用する環境で必須
+- ユーザー体験とセキュリティの両方を向上させる
+- 運用コストを削減できる
+
+### SSOの仕組み
+
+#### 1. SSOの認証フロー
+
+**基本的な認証フロー:**
+
+```
+1. ユーザーがアプリケーションAにアクセス
+   ↓
+2. アプリケーションAがSSOプロバイダーにリダイレクト
+   ↓
+3. ユーザーがSSOプロバイダーで認証
+   ↓
+4. SSOプロバイダーが認証トークンを発行
+   ↓
+5. ユーザーがアプリケーションAに戻る（トークン付き）
+   ↓
+6. アプリケーションAがトークンを検証
+   ↓
+7. ユーザーがアプリケーションAにアクセス可能
+   ↓
+8. ユーザーがアプリケーションBにアクセス
+   ↓
+9. アプリケーションBも同じトークンを使用（再認証不要）
+```
+
+**実装例:**
+
+```javascript
+// SSOプロバイダー（認証サーバー）の実装
+class SSOProvider {
+  async authenticate(username, password) {
+    // ユーザーを認証
+    const user = await this.verifyCredentials(username, password);
+    
+    if (!user) {
+      throw new Error('Invalid credentials');
+    }
+    
+    // SSOトークンを生成
+    const ssoToken = await this.generateSSOToken(user);
+    
+    // セッションを作成
+    await this.createSession(user.id, ssoToken);
+    
+    return {
+      token: ssoToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+      },
+    };
+  }
+  
+  async generateSSOToken(user) {
+    // JWTトークンを生成
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        email: user.email,
+        name: user.name,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 60 * 60,  // 1時間
+      },
+      process.env.SSO_SECRET_KEY,
+      { algorithm: 'HS256' }
+    );
+    
+    return token;
+  }
+  
+  async validateToken(token) {
+    try {
+      // トークンを検証
+      const decoded = jwt.verify(token, process.env.SSO_SECRET_KEY);
+      
+      // セッションを確認
+      const session = await this.getSession(decoded.userId);
+      if (!session || session.token !== token) {
+        throw new Error('Invalid session');
+      }
+      
+      return decoded;
+    } catch (error) {
+      throw new Error('Invalid token');
+    }
+  }
+}
+```
+
+#### 2. アプリケーション側の実装
+
+**アプリケーション側の実装:**
+
+```javascript
+// アプリケーション側のSSO実装
+class SSOClient {
+  constructor(ssoProviderUrl) {
+    this.ssoProviderUrl = ssoProviderUrl;
+    this.redirectUri = 'https://app.example.com/auth/callback';
+  }
+  
+  async initiateLogin() {
+    // SSOプロバイダーにリダイレクト
+    const authUrl = `${this.ssoProviderUrl}/auth?` +
+      `redirect_uri=${encodeURIComponent(this.redirectUri)}&` +
+      `client_id=${process.env.SSO_CLIENT_ID}`;
+    
+    // ブラウザをリダイレクト
+    window.location.href = authUrl;
+  }
+  
+  async handleCallback(code) {
+    // 認証コードをトークンに交換
+    const response = await fetch(`${this.ssoProviderUrl}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        code,
+        client_id: process.env.SSO_CLIENT_ID,
+        client_secret: process.env.SSO_CLIENT_SECRET,
+        redirect_uri: this.redirectUri,
+      }),
+    });
+    
+    const { token } = await response.json();
+    
+    // トークンを検証
+    const user = await this.validateToken(token);
+    
+    // セッションを作成
+    await this.createSession(user, token);
+    
+    return user;
+  }
+  
+  async validateToken(token) {
+    // SSOプロバイダーでトークンを検証
+    const response = await fetch(`${this.ssoProviderUrl}/validate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error('Invalid token');
+    }
+    
+    return await response.json();
+  }
+  
+  async createSession(user, token) {
+    // セッションを作成
+    await db.sessions.create({
+      userId: user.id,
+      ssoToken: token,
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),  // 1時間
+    });
+  }
+}
+```
+
+### SSOのプロトコル
+
+#### 1. SAML（Security Assertion Markup Language）
+
+**SAMLの特徴:**
+- XMLベースのプロトコル
+- エンタープライズ環境で広く使用
+- 高いセキュリティレベル
+
+**SAMLの実装:**
+
+```javascript
+// SAMLの実装例（Node.js + passport-saml）
+const SamlStrategy = require('passport-saml').Strategy;
+
+passport.use(new SamlStrategy({
+  entryPoint: 'https://sso.example.com/saml/sso',
+  issuer: 'https://app.example.com',
+  callbackUrl: 'https://app.example.com/auth/saml/callback',
+  cert: fs.readFileSync('sso-cert.pem', 'utf8'),
+}, (profile, done) => {
+  // SAMLアサーションからユーザー情報を取得
+  const user = {
+    id: profile.nameID,
+    email: profile.email,
+    name: profile.displayName,
+  };
+  
+  return done(null, user);
+}));
+
+// SAML認証のルート
+app.post('/auth/saml/callback',
+  passport.authenticate('saml', { failureRedirect: '/login' }),
+  (req, res) => {
+    // 認証成功
+    res.redirect('/dashboard');
+  }
+);
+```
+
+#### 2. OpenID Connect（OIDC）
+
+**OpenID Connectの特徴:**
+- OAuth 2.0をベースにした認証プロトコル
+- JSONベースで軽量
+- モダンなアプリケーションで広く使用
+
+**OpenID Connectの実装:**
+
+```javascript
+// OpenID Connectの実装例（Node.js + openid-client）
+const { Issuer, generators } = require('openid-client');
+
+class OIDCClient {
+  async initialize() {
+    // OpenID Connectプロバイダーを発見
+    const issuer = await Issuer.discover('https://sso.example.com');
+    
+    // クライアントを作成
+    this.client = new issuer.Client({
+      client_id: process.env.OIDC_CLIENT_ID,
+      client_secret: process.env.OIDC_CLIENT_SECRET,
+      redirect_uris: ['https://app.example.com/auth/oidc/callback'],
+      response_types: ['code'],
+    });
+  }
+  
+  async initiateLogin() {
+    // 認証コードを生成
+    const codeVerifier = generators.codeVerifier();
+    const codeChallenge = generators.codeChallenge(codeVerifier);
+    
+    // 認証URLを生成
+    const authUrl = this.client.authorizationUrl({
+      redirect_uri: 'https://app.example.com/auth/oidc/callback',
+      scope: 'openid profile email',
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+    });
+    
+    // セッションにcode_verifierを保存
+    await this.saveCodeVerifier(codeVerifier);
+    
+    return authUrl;
+  }
+  
+  async handleCallback(code) {
+    // 認証コードをトークンに交換
+    const params = {
+      code,
+      redirect_uri: 'https://app.example.com/auth/oidc/callback',
+      code_verifier: await this.getCodeVerifier(),
+    };
+    
+    const tokenSet = await this.client.callback(
+      'https://app.example.com/auth/oidc/callback',
+      params
+    );
+    
+    // ユーザー情報を取得
+    const userInfo = await this.client.userinfo(tokenSet.access_token);
+    
+    return {
+      user: userInfo,
+      tokenSet,
+    };
+  }
+}
+```
+
+#### 3. OAuth 2.0
+
+**OAuth 2.0の特徴:**
+- 認可プロトコル（認証も可能）
+- 広く採用されている標準プロトコル
+- モバイルアプリでも使用可能
+
+**OAuth 2.0の実装:**
+
+```javascript
+// OAuth 2.0の実装例
+class OAuth2SSO {
+  async initiateLogin() {
+    // 認証URLを生成
+    const authUrl = `${this.providerUrl}/authorize?` +
+      `client_id=${this.clientId}&` +
+      `redirect_uri=${encodeURIComponent(this.redirectUri)}&` +
+      `response_type=code&` +
+      `scope=openid profile email`;
+    
+    return authUrl;
+  }
+  
+  async handleCallback(code) {
+    // 認証コードをトークンに交換
+    const tokenResponse = await fetch(`${this.providerUrl}/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: this.redirectUri,
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+      }),
+    });
+    
+    const tokens = await tokenResponse.json();
+    
+    // ユーザー情報を取得
+    const userResponse = await fetch(`${this.providerUrl}/userinfo`, {
+      headers: {
+        'Authorization': `Bearer ${tokens.access_token}`,
+      },
+    });
+    
+    const user = await userResponse.json();
+    
+    return {
+      user,
+      tokens,
+    };
+  }
+}
+```
+
+### SSOのベストプラクティス
+
+#### 1. セッション管理
+
+**セッション管理の実装:**
+
+```javascript
+// SSOセッション管理の実装
+class SSOSessionManager {
+  async createSSOSession(userId, ssoToken) {
+    // SSOセッションを作成
+    const sessionId = this.generateSessionId();
+    
+    await db.ssoSessions.create({
+      sessionId,
+      userId,
+      ssoToken,
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000),  // 8時間
+      lastAccessedAt: new Date(),
+    });
+    
+    return sessionId;
+  }
+  
+  async validateSSOSession(sessionId) {
+    // SSOセッションを検証
+    const session = await db.ssoSessions.findOne({
+      sessionId,
+      expiresAt: { $gt: new Date() },
+      revoked: false,
+    });
+    
+    if (!session) {
+      throw new Error('Invalid or expired session');
+    }
+    
+    // 最終アクセス時刻を更新
+    await db.ssoSessions.update(session.id, {
+      lastAccessedAt: new Date(),
+    });
+    
+    return session;
+  }
+  
+  async revokeSSOSession(sessionId) {
+    // SSOセッションを無効化
+    await db.ssoSessions.update(
+      { sessionId },
+      { revoked: true, revokedAt: new Date() }
+    );
+  }
+  
+  async revokeAllUserSessions(userId) {
+    // ユーザーのすべてのSSOセッションを無効化
+    await db.ssoSessions.update(
+      { userId, revoked: false },
+      { revoked: true, revokedAt: new Date() }
+    );
+  }
+}
+```
+
+#### 2. セキュリティ対策
+
+**セキュリティ対策の実装:**
+
+```javascript
+// SSOセキュリティ対策の実装
+class SSOSecurity {
+  async validateRequest(request) {
+    // 1. CSRF対策（stateパラメータの検証）
+    const storedState = await this.getStoredState(request.sessionId);
+    if (request.state !== storedState) {
+      throw new Error('Invalid state parameter');
+    }
+    
+    // 2. リダイレクトURIの検証
+    if (!this.isValidRedirectUri(request.redirectUri)) {
+      throw new Error('Invalid redirect URI');
+    }
+    
+    // 3. クライアントIDの検証
+    if (!await this.isValidClient(request.clientId)) {
+      throw new Error('Invalid client ID');
+    }
+    
+    return true;
+  }
+  
+  async generateState() {
+    // CSRF対策用のstateを生成
+    const state = crypto.randomBytes(32).toString('hex');
+    return state;
+  }
+  
+  isValidRedirectUri(redirectUri) {
+    // 登録済みのリダイレクトURIか確認
+    const allowedUris = [
+      'https://app1.example.com/auth/callback',
+      'https://app2.example.com/auth/callback',
+    ];
+    
+    return allowedUris.includes(redirectUri);
+  }
+}
+```
+
+### まとめ
+
+SSOのポイント：
+
+- **利便性**: 1回のログインで複数システムにアクセス
+- **セキュリティ**: 一元化された認証管理
+- **コスト削減**: パスワード管理とサポートコストの削減
+- **プロトコル**: SAML、OpenID Connect、OAuth 2.0など
+- **セッション管理**: 適切なセッション管理でセキュリティを確保
+
+適切なSSOの実装により、ユーザー体験を向上させながら、セキュリティを確保できます。
+

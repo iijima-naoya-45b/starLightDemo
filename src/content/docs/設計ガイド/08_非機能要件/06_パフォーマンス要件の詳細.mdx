@@ -1,0 +1,430 @@
+---
+title: "パフォーマンス要件の詳細"
+label: "パフォーマンス要件の詳細"
+---
+
+## パフォーマンス要件の詳細
+
+パフォーマンス要件は、システムの応答速度とスループットを定義する重要な要件です。適切なパフォーマンス要件を設定することで、ユーザー体験を向上させ、システムの効率を最大化できます。
+
+### なぜパフォーマンス要件が重要なのか
+
+#### パフォーマンスの影響
+
+**実際のデータ:**
+
+- **ページの読み込み時間が1秒増加すると、コンバージョン率が7%低下する**（Amazonの調査）
+- **モバイルサイトの読み込み時間が3秒を超えると、53%のユーザーが離脱する**（Googleの調査）
+- **レスポンスタイムが2秒から8秒に増加すると、離脱率が30%増加する**（Akamaiの調査）
+
+**ビジネスへの影響:**
+
+- **売上の減少**: パフォーマンスが低いと、コンバージョン率が低下し、売上が減少する
+- **ユーザー満足度の低下**: 遅いシステムは、ユーザー満足度を低下させる
+- **コストの増加**: パフォーマンスが低いと、サーバーリソースを増強する必要があり、コストが増加する
+
+### パフォーマンス要件の定義
+
+#### 1. レスポンスタイム要件
+
+**レスポンスタイムの目標値:**
+
+```markdown
+# レスポンスタイム要件
+
+## Webアプリケーション
+- **初回表示時間（FCP）**: 1.8秒以内
+- **最大コンテンツ表示時間（LCP）**: 2.5秒以内
+- **First Input Delay（FID）**: 100ミリ秒以内
+- **Cumulative Layout Shift（CLS）**: 0.1以下
+
+## API
+- **単純なGETリクエスト**: 100ミリ秒以内
+- **複雑なGETリクエスト**: 500ミリ秒以内
+- **POST/PUT/DELETEリクエスト**: 1秒以内
+- **バッチ処理**: 5秒以内
+
+## データベース
+- **単純なSELECT**: 10ミリ秒以内
+- **複雑なJOIN**: 100ミリ秒以内
+- **INSERT/UPDATE**: 50ミリ秒以内
+- **バッチ処理**: 1秒以内
+```
+
+**レスポンスタイムの測定:**
+
+```javascript
+// レスポンスタイムの測定
+class PerformanceMonitor {
+  async measureResponseTime(endpoint, method = 'GET', data = null) {
+    const startTime = performance.now();
+    
+    try {
+      const response = await fetch(endpoint, {
+        method,
+        body: data ? JSON.stringify(data) : null,
+      });
+      
+      const endTime = performance.now();
+      const responseTime = endTime - startTime;
+      
+      // メトリクスを記録
+      await this.recordMetric({
+        endpoint,
+        method,
+        responseTime,
+        status: response.status,
+        timestamp: new Date(),
+      });
+      
+      // 目標値を超えた場合はアラート
+      const target = this.getTargetResponseTime(endpoint, method);
+      if (responseTime > target) {
+        await this.sendAlert({
+          type: 'slow_response',
+          endpoint,
+          method,
+          responseTime,
+          target,
+        });
+      }
+      
+      return response;
+    } catch (error) {
+      const endTime = performance.now();
+      const responseTime = endTime - startTime;
+      
+      await this.recordMetric({
+        endpoint,
+        method,
+        responseTime,
+        status: 'error',
+        error: error.message,
+        timestamp: new Date(),
+      });
+      
+      throw error;
+    }
+  }
+  
+  getTargetResponseTime(endpoint, method) {
+    // エンドポイントとメソッドに応じた目標値を返す
+    if (method === 'GET') {
+      if (endpoint.includes('/api/users/')) {
+        return 100;  // 100ミリ秒
+      }
+      return 500;  // 500ミリ秒
+    }
+    
+    if (method === 'POST' || method === 'PUT' || method === 'DELETE') {
+      return 1000;  // 1秒
+    }
+    
+    return 5000;  // 5秒
+  }
+}
+```
+
+#### 2. スループット要件
+
+**スループットの目標値:**
+
+```markdown
+# スループット要件
+
+## Webアプリケーション
+- **同時接続数**: 10,000接続
+- **リクエスト/秒**: 1,000リクエスト/秒
+- **ページビュー/秒**: 500ページビュー/秒
+
+## API
+- **リクエスト/秒**: 5,000リクエスト/秒
+- **トランザクション/秒**: 1,000トランザクション/秒
+
+## データベース
+- **クエリ/秒**: 10,000クエリ/秒
+- **トランザクション/秒**: 5,000トランザクション/秒
+```
+
+**スループットの測定:**
+
+```javascript
+// スループットの測定
+class ThroughputMonitor {
+  constructor() {
+    this.requestCounts = new Map();
+    this.interval = 1000;  // 1秒ごとに測定
+  }
+  
+  startMonitoring() {
+    setInterval(() => {
+      this.calculateThroughput();
+    }, this.interval);
+  }
+  
+  recordRequest(endpoint) {
+    const now = Date.now();
+    const key = `${endpoint}:${Math.floor(now / this.interval)}`;
+    
+    const count = this.requestCounts.get(key) || 0;
+    this.requestCounts.set(key, count + 1);
+  }
+  
+  calculateThroughput() {
+    const now = Date.now();
+    const currentWindow = Math.floor(now / this.interval);
+    
+    // 現在のウィンドウのリクエスト数を取得
+    const requests = Array.from(this.requestCounts.entries())
+      .filter(([key]) => {
+        const window = parseInt(key.split(':')[1]);
+        return window === currentWindow;
+      })
+      .reduce((sum, [, count]) => sum + count, 0);
+    
+    // スループットを記録
+    this.recordThroughput(requests);
+    
+    // 目標値を超えた場合はアラート
+    const target = 1000;  // 1,000リクエスト/秒
+    if (requests > target) {
+      await this.sendAlert({
+        type: 'high_throughput',
+        throughput: requests,
+        target,
+      });
+    }
+    
+    // 古いデータを削除
+    this.cleanupOldData(currentWindow);
+  }
+  
+  cleanupOldData(currentWindow) {
+    // 5分以上古いデータを削除
+    const threshold = currentWindow - 300;
+    
+    for (const [key] of this.requestCounts.entries()) {
+      const window = parseInt(key.split(':')[1]);
+      if (window < threshold) {
+        this.requestCounts.delete(key);
+      }
+    }
+  }
+}
+```
+
+#### 3. リソース使用率要件
+
+**リソース使用率の目標値:**
+
+```markdown
+# リソース使用率要件
+
+## CPU
+- **平均使用率**: 70%以下
+- **ピーク使用率**: 90%以下
+- **アイドル時間**: 10%以上
+
+## メモリ
+- **平均使用率**: 80%以下
+- **ピーク使用率**: 95%以下
+- **スワップ使用**: 0%
+
+## ディスク
+- **I/O使用率**: 80%以下
+- **ディスク使用率**: 85%以下
+- **空き容量**: 15%以上
+
+## ネットワーク
+- **帯域幅使用率**: 80%以下
+- **パケット損失率**: 0.1%以下
+```
+
+**リソース使用率の測定:**
+
+```javascript
+// リソース使用率の測定
+class ResourceMonitor {
+  async measureResourceUsage() {
+    // CPU使用率を測定
+    const cpuUsage = await this.measureCPUUsage();
+    
+    // メモリ使用率を測定
+    const memoryUsage = await this.measureMemoryUsage();
+    
+    // ディスク使用率を測定
+    const diskUsage = await this.measureDiskUsage();
+    
+    // ネットワーク使用率を測定
+    const networkUsage = await this.measureNetworkUsage();
+    
+    // メトリクスを記録
+    await this.recordMetrics({
+      cpu: cpuUsage,
+      memory: memoryUsage,
+      disk: diskUsage,
+      network: networkUsage,
+      timestamp: new Date(),
+    });
+    
+    // 目標値を超えた場合はアラート
+    await this.checkThresholds({
+      cpu: cpuUsage,
+      memory: memoryUsage,
+      disk: diskUsage,
+      network: networkUsage,
+    });
+  }
+  
+  async checkThresholds(usage) {
+    const thresholds = {
+      cpu: { average: 70, peak: 90 },
+      memory: { average: 80, peak: 95 },
+      disk: { average: 85, peak: 95 },
+      network: { average: 80, peak: 90 },
+    };
+    
+    for (const [resource, values] of Object.entries(usage)) {
+      const threshold = thresholds[resource];
+      
+      if (values.average > threshold.average) {
+        await this.sendAlert({
+          type: 'high_resource_usage',
+          resource,
+          usage: values.average,
+          threshold: threshold.average,
+        });
+      }
+      
+      if (values.peak > threshold.peak) {
+        await this.sendAlert({
+          type: 'peak_resource_usage',
+          resource,
+          usage: values.peak,
+          threshold: threshold.peak,
+        });
+      }
+    }
+  }
+}
+```
+
+### パフォーマンス要件の実装
+
+#### 1. キャッシング戦略
+
+**キャッシングの実装:**
+
+```javascript
+// キャッシング戦略の実装
+class CachingStrategy {
+  constructor() {
+    this.cache = new Map();
+    this.ttl = 5 * 60 * 1000;  // 5分
+  }
+  
+  async get(key) {
+    const cached = this.cache.get(key);
+    
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value;
+    }
+    
+    // キャッシュが無効または期限切れ
+    this.cache.delete(key);
+    return null;
+  }
+  
+  async set(key, value, ttl = this.ttl) {
+    this.cache.set(key, {
+      value,
+      expiresAt: Date.now() + ttl,
+    });
+  }
+  
+  async getOrFetch(key, fetchFn, ttl = this.ttl) {
+    // キャッシュから取得を試みる
+    const cached = await this.get(key);
+    if (cached !== null) {
+      return cached;
+    }
+    
+    // キャッシュにない場合は取得
+    const value = await fetchFn();
+    
+    // キャッシュに保存
+    await this.set(key, value, ttl);
+    
+    return value;
+  }
+}
+```
+
+#### 2. データベース最適化
+
+**データベース最適化の実装:**
+
+```javascript
+// データベース最適化の実装
+class DatabaseOptimizer {
+  async optimizeQuery(query) {
+    // 1. インデックスの確認
+    const indexes = await this.checkIndexes(query);
+    if (!indexes.optimal) {
+      await this.suggestIndexes(query, indexes);
+    }
+    
+    // 2. クエリプランの確認
+    const plan = await this.explainQuery(query);
+    if (plan.cost > 1000) {
+      await this.optimizeQueryPlan(query, plan);
+    }
+    
+    // 3. N+1問題の検出
+    const nPlusOne = await this.detectNPlusOne(query);
+    if (nPlusOne.detected) {
+      await this.fixNPlusOne(query, nPlusOne);
+    }
+    
+    return query;
+  }
+  
+  async checkIndexes(query) {
+    // クエリで使用されるカラムのインデックスを確認
+    const columns = this.extractColumns(query);
+    const indexes = await db.indexes.find({ columns });
+    
+    return {
+      optimal: indexes.length > 0,
+      indexes,
+    };
+  }
+  
+  async detectNPlusOne(query) {
+    // N+1問題を検出
+    // 例: ユーザー一覧を取得し、各ユーザーの注文を個別に取得
+    const pattern = /SELECT.*FROM users.*SELECT.*FROM orders.*WHERE.*user_id/;
+    
+    return {
+      detected: pattern.test(query),
+      suggestions: [
+        'JOINを使用して1回のクエリで取得',
+        'prefetch_relatedを使用',
+      ],
+    };
+  }
+}
+```
+
+### まとめ
+
+パフォーマンス要件のポイント：
+
+- **レスポンスタイム**: 目標値を設定し、継続的に測定
+- **スループット**: 同時接続数とリクエスト/秒を定義
+- **リソース使用率**: CPU、メモリ、ディスク、ネットワークの使用率を監視
+- **キャッシング**: 適切なキャッシング戦略でパフォーマンスを向上
+- **データベース最適化**: インデックス、クエリプラン、N+1問題の対策
+
+適切なパフォーマンス要件を設定し、実装することで、ユーザー体験を向上させ、システムの効率を最大化できます。
+

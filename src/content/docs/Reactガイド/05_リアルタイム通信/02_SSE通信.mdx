@@ -1,0 +1,641 @@
+---
+title: "SSE（Server-Sent Events）通信"
+label: "SSE（Server-Sent Events）通信"
+---
+
+## SSE（Server-Sent Events）通信
+
+SSE（Server-Sent Events）は、サーバーからクライアントへの一方向のリアルタイム通信を実現するプロトコルです。WebSocketと異なり、サーバーからクライアントへのプッシュのみをサポートします。
+
+### なぜSSEが必要なのか
+
+#### SSEとWebSocketの違い
+
+**SSEの特徴:**
+- **一方向通信**: サーバーからクライアントへのみ
+- **HTTPベース**: HTTPプロトコルを使用
+- **自動再接続**: ブラウザが自動的に再接続
+- **シンプル**: 実装が簡単
+
+**WebSocketの特徴:**
+- **双方向通信**: クライアントとサーバーの双方向
+- **独自プロトコル**: WebSocketプロトコルを使用
+- **手動再接続**: 手動で再接続ロジックを実装
+- **複雑**: 実装が複雑
+
+**使い分け:**
+- **SSE**: サーバーからクライアントへのプッシュのみ必要な場合（通知、ログストリームなど）
+- **WebSocket**: 双方向通信が必要な場合（チャット、ゲームなど）
+
+### ReactでのSSE実装
+
+#### 1. 基本的なSSEフック
+
+**カスタムフックの実装:**
+
+```typescript
+// hooks/useSSE.ts
+import { useEffect, useRef, useState, useCallback } from 'react';
+
+interface UseSSEOptions {
+  url: string;
+  withCredentials?: boolean;
+  onOpen?: () => void;
+  onError?: (error: Event) => void;
+  onMessage?: (data: any) => void;
+}
+
+export function useSSE<T = any>(options: UseSSEOptions) {
+  const {
+    url,
+    withCredentials = false,
+    onOpen,
+    onError,
+    onMessage,
+  } = options;
+
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastMessage, setLastMessage] = useState<T | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+
+  const connect = useCallback(() => {
+    try {
+      const eventSource = new EventSource(url, {
+        withCredentials,
+      });
+
+      eventSourceRef.current = eventSource;
+
+      eventSource.onopen = () => {
+        setIsConnected(true);
+        onOpen?.();
+      };
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data) as T;
+          setLastMessage(data);
+          onMessage?.(data);
+        } catch (error) {
+          console.error('Failed to parse SSE message:', error);
+        }
+      };
+
+      eventSource.onerror = (error) => {
+        console.error('SSE error:', error);
+        setIsConnected(false);
+        onError?.(error);
+      };
+    } catch (error) {
+      console.error('Failed to create EventSource:', error);
+    }
+  }, [url, withCredentials, onOpen, onError, onMessage]);
+
+  const disconnect = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+      setIsConnected(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    connect();
+
+    return () => {
+      disconnect();
+    };
+  }, [connect, disconnect]);
+
+  return {
+    isConnected,
+    lastMessage,
+    reconnect: connect,
+    disconnect,
+  };
+}
+```
+
+#### 2. SSEフックの使用例
+
+**リアルタイム通知の実装:**
+
+```typescript
+// components/RealtimeNotifications.tsx
+import React, { useState, useEffect } from 'react';
+import { useSSE } from '../hooks/useSSE';
+
+interface Notification {
+  id: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  message: string;
+  timestamp: number;
+}
+
+export function RealtimeNotifications() {
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  const { isConnected, lastMessage } = useSSE<Notification>({
+    url: 'http://localhost:3000/api/notifications/stream',
+    onMessage: (data) => {
+      setNotifications((prev) => [data, ...prev]);
+
+      // 5秒後に自動的に削除
+      setTimeout(() => {
+        setNotifications((prev) =>
+          prev.filter((n) => n.id !== data.id)
+        );
+      }, 5000);
+    },
+  });
+
+  const handleDismiss = (id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
+  return (
+    <div className="notifications">
+      <div className="notifications-header">
+        <h3>通知</h3>
+        <div className={`status ${isConnected ? 'connected' : 'disconnected'}`}>
+          {isConnected ? '接続中' : '切断中'}
+        </div>
+      </div>
+
+      <div className="notifications-list">
+        {notifications.map((notification) => (
+          <div
+            key={notification.id}
+            className={`notification notification-${notification.type}`}
+          >
+            <div className="notification-message">{notification.message}</div>
+            <div className="notification-time">
+              {new Date(notification.timestamp).toLocaleTimeString()}
+            </div>
+            <button onClick={() => handleDismiss(notification.id)}>
+              閉じる
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+**ログストリームの実装:**
+
+```typescript
+// components/LogStream.tsx
+import React, { useState, useEffect, useRef } from 'react';
+import { useSSE } from '../hooks/useSSE';
+
+interface LogEntry {
+  id: string;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+  timestamp: number;
+}
+
+export function LogStream() {
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  const { isConnected, lastMessage } = useSSE<LogEntry>({
+    url: 'http://localhost:3000/api/logs/stream',
+    onMessage: (data) => {
+      setLogs((prev) => {
+        const newLogs = [...prev, data];
+        // 最大1000件まで保持
+        return newLogs.slice(-1000);
+      });
+    },
+  });
+
+  // 自動スクロール
+  useEffect(() => {
+    if (autoScroll && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, autoScroll]);
+
+  const handleClear = () => {
+    setLogs([]);
+  };
+
+  return (
+    <div className="log-stream">
+      <div className="log-stream-header">
+        <h3>ログストリーム</h3>
+        <div className="log-stream-controls">
+          <label>
+            <input
+              type="checkbox"
+              checked={autoScroll}
+              onChange={(e) => setAutoScroll(e.target.checked)}
+            />
+            自動スクロール
+          </label>
+          <button onClick={handleClear}>クリア</button>
+          <div className={`status ${isConnected ? 'connected' : 'disconnected'}`}>
+            {isConnected ? '接続中' : '切断中'}
+          </div>
+        </div>
+      </div>
+
+      <div className="log-stream-content">
+        {logs.map((log) => (
+          <div key={log.id} className={`log-entry log-${log.level}`}>
+            <span className="log-time">
+              {new Date(log.timestamp).toLocaleTimeString()}
+            </span>
+            <span className="log-level">{log.level.toUpperCase()}</span>
+            <span className="log-message">{log.message}</span>
+          </div>
+        ))}
+        <div ref={logsEndRef} />
+      </div>
+    </div>
+  );
+}
+```
+
+#### 3. カスタムイベントの処理
+
+**カスタムイベントの実装:**
+
+```typescript
+// hooks/useSSEWithEvents.ts
+import { useEffect, useRef, useState, useCallback } from 'react';
+
+interface UseSSEWithEventsOptions {
+  url: string;
+  events?: string[];
+  onOpen?: () => void;
+  onError?: (error: Event) => void;
+}
+
+export function useSSEWithEvents<T = any>(
+  options: UseSSEWithEventsOptions
+) {
+  const { url, events = [], onOpen, onError } = options;
+
+  const [isConnected, setIsConnected] = useState(false);
+  const [messages, setMessages] = useState<Map<string, T>>(new Map());
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const handlersRef = useRef<Map<string, (data: T) => void>>(new Map());
+
+  const connect = useCallback(() => {
+    try {
+      const eventSource = new EventSource(url);
+      eventSourceRef.current = eventSource;
+
+      eventSource.onopen = () => {
+        setIsConnected(true);
+        onOpen?.();
+      };
+
+      // デフォルトのメッセージイベント
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data) as T;
+          setMessages((prev) => {
+            const newMap = new Map(prev);
+            newMap.set('message', data);
+            return newMap;
+          });
+        } catch (error) {
+          console.error('Failed to parse SSE message:', error);
+        }
+      };
+
+      // カスタムイベント
+      events.forEach((eventName) => {
+        eventSource.addEventListener(eventName, (event: MessageEvent) => {
+          try {
+            const data = JSON.parse(event.data) as T;
+            setMessages((prev) => {
+              const newMap = new Map(prev);
+              newMap.set(eventName, data);
+              return newMap;
+            });
+
+            // ハンドラーを実行
+            const handler = handlersRef.current.get(eventName);
+            if (handler) {
+              handler(data);
+            }
+          } catch (error) {
+            console.error(`Failed to parse SSE event ${eventName}:`, error);
+          }
+        });
+      });
+
+      eventSource.onerror = (error) => {
+        console.error('SSE error:', error);
+        setIsConnected(false);
+        onError?.(error);
+      };
+    } catch (error) {
+      console.error('Failed to create EventSource:', error);
+    }
+  }, [url, events, onOpen, onError]);
+
+  const on = useCallback((eventName: string, handler: (data: T) => void) => {
+    handlersRef.current.set(eventName, handler);
+  }, []);
+
+  const off = useCallback((eventName: string) => {
+    handlersRef.current.delete(eventName);
+  }, []);
+
+  const disconnect = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+      setIsConnected(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    connect();
+
+    return () => {
+      disconnect();
+    };
+  }, [connect, disconnect]);
+
+  return {
+    isConnected,
+    messages,
+    on,
+    off,
+    reconnect: connect,
+    disconnect,
+  };
+}
+```
+
+**カスタムイベントの使用例:**
+
+```typescript
+// components/StockPrice.tsx
+import React, { useEffect, useState } from 'react';
+import { useSSEWithEvents } from '../hooks/useSSEWithEvents';
+
+interface StockPrice {
+  symbol: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  timestamp: number;
+}
+
+export function StockPrice({ symbol }: { symbol: string }) {
+  const [price, setPrice] = useState<StockPrice | null>(null);
+
+  const { isConnected, messages, on } = useSSEWithEvents<StockPrice>({
+    url: `http://localhost:3000/api/stocks/${symbol}/stream`,
+    events: ['price', 'error'],
+  });
+
+  useEffect(() => {
+    // 価格イベントをリッスン
+    on('price', (data) => {
+      setPrice(data);
+    });
+
+    // エラーイベントをリッスン
+    on('error', (error) => {
+      console.error('Stock price error:', error);
+    });
+  }, [on]);
+
+  // メッセージからも価格を取得
+  useEffect(() => {
+    const priceMessage = messages.get('price');
+    if (priceMessage) {
+      setPrice(priceMessage);
+    }
+  }, [messages]);
+
+  if (!price) {
+    return <div>読み込み中...</div>;
+  }
+
+  const changeColor = price.change >= 0 ? 'green' : 'red';
+
+  return (
+    <div className="stock-price">
+      <div className="stock-symbol">{symbol}</div>
+      <div className="stock-price-value">${price.price.toFixed(2)}</div>
+      <div className={`stock-change ${changeColor}`}>
+        {price.change >= 0 ? '+' : ''}
+        {price.change.toFixed(2)} ({price.changePercent.toFixed(2)}%)
+      </div>
+      <div className={`status ${isConnected ? 'connected' : 'disconnected'}`}>
+        {isConnected ? '接続中' : '切断中'}
+      </div>
+    </div>
+  );
+}
+```
+
+### SSEのベストプラクティス
+
+#### 1. 接続管理とリトライ
+
+**接続管理とリトライの実装:**
+
+```typescript
+// hooks/useSSEWithRetry.ts
+import { useEffect, useRef, useState, useCallback } from 'react';
+
+interface RetryOptions {
+  maxRetries?: number;
+  retryDelay?: number;
+  exponentialBackoff?: boolean;
+}
+
+export function useSSEWithRetry<T = any>(
+  url: string,
+  retryOptions: RetryOptions = {}
+) {
+  const {
+    maxRetries = 5,
+    retryDelay = 1000,
+    exponentialBackoff = true,
+  } = retryOptions;
+
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastMessage, setLastMessage] = useState<T | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<NodeJS.Timeout>();
+
+  const connect = useCallback(() => {
+    try {
+      const eventSource = new EventSource(url);
+      eventSourceRef.current = eventSource;
+
+      eventSource.onopen = () => {
+        setIsConnected(true);
+        retryCountRef.current = 0; // リトライカウントをリセット
+      };
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data) as T;
+          setLastMessage(data);
+        } catch (error) {
+          console.error('Failed to parse SSE message:', error);
+        }
+      };
+
+      eventSource.onerror = (error) => {
+        console.error('SSE error:', error);
+        setIsConnected(false);
+        eventSource.close();
+
+        // リトライ
+        if (retryCountRef.current < maxRetries) {
+          const delay = exponentialBackoff
+            ? retryDelay * Math.pow(2, retryCountRef.current)
+            : retryDelay;
+
+          retryTimeoutRef.current = setTimeout(() => {
+            retryCountRef.current++;
+            connect();
+          }, delay);
+        } else {
+          console.error('Max retries reached');
+        }
+      };
+    } catch (error) {
+      console.error('Failed to create EventSource:', error);
+    }
+  }, [url, maxRetries, retryDelay, exponentialBackoff]);
+
+  const disconnect = useCallback(() => {
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+    }
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+      setIsConnected(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    connect();
+
+    return () => {
+      disconnect();
+    };
+  }, [connect, disconnect]);
+
+  return {
+    isConnected,
+    lastMessage,
+    reconnect: connect,
+    disconnect,
+  };
+}
+```
+
+#### 2. 認証付きSSE
+
+**認証付きSSEの実装:**
+
+```typescript
+// hooks/useAuthenticatedSSE.ts
+import { useEffect, useRef, useState, useCallback } from 'react';
+
+interface AuthenticatedSSEOptions {
+  url: string;
+  token: string;
+  onOpen?: () => void;
+  onError?: (error: Event) => void;
+}
+
+export function useAuthenticatedSSE<T = any>(
+  options: AuthenticatedSSEOptions
+) {
+  const { url, token, onOpen, onError } = options;
+
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastMessage, setLastMessage] = useState<T | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+
+  const connect = useCallback(() => {
+    try {
+      // トークンをクエリパラメータまたはヘッダーで送信
+      const authenticatedUrl = `${url}?token=${encodeURIComponent(token)}`;
+      const eventSource = new EventSource(authenticatedUrl);
+      eventSourceRef.current = eventSource;
+
+      eventSource.onopen = () => {
+        setIsConnected(true);
+        onOpen?.();
+      };
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data) as T;
+          setLastMessage(data);
+        } catch (error) {
+          console.error('Failed to parse SSE message:', error);
+        }
+      };
+
+      eventSource.onerror = (error) => {
+        console.error('SSE error:', error);
+        setIsConnected(false);
+        onError?.(error);
+      };
+    } catch (error) {
+      console.error('Failed to create EventSource:', error);
+    }
+  }, [url, token, onOpen, onError]);
+
+  const disconnect = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+      setIsConnected(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (token) {
+      connect();
+    }
+
+    return () => {
+      disconnect();
+    };
+  }, [connect, disconnect, token]);
+
+  return {
+    isConnected,
+    lastMessage,
+    reconnect: connect,
+    disconnect,
+  };
+}
+```
+
+### まとめ
+
+ReactでのSSE通信のポイント：
+
+- **カスタムフック**: `useSSE`でSSE接続を管理
+- **自動再接続**: EventSourceが自動的に再接続
+- **カスタムイベント**: 複数のイベントタイプを処理
+- **認証**: トークンベースの認証をサポート
+- **エラーハンドリング**: エラーハンドリングとリトライロジック
+
+適切なSSE実装により、サーバーからクライアントへのリアルタイムプッシュを実現できます。
+

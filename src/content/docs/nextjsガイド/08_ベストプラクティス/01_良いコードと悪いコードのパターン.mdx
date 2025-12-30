@@ -1,0 +1,717 @@
+---
+title: "良いコードと悪いコードのパターン"
+label: "良いコードと悪いコードのパターン"
+---
+
+## 良いコードと悪いコードのパターン
+
+Next.js開発において、良いコードと悪いコードのパターンを理解することで、保守性の高いアプリケーションを構築できます。ここでは、よくある問題のあるコードと、それを改善した良いコードを対比して説明します。
+
+### なぜコードの品質が重要なのか
+
+#### 悪いコードによる問題
+
+**実際の事例:**
+
+あるNext.jsプロジェクトで、コードの品質が低かったため、以下の問題が発生しました：
+
+- **パフォーマンスの問題**: ページの読み込みが遅い
+- **SEOの問題**: 検索エンジンにインデックスされない
+- **開発速度の低下**: 新機能の追加に時間がかかる
+- **デプロイの問題**: ビルドエラーが頻発
+
+**教訓:**
+- 良いコードパターンを理解し、実践することが重要
+- Next.jsの特性を理解し、適切に活用することが重要
+
+### パターン1: データフェッチング
+
+#### 悪いコード: クライアント側でのデータフェッチング
+
+**問題のある実装:**
+
+```typescript
+// 悪いコード: クライアント側でデータフェッチング
+'use client';
+
+function ProductList() {
+  const [products, setProducts] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    // 問題: クライアント側でデータフェッチング
+    fetch('/api/products')
+      .then(res => res.json())
+      .then(data => {
+        setProducts(data);
+        setIsLoading(false);
+      });
+  }, []);
+
+  if (isLoading) {
+    return <div>読み込み中...</div>;
+  }
+
+  return (
+    <div>
+      {products.map(product => (
+        <div key={product.id}>{product.name}</div>
+      ))}
+    </div>
+  );
+}
+
+// 問題点:
+// - SEOに不利（初期HTMLにデータが含まれない）
+// - パフォーマンスが悪い（クライアント側でデータ取得）
+// - ローディング状態が表示される（ユーザー体験が悪い）
+// - クローラーがデータを取得できない
+```
+
+**なぜ悪いのか:**
+
+- **SEOの問題**: 初期HTMLにデータが含まれないため、検索エンジンがインデックスできない
+- **パフォーマンス**: クライアント側でデータを取得するため、表示が遅い
+- **ユーザー体験**: ローディング状態が表示され、ユーザー体験が悪い
+
+#### 良いコード: サーバー側でのデータフェッチング
+
+**改善された実装:**
+
+```typescript
+// 良いコード: サーバー側でデータフェッチング
+
+// 1. Server Componentでデータフェッチング
+async function ProductList() {
+  // サーバー側でデータを取得
+  const products = await fetch('https://api.example.com/products', {
+    next: { revalidate: 60 }, // ISR: 60秒ごとに再検証
+  }).then(res => res.json());
+
+  return (
+    <div>
+      {products.map(product => (
+        <ProductItem key={product.id} product={product} />
+      ))}
+    </div>
+  );
+}
+
+// 2. 動的ルートでのデータフェッチング
+async function ProductDetail({ params }: { params: { id: string } }) {
+  // サーバー側でデータを取得
+  const product = await fetch(`https://api.example.com/products/${params.id}`, {
+    cache: 'no-store', // SSGを無効化（動的データ）
+  }).then(res => res.json());
+
+  if (!product) {
+    notFound(); // 404ページを表示
+  }
+
+  return (
+    <div>
+      <h1>{product.name}</h1>
+      <p>{product.description}</p>
+    </div>
+  );
+}
+
+// 3. 並列データフェッチング
+async function ProductPage({ params }: { params: { id: string } }) {
+  // 並列でデータを取得（Promise.all）
+  const [product, reviews, relatedProducts] = await Promise.all([
+    fetch(`https://api.example.com/products/${params.id}`).then(res => res.json()),
+    fetch(`https://api.example.com/products/${params.id}/reviews`).then(res => res.json()),
+    fetch(`https://api.example.com/products/${params.id}/related`).then(res => res.json()),
+  ]);
+
+  return (
+    <div>
+      <ProductInfo product={product} />
+      <ReviewsList reviews={reviews} />
+      <RelatedProducts products={relatedProducts} />
+    </div>
+  );
+}
+
+// メリット:
+// - SEOに有利（初期HTMLにデータが含まれる）
+// - パフォーマンスが良い（サーバー側でデータ取得）
+// - ローディング状態が不要（データが既に取得されている）
+// - クローラーがデータを取得できる
+```
+
+### パターン2: ルーティング
+
+#### 悪いコード: 不適切なルーティング
+
+**問題のある実装:**
+
+```typescript
+// 悪いコード: クライアント側ルーティングを手動で実装
+'use client';
+
+function App() {
+  const [currentPage, setCurrentPage] = useState('home');
+
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'home':
+        return <HomePage />;
+      case 'about':
+        return <AboutPage />;
+      case 'contact':
+        return <ContactPage />;
+      default:
+        return <NotFoundPage />;
+    }
+  };
+
+  return (
+    <div>
+      <nav>
+        <button onClick={() => setCurrentPage('home')}>ホーム</button>
+        <button onClick={() => setCurrentPage('about')}>About</button>
+        <button onClick={() => setCurrentPage('contact')}>Contact</button>
+      </nav>
+      {renderPage()}
+    </div>
+  );
+}
+
+// 問題点:
+// - Next.jsのルーティング機能を使っていない
+// - URLが変更されない（ブラウザの戻る/進むボタンが使えない）
+// - SEOに不利（各ページが独立したURLを持たない）
+// - コード分割ができない
+```
+
+**なぜ悪いのか:**
+
+- **Next.jsの機能を活用していない**: App Routerの機能を使っていない
+- **SEOの問題**: URLが変更されないため、検索エンジンがインデックスできない
+- **ユーザー体験**: ブラウザの戻る/進むボタンが使えない
+
+#### 良いコード: Next.jsのルーティングを活用
+
+**改善された実装:**
+
+```typescript
+// 良いコード: Next.jsのApp Routerを活用
+
+// 1. ファイルベースルーティング
+// app/page.tsx
+export default function HomePage() {
+  return <div>ホームページ</div>;
+}
+
+// app/about/page.tsx
+export default function AboutPage() {
+  return <div>Aboutページ</div>;
+}
+
+// app/contact/page.tsx
+export default function ContactPage() {
+  return <div>Contactページ</div>;
+}
+
+// 2. 動的ルート
+// app/products/[id]/page.tsx
+async function ProductPage({ params }: { params: { id: string } }) {
+  const product = await getProduct(params.id);
+  return <div>{product.name}</div>;
+}
+
+// 3. ネストされたレイアウト
+// app/dashboard/layout.tsx
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <DashboardSidebar />
+      <main>{children}</main>
+    </div>
+  );
+}
+
+// app/dashboard/page.tsx
+export default function DashboardPage() {
+  return <div>ダッシュボード</div>;
+}
+
+// 4. リンクコンポーネントの使用
+import Link from 'next/link';
+
+function Navigation() {
+  return (
+    <nav>
+      <Link href="/">ホーム</Link>
+      <Link href="/about">About</Link>
+      <Link href="/contact">Contact</Link>
+    </nav>
+  );
+}
+
+// メリット:
+// - Next.jsのルーティング機能を活用
+// - URLが適切に変更される
+// - SEOに有利
+// - コード分割が自動的に行われる
+```
+
+### パターン3: メタデータとSEO
+
+#### 悪いコード: メタデータの不備
+
+**問題のある実装:**
+
+```typescript
+// 悪いコード: メタデータが設定されていない
+export default function ProductPage({ params }: { params: { id: string } }) {
+  const product = await getProduct(params.id);
+
+  return (
+    <html>
+      <head>
+        {/* 問題: メタデータが設定されていない */}
+        <title>Product</title>
+      </head>
+      <body>
+        <h1>{product.name}</h1>
+        <p>{product.description}</p>
+      </body>
+    </html>
+  );
+}
+
+// 問題点:
+// - SEOに不利（メタデータが不足）
+// - ソーシャルメディアでのシェア時に適切な情報が表示されない
+// - 検索エンジンがページを適切にインデックスできない
+```
+
+**なぜ悪いのか:**
+
+- **SEOの問題**: メタデータが不足しているため、検索エンジンが適切にインデックスできない
+- **ソーシャルメディア**: シェア時に適切な情報が表示されない
+- **ユーザー体験**: ブラウザのタブに適切なタイトルが表示されない
+
+#### 良いコード: 適切なメタデータの設定
+
+**改善された実装:**
+
+```typescript
+// 良いコード: メタデータを適切に設定
+
+// 1. 静的メタデータ
+export const metadata = {
+  title: '商品一覧',
+  description: '当社の商品一覧ページです',
+  keywords: ['商品', 'ECサイト', 'オンラインショップ'],
+  openGraph: {
+    title: '商品一覧',
+    description: '当社の商品一覧ページです',
+    images: ['/og-image.jpg'],
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: '商品一覧',
+    description: '当社の商品一覧ページです',
+    images: ['/twitter-image.jpg'],
+  },
+};
+
+// 2. 動的メタデータ
+export async function generateMetadata({
+  params,
+}: {
+  params: { id: string };
+}): Promise<Metadata> {
+  const product = await getProduct(params.id);
+
+  return {
+    title: `${product.name} - 商品詳細`,
+    description: product.description,
+    openGraph: {
+      title: product.name,
+      description: product.description,
+      images: [product.image],
+      type: 'website',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: product.name,
+      description: product.description,
+      images: [product.image],
+    },
+  };
+}
+
+// 3. 構造化データ（JSON-LD）
+function ProductPage({ product }: { product: Product }) {
+  const structuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: product.name,
+    description: product.description,
+    image: product.image,
+    offers: {
+      '@type': 'Offer',
+      price: product.price,
+      priceCurrency: 'JPY',
+    },
+  };
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
+      <h1>{product.name}</h1>
+      <p>{product.description}</p>
+    </>
+  );
+}
+
+// メリット:
+// - SEOに有利
+// - ソーシャルメディアでのシェア時に適切な情報が表示される
+// - 検索エンジンがページを適切にインデックスできる
+```
+
+### パターン4: パフォーマンス最適化
+
+#### 悪いコード: パフォーマンスの問題
+
+**問題のある実装:**
+
+```typescript
+// 悪いコード: パフォーマンスの問題
+'use client';
+
+function ImageGallery({ images }: { images: string[] }) {
+  return (
+    <div>
+      {images.map((image, index) => (
+        <img
+          key={index}
+          src={image}
+          alt={`Image ${index}`}
+          // 問題: 最適化されていない画像
+          // - サイズが最適化されていない
+          // - 遅延読み込みがない
+          // - レスポンシブ画像ではない
+        />
+      ))}
+    </div>
+  );
+}
+
+// 問題点:
+// - 画像が最適化されていない
+// - 初期表示が遅い
+// - モバイルでのパフォーマンスが悪い
+// - 帯域幅の無駄
+```
+
+**なぜ悪いのか:**
+
+- **パフォーマンス**: 画像が最適化されていないため、読み込みが遅い
+- **帯域幅**: 不要な帯域幅を消費する
+- **ユーザー体験**: 初期表示が遅く、ユーザー体験が悪い
+
+#### 良いコード: 適切なパフォーマンス最適化
+
+**改善された実装:**
+
+```typescript
+// 良いコード: Next.jsのImageコンポーネントを使用
+import Image from 'next/image';
+
+function ImageGallery({ images }: { images: string[] }) {
+  return (
+    <div className="image-gallery">
+      {images.map((image, index) => (
+        <Image
+          key={index}
+          src={image}
+          alt={`Image ${index}`}
+          width={800}
+          height={600}
+          loading="lazy" // 遅延読み込み
+          placeholder="blur" // ブラー効果
+          blurDataURL="data:image/jpeg;base64,..." // プレースホルダー
+          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" // レスポンシブ
+          quality={85} // 画質
+        />
+      ))}
+    </div>
+  );
+}
+
+// メリット:
+// - 画像が自動的に最適化される
+// - 遅延読み込みで初期表示が高速
+// - レスポンシブ画像でモバイルでも高速
+// - 帯域幅の節約
+```
+
+### パターン5: API Routes
+
+#### 悪いコード: 不適切なAPI Route実装
+
+**問題のある実装:**
+
+```typescript
+// 悪いコード: エラーハンドリングが不適切
+// app/api/users/route.ts
+export async function GET(request: Request) {
+  // 問題: エラーハンドリングがない
+  const users = await db.users.findMany();
+  return Response.json(users);
+}
+
+export async function POST(request: Request) {
+  // 問題: バリデーションがない
+  const body = await request.json();
+  const user = await db.users.create({ data: body });
+  return Response.json(user);
+}
+
+// 問題点:
+// - エラーハンドリングがない
+// - バリデーションがない
+// - 認証チェックがない
+// - 適切なHTTPステータスコードが返されない
+```
+
+**なぜ悪いのか:**
+
+- **セキュリティ**: 認証チェックがないため、誰でもアクセスできる
+- **データ整合性**: バリデーションがないため、不正なデータが保存される可能性がある
+- **エラーハンドリング**: エラーが適切に処理されない
+
+#### 良いコード: 適切なAPI Route実装
+
+**改善された実装:**
+
+```typescript
+// 良いコード: 適切なAPI Route実装
+// app/api/users/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+
+// バリデーションスキーマ
+const createUserSchema = z.object({
+  name: z.string().min(1).max(100),
+  email: z.string().email(),
+  age: z.number().int().min(0).max(150),
+});
+
+// GET: ユーザー一覧取得
+export async function GET(request: NextRequest) {
+  try {
+    // 認証チェック
+    const token = request.headers.get('authorization');
+    if (!token || !isValidToken(token)) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // クエリパラメータの取得
+    const searchParams = request.nextUrl.searchParams;
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '10');
+
+    // データベースから取得
+    const users = await db.users.findMany({
+      skip: (page - 1) * limit,
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const total = await db.users.count();
+
+    return NextResponse.json({
+      users,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error('Failed to fetch users:', error);
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST: ユーザー作成
+export async function POST(request: NextRequest) {
+  try {
+    // 認証チェック
+    const token = request.headers.get('authorization');
+    if (!token || !isValidToken(token)) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // リクエストボディの取得
+    const body = await request.json();
+
+    // バリデーション
+    const validatedData = createUserSchema.parse(body);
+
+    // データベースに保存
+    const user = await db.users.create({
+      data: validatedData,
+    });
+
+    return NextResponse.json(user, { status: 201 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      // バリデーションエラー
+      return NextResponse.json(
+        { error: 'Validation Error', details: error.errors },
+        { status: 400 }
+      );
+    }
+
+    console.error('Failed to create user:', error);
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}
+
+// メリット:
+// - 認証チェックがある
+// - バリデーションがある
+// - エラーハンドリングが適切
+// - 適切なHTTPステータスコードが返される
+```
+
+### パターン6: キャッシング戦略
+
+#### 悪いコード: キャッシングの不備
+
+**問題のある実装:**
+
+```typescript
+// 悪いコード: キャッシングがない
+async function ProductList() {
+  // 問題: 毎回データベースにアクセス
+  const products = await db.products.findMany();
+
+  return (
+    <div>
+      {products.map(product => (
+        <div key={product.id}>{product.name}</div>
+      ))}
+    </div>
+  );
+}
+
+// 問題点:
+// - キャッシングがないため、毎回データベースにアクセス
+// - パフォーマンスが悪い
+// - データベースの負荷が高い
+```
+
+**なぜ悪いのか:**
+
+- **パフォーマンス**: 毎回データベースにアクセスするため、遅い
+- **データベース負荷**: データベースへの負荷が高い
+- **コスト**: 不要なデータベースアクセスにより、コストが増加
+
+#### 良いコード: 適切なキャッシング戦略
+
+**改善された実装:**
+
+```typescript
+// 良いコード: 適切なキャッシング戦略
+
+// 1. データフェッチングでのキャッシング
+async function ProductList() {
+  // ISR: 60秒ごとに再検証
+  const products = await fetch('https://api.example.com/products', {
+    next: { revalidate: 60 },
+  }).then(res => res.json());
+
+  return (
+    <div>
+      {products.map(product => (
+        <div key={product.id}>{product.name}</div>
+      ))}
+    </div>
+  );
+}
+
+// 2. 動的ルートでのキャッシング
+async function ProductDetail({ params }: { params: { id: string } }) {
+  // 動的データの場合はキャッシングを無効化
+  const product = await fetch(`https://api.example.com/products/${params.id}`, {
+    cache: 'no-store',
+  }).then(res => res.json());
+
+  return <div>{product.name}</div>;
+}
+
+// 3. React Cacheを使用したキャッシング
+import { cache } from 'react';
+
+const getProduct = cache(async (id: string) => {
+  // 同じリクエスト内で同じデータを取得する場合、キャッシュを使用
+  return await db.products.findUnique({ where: { id } });
+});
+
+async function ProductPage({ params }: { params: { id: string } }) {
+  const product = await getProduct(params.id);
+  return <div>{product.name}</div>;
+}
+
+// 4. 手動でのキャッシュ制御
+async function getCachedData(key: string) {
+  const cached = await redis.get(key);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  const data = await fetchData();
+  await redis.setex(key, 3600, JSON.stringify(data)); // 1時間キャッシュ
+  return data;
+}
+
+// メリット:
+// - パフォーマンスが向上
+// - データベースの負荷が軽減
+// - コストが削減
+```
+
+### まとめ
+
+Next.jsでの良いコードと悪いコードのパターン：
+
+- **データフェッチング**: サーバー側でのデータフェッチング、適切なキャッシング
+- **ルーティング**: Next.jsのApp Routerを活用、ファイルベースルーティング
+- **メタデータとSEO**: 適切なメタデータの設定、構造化データ
+- **パフォーマンス最適化**: Next.jsのImageコンポーネント、適切な最適化
+- **API Routes**: 認証、バリデーション、エラーハンドリング
+- **キャッシング戦略**: ISR、React Cache、手動キャッシュ
+
+良いコードパターンを理解し、実践することで、保守性の高いNext.jsアプリケーションを構築できます。
+

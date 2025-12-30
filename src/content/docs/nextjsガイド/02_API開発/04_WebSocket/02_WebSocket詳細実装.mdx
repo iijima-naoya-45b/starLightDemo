@@ -1,0 +1,556 @@
+---
+title: "WebSocket詳細実装"
+label: "WebSocket詳細実装"
+---
+
+## WebSocket詳細実装
+
+Next.jsでのWebSocket実装について、より詳細な実装方法とベストプラクティスを解説します。
+
+### Next.jsでのWebSocket実装の課題
+
+#### Next.jsのサーバーレス環境での制約
+
+**問題点:**
+
+Next.jsは、デフォルトでサーバーレス関数としてデプロイされます。サーバーレス環境では、以下の制約があります：
+
+- **長時間接続の維持が困難**: サーバーレス関数は短時間で終了する
+- **ステートフルな接続の管理が困難**: 複数のリクエスト間で状態を保持できない
+- **WebSocketサーバーの直接ホストが困難**: 長時間接続を維持するWebSocketサーバーを直接ホストできない
+
+**解決策:**
+
+1. **カスタムサーバーの使用**: Node.jsのカスタムサーバーを使用
+2. **外部WebSocketサービスの利用**: Pusher、Ablyなどのマネージドサービスを使用
+3. **Edge Runtimeの活用**: Edge RuntimeでWebSocketを実装（制限あり）
+
+### カスタムサーバーでの実装
+
+#### 1. カスタムサーバーの設定
+
+**カスタムサーバーの実装:**
+
+```typescript
+// server.js
+const { createServer } = require('http');
+const { parse } = require('url');
+const next = require('next');
+const { Server } = require('socket.io');
+
+const dev = process.env.NODE_ENV !== 'production';
+const hostname = 'localhost';
+const port = 3000;
+
+const app = next({ dev, hostname, port });
+const handle = app.getRequestHandler();
+
+app.prepare().then(() => {
+  const httpServer = createServer(async (req, res) => {
+    try {
+      const parsedUrl = parse(req.url!, true);
+      await handle(req, res, parsedUrl);
+    } catch (err) {
+      console.error('Error occurred handling', req.url, err);
+      res.statusCode = 500;
+      res.end('internal server error');
+    }
+  });
+
+  // Socket.ioサーバーを作成
+  const io = new Server(httpServer, {
+    path: '/api/socket',
+    cors: {
+      origin: '*',
+      methods: ['GET', 'POST'],
+    },
+  });
+
+  // WebSocket接続の処理
+  io.on('connection', (socket) => {
+    console.log('Client connected:', socket.id);
+
+    // 認証
+    socket.on('authenticate', async (token) => {
+      try {
+        const user = await verifyToken(token);
+        socket.data.userId = user.id;
+        socket.join(`user:${user.id}`);
+        socket.emit('authenticated', { userId: user.id });
+      } catch (error) {
+        socket.emit('authentication_error', { message: 'Invalid token' });
+        socket.disconnect();
+      }
+    });
+
+    // メッセージの送信
+    socket.on('message', async (data) => {
+      const userId = socket.data.userId;
+      if (!userId) {
+        socket.emit('error', { message: 'Not authenticated' });
+        return;
+      }
+
+      // メッセージを保存
+      const message = await saveMessage({
+        userId,
+        text: data.text,
+        timestamp: new Date(),
+      });
+
+      // 受信者にメッセージを送信
+      if (data.recipientId) {
+        io.to(`user:${data.recipientId}`).emit('message', message);
+      } else {
+        // ブロードキャスト
+        io.emit('message', message);
+      }
+    });
+
+    // ルームへの参加
+    socket.on('join_room', (roomId) => {
+      socket.join(`room:${roomId}`);
+      socket.emit('joined_room', { roomId });
+    });
+
+    // ルームからの退出
+    socket.on('leave_room', (roomId) => {
+      socket.leave(`room:${roomId}`);
+      socket.emit('left_room', { roomId });
+    });
+
+    // 切断時の処理
+    socket.on('disconnect', () => {
+      console.log('Client disconnected:', socket.id);
+    });
+  });
+
+  httpServer.listen(port, () => {
+    console.log(`> Ready on http://${hostname}:${port}`);
+  });
+});
+```
+
+**package.jsonの設定:**
+
+```json
+{
+  "scripts": {
+    "dev": "node server.js",
+    "build": "next build",
+    "start": "NODE_ENV=production node server.js"
+  }
+}
+```
+
+#### 2. クライアント側の実装
+
+**Socket.ioクライアントの実装:**
+
+```typescript
+// lib/socket.ts
+import { io, Socket } from 'socket.io-client';
+
+let socket: Socket | null = null;
+
+export const getSocket = (token?: string): Socket => {
+  if (!socket || !socket.connected) {
+    socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000', {
+      path: '/api/socket',
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+      auth: token ? { token } : undefined,
+    });
+
+    // 接続時の処理
+    socket.on('connect', () => {
+      console.log('Socket connected:', socket?.id);
+      
+      // 認証トークンがある場合、認証を実行
+      if (token) {
+        socket?.emit('authenticate', token);
+      }
+    });
+
+    // 認証成功時の処理
+    socket.on('authenticated', (data) => {
+      console.log('Authenticated:', data);
+    });
+
+    // 認証エラー時の処理
+    socket.on('authentication_error', (error) => {
+      console.error('Authentication error:', error);
+      socket?.disconnect();
+    });
+
+    // 切断時の処理
+    socket.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
+    });
+
+    // エラー時の処理
+    socket.on('error', (error) => {
+      console.error('Socket error:', error);
+    });
+  }
+
+  return socket;
+};
+
+export const disconnectSocket = () => {
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+};
+```
+
+**Reactフックの実装:**
+
+```typescript
+// hooks/useSocket.ts
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { getSocket, disconnectSocket } from '@/lib/socket';
+import { Socket } from 'socket.io-client';
+
+export function useSocket(token?: string) {
+  const [isConnected, setIsConnected] = useState(false);
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const listenersRef = useRef<Map<string, (...args: any[]) => void>>(new Map());
+
+  useEffect(() => {
+    const socketInstance = getSocket(token);
+    setSocket(socketInstance);
+
+    const handleConnect = () => setIsConnected(true);
+    const handleDisconnect = () => setIsConnected(false);
+
+    socketInstance.on('connect', handleConnect);
+    socketInstance.on('disconnect', handleDisconnect);
+
+    setIsConnected(socketInstance.connected);
+
+    return () => {
+      socketInstance.off('connect', handleConnect);
+      socketInstance.off('disconnect', handleDisconnect);
+    };
+  }, [token]);
+
+  const on = useCallback((event: string, callback: (...args: any[]) => void) => {
+    if (socket) {
+      socket.on(event, callback);
+      listenersRef.current.set(event, callback);
+    }
+  }, [socket]);
+
+  const off = useCallback((event: string) => {
+    if (socket) {
+      const callback = listenersRef.current.get(event);
+      if (callback) {
+        socket.off(event, callback);
+        listenersRef.current.delete(event);
+      }
+    }
+  }, [socket]);
+
+  const emit = useCallback((event: string, data?: any) => {
+    if (socket && socket.connected) {
+      socket.emit(event, data);
+    } else {
+      console.warn('Socket is not connected');
+    }
+  }, [socket]);
+
+  useEffect(() => {
+    return () => {
+      // すべてのリスナーをクリーンアップ
+      listenersRef.current.forEach((callback, event) => {
+        socket?.off(event, callback);
+      });
+      listenersRef.current.clear();
+    };
+  }, [socket]);
+
+  return {
+    socket,
+    isConnected,
+    on,
+    off,
+    emit,
+    disconnect: disconnectSocket,
+  };
+}
+```
+
+#### 3. チャットアプリケーションの実装
+
+**チャットコンポーネントの実装:**
+
+```typescript
+// components/ChatRoom.tsx
+'use client';
+
+import { useEffect, useState, useRef } from 'react';
+import { useSocket } from '@/hooks/useSocket';
+
+interface Message {
+  id: string;
+  userId: string;
+  userName: string;
+  text: string;
+  timestamp: number;
+}
+
+interface ChatRoomProps {
+  roomId: string;
+  userId: string;
+  userName: string;
+}
+
+export function ChatRoom({ roomId, userId, userName }: ChatRoomProps) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { isConnected, on, off, emit } = useSocket();
+
+  // ルームに参加
+  useEffect(() => {
+    if (isConnected) {
+      emit('join_room', roomId);
+    }
+
+    return () => {
+      emit('leave_room', roomId);
+    };
+  }, [isConnected, roomId, emit]);
+
+  // メッセージを受信
+  useEffect(() => {
+    const handleMessage = (message: Message) => {
+      setMessages((prev) => [...prev, message]);
+    };
+
+    on('message', handleMessage);
+
+    return () => {
+      off('message');
+    };
+  }, [on, off]);
+
+  // 自動スクロール
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleSend = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (input.trim() && isConnected) {
+      emit('message', {
+        text: input,
+        recipientId: null, // ブロードキャスト
+        roomId,
+      });
+      setInput('');
+    }
+  };
+
+  return (
+    <div className="chat-room">
+      <div className="chat-header">
+        <h2>チャットルーム: {roomId}</h2>
+        <div className={`status ${isConnected ? 'connected' : 'disconnected'}`}>
+          {isConnected ? '接続中' : '切断中'}
+        </div>
+      </div>
+
+      <div className="messages">
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            className={`message ${
+              message.userId === userId ? 'own-message' : ''
+            }`}
+          >
+            <div className="message-user">{message.userName}</div>
+            <div className="message-text">{message.text}</div>
+            <div className="message-time">
+              {new Date(message.timestamp).toLocaleTimeString()}
+            </div>
+          </div>
+        ))}
+        <div ref={messagesEndRef} />
+      </div>
+
+      <form onSubmit={handleSend} className="chat-input">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="メッセージを入力..."
+          disabled={!isConnected}
+        />
+        <button type="submit" disabled={!isConnected || !input.trim()}>
+          送信
+        </button>
+      </form>
+    </div>
+  );
+}
+```
+
+### 外部WebSocketサービスの利用
+
+#### 1. Pusherの使用
+
+**Pusherの設定:**
+
+```typescript
+// lib/pusher.ts
+import Pusher from 'pusher-js';
+
+let pusher: Pusher | null = null;
+
+export const getPusher = (): Pusher => {
+  if (!pusher) {
+    pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
+      cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
+      authEndpoint: '/api/pusher/auth',
+      auth: {
+        headers: {
+          Authorization: `Bearer ${getToken()}`,
+        },
+      },
+    });
+  }
+  return pusher;
+};
+```
+
+**Pusherの使用例:**
+
+```typescript
+// hooks/usePusher.ts
+import { useEffect, useState } from 'react';
+import { getPusher } from '@/lib/pusher';
+import { Channel } from 'pusher-js';
+
+export function usePusherChannel(channelName: string) {
+  const [channel, setChannel] = useState<Channel | null>(null);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+
+  useEffect(() => {
+    const pusher = getPusher();
+    const channelInstance = pusher.subscribe(channelName);
+
+    channelInstance.bind('pusher:subscription_succeeded', () => {
+      setIsSubscribed(true);
+    });
+
+    channelInstance.bind('pusher:subscription_error', (error: any) => {
+      console.error('Subscription error:', error);
+    });
+
+    setChannel(channelInstance);
+
+    return () => {
+      pusher.unsubscribe(channelName);
+      setIsSubscribed(false);
+    };
+  }, [channelName]);
+
+  const bind = (event: string, callback: (data: any) => void) => {
+    if (channel) {
+      channel.bind(event, callback);
+    }
+  };
+
+  const unbind = (event: string) => {
+    if (channel) {
+      channel.unbind(event);
+    }
+  };
+
+  return {
+    channel,
+    isSubscribed,
+    bind,
+    unbind,
+  };
+}
+```
+
+**Pusher認証エンドポイント:**
+
+```typescript
+// app/api/pusher/auth/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import Pusher from 'pusher';
+
+const pusher = new Pusher({
+  appId: process.env.PUSHER_APP_ID!,
+  key: process.env.PUSHER_KEY!,
+  secret: process.env.PUSHER_SECRET!,
+  cluster: process.env.PUSHER_CLUSTER!,
+});
+
+export async function POST(request: NextRequest) {
+  const { socket_id, channel_name } = await request.json();
+  
+  // 認証トークンを取得
+  const authHeader = request.headers.get('authorization');
+  const token = authHeader?.replace('Bearer ', '');
+  
+  if (!token || !isValidToken(token)) {
+    return NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401 }
+    );
+  }
+
+  // プライベートチャネルの認証
+  if (channel_name.startsWith('private-')) {
+    const userId = getUserIdFromToken(token);
+    const auth = pusher.authorizeChannel(socket_id, channel_name, {
+      user_id: userId,
+      user_info: {
+        name: getUserName(userId),
+      },
+    });
+    
+    return NextResponse.json(auth);
+  }
+
+  // プレゼンスチャネルの認証
+  if (channel_name.startsWith('presence-')) {
+    const userId = getUserIdFromToken(token);
+    const auth = pusher.authorizeChannel(socket_id, channel_name, {
+      user_id: userId,
+      user_info: {
+        name: getUserName(userId),
+      },
+    });
+    
+    return NextResponse.json(auth);
+  }
+
+  return NextResponse.json(
+    { error: 'Invalid channel' },
+    { status: 400 }
+  );
+}
+```
+
+### まとめ
+
+Next.jsでのWebSocket詳細実装のポイント：
+
+- **カスタムサーバー**: Node.jsのカスタムサーバーでWebSocketを実装
+- **Socket.io**: Socket.ioを使用した双方向通信
+- **認証**: トークンベースの認証とルーム管理
+- **外部サービス**: Pusherなどのマネージドサービスを利用
+- **エラーハンドリング**: 再接続とエラー処理の実装
+
+適切なWebSocket実装により、Next.jsアプリケーションでリアルタイム通信を実現できます。
+
