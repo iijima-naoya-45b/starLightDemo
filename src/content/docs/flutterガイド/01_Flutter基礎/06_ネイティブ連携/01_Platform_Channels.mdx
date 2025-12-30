@@ -1,0 +1,45 @@
+---
+title: "Platform Channels"
+label: "Platform Channels"
+---
+
+## Platform Channels
+
+Platform Channelsは、Flutterとネイティブコード（Android/iOS）を連携するための仕組みです。
+
+### Method Channelの実装
+
+```dart
+// Flutter側
+import 'package:flutter/services.dart';
+
+class NativeBridge {
+  static const platform = MethodChannel('com.example/native');
+
+  Future<String> getNativeData() async {
+    try {
+      final String result = await platform.invokeMethod('getData');
+      return result;
+    } on PlatformException catch (e) {
+      return "Error: ${e.message}";
+    }
+  }
+}
+```
+
+```kotlin
+// Android側
+class MainActivity: FlutterActivity() {
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.example/native")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "getData") {
+                    result.success("Hello from Android")
+                } else {
+                    result.notImplemented()
+                }
+            }
+    }
+}
+```
+

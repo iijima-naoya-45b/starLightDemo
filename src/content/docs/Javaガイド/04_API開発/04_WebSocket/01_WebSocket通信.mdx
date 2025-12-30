@@ -1,0 +1,431 @@
+---
+title: "WebSocket通信"
+label: "WebSocket通信"
+---
+
+## WebSocket通信
+
+WebSocketは、クライアントとサーバー間の双方向通信を実現するプロトコルです。Spring Bootでは、**Spring WebSocket**を使用してリアルタイム通信を実装できます。
+
+### なぜWebSocketが必要なのか
+
+#### HTTPポーリングの課題
+
+**問題のあるHTTPポーリングの例:**
+
+```java
+// クライアント側: 定期的にサーバーにリクエスト
+setInterval(() => {
+    fetch('/api/messages')
+        .then(response => response.json())
+        .then(data => updateUI(data));
+}, 1000); // 1秒ごとにポーリング
+
+// 問題点:
+// - 不要なリクエストが多い（サーバー負荷）
+// - リアルタイム性が低い（最大1秒の遅延）
+// - ネットワーク帯域の無駄
+// - バッテリー消費が大きい（モバイル）
+```
+
+**WebSocketの解決:**
+
+```java
+// 1回の接続で双方向通信
+const socket = new WebSocket('ws://localhost:8080/ws');
+socket.onmessage = (event) => {
+    updateUI(JSON.parse(event.data));
+};
+
+// メリット:
+// - リアルタイム通信（低遅延）
+// - サーバーからクライアントへのプッシュが可能
+// - ネットワーク効率が良い
+// - 接続を維持するため、オーバーヘッドが少ない
+```
+
+**メリット:**
+1. **リアルタイム性**: 即座にデータを送受信
+2. **双方向通信**: サーバーからクライアントへのプッシュ
+3. **効率性**: 接続オーバーヘッドが少ない
+4. **低遅延**: HTTPリクエスト/レスポンスのオーバーヘッドがない
+
+### Spring WebSocketの設定
+
+#### 依存関係の追加
+
+**Maven (`pom.xml`):**
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-websocket</artifactId>
+    </dependency>
+</dependencies>
+```
+
+**Gradle (`build.gradle`):**
+
+```groovy
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-websocket'
+}
+```
+
+#### WebSocket設定
+
+```java
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+    
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry config) {
+        // メッセージブローカーの設定
+        config.enableSimpleBroker("/topic", "/queue"); // ブロードキャスト用
+        config.setApplicationDestinationPrefixes("/app"); // クライアント送信先
+    }
+    
+    @Override
+    public void registerStompEndpoints(StompEndpointRegistry registry) {
+        // WebSocketエンドポイントの登録
+        registry.addEndpoint("/ws")
+            .setAllowedOriginPatterns("*") // CORS設定（本番環境では適切に設定）
+            .withSockJS(); // SockJSフォールバック対応
+    }
+}
+```
+
+### STOMPプロトコル
+
+STOMP（Simple Text Oriented Messaging Protocol）は、WebSocket上でメッセージングを行うためのプロトコルです。
+
+#### STOMPの基本概念
+
+- **Destination**: メッセージの送信先（`/topic/chat`, `/queue/notifications`など）
+- **Subscribe**: メッセージの購読
+- **Send**: メッセージの送信
+- **Frame**: STOMPメッセージの単位
+
+### コントローラーの実装
+
+#### メッセージハンドラー
+
+```java
+@Controller
+public class ChatController {
+    
+    private final SimpMessagingTemplate messagingTemplate;
+    
+    public ChatController(SimpMessagingTemplate messagingTemplate) {
+        this.messagingTemplate = messagingTemplate;
+    }
+    
+    // クライアントからのメッセージを受信
+    @MessageMapping("/chat.send")
+    @SendTo("/topic/public")
+    public ChatMessage sendMessage(@Payload ChatMessage chatMessage) {
+        // メッセージを処理
+        chatMessage.setTimestamp(LocalDateTime.now());
+        
+        // 全クライアントにブロードキャスト
+        return chatMessage;
+    }
+    
+    // 特定のユーザーにメッセージを送信
+    @MessageMapping("/chat.private")
+    public void sendPrivateMessage(@Payload ChatMessage chatMessage,
+                                   Principal principal) {
+        // 送信者と受信者を設定
+        chatMessage.setSender(principal.getName());
+        
+        // 特定のユーザーに送信
+        messagingTemplate.convertAndSendToUser(
+            chatMessage.getRecipient(),
+            "/queue/messages",
+            chatMessage
+        );
+    }
+    
+    // ユーザーが参加したことを通知
+    @EventListener
+    public void handleSessionConnected(SessionConnectedEvent event) {
+        // 接続時の処理
+        log.info("User connected: {}", event.getMessage());
+    }
+    
+    // ユーザーが退出したことを通知
+    @EventListener
+    public void handleSessionDisconnect(SessionDisconnectEvent event) {
+        // 切断時の処理
+        StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
+        String username = (String) headerAccessor.getSessionAttributes().get("username");
+        
+        ChatMessage chatMessage = new ChatMessage();
+        chatMessage.setType(ChatMessage.MessageType.LEAVE);
+        chatMessage.setSender(username);
+        
+        messagingTemplate.convertAndSend("/topic/public", chatMessage);
+    }
+}
+```
+
+#### メッセージクラス
+
+```java
+public class ChatMessage {
+    
+    public enum MessageType {
+        CHAT, JOIN, LEAVE
+    }
+    
+    private MessageType type;
+    private String content;
+    private String sender;
+    private String recipient;
+    private LocalDateTime timestamp;
+    
+    // getters and setters
+}
+```
+
+### 認証・認可
+
+#### WebSocket認証
+
+```java
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+    
+    @Override
+    public void configureClientInboundChannel(ChannelRegistration registration) {
+        registration.interceptors(new ChannelInterceptor() {
+            @Override
+            public Message<?> preSend(Message<?> message, MessageChannel channel) {
+                StompHeaderAccessor accessor = 
+                    MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+                
+                if (StompCommand.CONNECT.equals(accessor.getCommand())) {
+                    // 認証トークンの検証
+                    String token = accessor.getFirstNativeHeader("Authorization");
+                    if (token != null && isValidToken(token)) {
+                        // 認証情報をセッションに保存
+                        Authentication auth = getAuthentication(token);
+                        accessor.setUser(auth);
+                    } else {
+                        throw new MessagingException("Unauthorized");
+                    }
+                }
+                
+                return message;
+            }
+        });
+    }
+    
+    private boolean isValidToken(String token) {
+        // JWT検証などの実装
+        return true;
+    }
+    
+    private Authentication getAuthentication(String token) {
+        // 認証情報の取得
+        return new UsernamePasswordAuthenticationToken(
+            getUsernameFromToken(token),
+            null,
+            getAuthoritiesFromToken(token)
+        );
+    }
+}
+```
+
+#### メッセージレベルの認可
+
+```java
+@Controller
+public class SecureChatController {
+    
+    @MessageMapping("/admin.broadcast")
+    @PreAuthorize("hasRole('ADMIN')")
+    public void adminBroadcast(@Payload String message) {
+        // 管理者のみが実行可能
+        messagingTemplate.convertAndSend("/topic/admin", message);
+    }
+}
+```
+
+### クライアント側の実装
+
+#### JavaScript (SockJS + STOMP)
+
+```javascript
+// WebSocket接続の確立
+const socket = new SockJS('/ws');
+const stompClient = Stomp.over(socket);
+
+stompClient.connect({}, function(frame) {
+    console.log('Connected: ' + frame);
+    
+    // パブリックチャンネルを購読
+    stompClient.subscribe('/topic/public', function(message) {
+        const chatMessage = JSON.parse(message.body);
+        displayMessage(chatMessage);
+    });
+    
+    // プライベートメッセージを購読
+    stompClient.subscribe('/user/queue/messages', function(message) {
+        const chatMessage = JSON.parse(message.body);
+        displayPrivateMessage(chatMessage);
+    });
+});
+
+// メッセージの送信
+function sendMessage() {
+    const chatMessage = {
+        type: 'CHAT',
+        content: document.getElementById('message').value,
+        sender: getCurrentUsername()
+    };
+    
+    stompClient.send("/app/chat.send", {}, JSON.stringify(chatMessage));
+}
+
+// 接続の切断
+function disconnect() {
+    if (stompClient !== null) {
+        stompClient.disconnect();
+    }
+}
+```
+
+### 実践的な例: リアルタイム通知システム
+
+```java
+@Service
+public class NotificationService {
+    
+    private final SimpMessagingTemplate messagingTemplate;
+    
+    public NotificationService(SimpMessagingTemplate messagingTemplate) {
+        this.messagingTemplate = messagingTemplate;
+    }
+    
+    // ユーザーに通知を送信
+    public void sendNotificationToUser(String username, Notification notification) {
+        messagingTemplate.convertAndSendToUser(
+            username,
+            "/queue/notifications",
+            notification
+        );
+    }
+    
+    // 全ユーザーにブロードキャスト
+    public void broadcastNotification(Notification notification) {
+        messagingTemplate.convertAndSend("/topic/notifications", notification);
+    }
+    
+    // 特定のトピックに送信
+    public void sendToTopic(String topic, Notification notification) {
+        messagingTemplate.convertAndSend("/topic/" + topic, notification);
+    }
+}
+
+// 通知クラス
+public class Notification {
+    private String id;
+    private String title;
+    private String message;
+    private NotificationType type;
+    private LocalDateTime timestamp;
+    
+    public enum NotificationType {
+        INFO, WARNING, ERROR, SUCCESS
+    }
+    
+    // getters and setters
+}
+```
+
+### パフォーマンス最適化
+
+#### 1. メッセージブローカーの選択
+
+```java
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+    
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry config) {
+        // RabbitMQを使用したメッセージブローカー
+        config.enableStompBrokerRelay("/topic", "/queue")
+            .setRelayHost("localhost")
+            .setRelayPort(61613)
+            .setClientLogin("guest")
+            .setClientPasscode("guest");
+    }
+}
+```
+
+#### 2. 接続数の制限
+
+```java
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+    
+    @Override
+    public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
+        registration.setSendTimeLimit(15 * 1000) // 15秒
+                   .setSendBufferSizeLimit(512 * 1024) // 512KB
+                   .setMessageSizeLimit(128 * 1024); // 128KB
+    }
+}
+```
+
+#### 3. ハートビートの設定
+
+```java
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+    
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry config) {
+        config.enableSimpleBroker("/topic", "/queue")
+            .setHeartbeatValue(new long[]{10000, 10000}); // 10秒ごと
+    }
+}
+```
+
+### エラーハンドリング
+
+```java
+@ControllerAdvice
+public class WebSocketExceptionHandler {
+    
+    @MessageExceptionHandler
+    @SendToUser("/queue/errors")
+    public ErrorMessage handleException(Exception ex) {
+        log.error("WebSocket error", ex);
+        return new ErrorMessage(
+            ex.getMessage(),
+            LocalDateTime.now()
+        );
+    }
+}
+```
+
+### まとめ
+
+Spring WebSocketを使用したWebSocket通信のポイント：
+
+- **STOMPプロトコル**: メッセージングの標準化
+- **双方向通信**: サーバーからクライアントへのプッシュ
+- **認証・認可**: セキュアなWebSocket接続
+- **パフォーマンス**: メッセージブローカーとハートビートの設定
+- **エラーハンドリング**: 適切なエラー処理
+
+WebSocketは、リアルタイム通信が必要なアプリケーション（チャット、通知、ライブ更新など）で非常に有用です。適切に実装することで、ユーザー体験を大幅に向上させることができます。
+

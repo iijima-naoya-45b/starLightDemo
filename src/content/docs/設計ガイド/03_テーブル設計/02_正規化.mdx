@@ -1,0 +1,227 @@
+---
+title: "正規化"
+label: "正規化"
+---
+
+## 正規化
+
+データベースの正規化について詳しく説明します。
+
+### 正規化とは
+
+正規化は、データベースのテーブルを整理して、データの重複を減らし、データ整合性を保つための手法です。
+
+### 第1正規形 (1NF)
+
+#### 要件
+
+1. 各セルに1つの値のみ
+2. 重複する行がない
+
+#### 例
+
+**正規化前:**
+
+```sql
+CREATE TABLE orders (
+  id INT,
+  customer_name VARCHAR(255),
+  items VARCHAR(255)  -- "商品1,商品2,商品3"
+);
+```
+
+**正規化後:**
+
+```sql
+CREATE TABLE orders (
+  id INT PRIMARY KEY,
+  customer_name VARCHAR(255)
+);
+
+CREATE TABLE order_items (
+  id INT PRIMARY KEY,
+  order_id INT,
+  item_name VARCHAR(255),
+  FOREIGN KEY (order_id) REFERENCES orders(id)
+);
+```
+
+### 第2正規形 (2NF)
+
+#### 要件
+
+1. 1NFを満たす
+2. 部分関数従属がない（非キー属性が主キーの一部にのみ依存しない）
+
+#### 例
+
+**正規化前:**
+
+```sql
+CREATE TABLE order_items (
+  order_id INT,
+  product_id INT,
+  product_name VARCHAR(255),  -- 部分関数従属
+  quantity INT,
+  price DECIMAL(10,2),
+  PRIMARY KEY (order_id, product_id)
+);
+```
+
+**正規化後:**
+
+```sql
+CREATE TABLE products (
+  id INT PRIMARY KEY,
+  name VARCHAR(255),
+  price DECIMAL(10,2)
+);
+
+CREATE TABLE order_items (
+  order_id INT,
+  product_id INT,
+  quantity INT,
+  PRIMARY KEY (order_id, product_id),
+  FOREIGN KEY (product_id) REFERENCES products(id)
+);
+```
+
+### 第3正規形 (3NF)
+
+#### 要件
+
+1. 2NFを満たす
+2. 推移的関数従属がない（非キー属性が他の非キー属性に依存しない）
+
+#### 例
+
+**正規化前:**
+
+```sql
+CREATE TABLE employees (
+  id INT PRIMARY KEY,
+  name VARCHAR(255),
+  department_id INT,
+  department_name VARCHAR(255),  -- 推移的関数従属
+  department_location VARCHAR(255)  -- 推移的関数従属
+);
+```
+
+**正規化後:**
+
+```sql
+CREATE TABLE departments (
+  id INT PRIMARY KEY,
+  name VARCHAR(255),
+  location VARCHAR(255)
+);
+
+CREATE TABLE employees (
+  id INT PRIMARY KEY,
+  name VARCHAR(255),
+  department_id INT,
+  FOREIGN KEY (department_id) REFERENCES departments(id)
+);
+```
+
+### ボイス・コッド正規形 (BCNF)
+
+#### 要件
+
+1. 3NFを満たす
+2. すべての決定因子が候補キー
+
+### 実践例: 完全な正規化
+
+```sql
+-- ユーザーテーブル
+CREATE TABLE users (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  username VARCHAR(50) UNIQUE NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL
+);
+
+-- プロフィールテーブル
+CREATE TABLE user_profiles (
+  user_id INT PRIMARY KEY,
+  first_name VARCHAR(100),
+  last_name VARCHAR(100),
+  bio TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- 商品テーブル
+CREATE TABLE products (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  category_id INT,
+  FOREIGN KEY (category_id) REFERENCES categories(id)
+);
+
+-- カテゴリテーブル
+CREATE TABLE categories (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(255) UNIQUE NOT NULL
+);
+
+-- 注文テーブル
+CREATE TABLE orders (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- 注文明細テーブル
+CREATE TABLE order_items (
+  order_id INT NOT NULL,
+  product_id INT NOT NULL,
+  quantity INT NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  PRIMARY KEY (order_id, product_id),
+  FOREIGN KEY (order_id) REFERENCES orders(id),
+  FOREIGN KEY (product_id) REFERENCES products(id)
+);
+```
+
+### 正規化のメリットとデメリット
+
+#### メリット
+
+1. **データ整合性**: データの重複が減り、整合性が保たれる
+2. **ストレージ効率**: データの重複が減り、ストレージを節約
+3. **更新効率**: データの更新が容易
+
+#### デメリット
+
+1. **クエリの複雑化**: JOINが増える
+2. **パフォーマンス**: JOINのコストがかかる場合がある
+
+### 非正規化（デノーマライゼーション）
+
+パフォーマンスのために、意図的に正規化を緩める場合があります。
+
+**例:**
+
+```sql
+-- 非正規化されたテーブル（パフォーマンス重視）
+CREATE TABLE order_summary (
+  order_id INT PRIMARY KEY,
+  user_name VARCHAR(255),  -- 正規化されていない
+  total_amount DECIMAL(10,2),
+  item_count INT  -- 集計値
+);
+```
+
+### まとめ
+
+正規化のポイント：
+
+- **1NF**: 各セルに1つの値、重複行なし
+- **2NF**: 部分関数従属の排除
+- **3NF**: 推移的関数従属の排除
+- **BCNF**: すべての決定因子が候補キー
+
+適切な正規化により、データ整合性と保守性を確保できます。
+

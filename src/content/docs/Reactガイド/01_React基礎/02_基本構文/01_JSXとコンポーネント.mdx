@@ -1,0 +1,107 @@
+---
+title: "JSXとコンポーネント"
+label: "JSXとコンポーネント"
+---
+
+## JSXとコンポーネント
+
+### JSXとは
+
+JSXは、JavaScriptの拡張構文で、HTMLライクな記述でReact要素を作成できます。
+
+```jsx
+// JSX
+const element = <h1>Hello, World!</h1>;
+
+// コンパイル後（React.createElement）
+const element = React.createElement('h1', null, 'Hello, World!');
+```
+
+### コンポーネントの種類
+
+#### 関数コンポーネント
+
+```jsx
+function Welcome({ name }) {
+  return <h1>Hello, {name}!</h1>;
+}
+
+// アロー関数
+const Welcome = ({ name }) => {
+  return <h1>Hello, {name}!</h1>;
+};
+```
+
+#### クラスコンポーネント
+
+```jsx
+class Welcome extends React.Component {
+  render() {
+    return <h1>Hello, {this.props.name}!</h1>;
+  }
+}
+```
+
+### Props
+
+```jsx
+function UserCard({ name, email, age }) {
+  return (
+    <div>
+      <h2>{name}</h2>
+      <p>{email}</p>
+      <p>Age: {age}</p>
+    </div>
+  );
+}
+
+// 使用例
+<UserCard name="John Doe" email="john@example.com" age={30} />
+```
+
+### 条件レンダリング
+
+```jsx
+function Greeting({ isLoggedIn }) {
+  if (isLoggedIn) {
+    return <h1>Welcome back!</h1>;
+  }
+  return <h1>Please sign in.</h1>;
+}
+
+// 三項演算子
+function Greeting({ isLoggedIn }) {
+  return (
+    <div>
+      {isLoggedIn ? <h1>Welcome back!</h1> : <h1>Please sign in.</h1>}
+    </div>
+  );
+}
+
+// 論理AND演算子
+function Mailbox({ unreadMessages }) {
+  return (
+    <div>
+      <h1>Hello!</h1>
+      {unreadMessages.length > 0 && (
+        <h2>You have {unreadMessages.length} unread messages.</h2>
+      )}
+    </div>
+  );
+}
+```
+
+### リストレンダリング
+
+```jsx
+function TodoList({ todos }) {
+  return (
+    <ul>
+      {todos.map(todo => (
+        <li key={todo.id}>{todo.text}</li>
+      ))}
+    </ul>
+  );
+}
+```
+

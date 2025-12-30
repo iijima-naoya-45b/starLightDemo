@@ -1,0 +1,100 @@
+---
+title: "GDPR"
+label: "GDPR"
+---
+
+## GDPR（一般データ保護規則）
+
+GDPRは、EUの個人データ保護に関する規則です。EU域内のユーザーを対象とするWebサイトは、GDPRに準拠する必要があります。
+
+### なぜGDPRが必要なのか
+
+#### GDPRの適用範囲
+
+- **EU域内のユーザー**: EU域内のユーザーの個人データを処理する場合
+- **EU域内の事業者**: EU域内に事業所がある事業者
+- **EU域外の事業者**: EU域内のユーザーを対象とする事業者
+
+### GDPRの主要な要件
+
+#### 1. 同意の取得
+
+```html
+<!-- GDPRに準拠した同意の取得 -->
+<form>
+  <label>
+    メールアドレス: <input type="email" name="email" required>
+  </label>
+  
+  <div class="gdpr-consent">
+    <label>
+      <input type="checkbox" name="consent" required>
+      個人データの処理に同意します（必須）
+    </label>
+    
+    <label>
+      <input type="checkbox" name="marketingConsent">
+      マーケティング目的での個人データの利用に同意します（任意）
+    </label>
+  </div>
+  
+  <button type="submit">送信</button>
+</form>
+```
+
+#### 2. データ主体の権利
+
+GDPRでは、データ主体（ユーザー）に以下の権利が認められています。
+
+- **アクセス権**: 個人データへのアクセス
+- **訂正権**: 不正確な個人データの訂正
+- **削除権**: 個人データの削除（忘れられる権利）
+- **処理制限権**: 個人データの処理の制限
+- **データポータビリティ権**: 個人データの移行
+
+#### 3. 実践例: データ主体の権利の実装
+
+```javascript
+// データ主体の権利の実装
+class GDPRCompliance {
+  // アクセス権
+  async getUserData(userId) {
+    const userData = await database.getUserData(userId);
+    return {
+      data: userData,
+      purpose: '商品の配送およびお問い合わせ対応',
+      retention: '3年間',
+    };
+  }
+  
+  // 削除権（忘れられる権利）
+  async deleteUserData(userId) {
+    await database.deleteUserData(userId);
+    await logService.log('userDataDeleted', userId);
+  }
+  
+  // データポータビリティ権
+  async exportUserData(userId) {
+    const userData = await database.getUserData(userId);
+    return JSON.stringify(userData, null, 2);
+  }
+}
+```
+
+### GDPRの罰則
+
+#### 罰則
+
+- **軽微な違反**: 最大1,000万ユーロまたは前年度の全世界年間売上高の2%のいずれか高い方
+- **重大な違反**: 最大2,000万ユーロまたは前年度の全世界年間売上高の4%のいずれか高い方
+
+### まとめ
+
+GDPRのポイント：
+
+- **同意の取得**: 明確で具体的な同意の取得
+- **データ主体の権利**: アクセス、訂正、削除などの権利の実装
+- **データ保護**: 適切なデータ保護措置の実施
+
+GDPRに準拠することで、EU域内のユーザーを対象とするWebサイトを適切に運営できます。
+

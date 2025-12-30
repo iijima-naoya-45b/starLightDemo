@@ -1,0 +1,448 @@
+---
+title: "コレクション（List、Set、Map、Queue）"
+label: "コレクション"
+---
+
+## コレクション（List、Set、Map、Queue）
+
+Javaのコレクションフレームワークは、データを効率的に管理するための重要な機能です。この章では、主要なコレクションクラスについて詳しく解説します。
+
+### コレクションフレームワークの階層
+
+```
+Collection
+├── List
+│   ├── ArrayList
+│   ├── LinkedList
+│   └── Vector
+├── Set
+│   ├── HashSet
+│   ├── LinkedHashSet
+│   └── TreeSet
+└── Queue
+    ├── PriorityQueue
+    ├── ArrayDeque
+    └── LinkedList
+
+Map
+├── HashMap
+├── LinkedHashMap
+├── TreeMap
+└── Hashtable
+```
+
+### List
+
+Listは、**順序が保たれ、重複を許容**するコレクションです。
+
+#### ArrayList
+
+**特徴:**
+- 動的配列の実装
+- ランダムアクセスが高速（O(1)）
+- 末尾への追加が高速（O(1)）
+- 途中への挿入・削除が遅い（O(n)）
+
+```java
+List<String> list = new ArrayList<>();
+
+// 要素の追加
+list.add("Alice");
+list.add("Bob");
+list.add("Charlie");
+
+// インデックス指定で追加
+list.add(1, "David");  // [Alice, David, Bob, Charlie]
+
+// 要素の取得
+String first = list.get(0);  // "Alice"
+
+// 要素の存在確認
+boolean contains = list.contains("Bob");  // true
+
+// 要素の削除
+list.remove("Bob");  // [Alice, David, Charlie]
+list.remove(0);  // [David, Charlie]
+
+// サイズの取得
+int size = list.size();  // 2
+
+// イテレーション
+for (String name : list) {
+    System.out.println(name);
+}
+
+// ストリームAPIを使用
+list.stream()
+    .filter(name -> name.length() > 4)
+    .forEach(System.out::println);
+```
+
+#### LinkedList
+
+**特徴:**
+- 双方向リンクリストの実装
+- 途中への挿入・削除が高速（O(1)）
+- ランダムアクセスが遅い（O(n)）
+- `Deque`インターフェースも実装
+
+```java
+List<String> list = new LinkedList<>();
+
+// 先頭への追加
+list.addFirst("Alice");  // [Alice]
+list.addFirst("Bob");  // [Bob, Alice]
+
+// 末尾への追加
+list.addLast("Charlie");  // [Bob, Alice, Charlie]
+
+// 先頭・末尾の取得
+String first = list.getFirst();  // "Bob"
+String last = list.getLast();  // "Charlie"
+
+// 先頭・末尾の削除
+String removed = list.removeFirst();  // "Bob"
+removed = list.removeLast();  // "Charlie"
+```
+
+#### Vector
+
+**特徴:**
+- スレッドセーフな動的配列（非推奨）
+- `ArrayList`の同期版
+- 現在は`Collections.synchronizedList()`を使用
+
+```java
+// 非推奨
+Vector<String> vector = new Vector<>();
+
+// 推奨: スレッドセーフなリストが必要な場合
+List<String> synchronizedList = Collections.synchronizedList(new ArrayList<>());
+```
+
+### Set
+
+Setは、**重複を許容しない**コレクションです。
+
+#### HashSet
+
+**特徴:**
+- ハッシュテーブルベースの実装
+- 順序が保証されない
+- 追加・削除・検索が高速（O(1)）
+
+```java
+Set<String> set = new HashSet<>();
+
+// 要素の追加
+set.add("Alice");
+set.add("Bob");
+set.add("Alice");  // 重複は無視される
+
+// 要素の存在確認
+boolean contains = set.contains("Bob");  // true
+
+// 要素の削除
+set.remove("Bob");
+
+// サイズの取得
+int size = set.size();
+
+// イテレーション
+for (String name : set) {
+    System.out.println(name);
+}
+```
+
+#### LinkedHashSet
+
+**特徴:**
+- `HashSet`の順序保持版
+- 挿入順序が保たれる
+- パフォーマンスは`HashSet`とほぼ同等
+
+```java
+Set<String> set = new LinkedHashSet<>();
+set.add("Alice");
+set.add("Bob");
+set.add("Charlie");
+
+// 挿入順序が保たれる
+for (String name : set) {
+    System.out.println(name);  // Alice, Bob, Charlie（順序保証）
+}
+```
+
+#### TreeSet
+
+**特徴:**
+- ソートされたSet
+- 要素は自然順序または`Comparator`でソート
+- 追加・削除・検索がO(log n)
+
+```java
+// 自然順序でソート
+Set<String> set = new TreeSet<>();
+set.add("Charlie");
+set.add("Alice");
+set.add("Bob");
+
+for (String name : set) {
+    System.out.println(name);  // Alice, Bob, Charlie（ソート済み）
+}
+
+// カスタムComparatorを使用
+Set<Person> people = new TreeSet<>(Comparator.comparing(Person::getAge));
+people.add(new Person("Alice", 25));
+people.add(new Person("Bob", 30));
+people.add(new Person("Charlie", 20));
+
+// 年齢順でソートされる
+```
+
+### Map
+
+Mapは、**キーと値のペア**を管理するコレクションです。
+
+#### HashMap
+
+**特徴:**
+- ハッシュテーブルベースの実装
+- 順序が保証されない
+- 追加・削除・検索が高速（O(1)）
+
+```java
+Map<String, Integer> map = new HashMap<>();
+
+// 要素の追加
+map.put("Alice", 25);
+map.put("Bob", 30);
+map.put("Charlie", 25);
+
+// 値の取得
+Integer age = map.get("Alice");  // 25
+
+// キーの存在確認
+boolean containsKey = map.containsKey("Bob");  // true
+
+// 値の存在確認
+boolean containsValue = map.containsValue(25);  // true
+
+// 要素の削除
+map.remove("Bob");
+
+// サイズの取得
+int size = map.size();
+
+// すべてのキーを取得
+Set<String> keys = map.keySet();
+
+// すべての値を取得
+Collection<Integer> values = map.values();
+
+// すべてのエントリを取得
+Set<Map.Entry<String, Integer>> entries = map.entrySet();
+
+// イテレーション
+for (Map.Entry<String, Integer> entry : map.entrySet()) {
+    System.out.println(entry.getKey() + ": " + entry.getValue());
+}
+
+// Java 8以降のforEach
+map.forEach((key, value) -> System.out.println(key + ": " + value));
+```
+
+#### LinkedHashMap
+
+**特徴:**
+- `HashMap`の順序保持版
+- 挿入順序またはアクセス順序が保たれる
+
+```java
+// 挿入順序を保持
+Map<String, Integer> map = new LinkedHashMap<>();
+map.put("Charlie", 25);
+map.put("Alice", 30);
+map.put("Bob", 20);
+
+for (String key : map.keySet()) {
+    System.out.println(key);  // Charlie, Alice, Bob（挿入順）
+}
+
+// アクセス順序を保持（LRUキャッシュなどに使用）
+Map<String, Integer> lruCache = new LinkedHashMap<>(16, 0.75f, true) {
+    @Override
+    protected boolean removeEldestEntry(Map.Entry<String, Integer> eldest) {
+        return size() > 3;  // 最大3要素まで保持
+    }
+};
+```
+
+#### TreeMap
+
+**特徴:**
+- ソートされたMap
+- キーは自然順序または`Comparator`でソート
+- 追加・削除・検索がO(log n)
+
+```java
+// 自然順序でソート
+Map<String, Integer> map = new TreeMap<>();
+map.put("Charlie", 25);
+map.put("Alice", 30);
+map.put("Bob", 20);
+
+for (String key : map.keySet()) {
+    System.out.println(key);  // Alice, Bob, Charlie（ソート済み）
+}
+
+// カスタムComparatorを使用
+Map<Person, Integer> peopleMap = new TreeMap<>(Comparator.comparing(Person::getName));
+```
+
+### Queue
+
+Queueは、**FIFO（First In First Out）**のデータ構造です。
+
+#### PriorityQueue
+
+**特徴:**
+- 優先度付きキュー
+- 要素は自然順序または`Comparator`でソート
+- ヒープベースの実装
+
+```java
+// 自然順序
+Queue<Integer> queue = new PriorityQueue<>();
+queue.offer(5);
+queue.offer(2);
+queue.offer(8);
+queue.offer(1);
+
+while (!queue.isEmpty()) {
+    System.out.println(queue.poll());  // 1, 2, 5, 8（優先度順）
+}
+
+// カスタムComparator
+Queue<Person> peopleQueue = new PriorityQueue<>(Comparator.comparing(Person::getAge));
+peopleQueue.offer(new Person("Alice", 25));
+peopleQueue.offer(new Person("Bob", 30));
+peopleQueue.offer(new Person("Charlie", 20));
+
+// 年齢が若い順に処理される
+```
+
+#### ArrayDeque
+
+**特徴:**
+- 両端キュー（Deque）の実装
+- スタックやキューとして使用可能
+- `ArrayList`より高速
+
+```java
+Deque<String> deque = new ArrayDeque<>();
+
+// スタックとして使用（LIFO）
+deque.push("Alice");
+deque.push("Bob");
+deque.push("Charlie");
+
+while (!deque.isEmpty()) {
+    System.out.println(deque.pop());  // Charlie, Bob, Alice（後入れ先出し）
+}
+
+// キューとして使用（FIFO）
+deque.offer("Alice");
+deque.offer("Bob");
+deque.offer("Charlie");
+
+while (!deque.isEmpty()) {
+    System.out.println(deque.poll());  // Alice, Bob, Charlie（先入れ先出し）
+}
+```
+
+### 並行コレクション
+
+マルチスレッド環境で使用する並行コレクションです。
+
+```java
+// ConcurrentHashMap: スレッドセーフなHashMap
+ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<>();
+map.put("Alice", 25);
+map.put("Bob", 30);
+
+// アトミック操作
+map.computeIfAbsent("Charlie", k -> 20);
+map.computeIfPresent("Alice", (k, v) -> v + 1);
+
+// CopyOnWriteArrayList: スレッドセーフなArrayList
+List<String> list = new CopyOnWriteArrayList<>();
+list.add("Alice");
+list.add("Bob");
+
+// 読み取り操作が多い場合に適している
+for (String name : list) {
+    System.out.println(name);
+}
+```
+
+### 実践例
+
+#### ユーザー管理システム
+
+```java
+public class UserService {
+    
+    // ユーザーIDでユーザーを管理
+    private Map<Long, User> userMap = new HashMap<>();
+    
+    // メールアドレスでユーザーを検索（重複チェック用）
+    private Set<String> emailSet = new HashSet<>();
+    
+    // ユーザーを年齢順で管理
+    private TreeSet<User> usersByAge = new TreeSet<>(Comparator.comparing(User::getAge));
+    
+    public void addUser(User user) {
+        if (emailSet.contains(user.getEmail())) {
+            throw new IllegalArgumentException("Email already exists");
+        }
+        
+        userMap.put(user.getId(), user);
+        emailSet.add(user.getEmail());
+        usersByAge.add(user);
+    }
+    
+    public User findById(Long id) {
+        return userMap.get(id);
+    }
+    
+    public List<User> findUsersByAgeRange(int minAge, int maxAge) {
+        return usersByAge.stream()
+            .filter(u -> u.getAge() >= minAge && u.getAge() <= maxAge)
+            .collect(Collectors.toList());
+    }
+}
+```
+
+### まとめ
+
+コレクションの選択指針：
+
+- **List**: 順序が重要で重複を許容する場合
+  - `ArrayList`: ランダムアクセスが多い場合
+  - `LinkedList`: 挿入・削除が多い場合
+- **Set**: 重複を許容しない場合
+  - `HashSet`: 順序が不要な場合
+  - `LinkedHashSet`: 挿入順序を保持したい場合
+  - `TreeSet`: ソートが必要な場合
+- **Map**: キーと値のペアを管理する場合
+  - `HashMap`: 順序が不要な場合
+  - `LinkedHashMap`: 順序を保持したい場合
+  - `TreeMap`: ソートが必要な場合
+- **Queue**: FIFOや優先度付き処理が必要な場合
+  - `PriorityQueue`: 優先度付き処理
+  - `ArrayDeque`: スタックやキューとして使用
+
+適切なコレクションを選択することで、効率的なデータ管理が可能です。
+
+

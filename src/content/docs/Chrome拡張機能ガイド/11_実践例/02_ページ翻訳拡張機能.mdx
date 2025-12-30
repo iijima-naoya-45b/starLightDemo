@@ -1,0 +1,165 @@
+---
+title: "ページ翻訳拡張機能"
+label: "ページ翻訳拡張機能"
+---
+
+## ページ翻訳拡張機能
+
+選択したテキストを翻訳する拡張機能の実装例です。
+
+### 機能概要
+
+- ページ上のテキストを選択
+- 右クリックメニューから翻訳
+- 翻訳結果をポップアップで表示
+
+### manifest.json
+
+```json
+{
+  "manifest_version": 3,
+  "name": "ページ翻訳",
+  "version": "1.0.0",
+  "description": "選択したテキストを翻訳します",
+  
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "storage"
+  ],
+  
+  "host_permissions": [
+    "https://api.mymemory.translated.net/*"
+  ],
+  
+  "background": {
+    "service_worker": "background.js"
+  },
+  
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}
+```
+
+### background.js
+
+```javascript
+// コンテキストメニューの作成
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: 'translate',
+    title: '翻訳: "%s"',
+    contexts: ['selection']
+  });
+});
+
+// コンテキストメニューのクリック
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'translate') {
+    const selectedText = info.selectionText;
+    
+    // 翻訳APIを呼び出し
+    translateText(selectedText, 'en', 'ja').then(translatedText => {
+      // 結果をストレージに保存
+      chrome.storage.local.set({
+        translatedText: translatedText,
+        originalText: selectedText
+      });
+      
+      // ポップアップを開く
+      chrome.action.openPopup();
+    });
+  }
+});
+
+// 翻訳関数
+async function translateText(text, fromLang, toLang) {
+  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${fromLang}|${toLang}`;
+  
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+    return data.responseData.translatedText;
+  } catch (error) {
+    console.error('翻訳エラー:', error);
+    return '翻訳に失敗しました';
+  }
+}
+```
+
+### popup.html
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 400px;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+    }
+    .original {
+      background-color: #f0f0f0;
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 10px;
+    }
+    .translated {
+      background-color: #e3f2fd;
+      padding: 10px;
+      border-radius: 4px;
+    }
+    h3 {
+      margin-top: 0;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <h3>翻訳結果</h3>
+  <div class="original">
+    <strong>原文:</strong>
+    <p id="originalText"></p>
+  </div>
+  <div class="translated">
+    <strong>翻訳:</strong>
+    <p id="translatedText"></p>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
+```
+
+### popup.js
+
+```javascript
+// ストレージから翻訳結果を取得
+chrome.storage.local.get(['originalText', 'translatedText'], (result) => {
+  if (result.originalText) {
+    document.getElementById('originalText').textContent = result.originalText;
+  }
+  
+  if (result.translatedText) {
+    document.getElementById('translatedText').textContent = result.translatedText;
+  }
+});
+```
+
+### まとめ
+
+ページ翻訳拡張機能の実装：
+
+1. **コンテキストメニュー**: 選択したテキストを翻訳
+2. **翻訳API**: 外部APIを使用して翻訳
+3. **結果表示**: ポップアップで翻訳結果を表示
+
+この実装を参考に、独自の翻訳拡張機能を作成できます。
+

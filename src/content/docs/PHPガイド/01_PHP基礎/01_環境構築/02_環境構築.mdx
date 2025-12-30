@@ -1,0 +1,36 @@
+---
+title: "環境構築"
+label: "環境構築"
+---
+
+## PHP環境構築
+
+### Composerのインストール
+
+```bash
+# Composerのインストール
+php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+php composer-setup.php
+php -r "unlink('composer-setup.php');"
+
+# グローバルインストール
+sudo mv composer.phar /usr/local/bin/composer
+```
+
+### プロジェクトの作成
+
+```bash
+# Composerでプロジェクトを作成
+composer create-project laravel/laravel my-project
+```
+
+### 開発サーバーの起動
+
+```bash
+# PHP組み込みサーバー
+php -S localhost:8000
+
+# Laravel開発サーバー
+php artisan serve
+```
+

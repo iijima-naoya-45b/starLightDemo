@@ -1,0 +1,42 @@
+---
+title: "Action Cable"
+label: "Action Cable"
+---
+
+## Action Cable
+
+Action Cableは、RailsのWebSocketフレームワークです。リアルタイム通信を実装できます。
+
+### Action Cableの設定
+
+#### チャンネルの作成
+
+```ruby
+# app/channels/chat_channel.rb
+class ChatChannel < ApplicationCable::Channel
+  def subscribed
+    stream_from "chat_#{params[:room]}"
+  end
+
+  def receive(data)
+    ActionCable.server.broadcast("chat_#{params[:room]}", data)
+  end
+end
+```
+
+#### クライアント側の実装
+
+```javascript
+// app/assets/javascripts/cable.js
+const cable = ActionCable.createConsumer();
+
+cable.subscriptions.create(
+  { channel: "ChatChannel", room: "general" },
+  {
+    received(data) {
+      console.log(data);
+    }
+  }
+);
+```
+

@@ -1,0 +1,39 @@
+---
+title: "Bull"
+label: "Bull"
+---
+
+## Bull
+
+Bullは、Node.jsのジョブキューライブラリです。Redisをバックエンドとして使用します。
+
+### Bullの設定
+
+#### 依存関係の追加
+
+```bash
+npm install bull
+```
+
+#### ジョブキューの実装
+
+```javascript
+const Queue = require('bull');
+const emailQueue = new Queue('email', {
+  redis: { host: '127.0.0.1', port: 6379 }
+});
+
+// ジョブの追加
+emailQueue.add('send-email', {
+  to: 'user@example.com',
+  subject: 'Hello',
+  body: 'This is a test email'
+});
+
+// ジョブの処理
+emailQueue.process('send-email', async (job) => {
+  const { to, subject, body } = job.data;
+  await sendEmail(to, subject, body);
+});
+```
+

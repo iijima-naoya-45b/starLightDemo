@@ -1,0 +1,344 @@
+---
+title: "useSWR詳細"
+label: "useSWR詳細"
+---
+
+## useSWR詳細
+
+useSWRの詳細な機能と実践的な使い方を説明します。
+
+### キャッシュと再検証
+
+#### 1. キャッシュの仕組み
+
+```typescript
+import useSWR from 'swr';
+
+// 同じキーを使用すると、キャッシュが共有される
+function ComponentA() {
+  const { data } = useSWR('/api/users/1', fetcher);
+  return <div>Component A: {data?.name}</div>;
+}
+
+function ComponentB() {
+  // ComponentAと同じキーなので、キャッシュが共有される
+  const { data } = useSWR('/api/users/1', fetcher);
+  return <div>Component B: {data?.name}</div>;
+}
+
+// メリット:
+// - 同じデータを複数のコンポーネントで使用しても、リクエストは1回だけ
+// - データが自動的に同期される
+```
+
+#### 2. 再検証のタイミング
+
+```typescript
+import useSWR from 'swr';
+
+function UserProfile({ userId }: { userId: string }) {
+  const { data, mutate } = useSWR(`/api/users/${userId}`, fetcher, {
+    // ウィンドウフォーカス時に再検証
+    revalidateOnFocus: true,
+    
+    // マウント時に再検証
+    revalidateOnMount: true,
+    
+    // ネットワーク再接続時に再検証
+    revalidateOnReconnect: true,
+    
+    // ポーリング間隔（ミリ秒）
+    refreshInterval: 0,  // 0は無効、1000なら1秒ごと
+    
+    // バックグラウンドでもポーリングするか
+    refreshWhenHidden: false,
+    
+    // オフライン時もポーリングするか
+    refreshWhenOffline: false,
+  });
+
+  // 手動で再検証
+  const handleRefresh = () => {
+    mutate();
+  };
+
+  return (
+    <div>
+      <div>{data?.name}</div>
+      <button onClick={handleRefresh}>Refresh</button>
+    </div>
+  );
+}
+```
+
+#### 3. キャッシュの操作
+
+```typescript
+import { mutate, cache } from 'swr';
+
+// 特定のキーのキャッシュを更新
+mutate('/api/users/1', { id: '1', name: 'New Name' }, false);
+
+// すべてのキャッシュを再検証
+mutate(key => true);
+
+// パターンマッチで再検証
+mutate(key => typeof key === 'string' && key.startsWith('/api/users'));
+
+// キャッシュの取得
+const cachedData = cache.get('/api/users/1');
+
+// キャッシュの削除
+cache.delete('/api/users/1');
+```
+
+### エラーハンドリングとリトライ
+
+#### 1. エラーハンドリング
+
+```typescript
+import useSWR from 'swr';
+
+function UserProfile({ userId }: { userId: string }) {
+  const { data, error, isLoading } = useSWR(
+    `/api/users/${userId}`,
+    fetcher,
+    {
+      onError: (error, key) => {
+        // エラー時の処理
+        console.error('Error fetching user:', error);
+        
+        // エラー通知サービスに送信
+        if (error.status === 500) {
+          // サーバーエラーの場合
+          errorReportingService.report(error);
+        }
+      },
+      onErrorRetry: (error, key, config, revalidate, { retryCount }) => {
+        // 404エラーはリトライしない
+        if (error.status === 404) return;
+        
+        // 500エラーは最大3回までリトライ
+        if (error.status === 500 && retryCount >= 3) return;
+        
+        // 指数バックオフでリトライ
+        const timeout = Math.min(5000 * 2 ** retryCount, 30000);
+        setTimeout(() => revalidate({ retryCount }), timeout);
+      },
+    }
+  );
+
+  if (error) {
+    if (error.status === 404) {
+      return <div>User not found</div>;
+    }
+    if (error.status === 500) {
+      return <div>Server error. Please try again later.</div>;
+    }
+    return <div>An error occurred</div>;
+  }
+
+  if (isLoading) return <Loading />;
+  return <div>{data.name}</div>;
+}
+```
+
+#### 2. カスタムfetcher
+
+```typescript
+import useSWR from 'swr';
+
+// エラーハンドリングを含むカスタムfetcher
+const fetcherWithErrorHandling = async (url: string) => {
+  const response = await fetch(url);
+  
+  if (!response.ok) {
+    const error = new Error('An error occurred while fetching the data.');
+    // エラーオブジェクトにstatusを追加
+    (error as any).status = response.status;
+    (error as any).info = await response.json();
+    throw error;
+  }
+  
+  return response.json();
+};
+
+function UserProfile({ userId }: { userId: string }) {
+  const { data, error } = useSWR(
+    `/api/users/${userId}`,
+    fetcherWithErrorHandling
+  );
+  
+  // ...
+}
+```
+
+### 実践的なパターン
+
+#### 1. 依存クエリ
+
+```typescript
+import useSWR from 'swr';
+
+// ユーザー情報を取得してから、そのユーザーの投稿を取得
+function UserPosts({ userId }: { userId: string }) {
+  // 1つ目のクエリ: ユーザー情報
+  const { data: user } = useSWR(`/api/users/${userId}`, fetcher);
+
+  // 2つ目のクエリ: ユーザーの投稿（ユーザー情報が取得できてから実行）
+  const { data: posts } = useSWR(
+    user ? `/api/users/${userId}/posts` : null,
+    fetcher
+  );
+
+  if (!user) return <Loading />;
+  if (!posts) return <Loading />;
+  
+  return (
+    <div>
+      <h1>{user.name}の投稿</h1>
+      {posts.map(post => (
+        <div key={post.id}>{post.title}</div>
+      ))}
+    </div>
+  );
+}
+```
+
+#### 2. 並列クエリ
+
+```typescript
+import useSWR from 'swr';
+
+function UserDashboard({ userIds }: { userIds: string[] }) {
+  // 複数のクエリを並列で実行
+  const userQueries = userIds.map(userId =>
+    useSWR(`/api/users/${userId}`, fetcher)
+  );
+
+  const isLoading = userQueries.some(query => query.isLoading);
+  const users = userQueries
+    .map(query => query.data)
+    .filter(Boolean);
+
+  if (isLoading) return <Loading />;
+  
+  return (
+    <div>
+      {users.map(user => (
+        <div key={user.id}>{user.name}</div>
+      ))}
+    </div>
+  );
+}
+```
+
+#### 3. オプティミスティックアップデート
+
+```typescript
+import useSWR from 'swr';
+
+function LikeButton({ postId }: { postId: string }) {
+  const { data: post, mutate } = useSWR(`/api/posts/${postId}`, fetcher);
+
+  const handleLike = async () => {
+    // 現在のデータを保存（ロールバック用）
+    const currentPost = post;
+
+    // オプティミスティックアップデート
+    mutate(
+      { ...post, likes: post.likes + 1, isLiked: true },
+      false  // 再検証しない
+    );
+
+    try {
+      // サーバーにリクエスト
+      await fetch(`/api/posts/${postId}/like`, { method: 'POST' });
+      
+      // サーバーのデータで再検証
+      mutate();
+    } catch (error) {
+      // エラー時はロールバック
+      mutate(currentPost, false);
+      console.error('Failed to like post:', error);
+    }
+  };
+
+  return (
+    <button onClick={handleLike}>
+      Like ({post?.likes})
+    </button>
+  );
+}
+```
+
+### Next.jsとの統合
+
+#### 1. SSRとの統合
+
+```typescript
+// pages/users/[id].tsx
+import { GetServerSideProps } from 'next';
+import useSWR from 'swr';
+
+interface User {
+  id: string;
+  name: string;
+}
+
+// サーバーサイドでデータを取得
+export const getServerSideProps: GetServerSideProps = async (context) => {
+  const userId = context.params?.id as string;
+  const user = await fetchUser(userId);
+  
+  return {
+    props: {
+      fallback: {
+        [`/api/users/${userId}`]: user,
+      },
+    },
+  };
+};
+
+function UserPage({ fallback }: { fallback: any }) {
+  const { data: user } = useSWR(`/api/users/${userId}`, fetcher, {
+    fallbackData: fallback[`/api/users/${userId}`],
+  });
+
+  return <div>{user.name}</div>;
+}
+```
+
+#### 2. SSGとの統合
+
+```typescript
+// pages/users/[id].tsx
+import { GetStaticProps } from 'next';
+import useSWR from 'swr';
+
+export const getStaticProps: GetStaticProps = async (context) => {
+  const userId = context.params?.id as string;
+  const user = await fetchUser(userId);
+  
+  return {
+    props: {
+      fallback: {
+        [`/api/users/${userId}`]: user,
+      },
+    },
+    revalidate: 60,  // 60秒ごとに再生成
+  };
+};
+```
+
+### まとめ
+
+useSWRの詳細：
+
+- **キャッシュと再検証**: キャッシュの仕組み、再検証のタイミング、キャッシュの操作
+- **エラーハンドリングとリトライ**: エラーハンドリング、カスタムfetcher
+- **実践的なパターン**: 依存クエリ、並列クエリ、オプティミスティックアップデート
+- **Next.jsとの統合**: SSR、SSGとの統合
+
+useSWRを活用することで、効率的で堅牢なデータフェッチングを実現できます。
+

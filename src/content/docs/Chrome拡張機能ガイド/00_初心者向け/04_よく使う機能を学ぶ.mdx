@@ -1,0 +1,275 @@
+---
+title: "よく使う機能を学ぶ"
+label: "よく使う機能を学ぶ"
+---
+
+## よく使う機能を学ぶ
+
+Chrome拡張機能でよく使う機能を学びましょう。
+
+### 1. 現在のページのURLを取得する
+
+現在開いているページのURLを取得する方法です。
+
+#### manifest.jsonにpermissionsを追加
+
+```json
+{
+  "manifest_version": 3,
+  "name": "URL取得拡張機能",
+  "version": "1.0.0",
+  "permissions": [
+    "activeTab"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
+```
+
+#### popup.jsでURLを取得
+
+```javascript
+// 現在のタブのURLを取得
+chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  const url = tabs[0].url;
+  document.getElementById('url').textContent = url;
+});
+```
+
+#### popup.html
+
+```html
+<body>
+  <h2>現在のページ</h2>
+  <p id="url"></p>
+  <script src="popup.js"></script>
+</body>
+```
+
+### 2. ページの背景色を変更する
+
+現在開いているページの背景色を変更する方法です。
+
+#### popup.html
+
+```html
+<body>
+  <h2>背景色を変更</h2>
+  <button id="redButton">赤</button>
+  <button id="blueButton">青</button>
+  <button id="greenButton">緑</button>
+  <button id="resetButton">リセット</button>
+  <script src="popup.js"></script>
+</body>
+```
+
+#### popup.js
+
+```javascript
+// manifest.jsonに"scripting"パーミッションが必要
+chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  const tabId = tabs[0].id;
+  
+  // 赤ボタン
+  document.getElementById('redButton').addEventListener('click', () => {
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      function: () => {
+        document.body.style.backgroundColor = 'red';
+      }
+    });
+  });
+  
+  // 青ボタン
+  document.getElementById('blueButton').addEventListener('click', () => {
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      function: () => {
+        document.body.style.backgroundColor = 'blue';
+      }
+    });
+  });
+  
+  // 緑ボタン
+  document.getElementById('greenButton').addEventListener('click', () => {
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      function: () => {
+        document.body.style.backgroundColor = 'green';
+      }
+    });
+  });
+  
+  // リセットボタン
+  document.getElementById('resetButton').addEventListener('click', () => {
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      function: () => {
+        document.body.style.backgroundColor = '';
+      }
+    });
+  });
+});
+```
+
+#### manifest.json
+
+```json
+{
+  "manifest_version": 3,
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ]
+}
+```
+
+### 3. データを保存する（Local Storage）
+
+ユーザーの設定やデータを保存する方法です。
+
+#### popup.html
+
+```html
+<body>
+  <h2>メモ</h2>
+  <textarea id="memo" rows="5" cols="30"></textarea>
+  <br>
+  <button id="saveButton">保存</button>
+  <button id="loadButton">読み込み</button>
+  <script src="popup.js"></script>
+</body>
+```
+
+#### popup.js
+
+```javascript
+// manifest.jsonに"storage"パーミッションが必要
+
+// 保存ボタン
+document.getElementById('saveButton').addEventListener('click', () => {
+  const memo = document.getElementById('memo').value;
+  chrome.storage.local.set({ memo: memo }, () => {
+    alert('保存しました！');
+  });
+});
+
+// 読み込みボタン
+document.getElementById('loadButton').addEventListener('click', () => {
+  chrome.storage.local.get(['memo'], (result) => {
+    document.getElementById('memo').value = result.memo || '';
+  });
+});
+
+// ページを開いたときに自動的に読み込む
+chrome.storage.local.get(['memo'], (result) => {
+  document.getElementById('memo').value = result.memo || '';
+});
+```
+
+#### manifest.json
+
+```json
+{
+  "manifest_version": 3,
+  "permissions": [
+    "storage"
+  ]
+}
+```
+
+### 4. ページにテキストを追加する
+
+現在開いているページにテキストを追加する方法です。
+
+#### popup.html
+
+```html
+<body>
+  <h2>テキストを追加</h2>
+  <input type="text" id="textInput" placeholder="追加するテキスト">
+  <button id="addButton">追加</button>
+  <script src="popup.js"></script>
+</body>
+```
+
+#### popup.js
+
+```javascript
+chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  const tabId = tabs[0].id;
+  
+  document.getElementById('addButton').addEventListener('click', () => {
+    const text = document.getElementById('textInput').value;
+    
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      function: (text) => {
+        // ページの上部にテキストを追加
+        const div = document.createElement('div');
+        div.textContent = text;
+        div.style.cssText = 'background-color: yellow; padding: 10px; font-size: 20px;';
+        document.body.insertBefore(div, document.body.firstChild);
+      },
+      args: [text]
+    });
+  });
+});
+```
+
+### 5. カウンターを作る
+
+クリック回数をカウントする機能です。
+
+#### popup.html
+
+```html
+<body>
+  <h2>カウンター</h2>
+  <p>クリック回数: <span id="count">0</span></p>
+  <button id="incrementButton">+1</button>
+  <button id="resetButton">リセット</button>
+  <script src="popup.js"></script>
+</body>
+```
+
+#### popup.js
+
+```javascript
+// カウントを読み込む
+chrome.storage.local.get(['count'], (result) => {
+  const count = result.count || 0;
+  document.getElementById('count').textContent = count;
+});
+
+// +1ボタン
+document.getElementById('incrementButton').addEventListener('click', () => {
+  chrome.storage.local.get(['count'], (result) => {
+    const newCount = (result.count || 0) + 1;
+    chrome.storage.local.set({ count: newCount }, () => {
+      document.getElementById('count').textContent = newCount;
+    });
+  });
+});
+
+// リセットボタン
+document.getElementById('resetButton').addEventListener('click', () => {
+  chrome.storage.local.set({ count: 0 }, () => {
+    document.getElementById('count').textContent = 0;
+  });
+});
+```
+
+### まとめ
+
+よく使う機能：
+
+1. **URLの取得**: `chrome.tabs.query`で現在のページのURLを取得
+2. **ページの変更**: `chrome.scripting.executeScript`でページを変更
+3. **データの保存**: `chrome.storage.local`でデータを保存・読み込み
+4. **テキストの追加**: DOM操作でページに要素を追加
+5. **カウンター**: ストレージを使ってカウントを保存
+
+これらの機能を組み合わせることで、様々な拡張機能を作ることができます！
+

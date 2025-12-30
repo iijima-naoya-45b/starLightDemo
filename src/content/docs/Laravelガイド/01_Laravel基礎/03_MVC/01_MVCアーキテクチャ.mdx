@@ -1,0 +1,92 @@
+---
+title: "MVCアーキテクチャ"
+label: "MVCアーキテクチャ"
+---
+
+## Laravel MVCアーキテクチャ
+
+### モデル（Model）
+
+```php
+<?php
+// app/Models/User.php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class User extends Model
+{
+    protected $fillable = ['name', 'email', 'password'];
+
+    protected $hidden = ['password', 'remember_token'];
+
+    // リレーション
+    public function posts()
+    {
+        return $this->hasMany(Post::class);
+    }
+}
+```
+
+### ビュー（View）
+
+```blade
+{{-- resources/views/users/index.blade.php --}}
+@extends('layouts.app')
+
+@section('content')
+    <h1>Users</h1>
+    <ul>
+        @foreach($users as $user)
+            <li>{{ $user->name }} - {{ $user->email }}</li>
+        @endforeach
+    </ul>
+@endsection
+```
+
+### コントローラー（Controller）
+
+```php
+<?php
+// app/Http/Controllers/UserController.php
+namespace App\Http\Controllers;
+
+use App\Models\User;
+use Illuminate\Http\Request;
+
+class UserController extends Controller
+{
+    public function index()
+    {
+        $users = User::all();
+        return view('users.index', compact('users'));
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users',
+            'password' => 'required|min:8',
+        ]);
+
+        $user = User::create($validated);
+        return redirect()->route('users.index');
+    }
+}
+```
+
+### ルーティング
+
+```php
+<?php
+// routes/web.php
+use App\Http\Controllers\UserController;
+
+Route::get('/users', [UserController::class, 'index'])->name('users.index');
+Route::post('/users', [UserController::class, 'store'])->name('users.store');
+
+// リソースルート
+Route::resource('users', UserController::class);
+```
+

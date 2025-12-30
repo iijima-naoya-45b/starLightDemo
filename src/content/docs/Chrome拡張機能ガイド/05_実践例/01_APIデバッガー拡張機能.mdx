@@ -1,0 +1,315 @@
+---
+title: "APIデバッガー拡張機能"
+label: "APIデバッガー拡張機能"
+---
+
+## APIデバッガー拡張機能
+
+実践的なAPIデバッガー拡張機能の実装例です。
+
+### 機能要件
+
+1. すべてのAPIリクエストをキャプチャ
+2. リクエスト/レスポンスの詳細表示
+3. リクエストの再送信
+4. リクエストの編集と送信
+5. 履歴の保存と検索
+
+### 実装
+
+#### 1. Manifest
+
+```json
+{
+  "manifest_version": 3,
+  "name": "API Debugger",
+  "version": "1.0.0",
+  "permissions": [
+    "storage",
+    "webRequest",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "devtools_page": "devtools.html"
+}
+```
+
+#### 2. Background Script
+
+```javascript
+// background.js
+class APIDebugger {
+  constructor() {
+    this.requests = [];
+    this.setupInterception();
+  }
+
+  setupInterception() {
+    chrome.webRequest.onBeforeRequest.addListener(
+      (details) => {
+        if (this.isAPIRequest(details.url)) {
+          this.captureRequest(details);
+        }
+      },
+      { urls: ['<all_urls>'] },
+      ['requestBody']
+    );
+
+    chrome.webRequest.onCompleted.addListener(
+      (details) => {
+        if (this.isAPIRequest(details.url)) {
+          this.captureResponse(details);
+        }
+      },
+      { urls: ['<all_urls>'] },
+      ['responseHeaders']
+    );
+  }
+
+  isAPIRequest(url) {
+    return url.includes('/api/') || url.match(/\.(json|xml)$/);
+  }
+
+  captureRequest(details) {
+    const request = {
+      id: details.requestId,
+      url: details.url,
+      method: details.method,
+      headers: details.requestHeaders,
+      timestamp: Date.now(),
+      tabId: details.tabId
+    };
+
+    if (details.requestBody) {
+      request.body = this.parseRequestBody(details.requestBody);
+    }
+
+    this.requests.push(request);
+    this.saveRequest(request);
+  }
+
+  captureResponse(details) {
+    const request = this.requests.find(r => r.id === details.requestId);
+    if (request) {
+      request.response = {
+        statusCode: details.statusCode,
+        headers: details.responseHeaders,
+        timestamp: Date.now()
+      };
+      this.updateRequest(request);
+    }
+  }
+
+  parseRequestBody(requestBody) {
+    if (requestBody.formData) {
+      return { type: 'form', data: requestBody.formData };
+    } else if (requestBody.raw) {
+      // バイナリデータの処理
+      return { type: 'raw', data: requestBody.raw };
+    }
+    return null;
+  }
+
+  async saveRequest(request) {
+    chrome.storage.local.get(['apiRequests'], (result) => {
+      const requests = result.apiRequests || [];
+      requests.push(request);
+      
+      // 最新500件のみ保持
+      if (requests.length > 500) {
+        requests.shift();
+      }
+      
+      chrome.storage.local.set({ apiRequests: requests });
+      
+      // イベントを発火
+      chrome.runtime.sendMessage({
+        type: 'NEW_REQUEST',
+        request: request
+      });
+    });
+  }
+
+  async updateRequest(request) {
+    chrome.storage.local.get(['apiRequests'], (result) => {
+      const requests = result.apiRequests || [];
+      const index = requests.findIndex(r => r.id === request.id);
+      if (index !== -1) {
+        requests[index] = request;
+        chrome.storage.local.set({ apiRequests: requests });
+      }
+    });
+  }
+
+  async getRequests() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['apiRequests'], (result) => {
+        resolve(result.apiRequests || []);
+      });
+    });
+  }
+}
+
+const apiDebugger = new APIDebugger();
+
+// メッセージハンドラー
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'GET_REQUESTS') {
+    apiDebugger.getRequests().then(requests => {
+      sendResponse({ requests });
+    });
+    return true;
+  }
+  
+  if (message.type === 'CLEAR_REQUESTS') {
+    chrome.storage.local.set({ apiRequests: [] }, () => {
+      sendResponse({ success: true });
+    });
+    return true;
+  }
+});
+```
+
+#### 3. Popup UI
+
+```html
+<!-- popup.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { width: 800px; height: 600px; margin: 0; padding: 10px; }
+    .request-item { padding: 10px; border-bottom: 1px solid #ccc; cursor: pointer; }
+    .request-item:hover { background: #f0f0f0; }
+    .method { font-weight: bold; color: #007bff; }
+    .url { color: #666; }
+    .status { color: #28a745; }
+  </style>
+</head>
+<body>
+  <div id="requests"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
+```
+
+```javascript
+// popup.js
+class PopupUI {
+  constructor() {
+    this.requests = [];
+    this.setupEventListeners();
+    this.loadRequests();
+  }
+
+  setupEventListeners() {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message.type === 'NEW_REQUEST') {
+        this.addRequest(message.request);
+      }
+    });
+  }
+
+  async loadRequests() {
+    chrome.runtime.sendMessage({ type: 'GET_REQUESTS' }, (response) => {
+      this.requests = response.requests || [];
+      this.render();
+    });
+  }
+
+  addRequest(request) {
+    this.requests.unshift(request);
+    if (this.requests.length > 100) {
+      this.requests.pop();
+    }
+    this.render();
+  }
+
+  render() {
+    const container = document.getElementById('requests');
+    container.innerHTML = '';
+
+    this.requests.forEach(request => {
+      const item = document.createElement('div');
+      item.className = 'request-item';
+      item.innerHTML = `
+        <span class="method">${request.method}</span>
+        <span class="url">${request.url}</span>
+        ${request.response ? `<span class="status">${request.response.statusCode}</span>` : ''}
+      `;
+      item.addEventListener('click', () => this.showDetails(request));
+      container.appendChild(item);
+    });
+  }
+
+  showDetails(request) {
+    // 詳細表示の実装
+    console.log('Request details:', request);
+  }
+}
+
+new PopupUI();
+```
+
+### 高度な機能
+
+#### リクエストの再送信
+
+```javascript
+async function resendRequest(request) {
+  const options = {
+    method: request.method,
+    headers: request.headers.reduce((acc, header) => {
+      acc[header.name] = header.value;
+      return acc;
+    }, {})
+  };
+
+  if (request.body) {
+    options.body = JSON.stringify(request.body.data);
+  }
+
+  try {
+    const response = await fetch(request.url, options);
+    const data = await response.text();
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+```
+
+#### リクエストの編集と送信
+
+```javascript
+async function editAndSendRequest(originalRequest, modifications) {
+  const modifiedRequest = {
+    ...originalRequest,
+    ...modifications
+  };
+
+  return await resendRequest(modifiedRequest);
+}
+```
+
+### まとめ
+
+APIデバッガー拡張機能の実装ポイント：
+
+- **リクエストのキャプチャ**: Web Request APIを使用
+- **データの永続化**: Storage APIで履歴を保存
+- **UIの実装**: PopupまたはDevToolsパネル
+- **メッセージパッシング**: コンポーネント間の通信
+- **パフォーマンス**: 大量のリクエストを効率的に処理
+
+この実装により、強力なAPIデバッグツールを構築できます。
+

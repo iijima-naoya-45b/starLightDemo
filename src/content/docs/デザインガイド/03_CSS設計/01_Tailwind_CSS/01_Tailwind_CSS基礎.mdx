@@ -1,0 +1,184 @@
+---
+title: "Tailwind CSS基礎"
+label: "Tailwind CSS基礎"
+---
+
+## Tailwind CSS基礎
+
+Tailwind CSSは、ユーティリティファーストのCSSフレームワークです。
+
+### なぜTailwind CSSが必要なのか
+
+#### 従来のCSSの課題
+
+**問題のあるCSS:**
+
+```css
+/* カスタムCSSを毎回書く必要がある */
+.button {
+  background-color: #3b82f6;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  font-weight: 600;
+}
+
+.button:hover {
+  background-color: #2563eb;
+}
+
+.button-secondary {
+  background-color: #6b7280;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  font-weight: 600;
+}
+/* 問題点:
+    - 同じスタイルを繰り返し定義
+    - クラス名を考える必要がある
+    - CSSファイルが肥大化
+    - 一貫性を保つのが困難
+*/
+```
+
+**Tailwind CSSの解決:**
+
+```html
+<!-- ユーティリティクラスを使用 -->
+<button class="bg-blue-500 text-white px-4 py-2 rounded font-semibold hover:bg-blue-600">
+  Primary Button
+</button>
+
+<button class="bg-gray-500 text-white px-4 py-2 rounded font-semibold hover:bg-gray-600">
+  Secondary Button
+</button>
+<!-- メリット:
+    - 再利用可能なユーティリティクラス
+    - クラス名を考える必要がない
+    - CSSファイルが不要
+    - 一貫性が保たれる
+-->
+```
+
+**メリット:**
+1. **開発速度**: ユーティリティクラスで迅速にスタイルを適用
+2. **一貫性**: デザインシステムに基づいた一貫性のあるスタイル
+3. **保守性**: カスタムCSSが少なく、保守しやすい
+4. **パフォーマンス**: 使用されていないCSSが自動的に削除される
+
+### Tailwind CSSのインストール
+
+```bash
+# Next.jsプロジェクト
+npx create-next-app@latest my-app --tailwind
+
+# 既存プロジェクトに追加
+npm install -D tailwindcss postcss autoprefixer
+npx tailwindcss init -p
+```
+
+### 設定ファイル
+
+```javascript
+// tailwind.config.js
+module.exports = {
+  content: [
+    './pages/**/*.{js,ts,jsx,tsx,mdx}',
+    './components/**/*.{js,ts,jsx,tsx,mdx}',
+    './app/**/*.{js,ts,jsx,tsx,mdx}',
+  ],
+  theme: {
+    extend: {
+      colors: {
+        primary: {
+          50: '#eff6ff',
+          500: '#3b82f6',
+          900: '#1e3a8a',
+        },
+      },
+    },
+  },
+  plugins: [],
+};
+```
+
+### 基本的な使用
+
+```html
+<!-- スペーシング -->
+<div class="p-4 m-2">Padding and Margin</div>
+
+<!-- タイポグラフィ -->
+<h1 class="text-3xl font-bold text-gray-900">Heading</h1>
+<p class="text-base text-gray-600">Paragraph</p>
+
+<!-- レイアウト -->
+<div class="flex items-center justify-between">
+  <div>Left</div>
+  <div>Right</div>
+</div>
+
+<!-- カラー -->
+<div class="bg-blue-500 text-white">Blue Background</div>
+```
+
+### レスポンシブデザイン
+
+```html
+<!-- モバイルファースト -->
+<div class="text-sm md:text-base lg:text-lg xl:text-xl">
+  Responsive Text
+</div>
+
+<!-- グリッドレイアウト -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+  <div>Item 1</div>
+  <div>Item 2</div>
+  <div>Item 3</div>
+</div>
+```
+
+### カスタムコンポーネント
+
+```html
+<!-- @applyディレクティブを使用 -->
+<style>
+  .btn-primary {
+    @apply bg-blue-500 text-white px-4 py-2 rounded font-semibold hover:bg-blue-600;
+  }
+</style>
+
+<button class="btn-primary">Primary Button</button>
+```
+
+### 実践例: カードコンポーネント
+
+```html
+<div class="max-w-sm rounded overflow-hidden shadow-lg">
+  <img class="w-full" src="image.jpg" alt="Card image">
+  <div class="px-6 py-4">
+    <div class="font-bold text-xl mb-2">Card Title</div>
+    <p class="text-gray-700 text-base">
+      Card description goes here.
+    </p>
+  </div>
+  <div class="px-6 pt-4 pb-2">
+    <span class="inline-block bg-gray-200 rounded-full px-3 py-1 text-sm font-semibold text-gray-700 mr-2 mb-2">
+      #tag1
+    </span>
+  </div>
+</div>
+```
+
+### まとめ
+
+Tailwind CSSのポイント：
+
+- **開発速度**: ユーティリティクラスで迅速にスタイルを適用
+- **一貫性**: デザインシステムに基づいた一貫性のあるスタイル
+- **保守性**: カスタムCSSが少なく、保守しやすい
+- **パフォーマンス**: 使用されていないCSSが自動的に削除される
+
+Tailwind CSSは、モダンなWeb開発において効率的なスタイリングを実現するための強力なツールです。
+

@@ -1,0 +1,714 @@
+---
+title: "Java Silver/Gold 試験範囲と対策"
+label: "Java Silver/Gold 試験範囲と対策"
+---
+
+## Oracle認定Java資格試験（Silver/Gold）対策
+
+Oracle認定Java資格試験は、Javaプログラマーのスキルを証明する国際的な資格です。この章では、**Java SE 11 Silver**と**Java SE 11 Gold**の試験範囲と対策について詳しく解説します。
+
+### 資格試験の概要
+
+#### 試験の種類
+
+| 資格名 | 正式名称 | 難易度 | 試験時間 | 問題数 |
+|--------|----------|--------|----------|--------|
+| **Java Silver** | Oracle Certified Java SE 11 Developer | 初級～中級 | 150分 | 80問 |
+| **Java Gold** | Oracle Certified Professional Java SE 11 Developer | 中級～上級 | 180分 | 80問 |
+
+#### 合格基準
+
+- **Java Silver**: 65%以上（80問中52問以上正解）
+- **Java Gold**: 65%以上（80問中52問以上正解）
+
+#### 試験形式
+
+- **CBT（Computer Based Testing）**: コンピューター上で実施
+- **選択式問題**: 複数選択、単一選択、ドラッグ&ドロップなど
+- **コード読解問題**: コードを読んで結果を予測する問題が多い
+
+### Java Silver 試験範囲
+
+#### 1. Javaの基本構文
+
+**変数の宣言と初期化:**
+
+```java
+// 基本型の変数宣言
+int age = 25;
+double price = 99.99;
+boolean isActive = true;
+char grade = 'A';
+
+// 参照型の変数宣言
+String name = "John";
+Object obj = new Object();
+
+// 配列の宣言と初期化
+int[] numbers = {1, 2, 3, 4, 5};
+String[] names = new String[5];
+int[][] matrix = new int[3][3];
+```
+
+**変数のスコープ:**
+
+```java
+public class ScopeExample {
+    private int instanceVar = 10;  // インスタンス変数
+    
+    public void method() {
+        int localVar = 20;  // ローカル変数
+        
+        if (true) {
+            int blockVar = 30;  // ブロック変数
+            System.out.println(blockVar);  // OK
+        }
+        // System.out.println(blockVar);  // コンパイルエラー
+    }
+}
+```
+
+**重要なポイント:**
+- ローカル変数は初期化しないと使用できない
+- インスタンス変数は自動的にデフォルト値で初期化される
+- ブロック変数はブロック内でのみ有効
+
+#### 2. オブジェクト指向の基本
+
+**クラスとインスタンス:**
+
+```java
+// クラスの定義
+public class Person {
+    // フィールド
+    private String name;
+    private int age;
+    
+    // コンストラクタ
+    public Person(String name, int age) {
+        this.name = name;
+        this.age = age;
+    }
+    
+    // メソッド
+    public String getName() {
+        return name;
+    }
+    
+    public void setName(String name) {
+        this.name = name;
+    }
+}
+
+// インスタンスの作成
+Person person = new Person("John", 25);
+```
+
+**継承:**
+
+```java
+// 親クラス
+public class Animal {
+    protected String name;
+    
+    public Animal(String name) {
+        this.name = name;
+    }
+    
+    public void makeSound() {
+        System.out.println("Some sound");
+    }
+}
+
+// 子クラス
+public class Dog extends Animal {
+    public Dog(String name) {
+        super(name);  // 親クラスのコンストラクタを呼び出す
+    }
+    
+    @Override
+    public void makeSound() {
+        System.out.println("Woof!");
+    }
+}
+```
+
+**ポリモーフィズム:**
+
+```java
+Animal animal = new Dog("Buddy");
+animal.makeSound();  // "Woof!" が出力される（オーバーライドされたメソッドが呼ばれる）
+```
+
+**重要なポイント:**
+- `extends`キーワードで継承を実現
+- `super`キーワードで親クラスにアクセス
+- `@Override`アノテーションでオーバーライドを明示
+- ポリモーフィズムにより、親クラスの参照で子クラスのインスタンスを扱える
+
+#### 3. 例外処理
+
+**try-catch-finally:**
+
+```java
+public void example() {
+    try {
+        // 例外が発生する可能性のあるコード
+        int result = 10 / 0;
+    } catch (ArithmeticException e) {
+        // 特定の例外をキャッチ
+        System.out.println("Division by zero: " + e.getMessage());
+    } catch (Exception e) {
+        // その他の例外をキャッチ
+        System.out.println("General exception: " + e.getMessage());
+    } finally {
+        // 必ず実行されるコード
+        System.out.println("Finally block executed");
+    }
+}
+```
+
+**throwsキーワード:**
+
+```java
+public void method() throws IOException {
+    // IOExceptionをスローする可能性がある
+    throw new IOException("File not found");
+}
+
+// 呼び出し側でtry-catchが必要
+try {
+    method();
+} catch (IOException e) {
+    // 例外を処理
+}
+```
+
+**例外の種類:**
+
+```java
+// チェック例外（コンパイル時にチェックされる）
+public void checkedException() throws IOException {
+    throw new IOException();
+}
+
+// ランタイム例外（コンパイル時にチェックされない）
+public void runtimeException() {
+    throw new RuntimeException();
+}
+
+// エラー（通常はキャッチしない）
+public void error() {
+    throw new OutOfMemoryError();
+}
+```
+
+**重要なポイント:**
+- チェック例外は`throws`で宣言するか、`try-catch`で処理する必要がある
+- ランタイム例外は処理が必須ではない
+- `finally`ブロックは例外の有無に関わらず実行される
+
+#### 4. コレクション
+
+**List（リスト）:**
+
+```java
+// ArrayList
+List<String> list = new ArrayList<>();
+list.add("Apple");
+list.add("Banana");
+list.add("Orange");
+
+// 要素の取得
+String first = list.get(0);  // "Apple"
+
+// 要素の検索
+boolean contains = list.contains("Apple");  // true
+int index = list.indexOf("Banana");  // 1
+
+// 要素の削除
+list.remove("Orange");
+list.remove(0);  // インデックスで削除
+```
+
+**Set（集合）:**
+
+```java
+// HashSet（順序なし）
+Set<String> set = new HashSet<>();
+set.add("Apple");
+set.add("Banana");
+set.add("Apple");  // 重複は無視される
+
+// TreeSet（ソート済み）
+Set<Integer> sortedSet = new TreeSet<>();
+sortedSet.add(3);
+sortedSet.add(1);
+sortedSet.add(2);
+// 結果: [1, 2, 3]（自動的にソートされる）
+```
+
+**Map（マップ）:**
+
+```java
+// HashMap
+Map<String, Integer> map = new HashMap<>();
+map.put("Apple", 100);
+map.put("Banana", 200);
+map.put("Orange", 150);
+
+// 値の取得
+Integer price = map.get("Apple");  // 100
+
+// キーの存在確認
+boolean exists = map.containsKey("Apple");  // true
+
+// エントリの反復処理
+for (Map.Entry<String, Integer> entry : map.entrySet()) {
+    System.out.println(entry.getKey() + ": " + entry.getValue());
+}
+```
+
+**重要なポイント:**
+- `List`は順序があり、重複を許可
+- `Set`は重複を許可しない
+- `Map`はキーと値のペアを格納
+- ジェネリクスを使用して型安全性を確保
+
+#### 5. 日付・時刻API（java.time）
+
+**LocalDate:**
+
+```java
+// 現在の日付
+LocalDate today = LocalDate.now();
+
+// 特定の日付
+LocalDate date = LocalDate.of(2024, 1, 15);
+
+// 日付の加算・減算
+LocalDate tomorrow = today.plusDays(1);
+LocalDate nextWeek = today.plusWeeks(1);
+LocalDate nextMonth = today.plusMonths(1);
+LocalDate nextYear = today.plusYears(1);
+
+// 日付の比較
+boolean isAfter = today.isAfter(date);
+boolean isBefore = today.isBefore(date);
+```
+
+**LocalTime:**
+
+```java
+// 現在の時刻
+LocalTime now = LocalTime.now();
+
+// 特定の時刻
+LocalTime time = LocalTime.of(14, 30, 45);
+
+// 時刻の加算・減算
+LocalTime later = time.plusHours(2);
+LocalTime earlier = time.minusMinutes(30);
+```
+
+**LocalDateTime:**
+
+```java
+// 現在の日時
+LocalDateTime now = LocalDateTime.now();
+
+// 特定の日時
+LocalDateTime dateTime = LocalDateTime.of(2024, 1, 15, 14, 30);
+
+// 日時の加算・減算
+LocalDateTime future = dateTime.plusDays(1).plusHours(2);
+```
+
+**重要なポイント:**
+- `java.time`パッケージは不変（immutable）
+- メソッドチェーンで日時の操作が可能
+- スレッドセーフ
+
+### Java Gold 試験範囲
+
+#### 1. ラムダ式とストリームAPI
+
+**ラムダ式の基本:**
+
+```java
+// 関数型インターフェース
+@FunctionalInterface
+interface Calculator {
+    int calculate(int a, int b);
+}
+
+// ラムダ式の使用
+Calculator add = (a, b) -> a + b;
+Calculator multiply = (a, b) -> a * b;
+
+int result1 = add.calculate(5, 3);  // 8
+int result2 = multiply.calculate(5, 3);  // 15
+```
+
+**メソッド参照:**
+
+```java
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie");
+
+// ラムダ式
+names.forEach(name -> System.out.println(name));
+
+// メソッド参照
+names.forEach(System.out::println);
+
+// コンストラクタ参照
+Supplier<List<String>> supplier = ArrayList::new;
+```
+
+**ストリームAPI:**
+
+```java
+List<Integer> numbers = Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+
+// フィルタリングとマッピング
+List<Integer> evenSquares = numbers.stream()
+    .filter(n -> n % 2 == 0)  // 偶数をフィルタ
+    .map(n -> n * n)  // 2乗に変換
+    .collect(Collectors.toList());  // [4, 16, 36, 64, 100]
+
+// 集約操作
+int sum = numbers.stream()
+    .mapToInt(Integer::intValue)
+    .sum();  // 55
+
+Optional<Integer> max = numbers.stream()
+    .max(Integer::compareTo);  // Optional[10]
+
+// 並列ストリーム
+List<Integer> parallelResult = numbers.parallelStream()
+    .filter(n -> n > 5)
+    .collect(Collectors.toList());
+```
+
+**重要なポイント:**
+- ラムダ式は関数型インターフェースの実装を簡潔に記述
+- ストリームは遅延評価（終端操作が呼ばれるまで実行されない）
+- 並列ストリームでパフォーマンス向上が期待できる
+
+#### 2. ジェネリクス
+
+**基本的なジェネリクス:**
+
+```java
+// ジェネリッククラス
+public class Box<T> {
+    private T value;
+    
+    public void setValue(T value) {
+        this.value = value;
+    }
+    
+    public T getValue() {
+        return value;
+    }
+}
+
+// 使用例
+Box<String> stringBox = new Box<>();
+stringBox.setValue("Hello");
+String value = stringBox.getValue();  // キャスト不要
+
+Box<Integer> intBox = new Box<>();
+intBox.setValue(100);
+Integer number = intBox.getValue();  // キャスト不要
+```
+
+**ワイルドカード:**
+
+```java
+// 上限境界ワイルドカード（extends）
+public void processNumbers(List<? extends Number> numbers) {
+    // Numberまたはそのサブクラスのリストを受け取る
+    for (Number num : numbers) {
+        System.out.println(num);
+    }
+}
+
+// 下限境界ワイルドカード（super）
+public void addNumbers(List<? super Integer> numbers) {
+    // Integerまたはそのスーパークラスのリストを受け取る
+    numbers.add(100);
+}
+```
+
+**重要なポイント:**
+- `? extends T`: Tまたはそのサブクラス（読み取り専用）
+- `? super T`: Tまたはそのスーパークラス（書き込み可能）
+- PECS原則: Producer Extends, Consumer Super
+
+#### 3. 並行処理
+
+**スレッドの作成:**
+
+```java
+// Threadクラスを継承
+class MyThread extends Thread {
+    @Override
+    public void run() {
+        System.out.println("Thread running");
+    }
+}
+
+MyThread thread = new MyThread();
+thread.start();
+
+// Runnableインターフェースを実装
+Runnable runnable = () -> System.out.println("Runnable running");
+Thread thread2 = new Thread(runnable);
+thread2.start();
+```
+
+**ExecutorService:**
+
+```java
+// スレッドプールの作成
+ExecutorService executor = Executors.newFixedThreadPool(5);
+
+// タスクの実行
+Future<String> future = executor.submit(() -> {
+    Thread.sleep(1000);
+    return "Task completed";
+});
+
+// 結果の取得
+try {
+    String result = future.get();  // ブロッキング
+    System.out.println(result);
+} catch (InterruptedException | ExecutionException e) {
+    e.printStackTrace();
+}
+
+// シャットダウン
+executor.shutdown();
+```
+
+**CompletableFuture:**
+
+```java
+// 非同期処理
+CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+    return "Hello";
+});
+
+// 結果の処理
+future.thenApply(s -> s + " World")
+      .thenAccept(System.out::println);
+
+// 複数のFutureの結合
+CompletableFuture<String> future1 = CompletableFuture.supplyAsync(() -> "Hello");
+CompletableFuture<String> future2 = CompletableFuture.supplyAsync(() -> "World");
+
+CompletableFuture<String> combined = future1.thenCombine(future2, (s1, s2) -> s1 + " " + s2);
+```
+
+**重要なポイント:**
+- `ExecutorService`でスレッドプールを管理
+- `CompletableFuture`で非同期処理を簡潔に記述
+- スレッドセーフなコレクション（`ConcurrentHashMap`など）を使用
+
+#### 4. モジュールシステム（Java 9以降）
+
+**module-info.java:**
+
+```java
+// モジュールの定義
+module com.example.myapp {
+    // 依存関係の宣言
+    requires java.base;
+    requires java.sql;
+    
+    // パッケージの公開
+    exports com.example.myapp.api;
+    
+    // サービス提供の宣言
+    provides com.example.myapp.service.MyService
+        with com.example.myapp.service.MyServiceImpl;
+    
+    // サービス使用の宣言
+    uses com.example.myapp.service.MyService;
+}
+```
+
+**重要なポイント:**
+- `requires`: 他のモジュールへの依存を宣言
+- `exports`: パッケージを他のモジュールに公開
+- `provides/uses`: サービスプロバイダーパターンを実現
+
+#### 5. リフレクション
+
+**クラス情報の取得:**
+
+```java
+// クラスオブジェクトの取得
+Class<?> clazz = String.class;
+Class<?> clazz2 = Class.forName("java.lang.String");
+
+// メソッドの取得と実行
+Method method = clazz.getMethod("substring", int.class);
+String result = (String) method.invoke("Hello World", 6);  // "World"
+
+// フィールドの取得と設定
+Field field = clazz.getDeclaredField("value");
+field.setAccessible(true);
+char[] value = (char[]) field.get("Hello");
+```
+
+**重要なポイント:**
+- リフレクションは実行時にクラス情報を取得・操作
+- パフォーマンスオーバーヘッドがある
+- セキュリティ制限に注意
+
+### 試験対策のポイント
+
+#### 1. コード読解問題
+
+**よく出るパターン:**
+
+```java
+// 問題: 以下のコードの出力は？
+List<String> list = new ArrayList<>();
+list.add("A");
+list.add("B");
+list.add("C");
+
+for (String s : list) {
+    if (s.equals("B")) {
+        list.remove(s);  // ConcurrentModificationException
+    }
+}
+```
+
+**対策:**
+- イテレータを使用するか、`removeIf`メソッドを使用
+- ストリームAPIを使用してフィルタリング
+
+#### 2. 例外処理の問題
+
+**よく出るパターン:**
+
+```java
+// 問題: 以下のコードの出力は？
+try {
+    System.out.println("1");
+    throw new RuntimeException();
+} catch (RuntimeException e) {
+    System.out.println("2");
+    return;
+} finally {
+    System.out.println("3");
+}
+// 出力: 1, 2, 3
+```
+
+**対策:**
+- `finally`ブロックは必ず実行される
+- `return`があっても`finally`は実行される
+
+#### 3. ジェネリクスの問題
+
+**よく出るパターン:**
+
+```java
+// 問題: コンパイルエラーになるのは？
+List<? extends Number> list1 = new ArrayList<Integer>();  // OK
+List<? super Integer> list2 = new ArrayList<Number>();  // OK
+list1.add(10);  // コンパイルエラー（読み取り専用）
+list2.add(10);  // OK（書き込み可能）
+```
+
+**対策:**
+- PECS原則を理解する
+- ワイルドカードの制約を理解する
+
+#### 4. ストリームAPIの問題
+
+**よく出るパターン:**
+
+```java
+// 問題: 以下のコードの出力は？
+List<Integer> numbers = Arrays.asList(1, 2, 3, 4, 5);
+Optional<Integer> result = numbers.stream()
+    .filter(n -> n > 10)
+    .findFirst();
+System.out.println(result.orElse(0));  // 0（要素が見つからない場合）
+```
+
+**対策:**
+- ストリームの遅延評価を理解する
+- 終端操作の動作を理解する
+
+### 実践問題
+
+#### 問題1: 例外処理
+
+```java
+public class ExceptionTest {
+    public static void main(String[] args) {
+        try {
+            System.out.println("1");
+            method();
+            System.out.println("2");
+        } catch (RuntimeException e) {
+            System.out.println("3");
+        } finally {
+            System.out.println("4");
+        }
+    }
+    
+    static void method() {
+        throw new RuntimeException();
+    }
+}
+// 出力: 1, 3, 4
+```
+
+#### 問題2: ジェネリクス
+
+```java
+List<? extends Number> list = new ArrayList<Integer>();
+// list.add(10);  // コンパイルエラー
+Number num = list.get(0);  // OK
+```
+
+#### 問題3: ストリームAPI
+
+```java
+List<String> list = Arrays.asList("a", "bb", "ccc", "dddd");
+long count = list.stream()
+    .filter(s -> s.length() > 2)
+    .count();
+// 結果: 2（"ccc"と"dddd"）
+```
+
+### まとめ
+
+**Java Silver/Gold試験対策のポイント:**
+
+1. **コード読解能力**: コードを読んで結果を予測する能力が重要
+2. **基本構文の理解**: 変数、メソッド、クラスなどの基本構文を正確に理解
+3. **オブジェクト指向**: 継承、ポリモーフィズム、カプセル化の理解
+4. **例外処理**: try-catch-finallyの動作を正確に理解
+5. **コレクション**: List、Set、Mapの違いと使い分け
+6. **ラムダ式とストリームAPI**: 関数型プログラミングの概念を理解
+7. **ジェネリクス**: 型安全性とワイルドカードの理解
+8. **並行処理**: スレッド、ExecutorService、CompletableFutureの理解
+
+**学習の進め方:**
+
+1. **基礎固め**: 各トピックの基本をしっかり理解
+2. **問題演習**: 過去問や模擬問題を解く
+3. **コード実行**: 実際にコードを書いて実行し、動作を確認
+4. **間違いの分析**: 間違えた問題を分析し、なぜ間違えたかを理解
+
+これらのポイントを押さえることで、Java Silver/Gold試験に合格できる実力を身につけることができます。
+

@@ -1,0 +1,549 @@
+---
+title: "Spring Beansの詳細設定"
+label: "Spring Beansの詳細設定"
+---
+
+## Spring Beansの詳細設定
+
+Spring FrameworkのBean管理は、依存性注入（DI）の中核となる機能です。この章では、Beanの詳細な設定方法と高度な使い方について解説します。
+
+### Beanのスコープ
+
+Spring Beanには、以下のスコープが定義されています：
+
+#### 1. Singleton（デフォルト）
+
+アプリケーション全体で1つのインスタンスのみが作成されます。
+
+```java
+@Component
+@Scope(ConfigurableBeanFactory.SCOPE_SINGLETON)
+public class SingletonService {
+    // アプリケーション全体で1つのインスタンスのみ
+}
+```
+
+**特徴:**
+- メモリ効率が良い
+- 状態を共有するため、スレッドセーフに注意が必要
+- デフォルトのスコープ
+
+#### 2. Prototype
+
+リクエストごとに新しいインスタンスが作成されます。
+
+```java
+@Component
+@Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+public class PrototypeService {
+    // 毎回新しいインスタンスが作成される
+}
+```
+
+**使用例:**
+
+```java
+@Service
+public class OrderService {
+    
+    @Autowired
+    private ApplicationContext applicationContext;
+    
+    public void processOrder() {
+        // プロトタイプBeanを取得（毎回新しいインスタンス）
+        PrototypeService service = applicationContext.getBean(PrototypeService.class);
+        // 使用...
+    }
+}
+```
+
+#### 3. Request（Webアプリケーション）
+
+HTTPリクエストごとに新しいインスタンスが作成されます。
+
+```java
+@Component
+@Scope(WebApplicationContext.SCOPE_REQUEST)
+public class RequestScopedService {
+    // 各HTTPリクエストごとに新しいインスタンス
+}
+```
+
+#### 4. Session（Webアプリケーション）
+
+HTTPセッションごとに新しいインスタンスが作成されます。
+
+```java
+@Component
+@Scope(WebApplicationContext.SCOPE_SESSION)
+public class SessionScopedService {
+    // 各HTTPセッションごとに新しいインスタンス
+}
+```
+
+#### 5. Application（Webアプリケーション）
+
+ServletContextごとに1つのインスタンスが作成されます。
+
+```java
+@Component
+@Scope(WebApplicationContext.SCOPE_APPLICATION)
+public class ApplicationScopedService {
+    // ServletContextごとに1つのインスタンス
+}
+```
+
+### @Configurationと@Bean
+
+`@Configuration`クラスで`@Bean`メソッドを使用して、Beanを明示的に定義できます。
+
+```java
+@Configuration
+public class AppConfig {
+    
+    @Bean
+    public DataSource dataSource() {
+        HikariDataSource dataSource = new HikariDataSource();
+        dataSource.setJdbcUrl("jdbc:postgresql://localhost:5432/mydb");
+        dataSource.setUsername("myuser");
+        dataSource.setPassword("mypassword");
+        return dataSource;
+    }
+    
+    @Bean
+    public RestTemplate restTemplate() {
+        RestTemplate restTemplate = new RestTemplate();
+        restTemplate.setRequestFactory(new HttpComponentsClientHttpRequestFactory());
+        return restTemplate;
+    }
+    
+    @Bean
+    @Primary  // 複数のBeanがある場合、優先的に使用される
+    public PaymentService paymentService() {
+        return new PaymentServiceImpl();
+    }
+    
+    @Bean
+    public PaymentService alternativePaymentService() {
+        return new AlternativePaymentServiceImpl();
+    }
+}
+```
+
+### @ConditionalOnProperty
+
+プロパティの値に応じてBeanを作成するかどうかを制御します。
+
+```java
+@Configuration
+public class FeatureConfig {
+    
+    @Bean
+    @ConditionalOnProperty(
+        name = "feature.email.enabled",
+        havingValue = "true",
+        matchIfMissing = false
+    )
+    public EmailService emailService() {
+        return new EmailServiceImpl();
+    }
+    
+    @Bean
+    @ConditionalOnProperty(
+        name = "feature.sms.enabled",
+        havingValue = "true"
+    )
+    public SmsService smsService() {
+        return new SmsServiceImpl();
+    }
+}
+```
+
+**application.properties:**
+
+```properties
+feature.email.enabled=true
+feature.sms.enabled=false
+```
+
+### @ConditionalOnClass
+
+特定のクラスが存在する場合のみBeanを作成します。
+
+```java
+@Configuration
+public class OptionalFeatureConfig {
+    
+    @Bean
+    @ConditionalOnClass(name = "com.example.ExternalLibrary")
+    public ExternalService externalService() {
+        return new ExternalServiceImpl();
+    }
+}
+```
+
+### @Primaryと@Qualifier
+
+複数の同じ型のBeanがある場合の解決方法：
+
+```java
+@Configuration
+public class ServiceConfig {
+    
+    @Bean
+    @Primary  // 優先的に使用される
+    public UserService defaultUserService() {
+        return new DefaultUserService();
+    }
+    
+    @Bean
+    @Qualifier("admin")
+    public UserService adminUserService() {
+        return new AdminUserService();
+    }
+    
+    @Bean
+    @Qualifier("guest")
+    public UserService guestUserService() {
+        return new GuestUserService();
+    }
+}
+
+@Service
+public class OrderService {
+    
+    // @Primaryが付いたBeanが注入される
+    @Autowired
+    private UserService userService;
+    
+    // 特定のBeanを指定
+    @Autowired
+    @Qualifier("admin")
+    private UserService adminUserService;
+    
+    // コンストラクタインジェクションでも使用可能
+    public OrderService(
+            @Qualifier("guest") UserService guestUserService) {
+        this.guestUserService = guestUserService;
+    }
+}
+```
+
+### @Order
+
+Beanの初期化順序を制御します。
+
+```java
+@Component
+@Order(1)
+public class FirstInitializer implements CommandLineRunner {
+    @Override
+    public void run(String... args) {
+        System.out.println("First initializer");
+    }
+}
+
+@Component
+@Order(2)
+public class SecondInitializer implements CommandLineRunner {
+    @Override
+    public void run(String... args) {
+        System.out.println("Second initializer");
+    }
+}
+```
+
+### Beanのライフサイクル
+
+Beanのライフサイクルメソッドを使用して、初期化と破棄時の処理を定義できます。
+
+```java
+@Component
+public class LifecycleService {
+    
+    @PostConstruct
+    public void init() {
+        // Beanの初期化後に実行される
+        System.out.println("LifecycleService initialized");
+    }
+    
+    @PreDestroy
+    public void cleanup() {
+        // Beanの破棄前に実行される
+        System.out.println("LifecycleService destroyed");
+    }
+}
+```
+
+**@Beanメソッドでの指定:**
+
+```java
+@Configuration
+public class LifecycleConfig {
+    
+    @Bean(initMethod = "init", destroyMethod = "cleanup")
+    public DataSource dataSource() {
+        return new HikariDataSource();
+    }
+    
+    // または、InitializingBeanとDisposableBeanインターフェースを実装
+    @Bean
+    public CustomService customService() {
+        return new CustomService() {
+            @Override
+            public void afterPropertiesSet() {
+                // 初期化処理
+            }
+            
+            @Override
+            public void destroy() {
+                // 破棄処理
+            }
+        };
+    }
+}
+```
+
+### @Lazy
+
+Beanの遅延初期化を設定します。
+
+```java
+@Component
+@Lazy
+public class LazyService {
+    // 最初に使用されるまで初期化されない
+    
+    public LazyService() {
+        System.out.println("LazyService created");
+    }
+}
+
+@Configuration
+public class LazyConfig {
+    
+    @Bean
+    @Lazy
+    public HeavyService heavyService() {
+        // このBeanが実際に使用されるまで初期化されない
+        return new HeavyService();
+    }
+}
+```
+
+### @DependsOn
+
+Beanの依存関係を明示的に指定します。
+
+```java
+@Configuration
+public class DependencyConfig {
+    
+    @Bean
+    @DependsOn("databaseInitializer")
+    public UserService userService() {
+        // databaseInitializerが初期化された後に初期化される
+        return new UserServiceImpl();
+    }
+    
+    @Bean
+    public DatabaseInitializer databaseInitializer() {
+        return new DatabaseInitializer();
+    }
+}
+```
+
+### @Profile
+
+環境に応じてBeanを作成します。
+
+```java
+@Configuration
+public class ProfileConfig {
+    
+    @Bean
+    @Profile("dev")
+    public DataSource devDataSource() {
+        // 開発環境でのみ作成される
+        return new H2DataSource();
+    }
+    
+    @Bean
+    @Profile("prod")
+    public DataSource prodDataSource() {
+        // 本番環境でのみ作成される
+        return new HikariDataSource();
+    }
+}
+```
+
+**プロファイルの有効化:**
+
+```bash
+# 開発環境
+java -jar app.jar --spring.profiles.active=dev
+
+# 本番環境
+java -jar app.jar --spring.profiles.active=prod
+```
+
+### BeanFactoryとApplicationContext
+
+#### BeanFactory
+
+基本的なBean管理機能を提供します。
+
+```java
+@Autowired
+private BeanFactory beanFactory;
+
+public void example() {
+    // Beanを取得
+    UserService userService = beanFactory.getBean(UserService.class);
+    
+    // 名前でBeanを取得
+    UserService namedService = beanFactory.getBean("userService", UserService.class);
+    
+    // Beanが存在するか確認
+    boolean exists = beanFactory.containsBean("userService");
+    
+    // Beanの型を取得
+    Class<?> type = beanFactory.getType("userService");
+}
+```
+
+#### ApplicationContext
+
+BeanFactoryを拡張し、より多くの機能を提供します。
+
+```java
+@Autowired
+private ApplicationContext applicationContext;
+
+public void example() {
+    // Beanを取得
+    UserService userService = applicationContext.getBean(UserService.class);
+    
+    // すべてのBean名を取得
+    String[] beanNames = applicationContext.getBeanNamesForType(UserService.class);
+    
+    // イベントを発行
+    applicationContext.publishEvent(new CustomEvent(this, "message"));
+    
+    // プロファイルを確認
+    boolean isDev = applicationContext.getEnvironment().acceptsProfiles("dev");
+}
+```
+
+### カスタムスコープの作成
+
+独自のスコープを定義できます。
+
+```java
+public class ThreadScope implements Scope {
+    
+    private final ThreadLocal<Map<String, Object>> threadLocal = 
+        ThreadLocal.withInitial(HashMap::new);
+    
+    @Override
+    public Object get(String name, ObjectFactory<?> objectFactory) {
+        Map<String, Object> scope = threadLocal.get();
+        Object object = scope.get(name);
+        if (object == null) {
+            object = objectFactory.getObject();
+            scope.put(name, object);
+        }
+        return object;
+    }
+    
+    @Override
+    public Object remove(String name) {
+        Map<String, Object> scope = threadLocal.get();
+        return scope.remove(name);
+    }
+    
+    @Override
+    public void registerDestructionCallback(String name, Runnable callback) {
+        // 破棄時のコールバックを登録
+    }
+    
+    @Override
+    public Object resolveContextualObject(String key) {
+        return null;
+    }
+    
+    @Override
+    public String getConversationId() {
+        return Thread.currentThread().getName();
+    }
+}
+
+// スコープの登録
+@Configuration
+public class ScopeConfig {
+    
+    @Bean
+    public static CustomScopeConfigurer customScopeConfigurer() {
+        CustomScopeConfigurer configurer = new CustomScopeConfigurer();
+        configurer.addScope("thread", new ThreadScope());
+        return configurer;
+    }
+}
+
+// 使用例
+@Component
+@Scope("thread")
+public class ThreadScopedService {
+    // スレッドごとに1つのインスタンス
+}
+```
+
+### Beanの検証
+
+Beanの検証を行うための実装：
+
+```java
+@Component
+public class BeanValidator implements BeanPostProcessor {
+    
+    @Override
+    public Object postProcessBeforeInitialization(Object bean, String beanName) 
+            throws BeansException {
+        // 初期化前の処理
+        if (bean instanceof Validatable) {
+            ((Validatable) bean).validate();
+        }
+        return bean;
+    }
+    
+    @Override
+    public Object postProcessAfterInitialization(Object bean, String beanName) 
+            throws BeansException {
+        // 初期化後の処理
+        return bean;
+    }
+}
+
+public interface Validatable {
+    void validate();
+}
+```
+
+### まとめ
+
+Spring Beansの詳細設定：
+
+- **スコープ**: Singleton、Prototype、Request、Sessionなど
+- **@Configurationと@Bean**: 明示的なBean定義
+- **@ConditionalOnProperty**: プロパティに応じた条件付きBean作成
+- **@Primaryと@Qualifier**: 複数Beanの解決
+- **@Order**: Beanの初期化順序制御
+- **ライフサイクル**: @PostConstruct、@PreDestroy
+- **@Lazy**: 遅延初期化
+- **@DependsOn**: Beanの依存関係
+- **@Profile**: 環境に応じたBean作成
+- **カスタムスコープ**: 独自スコープの定義
+
+これらの機能を適切に使用することで、柔軟で保守性の高いアプリケーションを構築できます。
+
+

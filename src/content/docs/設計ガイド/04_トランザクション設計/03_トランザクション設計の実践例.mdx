@@ -1,0 +1,594 @@
+---
+title: "トランザクション設計の実践例"
+label: "トランザクション設計の実践例"
+---
+
+## トランザクション設計の実践例
+
+実際のシステムを例に、トランザクション設計の実践的なユースケースを説明します。
+
+### ユースケース1: ECサイトの注文処理
+
+#### 要件
+
+- 在庫確認
+- 在庫の予約
+- 注文の作成
+- 決済処理
+- 在庫の確定
+
+#### トランザクション設計
+
+```javascript
+// 注文処理のトランザクション
+async function createOrder(userId, items, shippingAddress, paymentMethod) {
+  const connection = await db.getConnection();
+  
+  try {
+    await connection.beginTransaction();
+    
+    // 1. 在庫確認と予約
+    const reservedItems = [];
+    for (const item of items) {
+      // 在庫をロック
+      const [inventory] = await connection.query(
+        `SELECT available_quantity FROM inventory 
+         WHERE product_id = ? AND warehouse_id = ? 
+         FOR UPDATE`,
+        [item.product_id, item.warehouse_id]
+      );
+      
+      if (!inventory || inventory.available_quantity < item.quantity) {
+        throw new Error(`Insufficient stock for product ${item.product_id}`);
+      }
+      
+      // 在庫を予約
+      await connection.query(
+        `UPDATE inventory 
+         SET reserved_quantity = reserved_quantity + ? 
+         WHERE product_id = ? AND warehouse_id = ?`,
+        [item.quantity, item.product_id, item.warehouse_id]
+      );
+      
+      reservedItems.push(item);
+    }
+    
+    // 2. 注文を作成
+    const totalAmount = calculateTotal(items);
+    const [orderResult] = await connection.query(
+      `INSERT INTO orders (user_id, status, total_amount, shipping_address, payment_method)
+       VALUES (?, 'pending', ?, ?, ?)`,
+      [userId, totalAmount, JSON.stringify(shippingAddress), paymentMethod]
+    );
+    const orderId = orderResult.insertId;
+    
+    // 3. 注文明細を作成
+    for (const item of reservedItems) {
+      await connection.query(
+        `INSERT INTO order_items (order_id, product_id, quantity, price)
+         VALUES (?, ?, ?, ?)`,
+        [orderId, item.product_id, item.quantity, item.price]
+      );
+    }
+    
+    // 4. 決済処理（外部API呼び出し）
+    const paymentResult = await processPayment({
+      amount: totalAmount,
+      method: paymentMethod,
+      orderId: orderId
+    });
+    
+    if (!paymentResult.success) {
+      throw new Error('Payment failed');
+    }
+    
+    // 5. 注文ステータスを更新
+    await connection.query(
+      `UPDATE orders SET status = 'confirmed', payment_status = 'paid' WHERE id = ?`,
+      [orderId]
+    );
+    
+    // 6. 在庫を確定（予約から確定へ）
+    for (const item of reservedItems) {
+      await connection.query(
+        `UPDATE inventory 
+         SET quantity = quantity - ?,
+             reserved_quantity = reserved_quantity - ?
+         WHERE product_id = ? AND warehouse_id = ?`,
+        [item.quantity, item.quantity, item.product_id, item.warehouse_id]
+      );
+      
+      // 在庫履歴を記録
+      await connection.query(
+        `INSERT INTO inventory_transactions 
+         (product_id, warehouse_id, transaction_type, quantity, reference_type, reference_id)
+         VALUES (?, ?, 'out', ?, 'order', ?)`,
+        [item.product_id, item.warehouse_id, item.quantity, orderId]
+      );
+    }
+    
+    await connection.commit();
+    return { orderId, paymentResult };
+    
+  } catch (error) {
+    await connection.rollback();
+    
+    // 予約した在庫を解放
+    for (const item of reservedItems) {
+      await connection.query(
+        `UPDATE inventory 
+         SET reserved_quantity = reserved_quantity - ? 
+         WHERE product_id = ? AND warehouse_id = ?`,
+        [item.quantity, item.product_id, item.warehouse_id]
+      );
+    }
+    
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+```
+
+#### エラーハンドリング
+
+**在庫不足の場合:**
+
+```javascript
+// 在庫不足エラー
+try {
+  await createOrder(userId, items, shippingAddress, paymentMethod);
+} catch (error) {
+  if (error.message.includes('Insufficient stock')) {
+    // 在庫不足のエラーレスポンス
+    return {
+      error: {
+        code: 'INSUFFICIENT_STOCK',
+        message: '在庫が不足しています',
+        details: error.message
+      }
+    };
+  }
+  throw error;
+}
+```
+
+**決済失敗の場合:**
+
+```javascript
+// 決済失敗時のロールバック
+// トランザクション内で自動的にロールバックされる
+// 予約した在庫も解放される
+```
+
+### ユースケース2: 銀行口座間の送金
+
+#### 要件
+
+- 送金元の残高確認
+- 送金元の残高減少
+- 送金先の残高増加
+- 送金履歴の記録
+
+#### トランザクション設計
+
+```sql
+-- 送金処理のトランザクション
+BEGIN TRANSACTION;
+
+-- 1. 送金元の残高を確認・ロック
+SELECT balance FROM accounts WHERE id = 1 FOR UPDATE;
+
+-- 2. 残高が十分か確認（アプリケーション側で確認）
+-- IF balance < amount THEN ROLLBACK;
+
+-- 3. 送金元の残高を減らす
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+
+-- 4. 送金先の残高を増やす
+UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+
+-- 5. 送金履歴を記録
+INSERT INTO transactions 
+  (from_account_id, to_account_id, amount, transaction_type, status, created_at)
+VALUES 
+  (1, 2, 100, 'transfer', 'completed', NOW());
+
+COMMIT;
+```
+
+#### 実装例（Node.js）
+
+```javascript
+async function transferMoney(fromAccountId, toAccountId, amount) {
+  const connection = await db.getConnection();
+  
+  try {
+    await connection.beginTransaction();
+    
+    // 送金元の残高を確認・ロック
+    const [fromAccount] = await connection.query(
+      'SELECT balance FROM accounts WHERE id = ? FOR UPDATE',
+      [fromAccountId]
+    );
+    
+    if (!fromAccount) {
+      throw new Error('From account not found');
+    }
+    
+    if (fromAccount.balance < amount) {
+      throw new Error('Insufficient balance');
+    }
+    
+    // 送金先のアカウントが存在するか確認
+    const [toAccount] = await connection.query(
+      'SELECT id FROM accounts WHERE id = ? FOR UPDATE',
+      [toAccountId]
+    );
+    
+    if (!toAccount) {
+      throw new Error('To account not found');
+    }
+    
+    // 送金元の残高を減らす
+    await connection.query(
+      'UPDATE accounts SET balance = balance - ? WHERE id = ?',
+      [amount, fromAccountId]
+    );
+    
+    // 送金先の残高を増やす
+    await connection.query(
+      'UPDATE accounts SET balance = balance + ? WHERE id = ?',
+      [amount, toAccountId]
+    );
+    
+    // 送金履歴を記録
+    await connection.query(
+      `INSERT INTO transactions 
+       (from_account_id, to_account_id, amount, transaction_type, status)
+       VALUES (?, ?, ?, 'transfer', 'completed')`,
+      [fromAccountId, toAccountId, amount]
+    );
+    
+    await connection.commit();
+    return { success: true };
+    
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+```
+
+### ユースケース3: チケット予約システム
+
+#### 要件
+
+- 座席の確認
+- 座席の予約
+- チケットの発行
+- タイムアウト処理
+
+#### トランザクション設計
+
+```javascript
+// チケット予約のトランザクション
+async function reserveTicket(eventId, seatIds, userId) {
+  const connection = await db.getConnection();
+  
+  try {
+    await connection.beginTransaction();
+    
+    // 1. 座席の確認とロック
+    const [seats] = await connection.query(
+      `SELECT id, status FROM seats 
+       WHERE event_id = ? AND id IN (?)
+       FOR UPDATE`,
+      [eventId, seatIds]
+    );
+    
+    // 利用可能な座席を確認
+    const availableSeats = seats.filter(seat => seat.status === 'available');
+    if (availableSeats.length !== seatIds.length) {
+      throw new Error('Some seats are not available');
+    }
+    
+    // 2. 座席を予約状態に変更
+    await connection.query(
+      `UPDATE seats SET status = 'reserved', reserved_until = DATE_ADD(NOW(), INTERVAL 15 MINUTE)
+       WHERE event_id = ? AND id IN (?)`,
+      [eventId, seatIds]
+    );
+    
+    // 3. 予約レコードを作成
+    const [reservationResult] = await connection.query(
+      `INSERT INTO reservations (event_id, user_id, status, expires_at)
+       VALUES (?, ?, 'pending', DATE_ADD(NOW(), INTERVAL 15 MINUTE))`,
+      [eventId, userId]
+    );
+    const reservationId = reservationResult.insertId;
+    
+    // 4. 予約座席を記録
+    for (const seatId of seatIds) {
+      await connection.query(
+        `INSERT INTO reservation_seats (reservation_id, seat_id)
+         VALUES (?, ?)`,
+        [reservationId, seatId]
+      );
+    }
+    
+    await connection.commit();
+    return { reservationId, expiresAt: new Date(Date.now() + 15 * 60 * 1000) };
+    
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+// チケット発行（決済完了後）
+async function issueTickets(reservationId, paymentResult) {
+  const connection = await db.getConnection();
+  
+  try {
+    await connection.beginTransaction();
+    
+    // 1. 予約の確認
+    const [reservation] = await connection.query(
+      'SELECT * FROM reservations WHERE id = ? FOR UPDATE',
+      [reservationId]
+    );
+    
+    if (!reservation || reservation.status !== 'pending') {
+      throw new Error('Invalid reservation');
+    }
+    
+    // 2. 決済確認
+    if (!paymentResult.success) {
+      throw new Error('Payment failed');
+    }
+    
+    // 3. 座席を確定状態に変更
+    await connection.query(
+      `UPDATE seats s
+       JOIN reservation_seats rs ON s.id = rs.seat_id
+       SET s.status = 'sold'
+       WHERE rs.reservation_id = ?`,
+      [reservationId]
+    );
+    
+    // 4. 予約ステータスを更新
+    await connection.query(
+      `UPDATE reservations 
+       SET status = 'confirmed', confirmed_at = NOW()
+       WHERE id = ?`,
+      [reservationId]
+    );
+    
+    // 5. チケットを発行
+    const [seats] = await connection.query(
+      `SELECT seat_id FROM reservation_seats WHERE reservation_id = ?`,
+      [reservationId]
+    );
+    
+    const tickets = [];
+    for (const seat of seats) {
+      const [ticketResult] = await connection.query(
+        `INSERT INTO tickets (reservation_id, seat_id, ticket_number, status)
+         VALUES (?, ?, ?, 'issued')`,
+        [reservationId, seat.seat_id, generateTicketNumber()]
+      );
+      tickets.push(ticketResult.insertId);
+    }
+    
+    await connection.commit();
+    return { tickets };
+    
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+// タイムアウト処理（バッチ処理）
+async function expireReservations() {
+  const connection = await db.getConnection();
+  
+  try {
+    await connection.beginTransaction();
+    
+    // 期限切れの予約を取得
+    const [expiredReservations] = await connection.query(
+      `SELECT id FROM reservations 
+       WHERE status = 'pending' AND expires_at < NOW()`
+    );
+    
+    for (const reservation of expiredReservations) {
+      // 座席を解放
+      await connection.query(
+        `UPDATE seats s
+         JOIN reservation_seats rs ON s.id = rs.seat_id
+         SET s.status = 'available', s.reserved_until = NULL
+         WHERE rs.reservation_id = ?`,
+        [reservation.id]
+      );
+      
+      // 予約をキャンセル
+      await connection.query(
+        `UPDATE reservations SET status = 'expired' WHERE id = ?`,
+        [reservation.id]
+      );
+    }
+    
+    await connection.commit();
+    return { expiredCount: expiredReservations.length };
+    
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+```
+
+### ユースケース4: ポイントシステム
+
+#### 要件
+
+- ポイントの付与
+- ポイントの使用
+- ポイントの有効期限管理
+- ポイント履歴の記録
+
+#### トランザクション設計
+
+```sql
+-- ポイント付与テーブル
+CREATE TABLE point_grants (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  amount INT NOT NULL,
+  source_type VARCHAR(50) NOT NULL,  -- 'purchase', 'promotion', 'referral'
+  source_id INT,
+  expires_at TIMESTAMP NULL,
+  status ENUM('pending', 'active', 'expired', 'used') DEFAULT 'pending',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  INDEX idx_user_id (user_id),
+  INDEX idx_status (status),
+  INDEX idx_expires_at (expires_at)
+);
+
+-- ポイント使用テーブル
+CREATE TABLE point_usage (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  amount INT NOT NULL,
+  point_grant_ids JSON,  -- 使用したポイント付与のID
+  reference_type VARCHAR(50),  -- 'order', 'refund'など
+  reference_id INT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  INDEX idx_user_id (user_id),
+  INDEX idx_created_at (created_at)
+);
+```
+
+```javascript
+// ポイントの使用
+async function usePoints(userId, amount, referenceType, referenceId) {
+  const connection = await db.getConnection();
+  
+  try {
+    await connection.beginTransaction();
+    
+    // 1. 利用可能なポイントを取得（有効期限順）
+    const [availablePoints] = await connection.query(
+      `SELECT id, amount, expires_at 
+       FROM point_grants 
+       WHERE user_id = ? 
+         AND status = 'active'
+         AND (expires_at IS NULL OR expires_at > NOW())
+       ORDER BY expires_at ASC, created_at ASC
+       FOR UPDATE`,
+      [userId]
+    );
+    
+    // 2. 利用可能なポイントの合計を計算
+    const totalAvailable = availablePoints.reduce((sum, p) => sum + p.amount, 0);
+    if (totalAvailable < amount) {
+      throw new Error('Insufficient points');
+    }
+    
+    // 3. ポイントを使用（FIFO: First In First Out）
+    let remainingAmount = amount;
+    const usedGrantIds = [];
+    
+    for (const pointGrant of availablePoints) {
+      if (remainingAmount <= 0) break;
+      
+      const useAmount = Math.min(remainingAmount, pointGrant.amount);
+      
+      // ポイント付与を更新
+      if (useAmount === pointGrant.amount) {
+        // すべて使用
+        await connection.query(
+          `UPDATE point_grants SET status = 'used' WHERE id = ?`,
+          [pointGrant.id]
+        );
+      } else {
+        // 一部使用（分割が必要な場合は新しいレコードを作成）
+        await connection.query(
+          `UPDATE point_grants SET amount = amount - ? WHERE id = ?`,
+          [useAmount, pointGrant.id]
+        );
+      }
+      
+      usedGrantIds.push({ id: pointGrant.id, amount: useAmount });
+      remainingAmount -= useAmount;
+    }
+    
+    // 4. ポイント使用履歴を記録
+    await connection.query(
+      `INSERT INTO point_usage 
+       (user_id, amount, point_grant_ids, reference_type, reference_id)
+       VALUES (?, ?, ?, ?, ?)`,
+      [userId, amount, JSON.stringify(usedGrantIds), referenceType, referenceId]
+    );
+    
+    await connection.commit();
+    return { success: true, usedAmount: amount };
+    
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+// ポイントの付与
+async function grantPoints(userId, amount, sourceType, sourceId, expiresAt = null) {
+  const connection = await db.getConnection();
+  
+  try {
+    await connection.beginTransaction();
+    
+    // ポイント付与レコードを作成
+    const [result] = await connection.query(
+      `INSERT INTO point_grants 
+       (user_id, amount, source_type, source_id, expires_at, status)
+       VALUES (?, ?, ?, ?, ?, 'active')`,
+      [userId, amount, sourceType, sourceId, expiresAt]
+    );
+    
+    await connection.commit();
+    return { grantId: result.insertId };
+    
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+```
+
+### まとめ
+
+トランザクション設計の実践例：
+
+1. **ECサイトの注文処理**: 在庫確認、予約、注文作成、決済、在庫確定
+2. **銀行口座間の送金**: 残高確認、送金元減少、送金先増加、履歴記録
+3. **チケット予約システム**: 座席確認、予約、チケット発行、タイムアウト処理
+4. **ポイントシステム**: ポイント付与、使用、有効期限管理、履歴記録
+
+これらの実践例を参考に、実際のトランザクション設計を行えます。
+

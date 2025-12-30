@@ -1,0 +1,59 @@
+---
+title: "セキュリティ実践"
+label: "セキュリティ実践"
+---
+
+## セキュリティ実践
+
+### Secrets Manager
+
+```python
+# Secrets Managerからシークレットを取得
+import boto3
+import json
+
+secrets_client = boto3.client('secretsmanager')
+
+def get_secret(secret_name):
+    response = secrets_client.get_secret_value(SecretId=secret_name)
+    return json.loads(response['SecretString'])
+
+# 使用例
+db_credentials = get_secret('prod/db/credentials')
+```
+
+### WAFの設定
+
+```yaml
+WebACL:
+  Type: AWS::WAFv2::WebACL
+  Properties:
+    Name: MyWebACL
+    Scope: REGIONAL
+    DefaultAction:
+      Allow: {}
+    Rules:
+      - Name: AWSManagedRulesCommonRuleSet
+        Priority: 1
+        OverrideAction:
+          None: {}
+        Statement:
+          ManagedRuleGroupStatement:
+            VendorName: AWS
+            Name: AWSManagedRulesCommonRuleSet
+        VisibilityConfig:
+          SampledRequestsEnabled: true
+          CloudWatchMetricsEnabled: true
+          MetricName: CommonRuleSetMetric
+```
+
+### GuardDuty
+
+```yaml
+Detector:
+  Type: AWS::GuardDuty::Detector
+  Properties:
+    Enable: true
+    FindingPublishingFrequency: FIFTEEN_MINUTES
+```
+

@@ -1,0 +1,281 @@
+---
+title: "Hono詳細"
+label: "Hono詳細"
+---
+
+## Hono詳細
+
+Honoは、軽量で高速なWebフレームワークです。エッジランタイムで動作することを前提に設計されています。
+
+### なぜHonoが必要なのか
+
+#### Expressの課題（エッジ環境）
+
+**問題のあるExpressコード:**
+
+```javascript
+// ExpressはNode.js環境でのみ動作
+const express = require('express');
+const app = express();
+
+// 問題点:
+// - Cloudflare Workersで動作しない
+// - Denoで動作しない
+// - Bunで動作しない
+// - エッジ環境でのパフォーマンスが低い
+```
+
+**Honoの解決:**
+
+```javascript
+// Honoは複数のランタイムで動作
+import { Hono } from 'hono';
+const app = new Hono();
+
+// メリット:
+// - Cloudflare Workersで動作
+// - Denoで動作
+// - Bunで動作
+// - Node.jsでも動作
+// - エッジ環境で非常に高速
+```
+
+**メリット:**
+1. **マルチランタイム**: Cloudflare Workers、Deno、Bun、Node.js
+2. **高性能**: Expressの2-3倍のパフォーマンス
+3. **軽量**: 約13KBの小さなバンドルサイズ
+4. **TypeScript**: TypeScriptファーストの設計
+
+### Honoのインストール
+
+```bash
+# Node.js
+npm install hono
+
+# Deno
+import { Hono } from 'https://deno.land/x/hono/mod.ts'
+
+# Bun
+bun add hono
+```
+
+### 基本的なアプリケーション
+
+```typescript
+import { Hono } from 'hono';
+
+const app = new Hono();
+
+app.get('/', (c) => {
+  return c.text('Hello Hono!');
+});
+
+app.get('/users', (c) => {
+  return c.json({ users: [] });
+});
+
+export default app;
+```
+
+### ルーティング
+
+```typescript
+// パスパラメータ
+app.get('/users/:id', (c) => {
+  const id = c.req.param('id');
+  return c.json({ user: { id } });
+});
+
+// クエリパラメータ
+app.get('/users', (c) => {
+  const page = c.req.query('page');
+  const limit = c.req.query('limit');
+  return c.json({ page, limit });
+});
+
+// リクエストボディ
+app.post('/users', async (c) => {
+  const body = await c.req.json();
+  return c.json({ user: body }, 201);
+});
+```
+
+### ミドルウェア
+
+```typescript
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { logger } from 'hono/logger';
+import { secureHeaders } from 'hono/secure-headers';
+
+const app = new Hono();
+
+// 組み込みミドルウェア
+app.use('*', cors());
+app.use('*', logger());
+app.use('*', secureHeaders());
+
+// カスタムミドルウェア
+app.use('*', async (c, next) => {
+  console.log(`${c.req.method} ${c.req.path}`);
+  await next();
+});
+
+// 認証ミドルウェア
+const auth = async (c, next) => {
+  const token = c.req.header('Authorization');
+  if (!token) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  // トークンの検証
+  await next();
+};
+
+app.use('/protected/*', auth);
+```
+
+### バリデーション
+
+```typescript
+import { Hono } from 'hono';
+import { validator } from 'hono/validator';
+
+const app = new Hono();
+
+app.post(
+  '/users',
+  validator('json', (value, c) => {
+    if (!value.name || typeof value.name !== 'string') {
+      return c.json({ error: 'Name is required' }, 400);
+    }
+    if (!value.email || !value.email.includes('@')) {
+      return c.json({ error: 'Valid email is required' }, 400);
+    }
+    return value;
+  }),
+  async (c) => {
+    const userData = c.req.valid('json');
+    const user = await createUser(userData);
+    return c.json({ user }, 201);
+  }
+);
+```
+
+### エラーハンドリング
+
+```typescript
+// エラーハンドラー
+app.onError((err, c) => {
+  console.error(`${err}`);
+  return c.json({ error: 'Internal Server Error' }, 500);
+});
+
+// 404ハンドラー
+app.notFound((c) => {
+  return c.json({ error: 'Not Found' }, 404);
+});
+```
+
+### Cloudflare Workersでの使用
+
+```typescript
+// src/index.ts
+import { Hono } from 'hono';
+
+const app = new Hono();
+
+app.get('/', (c) => {
+  return c.text('Hello from Cloudflare Workers!');
+});
+
+export default app;
+
+// wrangler.toml
+[site]
+bucket = "./public"
+
+[[routes]]
+pattern = "/*"
+zone_name = "example.com"
+```
+
+### Denoでの使用
+
+```typescript
+// main.ts
+import { Hono } from 'https://deno.land/x/hono/mod.ts';
+
+const app = new Hono();
+
+app.get('/', (c) => {
+  return c.text('Hello from Deno!');
+});
+
+Deno.serve({ port: 8000 }, app.fetch);
+```
+
+### 実践例: RESTful API
+
+```typescript
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { logger } from 'hono/logger';
+
+const app = new Hono();
+
+app.use('*', cors());
+app.use('*', logger());
+
+// GET /users
+app.get('/users', async (c) => {
+  const users = await getUsers();
+  return c.json({ users });
+});
+
+// GET /users/:id
+app.get('/users/:id', async (c) => {
+  const id = c.req.param('id');
+  const user = await getUser(id);
+  if (!user) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+  return c.json({ user });
+});
+
+// POST /users
+app.post('/users', async (c) => {
+  const userData = await c.req.json();
+  const user = await createUser(userData);
+  return c.json({ user }, 201);
+});
+
+// PUT /users/:id
+app.put('/users/:id', async (c) => {
+  const id = c.req.param('id');
+  const userData = await c.req.json();
+  const user = await updateUser(id, userData);
+  return c.json({ user });
+});
+
+// DELETE /users/:id
+app.delete('/users/:id', async (c) => {
+  const id = c.req.param('id');
+  await deleteUser(id);
+  return c.json(null, 204);
+});
+
+export default app;
+```
+
+### まとめ
+
+Honoのポイント：
+
+- **マルチランタイム**: 複数のランタイムで動作
+- **高性能**: Expressの2-3倍のパフォーマンス
+- **軽量**: 約13KBの小さなバンドルサイズ
+- **TypeScript**: TypeScriptファーストの設計
+- **エッジ対応**: Cloudflare Workers、Deno、Bunで動作
+
+Honoは、エッジコンピューティングや高性能APIサーバーに最適なフレームワークです。
+

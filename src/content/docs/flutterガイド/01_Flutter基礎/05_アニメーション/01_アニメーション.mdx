@@ -1,0 +1,40 @@
+---
+title: "アニメーション"
+label: "アニメーション"
+---
+
+## アニメーション
+
+Flutterでは、豊富なアニメーションAPIを提供しています。
+
+### 基本的なアニメーション
+
+```dart
+class AnimatedContainerExample extends StatefulWidget {
+  @override
+  _AnimatedContainerExampleState createState() => _AnimatedContainerExampleState();
+}
+
+class _AnimatedContainerExampleState extends State<AnimatedContainerExample> {
+  bool _selected = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selected = !_selected;
+        });
+      },
+      child: AnimatedContainer(
+        width: _selected ? 200.0 : 100.0,
+        height: _selected ? 100.0 : 200.0,
+        color: _selected ? Colors.red : Colors.blue,
+        duration: Duration(seconds: 1),
+        curve: Curves.fastOutSlowIn,
+      ),
+    );
+  }
+}
+```
+

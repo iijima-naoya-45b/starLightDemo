@@ -1,0 +1,38 @@
+---
+title: "なぜLaravelか"
+label: "なぜLaravelか"
+---
+
+## なぜLaravelか
+
+Laravelは、PHPで最も人気のあるWebアプリケーションフレームワークです。
+
+### Laravelの特徴
+
+#### 1. エレガントな構文
+
+```php
+// ルーティング
+Route::get('/users', [UserController::class, 'index']);
+
+// Eloquent ORM
+$user = User::where('email', $email)->first();
+
+// ビュー
+return view('users.index', compact('users'));
+```
+
+#### 2. 豊富な機能
+
+- **Eloquent ORM**: 直感的なデータベース操作
+- **Bladeテンプレート**: 強力なテンプレートエンジン
+- **Artisan CLI**: 開発を効率化するコマンドラインツール
+- **マイグレーション**: データベーススキーマのバージョン管理
+
+### Laravelのメリット
+
+1. **開発速度**: 迅速な開発が可能
+2. **保守性**: クリーンで読みやすいコード
+3. **エコシステム**: 豊富なパッケージ（Laravel Mix、Laravel Horizonなど）
+4. **コミュニティ**: 大規模で活発なコミュニティ
+

@@ -1,0 +1,46 @@
+---
+title: "なぜAWSか"
+label: "なぜAWSか"
+---
+
+## なぜAWSか
+
+Amazon Web Services（AWS）は、世界最大のクラウドコンピューティングプラットフォームです。
+
+### AWSの特徴
+
+#### 1. 豊富なサービス
+
+- **コンピューティング**: EC2, Lambda, ECS, EKS
+- **ストレージ**: S3, EBS, EFS
+- **データベース**: RDS, DynamoDB, ElastiCache
+- **ネットワーク**: VPC, CloudFront, Route 53
+- **セキュリティ**: IAM, Secrets Manager, WAF
+- **モニタリング**: CloudWatch, X-Ray, CloudTrail
+
+#### 2. スケーラビリティ
+
+```yaml
+# オートスケーリング設定例
+AutoScalingGroup:
+  MinSize: 2
+  MaxSize: 10
+  TargetTrackingScalingPolicy:
+    TargetValue: 70.0
+    PredefinedMetricSpecification:
+      PredefinedMetricType: ASGAverageCPUUtilization
+```
+
+#### 3. グローバルインフラ
+
+- **リージョン**: 世界中に25以上のリージョン
+- **アベイラビリティゾーン**: 各リージョンに複数のAZ
+- **エッジロケーション**: CloudFrontで低遅延配信
+
+### AWSのメリット
+
+1. **コスト効率**: 従量課金で必要な分だけ支払い
+2. **柔軟性**: 必要な時に必要なリソースを追加
+3. **信頼性**: 99.99%の可用性を実現
+4. **セキュリティ**: 業界標準のセキュリティ機能
+

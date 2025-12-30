@@ -1,0 +1,62 @@
+---
+title: "なぜReactか"
+label: "なぜReactか"
+---
+
+## なぜReactか
+
+Reactは、Facebook（Meta）が開発した、ユーザーインターフェースを構築するためのJavaScriptライブラリです。
+
+### Reactの特徴
+
+#### 1. コンポーネントベース
+
+```jsx
+// 再利用可能なコンポーネント
+function Button({ label, onClick }) {
+  return <button onClick={onClick}>{label}</button>;
+}
+
+// コンポーネントの組み合わせ
+function App() {
+  return (
+    <div>
+      <Button label="Click me" onClick={() => alert('Clicked!')} />
+    </div>
+  );
+}
+```
+
+#### 2. 宣言的なUI
+
+```jsx
+// 命令的なコード（問題）
+function updateUI() {
+  const element = document.getElementById('counter');
+  element.textContent = count;
+  if (count > 10) {
+    element.style.color = 'red';
+  }
+}
+
+// 宣言的なコード（React）
+function Counter({ count }) {
+  return (
+    <div style={{ color: count > 10 ? 'red' : 'black' }}>
+      {count}
+    </div>
+  );
+}
+```
+
+#### 3. 仮想DOM
+
+Reactは仮想DOMを使用して、効率的な更新を実現します。
+
+### Reactのメリット
+
+1. **再利用性**: コンポーネントを再利用可能
+2. **保守性**: コードの整理が容易
+3. **パフォーマンス**: 仮想DOMによる効率的な更新
+4. **エコシステム**: 豊富なライブラリとツール
+

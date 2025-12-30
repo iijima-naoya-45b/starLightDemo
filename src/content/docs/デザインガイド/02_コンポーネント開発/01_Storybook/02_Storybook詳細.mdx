@@ -1,0 +1,113 @@
+---
+title: "Storybook詳細"
+label: "Storybook詳細"
+---
+
+## Storybook詳細
+
+### アドオンの活用
+
+#### 1. Controls（コントロール）
+
+```typescript
+// Button.stories.tsx
+export default {
+  title: 'Components/Button',
+  component: Button,
+  argTypes: {
+    variant: {
+      control: 'select',
+      options: ['primary', 'secondary', 'danger'],
+      description: 'ボタンのバリアント',
+    },
+    size: {
+      control: 'radio',
+      options: ['small', 'medium', 'large'],
+      description: 'ボタンのサイズ',
+    },
+    disabled: {
+      control: 'boolean',
+      description: '無効化状態',
+    },
+  },
+};
+```
+
+#### 2. Actions（アクション）
+
+```typescript
+import { fn } from '@storybook/test';
+
+export const WithActions: Story = {
+  args: {
+    onClick: fn(),
+    children: 'Click me',
+  },
+};
+```
+
+#### 3. Viewport（ビューポート）
+
+```typescript
+export const Mobile: Story = {
+  args: {
+    children: 'Mobile Button',
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: 'mobile1',
+    },
+  },
+};
+```
+
+### アドオンのインストール
+
+```bash
+# よく使われるアドオン
+npm install --save-dev @storybook/addon-essentials
+npm install --save-dev @storybook/addon-a11y
+npm install --save-dev @storybook/addon-viewport
+npm install --save-dev @storybook/addon-docs
+```
+
+### アクセシビリティテスト
+
+```typescript
+// .storybook/preview.ts
+import { withA11y } from '@storybook/addon-a11y';
+
+export const decorators = [withA11y];
+
+// Button.stories.tsx
+export const AccessibilityTest: Story = {
+  args: {
+    children: 'Accessible Button',
+    'aria-label': 'Submit form',
+  },
+};
+```
+
+### ドキュメントのカスタマイズ
+
+```typescript
+// Button.stories.tsx
+import { Meta, StoryObj } from '@storybook/react';
+
+const meta: Meta<typeof Button> = {
+  title: 'Components/Button',
+  component: Button,
+  parameters: {
+    docs: {
+      description: {
+        component: 'ボタンコンポーネントは、ユーザーのアクションをトリガーするために使用されます。',
+      },
+    },
+  },
+};
+```
+
+### まとめ
+
+Storybookの詳細機能を活用することで、より高度なコンポーネント開発とテストが可能になります。
+

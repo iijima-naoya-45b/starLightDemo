@@ -1,0 +1,809 @@
+---
+title: "MyBatis"
+label: "MyBatis"
+---
+
+## MyBatisによるデータベースアクセス
+
+MyBatisは、Javaの**SQLマッパーフレームワーク**です。JPA/Hibernateとは異なるアプローチで、SQLを直接制御しながら、Javaオブジェクトとデータベースの結果をマッピングします。この章では、MyBatisの基本から実践的な使い方まで、シニアエンジニアの視点から詳しく解説します。
+
+### MyBatisとは何か
+
+#### MyBatisの特徴
+
+**MyBatisはORMではない:**
+
+- **ORM（Object-Relational Mapping）**: JPA/Hibernateのように、オブジェクトとリレーショナルデータベースを自動的にマッピング
+- **SQLマッパー**: SQLを直接記述し、その結果をJavaオブジェクトにマッピング
+
+**MyBatisの特徴:**
+
+1. **SQLを直接制御**: 複雑なクエリやパフォーマンスチューニングが必要な場合に有利
+2. **軽量**: JPA/Hibernateと比べて軽量で、オーバーヘッドが少ない
+3. **柔軟性**: 動的SQLにより、条件に応じたクエリを柔軟に構築
+4. **学習コスト**: SQLが書ければ、比較的簡単に習得できる
+
+#### JPA/Hibernateとの比較
+
+| 項目 | JPA/Hibernate | MyBatis |
+|------|---------------|---------|
+| **アプローチ** | ORM（オブジェクト中心） | SQLマッパー（SQL中心） |
+| **SQL制御** | 自動生成（カスタムクエリも可能） | 手動でSQLを記述 |
+| **学習コスト** | 高い（JPAの仕様を理解する必要） | 低い（SQLが書ければOK） |
+| **パフォーマンス** | 最適化が必要な場合がある | SQLを直接制御できるため、最適化しやすい |
+| **複雑なクエリ** | JPQLやCriteria APIが必要 | SQLを直接記述できる |
+| **適用シーン** | CRUD中心のアプリケーション | 複雑なクエリやレポート生成 |
+
+**使い分けの指針:**
+
+```java
+// JPA/Hibernateが適している場合:
+// 1. CRUD操作が中心のアプリケーション
+// 2. オブジェクト指向的な設計を重視
+// 3. 開発速度を優先
+// 4. チームがJPAに慣れ親しんでいる
+
+// MyBatisが適している場合:
+// 1. 複雑なSQLクエリが多い
+// 2. パフォーマンスが重要なレポート生成
+// 3. 既存のSQL資産を活用したい
+// 4. SQLを直接制御したい
+```
+
+### なぜMyBatisを使うのか
+
+#### JPA/Hibernateの限界
+
+**問題のあるコード（JPA）:**
+
+```java
+@Repository
+public interface OrderRepository extends JpaRepository<Order, Long> {
+    
+    // 問題: 複雑な集計クエリをJPQLで書くのが困難
+    @Query("SELECT o.user.id, SUM(o.totalAmount), COUNT(o.id) " +
+           "FROM Order o " +
+           "WHERE o.orderDate BETWEEN :startDate AND :endDate " +
+           "GROUP BY o.user.id " +
+           "HAVING SUM(o.totalAmount) > :minAmount " +
+           "ORDER BY SUM(o.totalAmount) DESC")
+    List<Object[]> findOrderSummary(@Param("startDate") LocalDate startDate,
+                                   @Param("endDate") LocalDate endDate,
+                                   @Param("minAmount") BigDecimal minAmount);
+}
+```
+
+**問題点:**
+
+1. **複雑なSQLの表現が困難**: ウィンドウ関数、CTE（Common Table Expression）などが使いにくい
+2. **パフォーマンスチューニングが困難**: 生成されるSQLを直接制御できない
+3. **既存のSQL資産が活用できない**: 既存のSQLをそのまま使えない
+
+#### MyBatisのメリット
+
+**改善されたコード（MyBatis）:**
+
+```xml
+<!-- OrderMapper.xml -->
+<select id="findOrderSummary" resultType="OrderSummaryDTO">
+    SELECT 
+        o.user_id AS userId,
+        SUM(o.total_amount) AS totalAmount,
+        COUNT(o.id) AS orderCount
+    FROM orders o
+    WHERE o.order_date BETWEEN #{startDate} AND #{endDate}
+    GROUP BY o.user_id
+    HAVING SUM(o.total_amount) > #{minAmount}
+    ORDER BY SUM(o.total_amount) DESC
+</select>
+```
+
+**メリット:**
+
+1. **SQLを直接記述**: 複雑なSQLもそのまま書ける
+2. **パフォーマンスチューニングが容易**: SQLを直接最適化できる
+3. **既存のSQL資産を活用**: 既存のSQLをそのまま使える
+4. **動的SQL**: 条件に応じてSQLを動的に構築できる
+
+### MyBatisのセットアップ
+
+#### 依存関係の追加（Maven）
+
+```xml
+<dependencies>
+    <!-- MyBatis Spring Boot Starter -->
+    <dependency>
+        <groupId>org.mybatis.spring.boot</groupId>
+        <artifactId>mybatis-spring-boot-starter</artifactId>
+        <version>3.0.3</version>
+    </dependency>
+    
+    <!-- データベースドライバー（PostgreSQLの例） -->
+    <dependency>
+        <groupId>org.postgresql</groupId>
+        <artifactId>postgresql</artifactId>
+        <scope>runtime</scope>
+    </dependency>
+</dependencies>
+```
+
+#### 依存関係の追加（Gradle）
+
+```groovy
+dependencies {
+    implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.3'
+    runtimeOnly 'org.postgresql:postgresql'
+}
+```
+
+#### application.propertiesでの設定
+
+```properties
+# データベース設定
+spring.datasource.url=jdbc:postgresql://localhost:5432/mydb
+spring.datasource.username=myuser
+spring.datasource.password=mypassword
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+# MyBatis設定
+# Mapper XMLファイルの場所
+mybatis.mapper-locations=classpath:mapper/**/*.xml
+# エイリアスのパッケージ
+mybatis.type-aliases-package=com.example.myapp.model
+# 設定ファイルの場所（オプション）
+mybatis.config-location=classpath:mybatis-config.xml
+```
+
+#### application.ymlでの設定
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/mydb
+    username: myuser
+    password: mypassword
+    driver-class-name: org.postgresql.Driver
+
+mybatis:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.example.myapp.model
+  configuration:
+    map-underscore-to-camel-case: true  # スネークケースをキャメルケースに自動変換
+    default-fetch-size: 100
+    default-statement-timeout: 30
+```
+
+### 基本的な使い方
+
+#### 1. エンティティクラスの作成
+
+```java
+package com.example.myapp.model;
+
+public class User {
+    private Long id;
+    private String name;
+    private String email;
+    private LocalDateTime createdAt;
+    
+    // コンストラクタ
+    public User() {}
+    
+    public User(Long id, String name, String email, LocalDateTime createdAt) {
+        this.id = id;
+        this.name = name;
+        this.email = email;
+        this.createdAt = createdAt;
+    }
+    
+    // getter/setter
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+    
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+    
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+}
+```
+
+#### 2. Mapperインターフェースの作成
+
+```java
+package com.example.myapp.mapper;
+
+import com.example.myapp.model.User;
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
+import java.util.Optional;
+
+@Mapper
+public interface UserMapper {
+    
+    // IDで検索
+    Optional<User> findById(@Param("id") Long id);
+    
+    // メールアドレスで検索
+    Optional<User> findByEmail(@Param("email") String email);
+    
+    // 全件取得
+    List<User> findAll();
+    
+    // 名前で部分一致検索
+    List<User> findByNameContaining(@Param("name") String name);
+    
+    // 作成
+    void insert(User user);
+    
+    // 更新
+    void update(User user);
+    
+    // 削除
+    void deleteById(@Param("id") Long id);
+}
+```
+
+#### 3. Mapper XMLファイルの作成
+
+`src/main/resources/mapper/UserMapper.xml`を作成：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.myapp.mapper.UserMapper">
+    
+    <!-- 結果マッピングの定義 -->
+    <resultMap id="UserResultMap" type="User">
+        <id property="id" column="id"/>
+        <result property="name" column="name"/>
+        <result property="email" column="email"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+    
+    <!-- IDで検索 -->
+    <select id="findById" resultMap="UserResultMap">
+        SELECT id, name, email, created_at
+        FROM users
+        WHERE id = #{id}
+    </select>
+    
+    <!-- メールアドレスで検索 -->
+    <select id="findByEmail" resultMap="UserResultMap">
+        SELECT id, name, email, created_at
+        FROM users
+        WHERE email = #{email}
+    </select>
+    
+    <!-- 全件取得 -->
+    <select id="findAll" resultMap="UserResultMap">
+        SELECT id, name, email, created_at
+        FROM users
+        ORDER BY created_at DESC
+    </select>
+    
+    <!-- 名前で部分一致検索 -->
+    <select id="findByNameContaining" resultMap="UserResultMap">
+        SELECT id, name, email, created_at
+        FROM users
+        WHERE name LIKE CONCAT('%', #{name}, '%')
+        ORDER BY name
+    </select>
+    
+    <!-- 作成 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO users (name, email, created_at)
+        VALUES (#{name}, #{email}, #{createdAt})
+    </insert>
+    
+    <!-- 更新 -->
+    <update id="update">
+        UPDATE users
+        SET name = #{name},
+            email = #{email}
+        WHERE id = #{id}
+    </update>
+    
+    <!-- 削除 -->
+    <delete id="deleteById">
+        DELETE FROM users
+        WHERE id = #{id}
+    </delete>
+    
+</mapper>
+```
+
+#### 4. サービス層での使用
+
+```java
+package com.example.myapp.service;
+
+import com.example.myapp.mapper.UserMapper;
+import com.example.myapp.model.User;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
+@Service
+@Transactional(readOnly = true)
+public class UserService {
+    
+    private final UserMapper userMapper;
+    
+    public UserService(UserMapper userMapper) {
+        this.userMapper = userMapper;
+    }
+    
+    public Optional<User> findById(Long id) {
+        return userMapper.findById(id);
+    }
+    
+    public Optional<User> findByEmail(String email) {
+        return userMapper.findByEmail(email);
+    }
+    
+    public List<User> findAll() {
+        return userMapper.findAll();
+    }
+    
+    public List<User> findByNameContaining(String name) {
+        return userMapper.findByNameContaining(name);
+    }
+    
+    @Transactional
+    public User create(User user) {
+        user.setCreatedAt(LocalDateTime.now());
+        userMapper.insert(user);
+        return user;
+    }
+    
+    @Transactional
+    public User update(User user) {
+        userMapper.update(user);
+        return userMapper.findById(user.getId())
+            .orElseThrow(() -> new RuntimeException("User not found"));
+    }
+    
+    @Transactional
+    public void delete(Long id) {
+        userMapper.deleteById(id);
+    }
+}
+```
+
+### 動的SQL
+
+MyBatisの強力な機能の一つが**動的SQL**です。条件に応じてSQLを動的に構築できます。
+
+#### if要素
+
+```xml
+<select id="findUsers" resultMap="UserResultMap">
+    SELECT id, name, email, created_at
+    FROM users
+    WHERE 1=1
+    <if test="name != null and name != ''">
+        AND name LIKE CONCAT('%', #{name}, '%')
+    </if>
+    <if test="email != null and email != ''">
+        AND email = #{email}
+    </if>
+    <if test="startDate != null">
+        AND created_at >= #{startDate}
+    </if>
+    <if test="endDate != null">
+        AND created_at &lt;= #{endDate}
+    </if>
+</select>
+```
+
+#### choose, when, otherwise要素
+
+```xml
+<select id="findUsers" resultMap="UserResultMap">
+    SELECT id, name, email, created_at
+    FROM users
+    WHERE 1=1
+    <choose>
+        <when test="name != null and name != ''">
+            AND name LIKE CONCAT('%', #{name}, '%')
+        </when>
+        <when test="email != null and email != ''">
+            AND email = #{email}
+        </when>
+        <otherwise>
+            AND active = true
+        </otherwise>
+    </choose>
+</select>
+```
+
+#### where要素
+
+`WHERE 1=1`を避けるために、`<where>`要素を使用します。
+
+```xml
+<select id="findUsers" resultMap="UserResultMap">
+    SELECT id, name, email, created_at
+    FROM users
+    <where>
+        <if test="name != null and name != ''">
+            AND name LIKE CONCAT('%', #{name}, '%')
+        </if>
+        <if test="email != null and email != ''">
+            AND email = #{email}
+        </if>
+    </where>
+</select>
+```
+
+#### set要素
+
+更新時に使用します。
+
+```xml
+<update id="updateUser">
+    UPDATE users
+    <set>
+        <if test="name != null">name = #{name},</if>
+        <if test="email != null">email = #{email},</if>
+        <if test="updatedAt != null">updated_at = #{updatedAt}</if>
+    </set>
+    WHERE id = #{id}
+</update>
+```
+
+#### foreach要素
+
+IN句やバッチ処理で使用します。
+
+```xml
+<!-- IN句の例 -->
+<select id="findByIds" resultMap="UserResultMap">
+    SELECT id, name, email, created_at
+    FROM users
+    WHERE id IN
+    <foreach collection="ids" item="id" open="(" separator="," close=")">
+        #{id}
+    </foreach>
+</select>
+
+<!-- バッチインサートの例 -->
+<insert id="insertBatch">
+    INSERT INTO users (name, email, created_at)
+    VALUES
+    <foreach collection="users" item="user" separator=",">
+        (#{user.name}, #{user.email}, #{user.createdAt})
+    </foreach>
+</insert>
+```
+
+**Mapperインターフェース:**
+
+```java
+@Mapper
+public interface UserMapper {
+    
+    List<User> findUsers(@Param("name") String name,
+                        @Param("email") String email,
+                        @Param("startDate") LocalDate startDate,
+                        @Param("endDate") LocalDate endDate);
+    
+    List<User> findByIds(@Param("ids") List<Long> ids);
+    
+    void insertBatch(@Param("users") List<User> users);
+}
+```
+
+### 結果マッピング
+
+#### 基本的な結果マッピング
+
+```xml
+<resultMap id="UserResultMap" type="User">
+    <id property="id" column="id"/>
+    <result property="name" column="name"/>
+    <result property="email" column="email"/>
+    <result property="createdAt" column="created_at"/>
+</resultMap>
+```
+
+#### ネストされたオブジェクトのマッピング
+
+**エンティティ:**
+
+```java
+public class Order {
+    private Long id;
+    private BigDecimal totalAmount;
+    private LocalDateTime orderDate;
+    private User user;  // 関連オブジェクト
+    
+    // getter/setter
+}
+
+public class User {
+    private Long id;
+    private String name;
+    private String email;
+    private List<Order> orders;  // コレクション
+    
+    // getter/setter
+}
+```
+
+**結果マッピング:**
+
+```xml
+<!-- OrderとUserの関連 -->
+<resultMap id="OrderResultMap" type="Order">
+    <id property="id" column="order_id"/>
+    <result property="totalAmount" column="total_amount"/>
+    <result property="orderDate" column="order_date"/>
+    <association property="user" javaType="User">
+        <id property="id" column="user_id"/>
+        <result property="name" column="user_name"/>
+        <result property="email" column="user_email"/>
+    </association>
+</resultMap>
+
+<select id="findOrderWithUser" resultMap="OrderResultMap">
+    SELECT 
+        o.id AS order_id,
+        o.total_amount,
+        o.order_date,
+        u.id AS user_id,
+        u.name AS user_name,
+        u.email AS user_email
+    FROM orders o
+    INNER JOIN users u ON o.user_id = u.id
+    WHERE o.id = #{id}
+</select>
+
+<!-- UserとOrderのコレクション -->
+<resultMap id="UserWithOrdersResultMap" type="User">
+    <id property="id" column="user_id"/>
+    <result property="name" column="user_name"/>
+    <result property="email" column="user_email"/>
+    <collection property="orders" ofType="Order">
+        <id property="id" column="order_id"/>
+        <result property="totalAmount" column="total_amount"/>
+        <result property="orderDate" column="order_date"/>
+    </collection>
+</resultMap>
+
+<select id="findUserWithOrders" resultMap="UserWithOrdersResultMap">
+    SELECT 
+        u.id AS user_id,
+        u.name AS user_name,
+        u.email AS user_email,
+        o.id AS order_id,
+        o.total_amount,
+        o.order_date
+    FROM users u
+    LEFT JOIN orders o ON u.id = o.user_id
+    WHERE u.id = #{id}
+</select>
+```
+
+### ページング
+
+MyBatisでページングを実装する方法を解説します。
+
+#### RowBoundsを使用したページング
+
+```java
+@Mapper
+public interface UserMapper {
+    List<User> findAll(RowBounds rowBounds);
+}
+
+// サービス層での使用
+public List<User> findAll(int page, int size) {
+    int offset = (page - 1) * size;
+    RowBounds rowBounds = new RowBounds(offset, size);
+    return userMapper.findAll(rowBounds);
+}
+```
+
+#### LIMIT/OFFSETを使用したページング
+
+```xml
+<select id="findAllWithPaging" resultMap="UserResultMap">
+    SELECT id, name, email, created_at
+    FROM users
+    ORDER BY created_at DESC
+    LIMIT #{limit} OFFSET #{offset}
+</select>
+```
+
+```java
+@Mapper
+public interface UserMapper {
+    List<User> findAllWithPaging(@Param("limit") int limit, 
+                                  @Param("offset") int offset);
+    
+    int countAll();
+}
+
+// サービス層での使用
+public Page<User> findAll(int page, int size) {
+    int offset = (page - 1) * size;
+    List<User> users = userMapper.findAllWithPaging(size, offset);
+    int total = userMapper.countAll();
+    
+    return new PageImpl<>(users, PageRequest.of(page - 1, size), total);
+}
+```
+
+### アノテーションベースのMapper
+
+XMLファイルを使わずに、アノテーションだけでMapperを定義することもできます。
+
+```java
+@Mapper
+public interface UserMapper {
+    
+    @Select("SELECT id, name, email, created_at FROM users WHERE id = #{id}")
+    @Results({
+        @Result(property = "id", column = "id"),
+        @Result(property = "name", column = "name"),
+        @Result(property = "email", column = "email"),
+        @Result(property = "createdAt", column = "created_at")
+    })
+    Optional<User> findById(@Param("id") Long id);
+    
+    @Insert("INSERT INTO users (name, email, created_at) " +
+            "VALUES (#{name}, #{email}, #{createdAt})")
+    @Options(useGeneratedKeys = true, keyProperty = "id")
+    void insert(User user);
+    
+    @Update("UPDATE users SET name = #{name}, email = #{email} WHERE id = #{id}")
+    void update(User user);
+    
+    @Delete("DELETE FROM users WHERE id = #{id}")
+    void deleteById(@Param("id") Long id);
+}
+```
+
+**アノテーション vs XML:**
+
+| 項目 | アノテーション | XML |
+|------|---------------|-----|
+| **シンプルなクエリ** | 適している | 冗長 |
+| **複雑なクエリ** | 読みにくい | 適している |
+| **動的SQL** | 困難 | 適している |
+| **保守性** | 低い（SQLがJavaコードに混在） | 高い（SQLとJavaが分離） |
+
+**推奨:** 複雑なクエリや動的SQLが必要な場合はXMLを使用し、シンプルなCRUD操作のみの場合はアノテーションを使用。
+
+### パフォーマンス最適化
+
+#### 1. バッチ処理
+
+```xml
+<insert id="insertBatch" parameterType="java.util.List">
+    INSERT INTO users (name, email, created_at)
+    VALUES
+    <foreach collection="list" item="user" separator=",">
+        (#{user.name}, #{user.email}, #{user.createdAt})
+    </foreach>
+</insert>
+```
+
+```java
+@Mapper
+public interface UserMapper {
+    void insertBatch(@Param("list") List<User> users);
+}
+
+// サービス層での使用
+@Transactional
+public void createUsers(List<User> users) {
+    // バッチサイズを指定して分割
+    int batchSize = 1000;
+    for (int i = 0; i < users.size(); i += batchSize) {
+        int end = Math.min(i + batchSize, users.size());
+        List<User> batch = users.subList(i, end);
+        userMapper.insertBatch(batch);
+    }
+}
+```
+
+#### 2. フェッチサイズの設定
+
+```xml
+<select id="findAll" resultMap="UserResultMap" fetchSize="1000">
+    SELECT id, name, email, created_at
+    FROM users
+</select>
+```
+
+#### 3. ストリーミング結果
+
+大量のデータを処理する場合、ストリーミングを使用します。
+
+```java
+@Mapper
+public interface UserMapper {
+    @Select("SELECT id, name, email, created_at FROM users")
+    @Options(resultSetType = ResultSetType.FORWARD_ONLY, fetchSize = 1000)
+    void findAll(ResultHandler<User> handler);
+}
+
+// サービス層での使用
+public void processAllUsers() {
+    userMapper.findAll(resultContext -> {
+        User user = resultContext.getResultObject();
+        // 処理
+        processUser(user);
+    });
+}
+```
+
+### MyBatisとJPAの使い分け
+
+#### ハイブリッドアプローチ
+
+同じプロジェクトでMyBatisとJPAを併用することも可能です。
+
+```java
+// JPA: シンプルなCRUD操作
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    Optional<User> findByEmail(String email);
+}
+
+// MyBatis: 複雑なクエリやレポート生成
+@Mapper
+public interface UserReportMapper {
+    List<UserReportDTO> generateUserReport(@Param("startDate") LocalDate startDate,
+                                          @Param("endDate") LocalDate endDate);
+}
+```
+
+**使い分けの指針:**
+
+```java
+// JPAを使用する場合:
+// 1. シンプルなCRUD操作
+// 2. エンティティの関連を活用したい
+// 3. トランザクション管理を簡単にしたい
+
+// MyBatisを使用する場合:
+// 1. 複雑なSQLクエリ
+// 2. パフォーマンスが重要なレポート生成
+// 3. 既存のSQL資産を活用したい
+// 4. 動的なクエリ構築が必要
+```
+
+### まとめ
+
+MyBatisの主なポイント：
+
+1. **SQLマッパーフレームワーク**: SQLを直接制御しながら、Javaオブジェクトにマッピング
+2. **柔軟なSQL制御**: 複雑なクエリやパフォーマンスチューニングが容易
+3. **動的SQL**: 条件に応じてSQLを動的に構築
+4. **軽量**: JPA/Hibernateと比べてオーバーヘッドが少ない
+5. **学習コスト**: SQLが書ければ比較的簡単に習得できる
+
+**シニアエンジニアとして考慮すべき点:**
+
+1. **プロジェクトの要件に応じた選択**: JPAとMyBatisのどちらが適しているか判断
+2. **ハイブリッドアプローチ**: 同じプロジェクトで両方を使い分けることも可能
+3. **パフォーマンス**: SQLを直接制御できるため、パフォーマンスチューニングが容易
+4. **保守性**: XMLファイルの管理と、SQLの可読性を考慮
+5. **チームのスキル**: チームがSQLに慣れているか、JPAに慣れているかを考慮
+
+これらの原則に従うことで、適切なデータベースアクセス方法を選択し、保守性の高いアプリケーションを構築できます。
+

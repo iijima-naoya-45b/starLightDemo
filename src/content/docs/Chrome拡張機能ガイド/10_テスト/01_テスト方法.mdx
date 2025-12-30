@@ -1,0 +1,201 @@
+---
+title: "テスト方法"
+label: "テスト方法"
+---
+
+## テスト方法
+
+Chrome拡張機能のテスト方法を説明します。
+
+### テストの種類
+
+#### 1. 手動テスト
+
+**基本的なテスト:**
+- 拡張機能のインストール
+- 基本的な機能の動作確認
+- エラーの確認
+
+**テスト手順:**
+1. 拡張機能を読み込む
+2. 各機能をテスト
+3. エラーがないか確認
+4. パフォーマンスを確認
+
+#### 2. 自動テスト
+
+**単体テスト:**
+- 個々の関数のテスト
+- ユーティリティ関数のテスト
+
+**E2Eテスト:**
+- 拡張機能全体の動作テスト
+- ユーザーシナリオのテスト
+
+### 単体テスト
+
+#### 1. Jestのセットアップ
+
+```bash
+npm install --save-dev jest @types/jest
+```
+
+#### 2. テストファイルの作成
+
+```javascript
+// utils.test.js
+const { formatDate, validateEmail } = require('./utils');
+
+describe('Utils', () => {
+  test('formatDate formats date correctly', () => {
+    const date = new Date('2024-01-01');
+    expect(formatDate(date)).toBe('2024-01-01');
+  });
+  
+  test('validateEmail validates email correctly', () => {
+    expect(validateEmail('test@example.com')).toBe(true);
+    expect(validateEmail('invalid-email')).toBe(false);
+  });
+});
+```
+
+#### 3. テストの実行
+
+```bash
+npm test
+```
+
+### E2Eテスト
+
+#### 1. Puppeteerのセットアップ
+
+```bash
+npm install --save-dev puppeteer
+```
+
+#### 2. E2Eテストの作成
+
+```javascript
+// e2e.test.js
+const puppeteer = require('puppeteer');
+const path = require('path');
+
+describe('Extension E2E Tests', () => {
+  let browser;
+  let page;
+  
+  beforeAll(async () => {
+    const extensionPath = path.join(__dirname, '../');
+    browser = await puppeteer.launch({
+      headless: false,
+      args: [
+        `--disable-extensions-except=${extensionPath}`,
+        `--load-extension=${extensionPath}`
+      ]
+    });
+    page = await browser.newPage();
+  });
+  
+  afterAll(async () => {
+    await browser.close();
+  });
+  
+  test('Extension loads correctly', async () => {
+    await page.goto('https://example.com');
+    // 拡張機能の動作を確認
+  });
+});
+```
+
+### クロスブラウザテスト
+
+#### 1. Microsoft Edgeでのテスト
+
+EdgeでもChrome拡張機能は動作しますが、テストが必要です。
+
+**テスト手順:**
+1. Edgeで `edge://extensions/` を開く
+2. 「開発者モード」を有効にする
+3. 「パッケージ化されていない拡張機能を読み込む」をクリック
+4. 拡張機能を読み込む
+5. 動作を確認
+
+#### 2. Firefoxでのテスト
+
+Firefoxでは、WebExtensions APIを使用する必要があります。
+
+**主な違い:**
+- Manifest V3は未対応（Manifest V2を使用）
+- 一部のAPIが異なる
+
+### パフォーマンステスト
+
+#### 1. メモリ使用量のテスト
+
+```javascript
+// メモリ使用量を測定
+const startMemory = performance.memory.usedJSHeapSize;
+
+// 処理を実行
+processData();
+
+const endMemory = performance.memory.usedJSHeapSize;
+const memoryUsed = endMemory - startMemory;
+
+console.log(`メモリ使用量: ${memoryUsed} bytes`);
+```
+
+#### 2. 実行時間のテスト
+
+```javascript
+// 実行時間を測定
+const startTime = performance.now();
+
+// 処理を実行
+processData();
+
+const endTime = performance.now();
+const executionTime = endTime - startTime;
+
+console.log(`実行時間: ${executionTime} ms`);
+```
+
+### セキュリティテスト
+
+#### 1. パーミッションの確認
+
+- 必要なパーミッションのみを要求
+- 不要なパーミッションを削除
+
+#### 2. 入力値の検証
+
+```javascript
+// 入力値の検証
+function validateInput(input) {
+  if (typeof input !== 'string') {
+    throw new Error('Invalid input type');
+  }
+  
+  if (input.length > 100) {
+    throw new Error('Input too long');
+  }
+  
+  // XSS対策
+  const sanitized = input.replace(/<script>/gi, '');
+  
+  return sanitized;
+}
+```
+
+### まとめ
+
+テスト方法：
+
+1. **手動テスト**: 基本的な動作確認
+2. **自動テスト**: JestやPuppeteerを使用
+3. **クロスブラウザテスト**: Edge、Firefoxでのテスト
+4. **パフォーマンステスト**: メモリ使用量、実行時間の測定
+5. **セキュリティテスト**: パーミッション、入力値の検証
+
+適切なテストにより、高品質な拡張機能を開発できます。
+

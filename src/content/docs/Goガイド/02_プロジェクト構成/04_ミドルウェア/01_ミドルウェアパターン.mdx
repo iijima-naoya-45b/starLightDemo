@@ -1,0 +1,210 @@
+---
+title: "ミドルウェアパターン"
+label: "ミドルウェアパターン"
+---
+
+## ミドルウェアパターン
+
+ミドルウェアは、HTTPリクエストとレスポンスの処理を横断的に行うためのパターンです。Goでは、標準ライブラリや**gorilla/mux**を使用してミドルウェアを実装できます。
+
+### なぜミドルウェアが必要なのか
+
+#### コードの重複
+
+**問題のあるコード:**
+
+```go
+func handler1(w http.ResponseWriter, r *http.Request) {
+    // 認証チェック
+    if !isAuthenticated(r) {
+        http.Error(w, "Unauthorized", http.StatusUnauthorized)
+        return
+    }
+    
+    // ロギング
+    log.Printf("Request: %s %s", r.Method, r.URL.Path)
+    
+    // 実際の処理
+    // ...
+}
+
+func handler2(w http.ResponseWriter, r *http.Request) {
+    // 認証チェック（重複）
+    if !isAuthenticated(r) {
+        http.Error(w, "Unauthorized", http.StatusUnauthorized)
+        return
+    }
+    
+    // ロギング（重複）
+    log.Printf("Request: %s %s", r.Method, r.URL.Path)
+    
+    // 実際の処理
+    // ...
+}
+```
+
+**ミドルウェアの解決:**
+
+```go
+func authMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        if !isAuthenticated(r) {
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
+}
+
+func loggingMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        log.Printf("Request: %s %s", r.Method, r.URL.Path)
+        next.ServeHTTP(w, r)
+    })
+}
+
+// 使用例
+handler := authMiddleware(loggingMiddleware(http.HandlerFunc(handler1)))
+```
+
+**メリット:**
+1. **コードの再利用**: 共通処理を1箇所で定義
+2. **保守性**: 変更が1箇所で済む
+3. **テスト容易性**: ミドルウェアを個別にテスト可能
+
+### 基本的なミドルウェア
+
+#### ロギングミドルウェア
+
+```go
+func loggingMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        start := time.Now()
+        
+        // レスポンスライターをラップ
+        rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+        
+        next.ServeHTTP(rw, r)
+        
+        duration := time.Since(start)
+        log.Printf(
+            "%s %s %d %v",
+            r.Method,
+            r.URL.Path,
+            rw.statusCode,
+            duration,
+        )
+    })
+}
+
+type responseWriter struct {
+    http.ResponseWriter
+    statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+    rw.statusCode = code
+    rw.ResponseWriter.WriteHeader(code)
+}
+```
+
+#### 認証ミドルウェア
+
+```go
+func authMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        token := r.Header.Get("Authorization")
+        if token == "" {
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return
+        }
+        
+        userID, err := validateToken(token)
+        if err != nil {
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return
+        }
+        
+        // コンテキストにユーザーIDを追加
+        ctx := context.WithValue(r.Context(), "userID", userID)
+        r = r.WithContext(ctx)
+        
+        next.ServeHTTP(w, r)
+    })
+}
+```
+
+#### CORSミドルウェア
+
+```go
+func corsMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Access-Control-Allow-Origin", "*")
+        w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        
+        if r.Method == "OPTIONS" {
+            w.WriteHeader(http.StatusOK)
+            return
+        }
+        
+        next.ServeHTTP(w, r)
+    })
+}
+```
+
+### ミドルウェアのチェーン
+
+```go
+func chainMiddleware(middlewares ...func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        for i := len(middlewares) - 1; i >= 0; i-- {
+            next = middlewares[i](next)
+        }
+        return next
+    }
+}
+
+// 使用例
+middleware := chainMiddleware(
+    loggingMiddleware,
+    authMiddleware,
+    corsMiddleware,
+)
+
+handler := middleware(http.HandlerFunc(myHandler))
+```
+
+### 実践的な例: 完全なミドルウェアスタック
+
+```go
+func setupRouter() *mux.Router {
+    router := mux.NewRouter()
+    
+    // グローバルミドルウェア
+    router.Use(loggingMiddleware)
+    router.Use(corsMiddleware)
+    
+    // 認証が必要なルート
+    authRouter := router.PathPrefix("/api").Subrouter()
+    authRouter.Use(authMiddleware)
+    authRouter.HandleFunc("/users", getUsers).Methods("GET")
+    
+    // 公開ルート
+    router.HandleFunc("/health", healthCheck).Methods("GET")
+    
+    return router
+}
+```
+
+### まとめ
+
+Goのミドルウェアパターンのポイント：
+
+- **関数型ミドルウェア**: 関数としてミドルウェアを定義
+- **チェーン**: 複数のミドルウェアを組み合わせ
+- **コンテキスト**: リクエストスコープの値を伝播
+- **レスポンスラッピング**: レスポンスをラップして情報を取得
+
+ミドルウェアパターンは、HTTPハンドラーの横断的関心事を処理するための強力なパターンです。適切に実装することで、コードの再利用性と保守性を大幅に向上させることができます。
+

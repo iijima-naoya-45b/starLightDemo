@@ -1,0 +1,45 @@
+---
+title: "WebSocket"
+label: "WebSocket"
+---
+
+## WebSocket
+
+Node.jsでは、**Socket.io**や**ws**を使用してWebSocket通信を実装できます。
+
+### Socket.ioの設定
+
+#### 依存関係の追加
+
+```bash
+npm install socket.io
+```
+
+#### サーバー側の実装
+
+```javascript
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+io.on('connection', (socket) => {
+  console.log('User connected:', socket.id);
+
+  socket.on('message', (data) => {
+    io.emit('message', data);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+  });
+});
+
+server.listen(3000, () => {
+  console.log('Server running on port 3000');
+});
+```
+

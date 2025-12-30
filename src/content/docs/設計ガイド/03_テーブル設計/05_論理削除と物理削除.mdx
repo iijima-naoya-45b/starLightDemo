@@ -1,0 +1,345 @@
+---
+title: "論理削除と物理削除"
+label: "論理削除と物理削除"
+---
+
+## 論理削除と物理削除
+
+データベースにおける削除方法の選択は、システム設計において重要な判断です。
+
+### なぜ削除方法の選択が重要なのか
+
+#### 問題のある削除処理
+
+**物理削除の問題:**
+
+```sql
+-- 物理削除（データを完全に削除）
+DELETE FROM users WHERE id = 1;
+-- 問題点:
+// - データが完全に失われる
+// - 削除履歴が残らない
+// - 復元が不可能
+// - 監査証跡が残らない
+```
+
+**論理削除の解決:**
+
+```sql
+-- 論理削除（削除フラグを設定）
+UPDATE users SET deleted_at = NOW(), is_deleted = TRUE WHERE id = 1;
+-- メリット:
+// - データが保持される
+// - 削除履歴が残る
+// - 復元が可能
+// - 監査証跡が残る
+```
+
+**メリット:**
+1. **データの保護**: 重要なデータを保護
+2. **監査証跡**: 削除履歴を記録
+3. **復元可能性**: 誤削除時の復元
+4. **法的要件**: 法的な記録保持要件への対応
+
+### 論理削除
+
+#### 1. 論理削除とは
+
+論理削除は、データを実際に削除せず、削除フラグを設定して「削除された」とみなす方法です。
+
+#### 2. 実装方法
+
+**基本的な実装:**
+
+```sql
+-- ユーザーテーブルに削除フラグを追加
+CREATE TABLE users (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  deleted_at TIMESTAMP NULL,  -- 削除日時
+  is_deleted BOOLEAN DEFAULT FALSE,  -- 削除フラグ
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_deleted_at (deleted_at),
+  INDEX idx_is_deleted (is_deleted)
+);
+
+-- 論理削除の実行
+UPDATE users 
+SET deleted_at = NOW(), 
+    is_deleted = TRUE 
+WHERE id = 1;
+
+-- 削除されていないユーザーの取得
+SELECT * FROM users WHERE is_deleted = FALSE;
+-- または
+SELECT * FROM users WHERE deleted_at IS NULL;
+```
+
+#### 3. ユースケース1: ユーザー管理システム
+
+**要件:**
+- ユーザーの削除
+- 削除履歴の保持
+- 誤削除時の復元
+
+**実装:**
+
+```sql
+-- ユーザーテーブル
+CREATE TABLE users (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  username VARCHAR(50) UNIQUE NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  deleted_at TIMESTAMP NULL,
+  deleted_by INT NULL,  -- 削除したユーザーID
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_deleted_at (deleted_at)
+);
+
+-- 論理削除の実行
+UPDATE users 
+SET deleted_at = NOW(),
+    deleted_by = @current_user_id
+WHERE id = 1;
+
+-- アクティブなユーザーの取得（ビューまたはクエリ）
+CREATE VIEW active_users AS
+SELECT * FROM users WHERE deleted_at IS NULL;
+
+-- 削除されたユーザーの取得
+SELECT * FROM users WHERE deleted_at IS NOT NULL;
+
+-- ユーザーの復元
+UPDATE users 
+SET deleted_at = NULL,
+    deleted_by = NULL
+WHERE id = 1;
+```
+
+**アプリケーション側の実装:**
+
+```javascript
+// ユーザーサービスの実装
+class UserService {
+  // 論理削除
+  async deleteUser(userId, deletedBy) {
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      
+      await connection.query(
+        'UPDATE users SET deleted_at = NOW(), deleted_by = ? WHERE id = ?',
+        [deletedBy, userId]
+      );
+      
+      // 関連データも論理削除
+      await connection.query(
+        'UPDATE user_profiles SET deleted_at = NOW() WHERE user_id = ?',
+        [userId]
+      );
+      
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+  
+  // アクティブなユーザーの取得
+  async getActiveUsers() {
+    return await db.query(
+      'SELECT * FROM users WHERE deleted_at IS NULL'
+    );
+  }
+  
+  // ユーザーの復元
+  async restoreUser(userId) {
+    await db.query(
+      'UPDATE users SET deleted_at = NULL, deleted_by = NULL WHERE id = ?',
+      [userId]
+    );
+  }
+}
+```
+
+#### 4. ユースケース2: 注文管理システム
+
+**要件:**
+- 注文の削除（キャンセル）
+- 注文履歴の保持
+- 法的な記録保持要件への対応
+
+**実装:**
+
+```sql
+-- 注文テーブル
+CREATE TABLE orders (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  order_number VARCHAR(50) UNIQUE NOT NULL,
+  status ENUM('pending', 'confirmed', 'cancelled', 'completed') DEFAULT 'pending',
+  total_amount DECIMAL(10,2) NOT NULL,
+  cancelled_at TIMESTAMP NULL,
+  cancelled_by INT NULL,
+  cancellation_reason TEXT,
+  deleted_at TIMESTAMP NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  INDEX idx_deleted_at (deleted_at),
+  INDEX idx_status (status)
+);
+
+-- 注文のキャンセル（論理削除）
+UPDATE orders 
+SET status = 'cancelled',
+    cancelled_at = NOW(),
+    cancelled_by = @current_user_id,
+    cancellation_reason = 'User request'
+WHERE id = 1;
+
+-- 完全な削除（論理削除）
+UPDATE orders 
+SET deleted_at = NOW()
+WHERE id = 1 AND status = 'cancelled';
+```
+
+### 物理削除
+
+#### 1. 物理削除とは
+
+物理削除は、データをデータベースから完全に削除する方法です。
+
+#### 2. 実装方法
+
+```sql
+-- 物理削除の実行
+DELETE FROM users WHERE id = 1;
+
+-- 関連データも物理削除（CASCADE）
+DELETE FROM user_profiles WHERE user_id = 1;
+```
+
+#### 3. ユースケース1: 一時データの削除
+
+**要件:**
+- 一時的なデータ
+- ストレージの節約
+- パフォーマンスの向上
+
+**実装:**
+
+```sql
+-- セッションテーブル（一時データ）
+CREATE TABLE sessions (
+  id VARCHAR(255) PRIMARY KEY,
+  user_id INT NOT NULL,
+  data TEXT,
+  expires_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_expires_at (expires_at)
+);
+
+-- 期限切れセッションの物理削除（バッチ処理）
+DELETE FROM sessions WHERE expires_at < NOW();
+```
+
+#### 4. ユースケース2: ログデータの削除
+
+**要件:**
+- 古いログデータの削除
+- ストレージの節約
+- パフォーマンスの向上
+
+**実装:**
+
+```sql
+-- アクセスログテーブル
+CREATE TABLE access_logs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT,
+  url VARCHAR(255),
+  method VARCHAR(10),
+  status_code INT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_created_at (created_at)
+);
+
+-- 1年以上前のログを物理削除（バッチ処理）
+DELETE FROM access_logs 
+WHERE created_at < DATE_SUB(NOW(), INTERVAL 1 YEAR);
+```
+
+### 論理削除と物理削除の使い分け
+
+#### 1. 論理削除を使うべき場合
+
+**重要なデータ:**
+- ユーザー情報
+- 注文情報
+- 取引履歴
+- 監査が必要なデータ
+
+**要件:**
+- 削除履歴が必要
+- 復元が必要
+- 法的な記録保持要件がある
+
+#### 2. 物理削除を使うべき場合
+
+**一時的なデータ:**
+- セッションデータ
+- 一時ファイル
+- キャッシュデータ
+
+**要件:**
+- ストレージの節約が必要
+- パフォーマンスの向上が必要
+- 削除履歴が不要
+
+### 実践例: ハイブリッドアプローチ
+
+#### 1. 段階的な削除
+
+```sql
+-- 段階的な削除の実装
+-- ステップ1: 論理削除
+UPDATE users SET deleted_at = NOW() WHERE id = 1;
+
+-- ステップ2: 一定期間後に物理削除（バッチ処理）
+-- 1年以上前に削除されたデータを物理削除
+DELETE FROM users 
+WHERE deleted_at IS NOT NULL 
+  AND deleted_at < DATE_SUB(NOW(), INTERVAL 1 YEAR);
+```
+
+#### 2. アーカイブテーブルへの移動
+
+```sql
+-- アーカイブテーブル
+CREATE TABLE users_archive LIKE users;
+
+-- 削除されたデータをアーカイブに移動
+INSERT INTO users_archive
+SELECT * FROM users WHERE deleted_at IS NOT NULL;
+
+-- アーカイブに移動したデータを物理削除
+DELETE FROM users WHERE deleted_at IS NOT NULL;
+```
+
+### まとめ
+
+論理削除と物理削除の使い分け：
+
+- **論理削除**: 重要なデータ、削除履歴が必要、復元が必要
+- **物理削除**: 一時的なデータ、ストレージの節約、パフォーマンスの向上
+- **ハイブリッド**: 段階的な削除、アーカイブテーブルへの移動
+
+適切な削除方法を選択することで、データの保護とパフォーマンスのバランスを取れます。
+

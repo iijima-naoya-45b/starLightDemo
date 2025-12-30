@@ -1,0 +1,51 @@
+---
+title: "環境構築"
+label: "環境構築"
+---
+
+## React環境構築
+
+### Create React App
+
+```bash
+npx create-react-app my-app
+cd my-app
+npm start
+```
+
+### Vite
+
+```bash
+npm create vite@latest my-app -- --template react
+cd my-app
+npm install
+npm run dev
+```
+
+### Next.js
+
+```bash
+npx create-next-app@latest my-app
+cd my-app
+npm run dev
+```
+
+### 手動セットアップ
+
+```bash
+npm init -y
+npm install react react-dom
+npm install --save-dev @vitejs/plugin-react vite
+```
+
+**`vite.config.js`:**
+
+```javascript
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+});
+```
+

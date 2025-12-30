@@ -1,0 +1,420 @@
+---
+title: "GraphQL"
+label: "GraphQL"
+---
+
+## GraphQL
+
+GraphQLは、REST APIの代替として、より柔軟で効率的なAPIを構築するためのクエリ言語です。Next.jsでは、**Apollo Client**や**Relay**を使用してGraphQL APIと連携できます。
+
+### なぜGraphQLが必要なのか
+
+#### REST APIの課題
+
+**問題のあるREST APIの例:**
+
+```typescript
+// REST API: ユーザー情報とその投稿を取得する場合
+// 1. ユーザー情報を取得
+const user = await fetch('/api/users/1').then(r => r.json());
+// 2. そのユーザーの投稿を取得
+const posts = await fetch(`/api/users/1/posts`).then(r => r.json());
+// 3. 各投稿のコメントを取得
+const comments = await Promise.all(
+  posts.map(post => 
+    fetch(`/api/posts/${post.id}/comments`).then(r => r.json())
+  )
+);
+
+// 問題点:
+// - 複数のリクエストが必要（N+1問題）
+// - 不要なデータも取得してしまう（オーバーフェッチ）
+// - 必要なデータが取得できない（アンダーフェッチ）
+```
+
+**GraphQLの解決:**
+
+```graphql
+# 1つのクエリで必要なデータだけを取得
+query {
+  user(id: 1) {
+    name
+    email
+    posts {
+      title
+      content
+      comments {
+        text
+        author {
+          name
+        }
+      }
+    }
+  }
+}
+```
+
+**メリット:**
+1. **必要なデータだけを取得**: クライアントが要求するフィールドだけを返す
+2. **1つのリクエストで複数のリソース**: 関連データを1回のクエリで取得
+3. **型安全性**: スキーマにより型が明確
+4. **APIの進化**: フィールドの追加・削除が容易
+
+### Apollo Clientの設定
+
+#### 依存関係の追加
+
+```bash
+npm install @apollo/client graphql
+```
+
+#### Apollo Clientの設定
+
+```typescript
+// lib/apollo-client.ts
+import { ApolloClient, InMemoryCache, createHttpLink } from '@apollo/client';
+import { setContext } from '@apollo/client/link/context';
+
+const httpLink = createHttpLink({
+  uri: process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || 'http://localhost:4000/graphql',
+});
+
+const authLink = setContext((_, { headers }) => {
+  const token = localStorage.getItem('token');
+  return {
+    headers: {
+      ...headers,
+      authorization: token ? `Bearer ${token}` : '',
+    },
+  };
+});
+
+export const apolloClient = new ApolloClient({
+  link: authLink.concat(httpLink),
+  cache: new InMemoryCache(),
+});
+```
+
+#### Apollo Providerの設定
+
+```typescript
+// app/layout.tsx
+import { ApolloProvider } from '@apollo/client';
+import { apolloClient } from '@/lib/apollo-client';
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="ja">
+      <body>
+        <ApolloProvider client={apolloClient}>
+          {children}
+        </ApolloProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+### クエリの実行
+
+#### useQueryフック
+
+```typescript
+// components/UserProfile.tsx
+'use client';
+
+import { useQuery, gql } from '@apollo/client';
+
+const GET_USER = gql`
+  query GetUser($id: ID!) {
+    user(id: $id) {
+      id
+      name
+      email
+      posts {
+        id
+        title
+        content
+      }
+    }
+  }
+`;
+
+export default function UserProfile({ userId }: { userId: string }) {
+  const { loading, error, data } = useQuery(GET_USER, {
+    variables: { id: userId },
+  });
+
+  if (loading) return <p>Loading...</p>;
+  if (error) return <p>Error: {error.message}</p>;
+
+  return (
+    <div>
+      <h1>{data.user.name}</h1>
+      <p>{data.user.email}</p>
+      <ul>
+        {data.user.posts.map((post: any) => (
+          <li key={post.id}>
+            <h2>{post.title}</h2>
+            <p>{post.content}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+#### サーバーコンポーネントでの使用
+
+```typescript
+// app/users/[id]/page.tsx
+import { apolloClient } from '@/lib/apollo-client';
+import { gql } from '@apollo/client';
+
+const GET_USER = gql`
+  query GetUser($id: ID!) {
+    user(id: $id) {
+      id
+      name
+      email
+    }
+  }
+`;
+
+export default async function UserPage({ params }: { params: { id: string } }) {
+  const { data } = await apolloClient.query({
+    query: GET_USER,
+    variables: { id: params.id },
+  });
+
+  return (
+    <div>
+      <h1>{data.user.name}</h1>
+      <p>{data.user.email}</p>
+    </div>
+  );
+}
+```
+
+### ミューテーションの実行
+
+#### useMutationフック
+
+```typescript
+// components/CreatePost.tsx
+'use client';
+
+import { useMutation, gql } from '@apollo/client';
+
+const CREATE_POST = gql`
+  mutation CreatePost($input: CreatePostInput!) {
+    createPost(input: $input) {
+      id
+      title
+      content
+    }
+  }
+`;
+
+export default function CreatePost() {
+  const [createPost, { loading, error }] = useMutation(CREATE_POST, {
+    refetchQueries: ['GetUser'], // ミューテーション後にクエリを再実行
+  });
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    
+    try {
+      const { data } = await createPost({
+        variables: {
+          input: {
+            title: formData.get('title'),
+            content: formData.get('content'),
+          },
+        },
+      });
+      
+      console.log('Post created:', data.createPost);
+    } catch (err) {
+      console.error('Error creating post:', err);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input name="title" placeholder="Title" required />
+      <textarea name="content" placeholder="Content" required />
+      <button type="submit" disabled={loading}>
+        {loading ? 'Creating...' : 'Create Post'}
+      </button>
+      {error && <p>Error: {error.message}</p>}
+    </form>
+  );
+}
+```
+
+### キャッシュの管理
+
+```typescript
+// lib/apollo-client.ts
+import { ApolloClient, InMemoryCache } from '@apollo/client';
+
+export const apolloClient = new ApolloClient({
+  link: authLink.concat(httpLink),
+  cache: new InMemoryCache({
+    typePolicies: {
+      User: {
+        fields: {
+          posts: {
+            merge(existing = [], incoming) {
+              return incoming; // 新しいデータで置き換え
+            },
+          },
+        },
+      },
+    },
+  }),
+});
+```
+
+### エラーハンドリング
+
+```typescript
+// lib/apollo-client.ts
+import { onError } from '@apollo/client/link/error';
+
+const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) => {
+  if (graphQLErrors) {
+    graphQLErrors.forEach(({ message, locations, path }) => {
+      console.error(
+        `GraphQL error: Message: ${message}, Location: ${locations}, Path: ${path}`
+      );
+    });
+  }
+
+  if (networkError) {
+    console.error(`Network error: ${networkError}`);
+    // リトライロジックなど
+  }
+});
+
+export const apolloClient = new ApolloClient({
+  link: errorLink.concat(authLink).concat(httpLink),
+  cache: new InMemoryCache(),
+});
+```
+
+### 実践的な例: ユーザー管理アプリ
+
+```typescript
+// app/users/page.tsx
+'use client';
+
+import { useQuery, useMutation, gql } from '@apollo/client';
+
+const GET_USERS = gql`
+  query GetUsers {
+    users {
+      id
+      name
+      email
+    }
+  }
+`;
+
+const DELETE_USER = gql`
+  mutation DeleteUser($id: ID!) {
+    deleteUser(id: $id)
+  }
+`;
+
+export default function UsersPage() {
+  const { loading, error, data, refetch } = useQuery(GET_USERS);
+  const [deleteUser] = useMutation(DELETE_USER, {
+    onCompleted: () => {
+      refetch(); // ユーザー削除後にリストを更新
+    },
+  });
+
+  if (loading) return <p>Loading...</p>;
+  if (error) return <p>Error: {error.message}</p>;
+
+  return (
+    <div>
+      <h1>Users</h1>
+      <ul>
+        {data.users.map((user: any) => (
+          <li key={user.id}>
+            {user.name} ({user.email})
+            <button
+              onClick={() => {
+                if (confirm('Delete this user?')) {
+                  deleteUser({ variables: { id: user.id } });
+                }
+              }}
+            >
+              Delete
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+### パフォーマンス最適化
+
+#### 1. クエリの最適化
+
+```typescript
+// 必要なフィールドだけを取得
+const GET_USER_MINIMAL = gql`
+  query GetUserMinimal($id: ID!) {
+    user(id: $id) {
+      id
+      name
+    }
+  }
+`;
+```
+
+#### 2. バッチ処理
+
+```typescript
+// 複数のクエリを1つのリクエストで実行
+const { data } = await apolloClient.query({
+  query: gql`
+    query GetUserAndPosts($userId: ID!) {
+      user(id: $userId) {
+        id
+        name
+      }
+      posts(userId: $userId) {
+        id
+        title
+      }
+    }
+  `,
+  variables: { userId: '1' },
+});
+```
+
+### まとめ
+
+Next.jsでGraphQLを使用するポイント：
+
+- **Apollo Client**: GraphQLクライアントライブラリ
+- **useQuery/useMutation**: Reactフックによるデータ取得と更新
+- **キャッシュ管理**: InMemoryCacheによる効率的なキャッシュ
+- **エラーハンドリング**: 適切なエラー処理
+- **パフォーマンス最適化**: 必要なフィールドだけを取得
+
+GraphQLは、柔軟で効率的なAPIを構築するための強力なツールです。適切に使用することで、フロントエンドとバックエンドの開発効率を大幅に向上させることができます。
+

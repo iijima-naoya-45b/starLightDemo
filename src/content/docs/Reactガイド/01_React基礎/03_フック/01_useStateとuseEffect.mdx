@@ -1,0 +1,144 @@
+---
+title: "useStateとuseEffect"
+label: "useStateとuseEffect"
+---
+
+## useStateとuseEffect
+
+### useState
+
+`useState`は、関数コンポーネントで状態を管理するためのフックです。
+
+```jsx
+import { useState } from 'react';
+
+function Counter() {
+  const [count, setCount] = useState(0);
+
+  return (
+    <div>
+      <p>You clicked {count} times</p>
+      <button onClick={() => setCount(count + 1)}>
+        Click me
+      </button>
+    </div>
+  );
+}
+```
+
+#### 複数の状態
+
+```jsx
+function Form() {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+
+  return (
+    <form>
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Name"
+      />
+      <input
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="Email"
+      />
+    </form>
+  );
+}
+```
+
+#### オブジェクトの状態
+
+```jsx
+function UserForm() {
+  const [user, setUser] = useState({
+    name: '',
+    email: '',
+  });
+
+  const updateName = (name) => {
+    setUser({ ...user, name });
+  };
+
+  const updateEmail = (email) => {
+    setUser({ ...user, email });
+  };
+
+  return (
+    <form>
+      <input
+        value={user.name}
+        onChange={(e) => updateName(e.target.value)}
+      />
+      <input
+        value={user.email}
+        onChange={(e) => updateEmail(e.target.value)}
+      />
+    </form>
+  );
+}
+```
+
+### useEffect
+
+`useEffect`は、副作用（データ取得、DOM操作など）を実行するためのフックです。
+
+```jsx
+import { useState, useEffect } from 'react';
+
+function UserProfile({ userId }) {
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    fetch(`/api/users/${userId}`)
+      .then(response => response.json())
+      .then(data => setUser(data));
+  }, [userId]); // userIdが変更されたときに再実行
+
+  if (!user) return <div>Loading...</div>;
+
+  return <div>{user.name}</div>;
+}
+```
+
+#### クリーンアップ
+
+```jsx
+function Timer() {
+  const [seconds, setSeconds] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSeconds(seconds => seconds + 1);
+    }, 1000);
+
+    // クリーンアップ関数
+    return () => clearInterval(interval);
+  }, []); // マウント時のみ実行
+
+  return <div>Seconds: {seconds}</div>;
+}
+```
+
+#### 依存配列
+
+```jsx
+// 毎回実行
+useEffect(() => {
+  console.log('Component rendered');
+});
+
+// マウント時のみ実行
+useEffect(() => {
+  console.log('Component mounted');
+}, []);
+
+// 特定の値が変更されたときのみ実行
+useEffect(() => {
+  console.log('User ID changed:', userId);
+}, [userId]);
+```
+

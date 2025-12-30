@@ -1,0 +1,500 @@
+---
+title: "Redis詳細"
+label: "Redis詳細"
+---
+
+## Redis詳細
+
+Redisは、インメモリデータストアとして機能するオープンソースのNoSQLデータベースです。Spring Bootでは、**Spring Data Redis**を使用してRedisと連携できます。
+
+### なぜRedisが必要なのか
+
+#### データベースアクセスの課題
+
+**問題のあるデータベースアクセスの例:**
+
+```java
+@Service
+public class UserService {
+    
+    public User findById(Long id) {
+        // 毎回データベースにアクセス
+        return userRepository.findById(id)
+            .orElseThrow(() -> new UserNotFoundException());
+        
+        // 問題点:
+        // - データベースへの負荷が高い
+        // - レスポンスタイムが遅い（10-50ms）
+        // - データベース接続数の消費
+    }
+}
+```
+
+**Redisキャッシュの解決:**
+
+```java
+@Service
+public class UserService {
+    
+    @Cacheable(value = "users", key = "#id")
+    public User findById(Long id) {
+        // 1回目: データベースから取得してキャッシュに保存
+        // 2回目以降: キャッシュから取得（1ms以下）
+        return userRepository.findById(id)
+            .orElseThrow(() -> new UserNotFoundException());
+        
+        // メリット:
+        // - データベースへの負荷が大幅に減少
+        // - レスポンスタイムが大幅に短縮
+        // - スケーラビリティの向上
+    }
+}
+```
+
+**メリット:**
+1. **高速アクセス**: メモリベースのため非常に高速（1ms以下）
+2. **データベース負荷の軽減**: 頻繁にアクセスされるデータをキャッシュ
+3. **セッション管理**: 分散環境でのセッション共有
+4. **リアルタイム処理**: カウンター、レート制限など
+
+### Redisの基本概念
+
+- **Key-Value Store**: キーと値のペアでデータを保存
+- **データ型**: String, List, Set, Sorted Set, Hash, Bitmap, HyperLogLog
+- **TTL (Time To Live)**: データの有効期限を設定可能
+- **Pub/Sub**: パブリッシュ/サブスクライブパターン
+
+### Spring Data Redisの設定
+
+#### 依存関係の追加
+
+**Maven (`pom.xml`):**
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-data-redis</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.apache.commons</groupId>
+        <artifactId>commons-pool2</artifactId>
+    </dependency>
+</dependencies>
+```
+
+**Gradle (`build.gradle`):**
+
+```groovy
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    implementation 'org.apache.commons:commons-pool2'
+}
+```
+
+#### 基本設定
+
+**`application.yml`:**
+
+```yaml
+spring:
+  redis:
+    host: localhost
+    port: 6379
+    password: 
+    timeout: 2000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+```
+
+### RedisTemplateの使用
+
+```java
+@Configuration
+public class RedisConfig {
+    
+    @Bean
+    public RedisTemplate<String, Object> redisTemplate(
+            RedisConnectionFactory connectionFactory) {
+        RedisTemplate<String, Object> template = new RedisTemplate<>();
+        template.setConnectionFactory(connectionFactory);
+        
+        // シリアライザーの設定
+        template.setKeySerializer(new StringRedisSerializer());
+        template.setValueSerializer(new GenericJackson2JsonRedisSerializer());
+        template.setHashKeySerializer(new StringRedisSerializer());
+        template.setHashValueSerializer(new GenericJackson2JsonRedisSerializer());
+        
+        return template;
+    }
+}
+
+@Service
+public class UserCacheService {
+    
+    private final RedisTemplate<String, Object> redisTemplate;
+    private static final String USER_KEY_PREFIX = "user:";
+    private static final long TTL_SECONDS = 3600; // 1時間
+    
+    public UserCacheService(RedisTemplate<String, Object> redisTemplate) {
+        this.redisTemplate = redisTemplate;
+    }
+    
+    // ユーザーをキャッシュに保存
+    public void cacheUser(User user) {
+        String key = USER_KEY_PREFIX + user.getId();
+        redisTemplate.opsForValue().set(key, user, TTL_SECONDS, TimeUnit.SECONDS);
+    }
+    
+    // ユーザーをキャッシュから取得
+    public User getUserFromCache(Long id) {
+        String key = USER_KEY_PREFIX + id;
+        return (User) redisTemplate.opsForValue().get(key);
+    }
+    
+    // ユーザーをキャッシュから削除
+    public void evictUser(Long id) {
+        String key = USER_KEY_PREFIX + id;
+        redisTemplate.delete(key);
+    }
+    
+    // パターンでキーを削除
+    public void evictUsersByPattern(String pattern) {
+        Set<String> keys = redisTemplate.keys(pattern);
+        if (keys != null && !keys.isEmpty()) {
+            redisTemplate.delete(keys);
+        }
+    }
+}
+```
+
+### キャッシュアノテーションの使用
+
+```java
+@Configuration
+@EnableCaching
+public class CacheConfig {
+    
+    @Bean
+    public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
+        RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
+            .entryTtl(Duration.ofMinutes(10))
+            .serializeKeysWith(RedisSerializationContext.SerializationPair
+                .fromSerializer(new StringRedisSerializer()))
+            .serializeValuesWith(RedisSerializationContext.SerializationPair
+                .fromSerializer(new GenericJackson2JsonRedisSerializer()));
+        
+        return RedisCacheManager.builder(connectionFactory)
+            .cacheDefaults(config)
+            .build();
+    }
+}
+
+@Service
+public class UserService {
+    
+    @Cacheable(value = "users", key = "#id")
+    public User findById(Long id) {
+        return userRepository.findById(id)
+            .orElseThrow(() -> new UserNotFoundException());
+    }
+    
+    @CachePut(value = "users", key = "#user.id")
+    public User updateUser(User user) {
+        return userRepository.save(user);
+    }
+    
+    @CacheEvict(value = "users", key = "#id")
+    public void deleteUser(Long id) {
+        userRepository.deleteById(id);
+    }
+    
+    @CacheEvict(value = "users", allEntries = true)
+    public void clearAllUsers() {
+        // 全キャッシュをクリア
+    }
+}
+```
+
+### 高度なRedis操作
+
+#### 1. Hash操作
+
+```java
+@Service
+public class UserProfileService {
+    
+    private final RedisTemplate<String, Object> redisTemplate;
+    
+    // Hashでユーザープロファイルを保存
+    public void saveUserProfile(Long userId, Map<String, String> profile) {
+        String key = "user:profile:" + userId;
+        redisTemplate.opsForHash().putAll(key, profile);
+        redisTemplate.expire(key, 1, TimeUnit.HOURS);
+    }
+    
+    // Hashから特定のフィールドを取得
+    public String getUserProfileField(Long userId, String field) {
+        String key = "user:profile:" + userId;
+        return (String) redisTemplate.opsForHash().get(key, field);
+    }
+    
+    // Hashの全フィールドを取得
+    public Map<Object, Object> getUserProfile(Long userId) {
+        String key = "user:profile:" + userId;
+        return redisTemplate.opsForHash().entries(key);
+    }
+}
+```
+
+#### 2. List操作
+
+```java
+@Service
+public class ActivityLogService {
+    
+    private final RedisTemplate<String, Object> redisTemplate;
+    
+    // アクティビティログを追加
+    public void addActivity(Long userId, String activity) {
+        String key = "user:activity:" + userId;
+        redisTemplate.opsForList().leftPush(key, activity);
+        redisTemplate.opsForList().trim(key, 0, 99); // 最新100件のみ保持
+        redisTemplate.expire(key, 7, TimeUnit.DAYS);
+    }
+    
+    // アクティビティログを取得
+    public List<Object> getActivities(Long userId, long start, long end) {
+        String key = "user:activity:" + userId;
+        return redisTemplate.opsForList().range(key, start, end);
+    }
+}
+```
+
+#### 3. Set操作
+
+```java
+@Service
+public class UserTagService {
+    
+    private final RedisTemplate<String, Object> redisTemplate;
+    
+    // ユーザーにタグを追加
+    public void addTag(Long userId, String tag) {
+        String key = "user:tags:" + userId;
+        redisTemplate.opsForSet().add(key, tag);
+    }
+    
+    // ユーザーのタグを取得
+    public Set<Object> getTags(Long userId) {
+        String key = "user:tags:" + userId;
+        return redisTemplate.opsForSet().members(key);
+    }
+    
+    // 2つのユーザーの共通タグを取得
+    public Set<Object> getCommonTags(Long userId1, Long userId2) {
+        String key1 = "user:tags:" + userId1;
+        String key2 = "user:tags:" + userId2;
+        return redisTemplate.opsForSet().intersect(key1, key2);
+    }
+}
+```
+
+#### 4. Sorted Set操作（ランキング）
+
+```java
+@Service
+public class RankingService {
+    
+    private final RedisTemplate<String, Object> redisTemplate;
+    
+    // スコアを追加
+    public void addScore(String gameId, Long userId, double score) {
+        String key = "ranking:" + gameId;
+        redisTemplate.opsForZSet().add(key, userId.toString(), score);
+    }
+    
+    // ランキングを取得
+    public Set<ZSetOperations.TypedTuple<Object>> getRanking(String gameId, long start, long end) {
+        String key = "ranking:" + gameId;
+        return redisTemplate.opsForZSet().reverseRangeWithScores(key, start, end);
+    }
+    
+    // ユーザーの順位を取得
+    public Long getRank(String gameId, Long userId) {
+        String key = "ranking:" + gameId;
+        return redisTemplate.opsForZSet().reverseRank(key, userId.toString());
+    }
+}
+```
+
+### セッション管理
+
+```java
+@Configuration
+public class SessionConfig {
+    
+    @Bean
+    public RedisSessionRepository sessionRepository(RedisConnectionFactory connectionFactory) {
+        RedisSessionRepository repository = new RedisSessionRepository(connectionFactory);
+        repository.setDefaultMaxInactiveInterval(1800); // 30分
+        return repository;
+    }
+}
+
+@RestController
+public class SessionController {
+    
+    @GetMapping("/session")
+    public Map<String, Object> getSession(HttpSession session) {
+        Map<String, Object> sessionData = new HashMap<>();
+        sessionData.put("sessionId", session.getId());
+        sessionData.put("creationTime", new Date(session.getCreationTime()));
+        sessionData.put("lastAccessedTime", new Date(session.getLastAccessedTime()));
+        return sessionData;
+    }
+    
+    @PostMapping("/session")
+    public void setSessionAttribute(@RequestParam String key, 
+                                   @RequestParam String value,
+                                   HttpSession session) {
+        session.setAttribute(key, value);
+    }
+}
+```
+
+### レート制限
+
+```java
+@Service
+public class RateLimitService {
+    
+    private final RedisTemplate<String, Object> redisTemplate;
+    
+    // レート制限をチェック
+    public boolean isAllowed(String key, int maxRequests, int windowSeconds) {
+        String redisKey = "ratelimit:" + key;
+        Long count = redisTemplate.opsForValue().increment(redisKey);
+        
+        if (count == 1) {
+            redisTemplate.expire(redisKey, windowSeconds, TimeUnit.SECONDS);
+        }
+        
+        return count <= maxRequests;
+    }
+    
+    // スライディングウィンドウ方式
+    public boolean isAllowedSlidingWindow(String key, int maxRequests, int windowSeconds) {
+        String redisKey = "ratelimit:sliding:" + key;
+        long now = System.currentTimeMillis();
+        long windowStart = now - (windowSeconds * 1000);
+        
+        redisTemplate.opsForZSet().removeRangeByScore(redisKey, 0, windowStart);
+        Long count = redisTemplate.opsForZSet().count(redisKey, windowStart, now);
+        
+        if (count < maxRequests) {
+            redisTemplate.opsForZSet().add(redisKey, UUID.randomUUID().toString(), now);
+            redisTemplate.expire(redisKey, windowSeconds, TimeUnit.SECONDS);
+            return true;
+        }
+        
+        return false;
+    }
+}
+```
+
+### Pub/Subパターン
+
+```java
+@Configuration
+public class RedisPubSubConfig {
+    
+    @Bean
+    public RedisMessageListenerContainer redisContainer(
+            RedisConnectionFactory connectionFactory) {
+        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+        container.setConnectionFactory(connectionFactory);
+        return container;
+    }
+}
+
+@Component
+public class RedisMessageListener implements MessageListener {
+    
+    @Override
+    public void onMessage(Message message, byte[] pattern) {
+        String channel = new String(message.getChannel());
+        String body = new String(message.getBody());
+        log.info("Received message from channel {}: {}", channel, body);
+    }
+}
+
+@Service
+public class NotificationService {
+    
+    private final RedisTemplate<String, Object> redisTemplate;
+    
+    public void publishNotification(String channel, Notification notification) {
+        redisTemplate.convertAndSend(channel, notification);
+    }
+}
+```
+
+### パフォーマンス最適化
+
+#### 1. 接続プールの設定
+
+```yaml
+spring:
+  redis:
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+        max-wait: -1ms
+```
+
+#### 2. パイプライン処理
+
+```java
+@Service
+public class BatchCacheService {
+    
+    private final RedisTemplate<String, Object> redisTemplate;
+    
+    public List<Object> getMultipleUsers(List<Long> userIds) {
+        List<Object> results = redisTemplate.executePipelined(
+            new RedisCallback<Object>() {
+                @Override
+                public Object doInRedis(RedisConnection connection) {
+                    StringRedisConnection stringRedisConn = 
+                        (StringRedisConnection) connection;
+                    for (Long userId : userIds) {
+                        stringRedisConn.get("user:" + userId);
+                    }
+                    return null;
+                }
+            }
+        );
+        return results;
+    }
+}
+```
+
+### まとめ
+
+Redisを使用したキャッシングシステムのポイント：
+
+- **高速アクセス**: メモリベースの高速なデータアクセス
+- **多様なデータ型**: String, Hash, List, Set, Sorted Setなど
+- **TTL**: データの有効期限管理
+- **セッション管理**: 分散環境でのセッション共有
+- **レート制限**: APIのレート制限実装
+- **Pub/Sub**: リアルタイム通知
+
+Redisは、パフォーマンスが重要なアプリケーションで非常に有用です。適切に実装することで、アプリケーションのレスポンスタイムとスケーラビリティを大幅に向上させることができます。
+

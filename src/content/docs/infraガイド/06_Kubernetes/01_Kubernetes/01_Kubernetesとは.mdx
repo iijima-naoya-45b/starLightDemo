@@ -1,0 +1,40 @@
+---
+title: "Kubernetesとは"
+label: "Kubernetesとは"
+---
+
+## Kubernetesとは
+
+Kubernetesは、コンテナオーケストレーションプラットフォームです。コンテナのデプロイ、スケーリング、管理を自動化します。
+
+### 基本概念
+
+- **Pod**: コンテナの実行単位
+- **Deployment**: Podのレプリカ管理
+- **Service**: Podへのアクセスを提供
+- **Namespace**: リソースの論理的分割
+
+### 基本的なDeployment
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+      - name: my-app
+        image: my-app:latest
+        ports:
+        - containerPort: 8080
+```
+

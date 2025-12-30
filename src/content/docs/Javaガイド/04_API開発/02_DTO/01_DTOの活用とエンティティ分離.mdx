@@ -1,0 +1,860 @@
+---
+title: "DTOの活用とエンティティ分離"
+label: "DTOの活用とエンティティ分離"
+---
+
+## DTOの活用とエンティティ分離
+
+エンティティを直接APIレスポンスとして返すことは、多くの問題を引き起こします。この章では、**DTO（Data Transfer Object）パターン**を活用して、エンティティとAPIの境界を適切に分離する方法について、シニアエンジニアの視点から深く解説します。
+
+### なぜエンティティを直接APIレスポンスとして返してはいけないのか
+
+#### 問題1: セキュリティリスク
+
+**問題のあるコード:**
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    private final UserRepository userRepository;
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<User> getUser(@PathVariable Long id) {
+        // 問題: エンティティを直接返している
+        User user = userRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("User", id));
+        return ResponseEntity.ok(user);
+    }
+}
+
+@Entity
+@Table(name = "users")
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    private String email;
+    
+    // 問題: パスワードがAPIレスポンスに含まれる可能性がある
+    private String password;
+    
+    // 問題: 内部的な管理情報が外部に露出する
+    private String internalNotes;
+    private Boolean isAdmin;
+    private LocalDateTime lastLoginAt;
+    
+    // 問題: 関連エンティティが意図せずシリアライズされる
+    @OneToMany(mappedBy = "user")
+    private List<Order> orders;
+    
+    // getter/setter
+}
+```
+
+**具体的な問題:**
+
+1. **機密情報の漏洩**: パスワード、内部メモ、管理者フラグなどがJSONレスポンスに含まれる
+2. **過剰な情報の露出**: クライアントが不要な情報（`lastLoginAt`、`internalNotes`など）を受け取る
+3. **関連エンティティの意図しないシリアライズ**: `@OneToMany`の関連がJSONに含まれ、巨大なレスポンスになる可能性
+
+**実際の被害例:**
+
+```json
+// 意図しないAPIレスポンス
+{
+  "id": 1,
+  "name": "John Doe",
+  "email": "john@example.com",
+  "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",  // ハッシュ化されているが、依然として機密情報
+  "internalNotes": "VIP customer, handle with care",  // 内部情報の漏洩
+  "isAdmin": true,  // 管理者フラグの漏洩
+  "lastLoginAt": "2024-01-15T10:30:00",
+  "orders": [  // 意図しない関連データのシリアライズ
+    {
+      "id": 100,
+      "totalAmount": 50000,
+      "items": [...]
+    },
+    // ... 大量の注文データ
+  ]
+}
+```
+
+#### 問題2: APIの進化と互換性の問題
+
+**問題のあるコード:**
+
+```java
+@Entity
+@Table(name = "users")
+public class User {
+    private Long id;
+    private String name;
+    private String email;
+    
+    // 将来、データベースの要件変更で追加されたフィールド
+    private String phoneNumber;  // 新しく追加されたフィールド
+    private String address;  // 新しく追加されたフィールド
+    
+    // getter/setter
+}
+
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<User> getUser(@PathVariable Long id) {
+        // 問題: エンティティの変更が直接APIに影響する
+        User user = userRepository.findById(id).orElseThrow();
+        return ResponseEntity.ok(user);
+    }
+}
+```
+
+**具体的な問題:**
+
+1. **破壊的変更**: エンティティにフィールドを追加すると、既存のAPIクライアントが影響を受ける
+2. **バージョン管理の困難**: APIのバージョン管理ができない（エンティティとAPIが密結合）
+3. **段階的な移行が不可能**: 新しいフィールドを段階的に公開できない
+
+**実際のシナリオ:**
+
+```java
+// バージョン1: シンプルなAPI
+// GET /api/users/1
+// レスポンス: {"id": 1, "name": "John", "email": "john@example.com"}
+
+// データベースにphoneNumberフィールドを追加
+// 問題: 既存のAPIクライアントが突然phoneNumberフィールドを受け取る
+// GET /api/users/1
+// レスポンス: {"id": 1, "name": "John", "email": "john@example.com", "phoneNumber": "090-1234-5678"}
+// 既存のクライアントが予期しないフィールドを受け取り、パースエラーが発生する可能性
+```
+
+#### 問題3: パフォーマンスの問題
+
+**問題のあるコード:**
+
+```java
+@Entity
+@Table(name = "users")
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    private String email;
+    
+    // 問題: 大量の関連データがシリアライズされる
+    @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
+    private List<Order> orders;  // 1000件の注文がある場合
+    
+    @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
+    private List<Payment> payments;  // 500件の支払いがある場合
+    
+    @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
+    private List<Notification> notifications;  // 10000件の通知がある場合
+    
+    // getter/setter
+}
+
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<User> getUser(@PathVariable Long id) {
+        // 問題: エンティティを直接返すと、関連データがすべてシリアライズされる
+        User user = userRepository.findById(id).orElseThrow();
+        return ResponseEntity.ok(user);
+    }
+}
+```
+
+**具体的な問題:**
+
+1. **N+1問題の発生**: 関連エンティティを取得するために大量のクエリが実行される
+2. **巨大なJSONレスポンス**: 不要なデータまで含まれた巨大なレスポンスが生成される
+3. **ネットワーク帯域の無駄**: クライアントが不要なデータを受け取ることで、ネットワーク帯域を無駄に消費
+
+**実際のパフォーマンス影響:**
+
+```java
+// ユーザー1人の情報を取得するだけなのに...
+// 1. Userを取得: SELECT * FROM users WHERE id = 1
+// 2. Ordersを取得: SELECT * FROM orders WHERE user_id = 1  (1000件)
+// 3. Paymentsを取得: SELECT * FROM payments WHERE user_id = 1  (500件)
+// 4. Notificationsを取得: SELECT * FROM notifications WHERE user_id = 1  (10000件)
+// 合計: 11501件のデータが取得され、JSONレスポンスが数MBになる可能性
+```
+
+#### 問題4: 結合度の増加と保守性の低下
+
+**問題のあるコード:**
+
+```java
+@Entity
+@Table(name = "users")
+public class User {
+    // データベースの物理的な構造に依存
+    @Column(name = "user_name", nullable = false, length = 100)
+    private String name;
+    
+    // JPAのアノテーションがAPIレスポンスに影響する
+    @JsonIgnore  // Jacksonのアノテーションがエンティティに混在
+    private String password;
+    
+    // データベースの制約がAPIに影響する
+    @Column(nullable = false)
+    private LocalDateTime createdAt;
+    
+    // getter/setter
+}
+```
+
+**具体的な問題:**
+
+1. **関心の分離違反**: データベースの構造とAPIの構造が密結合している
+2. **テストの困難**: エンティティをモックする必要があり、テストが複雑になる
+3. **再利用性の低下**: 同じエンティティを異なるAPIで使用する場合、要件の違いに対応できない
+
+### DTOパターンの実践的な実装
+
+#### 基本的なDTOの実装
+
+**レスポンスDTO:**
+
+```java
+// ユーザー情報のレスポンスDTO
+public class UserResponseDTO {
+    private Long id;
+    private String name;
+    private String email;
+    private LocalDateTime createdAt;
+    
+    // コンストラクタ
+    public UserResponseDTO() {}
+    
+    public UserResponseDTO(Long id, String name, String email, LocalDateTime createdAt) {
+        this.id = id;
+        this.name = name;
+        this.email = email;
+        this.createdAt = createdAt;
+    }
+    
+    // 静的ファクトリーメソッド（推奨）
+    public static UserResponseDTO from(User user) {
+        return new UserResponseDTO(
+            user.getId(),
+            user.getName(),
+            user.getEmail(),
+            user.getCreatedAt()
+        );
+    }
+    
+    // getter/setter
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+    
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+    
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+}
+```
+
+**リクエストDTO:**
+
+```java
+// ユーザー作成リクエストDTO
+public class UserCreateRequestDTO {
+    
+    @NotBlank(message = "名前は必須です")
+    @Size(min = 1, max = 100, message = "名前は1文字以上100文字以内で入力してください")
+    private String name;
+    
+    @NotBlank(message = "メールアドレスは必須です")
+    @Email(message = "有効なメールアドレスを入力してください")
+    private String email;
+    
+    @NotBlank(message = "パスワードは必須です")
+    @Size(min = 8, max = 100, message = "パスワードは8文字以上100文字以内で入力してください")
+    @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).*$", 
+             message = "パスワードは大文字、小文字、数字を含む必要があります")
+    private String password;
+    
+    // コンストラクタ
+    public UserCreateRequestDTO() {}
+    
+    // getter/setter
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+    
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
+}
+```
+
+**更新リクエストDTO:**
+
+```java
+// ユーザー更新リクエストDTO（すべてのフィールドがオプショナル）
+public class UserUpdateRequestDTO {
+    
+    @Size(min = 1, max = 100, message = "名前は1文字以上100文字以内で入力してください")
+    private String name;
+    
+    @Email(message = "有効なメールアドレスを入力してください")
+    private String email;
+    
+    // コンストラクタ
+    public UserUpdateRequestDTO() {}
+    
+    // getter/setter
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+    
+    // 更新対象のフィールドを判定するヘルパーメソッド
+    public boolean hasName() { return name != null && !name.isBlank(); }
+    public boolean hasEmail() { return email != null && !email.isBlank(); }
+}
+```
+
+#### コントローラーでのDTO活用
+
+**改善されたコントローラー:**
+
+```java
+@RestController
+@RequestMapping("/api/users")
+@Validated
+public class UserController {
+    
+    private final UserService userService;
+    
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<UserResponseDTO> getUser(@PathVariable Long id) {
+        // DTOを返すことで、エンティティの内部構造を隠蔽
+        UserResponseDTO user = userService.findById(id);
+        return ResponseEntity.ok(user);
+    }
+    
+    @PostMapping
+    public ResponseEntity<UserResponseDTO> createUser(
+            @Valid @RequestBody UserCreateRequestDTO request) {
+        // リクエストDTOでバリデーションとデータ受け取りを分離
+        UserResponseDTO createdUser = userService.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(createdUser);
+    }
+    
+    @PutMapping("/{id}")
+    public ResponseEntity<UserResponseDTO> updateUser(
+            @PathVariable Long id,
+            @Valid @RequestBody UserUpdateRequestDTO request) {
+        // 更新リクエストDTOで部分更新を実現
+        UserResponseDTO updatedUser = userService.update(id, request);
+        return ResponseEntity.ok(updatedUser);
+    }
+    
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
+        userService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+}
+```
+
+#### サービス層でのDTO変換
+
+**改善されたサービス層:**
+
+```java
+@Service
+@Transactional(readOnly = true)
+public class UserService {
+    
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+    }
+    
+    public UserResponseDTO findById(Long id) {
+        User user = userRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("User", id));
+        // エンティティからDTOに変換
+        return UserResponseDTO.from(user);
+    }
+    
+    @Transactional
+    public UserResponseDTO create(UserCreateRequestDTO request) {
+        // 重複チェック
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new DuplicateResourceException("User", request.getEmail());
+        }
+        
+        // DTOからエンティティに変換
+        User user = new User();
+        user.setName(request.getName());
+        user.setEmail(request.getEmail());
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        
+        User savedUser = userRepository.save(user);
+        // エンティティからDTOに変換して返す
+        return UserResponseDTO.from(savedUser);
+    }
+    
+    @Transactional
+    public UserResponseDTO update(Long id, UserUpdateRequestDTO request) {
+        User user = userRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("User", id));
+        
+        // 部分更新: リクエストに含まれるフィールドのみ更新
+        if (request.hasName()) {
+            user.setName(request.getName());
+        }
+        if (request.hasEmail() && !user.getEmail().equals(request.getEmail())) {
+            if (userRepository.existsByEmail(request.getEmail())) {
+                throw new DuplicateResourceException("User", request.getEmail());
+            }
+            user.setEmail(request.getEmail());
+        }
+        
+        User updatedUser = userRepository.save(user);
+        return UserResponseDTO.from(updatedUser);
+    }
+    
+    @Transactional
+    public void delete(Long id) {
+        if (!userRepository.existsById(id)) {
+            throw new ResourceNotFoundException("User", id);
+        }
+        userRepository.deleteById(id);
+    }
+}
+```
+
+### マッピングライブラリの活用
+
+手動でのDTO変換は煩雑で、エラーが発生しやすいため、**マッピングライブラリ**を活用することが推奨されます。
+
+#### MapStructの導入
+
+**依存関係の追加（Gradle）:**
+
+```groovy
+dependencies {
+    implementation 'org.mapstruct:mapstruct:1.5.5.Final'
+    annotationProcessor 'org.mapstruct:mapstruct-processor:1.5.5.Final'
+}
+```
+
+**依存関係の追加（Maven）:**
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>org.mapstruct</groupId>
+        <artifactId>mapstruct</artifactId>
+        <version>1.5.5.Final</version>
+    </dependency>
+</dependencies>
+
+<build>
+    <plugins>
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <configuration>
+                <annotationProcessorPaths>
+                    <path>
+                        <groupId>org.mapstruct</groupId>
+                        <artifactId>mapstruct-processor</artifactId>
+                        <version>1.5.5.Final</version>
+                    </path>
+                </annotationProcessorPaths>
+            </configuration>
+        </plugin>
+    </plugins>
+</build>
+```
+
+#### MapStructマッパーの実装
+
+**基本的なマッパー:**
+
+```java
+@Mapper(componentModel = "spring")  // Springのコンポーネントとして登録
+public interface UserMapper {
+    
+    // エンティティからレスポンスDTOへの変換
+    UserResponseDTO toResponseDTO(User user);
+    
+    // エンティティのリストからレスポンスDTOのリストへの変換
+    List<UserResponseDTO> toResponseDTOList(List<User> users);
+    
+    // 作成リクエストDTOからエンティティへの変換
+    @Mapping(target = "id", ignore = true)  // IDは自動生成されるため無視
+    @Mapping(target = "password", ignore = true)  // パスワードは別途エンコードするため無視
+    @Mapping(target = "createdAt", ignore = true)  // 作成日時は自動設定されるため無視
+    @Mapping(target = "updatedAt", ignore = true)  // 更新日時は自動設定されるため無視
+    User toEntity(UserCreateRequestDTO request);
+    
+    // 更新リクエストDTOからエンティティへの部分更新
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "password", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
+    void updateEntityFromDTO(UserUpdateRequestDTO request, @MappingTarget User user);
+}
+```
+
+**カスタムマッピング:**
+
+```java
+@Mapper(componentModel = "spring")
+public interface UserMapper {
+    
+    // デフォルトのマッピング
+    UserResponseDTO toResponseDTO(User user);
+    
+    // カスタムマッピング: フルネームを生成
+    @Mapping(target = "fullName", expression = "java(user.getFirstName() + \" \" + user.getLastName())")
+    UserDetailResponseDTO toDetailResponseDTO(User user);
+    
+    // カスタムマッピング: ネストされたオブジェクトの変換
+    @Mapping(target = "address", source = "userAddress")
+    UserResponseDTO toResponseDTOWithAddress(User user);
+    
+    // カスタムマッピング: 日付のフォーマット
+    @Mapping(target = "createdAtFormatted", 
+             expression = "java(user.getCreatedAt().format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME))")
+    UserResponseDTO toResponseDTOWithFormattedDate(User user);
+    
+    // カスタムマッピング: 条件付きマッピング
+    @Mapping(target = "email", 
+             expression = "java(user.isEmailPublic() ? user.getEmail() : null)")
+    UserPublicResponseDTO toPublicResponseDTO(User user);
+}
+```
+
+**サービス層でのMapStruct活用:**
+
+```java
+@Service
+@Transactional(readOnly = true)
+public class UserService {
+    
+    private final UserRepository userRepository;
+    private final UserMapper userMapper;  // MapStructで生成されたマッパー
+    private final PasswordEncoder passwordEncoder;
+    
+    public UserService(UserRepository userRepository, 
+                      UserMapper userMapper,
+                      PasswordEncoder passwordEncoder) {
+        this.userRepository = userRepository;
+        this.userMapper = userMapper;
+        this.passwordEncoder = passwordEncoder;
+    }
+    
+    public UserResponseDTO findById(Long id) {
+        User user = userRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("User", id));
+        // MapStructで自動生成されたマッパーを使用
+        return userMapper.toResponseDTO(user);
+    }
+    
+    public List<UserResponseDTO> findAll() {
+        List<User> users = userRepository.findAll();
+        // リストの変換も自動的に処理される
+        return userMapper.toResponseDTOList(users);
+    }
+    
+    @Transactional
+    public UserResponseDTO create(UserCreateRequestDTO request) {
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new DuplicateResourceException("User", request.getEmail());
+        }
+        
+        // MapStructでDTOからエンティティに変換
+        User user = userMapper.toEntity(request);
+        // パスワードは別途エンコード
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        
+        User savedUser = userRepository.save(user);
+        return userMapper.toResponseDTO(savedUser);
+    }
+    
+    @Transactional
+    public UserResponseDTO update(Long id, UserUpdateRequestDTO request) {
+        User user = userRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("User", id));
+        
+        // MapStructで部分更新を実現
+        userMapper.updateEntityFromDTO(request, user);
+        
+        if (request.hasEmail() && !user.getEmail().equals(request.getEmail())) {
+            if (userRepository.existsByEmail(request.getEmail())) {
+                throw new DuplicateResourceException("User", request.getEmail());
+            }
+        }
+        
+        User updatedUser = userRepository.save(user);
+        return userMapper.toResponseDTO(updatedUser);
+    }
+}
+```
+
+### ネストされたDTOの実装
+
+関連エンティティを含むDTOの実装方法について解説します。
+
+**エンティティの関連:**
+
+```java
+@Entity
+@Table(name = "users")
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    private String email;
+    
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Order> orders;
+    
+    // getter/setter
+}
+
+@Entity
+@Table(name = "orders")
+public class Order {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user;
+    
+    private BigDecimal totalAmount;
+    private LocalDateTime orderDate;
+    
+    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL)
+    private List<OrderItem> items;
+    
+    // getter/setter
+}
+```
+
+**ネストされたDTO:**
+
+```java
+// ユーザー詳細レスポンスDTO（注文情報を含む）
+public class UserDetailResponseDTO {
+    private Long id;
+    private String name;
+    private String email;
+    private List<OrderSummaryDTO> orders;  // 注文のサマリー情報のみ
+    
+    // コンストラクタ、getter/setter
+}
+
+// 注文サマリーDTO（詳細情報は含まない）
+public class OrderSummaryDTO {
+    private Long id;
+    private BigDecimal totalAmount;
+    private LocalDateTime orderDate;
+    private Integer itemCount;  // 注文アイテム数（詳細は含まない）
+    
+    // コンストラクタ、getter/setter
+}
+```
+
+**MapStructでのネストされたDTOのマッピング:**
+
+```java
+@Mapper(componentModel = "spring")
+public interface UserMapper {
+    
+    // ユーザー詳細DTOへの変換
+    @Mapping(target = "orders", source = "orders")
+    UserDetailResponseDTO toDetailResponseDTO(User user);
+    
+    // 注文サマリーDTOへの変換
+    @Mapping(target = "itemCount", expression = "java(order.getItems().size())")
+    OrderSummaryDTO toOrderSummaryDTO(Order order);
+    
+    // 注文リストの変換
+    List<OrderSummaryDTO> toOrderSummaryDTOList(List<Order> orders);
+}
+```
+
+### APIバージョン管理とDTO
+
+APIのバージョン管理を実現するためのDTO設計について解説します。
+
+**バージョン付きDTO:**
+
+```java
+// v1のDTO
+public class UserResponseDTOV1 {
+    private Long id;
+    private String name;
+    private String email;
+    
+    // getter/setter
+}
+
+// v2のDTO（新しいフィールドを追加）
+public class UserResponseDTOV2 {
+    private Long id;
+    private String name;
+    private String email;
+    private String phoneNumber;  // v2で追加
+    private AddressDTO address;  // v2で追加
+    
+    // getter/setter
+}
+
+// バージョン管理用のマッパー
+@Mapper(componentModel = "spring")
+public interface UserMapper {
+    
+    UserResponseDTOV1 toResponseDTOV1(User user);
+    UserResponseDTOV2 toResponseDTOV2(User user);
+}
+```
+
+**バージョン管理付きコントローラー:**
+
+```java
+@RestController
+@RequestMapping("/api")
+public class UserController {
+    
+    private final UserService userService;
+    private final UserMapper userMapper;
+    
+    @GetMapping("/v1/users/{id}")
+    public ResponseEntity<UserResponseDTOV1> getUserV1(@PathVariable Long id) {
+        User user = userService.findEntityById(id);
+        return ResponseEntity.ok(userMapper.toResponseDTOV1(user));
+    }
+    
+    @GetMapping("/v2/users/{id}")
+    public ResponseEntity<UserResponseDTOV2> getUserV2(@PathVariable Long id) {
+        User user = userService.findEntityById(id);
+        return ResponseEntity.ok(userMapper.toResponseDTOV2(user));
+    }
+}
+```
+
+### パフォーマンス最適化
+
+DTOを使用することで、パフォーマンスを最適化できます。
+
+**プロジェクションの活用:**
+
+```java
+// エンティティのプロジェクション（必要なフィールドのみ取得）
+public interface UserProjection {
+    Long getId();
+    String getName();
+    String getEmail();
+    LocalDateTime getCreatedAt();
+}
+
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    
+    // プロジェクションを使用して必要なフィールドのみ取得
+    @Query("SELECT u.id as id, u.name as name, u.email as email, u.createdAt as createdAt " +
+           "FROM User u WHERE u.id = :id")
+    UserProjection findProjectionById(@Param("id") Long id);
+    
+    // プロジェクションのリストを取得
+    @Query("SELECT u.id as id, u.name as name, u.email as email, u.createdAt as createdAt " +
+           "FROM User u")
+    List<UserProjection> findAllProjections();
+}
+
+// プロジェクションからDTOへの変換
+@Mapper(componentModel = "spring")
+public interface UserMapper {
+    
+    UserResponseDTO toResponseDTO(UserProjection projection);
+    List<UserResponseDTO> toResponseDTOList(List<UserProjection> projections);
+}
+```
+
+**サービス層でのプロジェクション活用:**
+
+```java
+@Service
+@Transactional(readOnly = true)
+public class UserService {
+    
+    private final UserRepository userRepository;
+    private final UserMapper userMapper;
+    
+    public UserResponseDTO findById(Long id) {
+        // プロジェクションを使用して必要なフィールドのみ取得
+        UserProjection projection = userRepository.findProjectionById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("User", id));
+        // プロジェクションからDTOに変換
+        return userMapper.toResponseDTO(projection);
+    }
+    
+    public List<UserResponseDTO> findAll() {
+        // プロジェクションのリストを取得
+        List<UserProjection> projections = userRepository.findAllProjections();
+        // プロジェクションからDTOのリストに変換
+        return userMapper.toResponseDTOList(projections);
+    }
+}
+```
+
+### まとめ
+
+DTOパターンを活用することで、以下のメリットが得られます：
+
+1. **セキュリティの向上**: 機密情報の漏洩を防止
+2. **APIの進化**: バージョン管理が容易になり、段階的な移行が可能
+3. **パフォーマンスの最適化**: 必要なデータのみを取得・返却
+4. **結合度の低減**: エンティティとAPIの分離により、保守性が向上
+5. **テストの容易性**: DTOはシンプルなPOJOのため、テストが容易
+
+**シニアエンジニアとして考慮すべき点:**
+
+1. **マッピングライブラリの選択**: MapStruct、ModelMapper、Dozerなど、プロジェクトに適したライブラリを選択
+2. **パフォーマンスとのバランス**: 過度なDTO変換はパフォーマンスに影響するため、プロジェクションを活用
+3. **チームの理解**: DTOパターンの重要性をチーム全体で理解し、一貫した実装を維持
+4. **進化的な設計**: 最初から完璧なDTO設計を目指さず、必要に応じて進化させる
+
+これらの原則に従うことで、セキュアで保守性が高く、パフォーマンスに優れたAPIを構築できます。
+

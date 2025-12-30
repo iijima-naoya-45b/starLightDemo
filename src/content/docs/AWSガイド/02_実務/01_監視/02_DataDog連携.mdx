@@ -1,0 +1,240 @@
+---
+title: "DataDog連携"
+label: "DataDog連携"
+---
+
+## DataDog連携
+
+DataDogは、クラウド監視とログ管理プラットフォームです。AWSと統合して包括的な監視を実現します。
+
+### なぜDataDogが必要なのか
+
+#### CloudWatchだけの課題
+
+**問題点:**
+- マルチクラウド環境の統合監視が困難
+- アプリケーションレベルのメトリクスが不足
+- ダッシュボードのカスタマイズが限定的
+- アラートの高度な条件設定が困難
+
+**DataDogの解決:**
+- マルチクラウド・オンプレミス統合監視
+- APM（Application Performance Monitoring）
+- 豊富なダッシュボードテンプレート
+- 高度なアラート設定
+
+### DataDog Agentのインストール
+
+```bash
+# EC2インスタンスにDataDog Agentをインストール
+DD_API_KEY=your-api-key DD_SITE="datadoghq.com" bash -c "$(curl -L https://s3.amazonaws.com/dd-agent/scripts/install_script_agent7.sh)"
+```
+
+### AWSインテグレーション
+
+#### 1. IAMロールの作成
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:Get*",
+        "cloudwatch:List*",
+        "ec2:Describe*",
+        "rds:Describe*",
+        "s3:GetBucketLocation",
+        "s3:ListAllMyBuckets"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+#### 2. DataDogでの設定
+
+```yaml
+# datadog.yaml
+api_key: <YOUR_API_KEY>
+site: datadoghq.com
+
+# AWS統合
+aws:
+  instance: true
+  tags:
+    - env:production
+    - team:backend
+```
+
+### カスタムメトリクスの送信
+
+```python
+# PythonアプリケーションからDataDogにメトリクスを送信
+from datadog import initialize, api
+
+options = {
+    'api_key': 'your-api-key',
+    'app_key': 'your-app-key'
+}
+
+initialize(**options)
+
+# カスタムメトリクスの送信
+api.Metric.send(
+    metric='myapp.request.count',
+    points=100,
+    tags=['env:production', 'service:api']
+)
+
+# カスタムイベントの送信
+api.Event.create(
+    title='Deployment completed',
+    text='Application deployed successfully',
+    tags=['env:production', 'deployment']
+)
+```
+
+### APM（Application Performance Monitoring）
+
+```python
+# Python FlaskアプリケーションでのAPM設定
+from ddtrace import patch_all
+patch_all()
+
+from flask import Flask
+from ddtrace import tracer
+
+app = Flask(__name__)
+
+@app.route('/api/users')
+@tracer.wrap()
+def get_users():
+    # データベースクエリ
+    users = db.query('SELECT * FROM users')
+    return jsonify(users)
+```
+
+### ログの収集
+
+```python
+# Pythonロギングの設定
+import logging
+from ddtrace import tracer
+
+# DataDogにログを送信
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[
+        logging.StreamHandler(),
+        # DataDogログハンドラー
+    ]
+)
+
+logger = logging.getLogger(__name__)
+logger.info('Application started', extra={
+    'dd.trace_id': tracer.current_trace_id(),
+    'dd.span_id': tracer.current_span_id()
+})
+```
+
+### ダッシュボードの作成
+
+```json
+{
+  "title": "Production Dashboard",
+  "widgets": [
+    {
+      "definition": {
+        "type": "timeseries",
+        "requests": [
+          {
+            "q": "avg:aws.ec2.cpuutilization{env:production}",
+            "display_type": "line"
+          }
+        ],
+        "title": "EC2 CPU Utilization"
+      }
+    },
+    {
+      "definition": {
+        "type": "query_value",
+        "requests": [
+          {
+            "q": "sum:myapp.request.count{env:production}",
+            "aggregator": "sum"
+          }
+        ],
+        "title": "Total Requests"
+      }
+    }
+  ]
+}
+```
+
+### アラートの設定
+
+```yaml
+# DataDogアラート設定
+alert:
+  name: High Error Rate
+  query: |
+    sum(last_5m):sum:myapp.error.count{env:production} > 100
+  message: |
+    Error rate is high: {{value}} errors in the last 5 minutes
+  options:
+    notify_audit: false
+    notify_no_data: false
+    thresholds:
+      critical: 100
+      warning: 50
+```
+
+### 実践例: マルチサービス監視
+
+```python
+# マイクロサービス全体の監視
+from datadog import api
+
+# サービス間の依存関係を可視化
+api.ServiceLevelObjective.create(
+    name='API Availability',
+    type='metric',
+    query={
+        'numerator': 'sum:myapp.request.success{env:production}',
+        'denominator': 'sum:myapp.request.total{env:production}'
+    },
+    thresholds=[
+        {
+            'timeframe': '7d',
+            'target': 99.9,
+            'warning': 99.5
+        }
+    ]
+)
+```
+
+### CloudWatchとDataDogの使い分け
+
+| 用途 | CloudWatch | DataDog |
+|------|-----------|---------|
+| AWSリソース監視 | ✓ | ✓ |
+| アプリケーション監視 | △ | ✓ |
+| マルチクラウド | × | ✓ |
+| コスト | 低 | 高 |
+| カスタマイズ性 | 中 | 高 |
+
+### まとめ
+
+DataDog連携のポイント：
+
+- **統合監視**: AWS、アプリケーション、インフラを一元管理
+- **APM**: アプリケーションのパフォーマンス追跡
+- **ログ管理**: 集中ログ管理と分析
+- **アラート**: 高度なアラート条件設定
+- **ダッシュボード**: カスタマイズ可能な可視化
+
+DataDogは、エンタープライズレベルの監視を実現する強力なツールです。適切に設定することで、システム全体の可観測性を大幅に向上させることができます。
+

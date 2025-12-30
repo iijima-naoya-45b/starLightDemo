@@ -1,0 +1,573 @@
+---
+title: "テーブル設計の実践例"
+label: "テーブル設計の実践例"
+---
+
+## テーブル設計の実践例
+
+実際のシステムを例に、テーブル設計の実践的なユースケースを説明します。
+
+### ユースケース1: SNS（ソーシャルネットワーキングサービス）
+
+#### 要件
+
+- ユーザー管理
+- 投稿機能
+- いいね機能
+- コメント機能
+- フォロー機能
+
+#### テーブル設計
+
+```sql
+-- ユーザーテーブル
+CREATE TABLE users (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  username VARCHAR(50) UNIQUE NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  display_name VARCHAR(100),
+  bio TEXT,
+  avatar_url VARCHAR(255),
+  is_verified BOOLEAN DEFAULT FALSE,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_username (username),
+  INDEX idx_email (email),
+  INDEX idx_created_at (created_at)
+);
+
+-- 投稿テーブル
+CREATE TABLE posts (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  content TEXT NOT NULL,
+  image_url VARCHAR(255),
+  like_count INT DEFAULT 0,
+  comment_count INT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_user_id (user_id),
+  INDEX idx_created_at (created_at),
+  FULLTEXT INDEX idx_content (content)  -- 全文検索用
+);
+
+-- いいねテーブル
+CREATE TABLE likes (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  post_id INT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_user_post_like (user_id, post_id),  -- 1ユーザー1投稿に1いいね
+  INDEX idx_user_id (user_id),
+  INDEX idx_post_id (post_id)
+);
+
+-- コメントテーブル
+CREATE TABLE comments (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  post_id INT NOT NULL,
+  parent_id INT NULL,  -- 返信コメント用
+  content TEXT NOT NULL,
+  like_count INT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+  FOREIGN KEY (parent_id) REFERENCES comments(id) ON DELETE CASCADE,
+  INDEX idx_user_id (user_id),
+  INDEX idx_post_id (post_id),
+  INDEX idx_parent_id (parent_id),
+  INDEX idx_created_at (created_at)
+);
+
+-- フォローテーブル
+CREATE TABLE follows (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  follower_id INT NOT NULL,  -- フォローする人
+  following_id INT NOT NULL,  -- フォローされる人
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (follower_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (following_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_follow (follower_id, following_id),  -- 1ユーザーは1ユーザーを1回だけフォロー
+  CHECK (follower_id != following_id),  -- 自分自身をフォローできない
+  INDEX idx_follower_id (follower_id),
+  INDEX idx_following_id (following_id)
+);
+```
+
+#### 設計のポイント
+
+**1. いいねカウントの管理:**
+
+```sql
+-- いいねを追加する際にカウントを更新
+BEGIN TRANSACTION;
+
+INSERT INTO likes (user_id, post_id) VALUES (1, 1);
+UPDATE posts SET like_count = like_count + 1 WHERE id = 1;
+
+COMMIT;
+
+-- いいねを削除する際にカウントを更新
+BEGIN TRANSACTION;
+
+DELETE FROM likes WHERE user_id = 1 AND post_id = 1;
+UPDATE posts SET like_count = like_count - 1 WHERE id = 1;
+
+COMMIT;
+```
+
+**2. タイムラインの取得:**
+
+```sql
+-- フォローしているユーザーの投稿を取得
+SELECT p.*, u.username, u.display_name, u.avatar_url
+FROM posts p
+JOIN users u ON p.user_id = u.id
+WHERE p.user_id IN (
+  SELECT following_id FROM follows WHERE follower_id = ?
+)
+ORDER BY p.created_at DESC
+LIMIT 20 OFFSET 0;
+```
+
+### ユースケース2: 在庫管理システム
+
+#### 要件
+
+- 商品管理
+- 在庫管理
+- 入荷・出荷管理
+- 在庫履歴の記録
+
+#### テーブル設計
+
+```sql
+-- 商品テーブル
+CREATE TABLE products (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  sku VARCHAR(50) UNIQUE NOT NULL,  -- Stock Keeping Unit
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  category_id INT,
+  unit_price DECIMAL(10,2) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (category_id) REFERENCES categories(id),
+  INDEX idx_sku (sku),
+  INDEX idx_category_id (category_id),
+  INDEX idx_name (name)
+);
+
+-- 倉庫テーブル
+CREATE TABLE warehouses (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(100) NOT NULL,
+  address TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 在庫テーブル
+CREATE TABLE inventory (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  product_id INT NOT NULL,
+  warehouse_id INT NOT NULL,
+  quantity INT NOT NULL DEFAULT 0,
+  reserved_quantity INT NOT NULL DEFAULT 0,  -- 予約済み在庫
+  available_quantity INT GENERATED ALWAYS AS (quantity - reserved_quantity) STORED,  -- 利用可能在庫
+  reorder_point INT DEFAULT 0,  -- 発注点
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+  FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_product_warehouse (product_id, warehouse_id),
+  INDEX idx_product_id (product_id),
+  INDEX idx_warehouse_id (warehouse_id),
+  INDEX idx_available_quantity (available_quantity)
+);
+
+-- 在庫履歴テーブル
+CREATE TABLE inventory_transactions (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  product_id INT NOT NULL,
+  warehouse_id INT NOT NULL,
+  transaction_type ENUM('in', 'out', 'adjustment', 'reservation', 'release') NOT NULL,
+  quantity INT NOT NULL,
+  reference_type VARCHAR(50),  -- 'order', 'return', 'adjustment'など
+  reference_id INT,  -- 参照先のID
+  notes TEXT,
+  created_by INT,  -- 操作者
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (product_id) REFERENCES products(id),
+  FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+  INDEX idx_product_id (product_id),
+  INDEX idx_warehouse_id (warehouse_id),
+  INDEX idx_transaction_type (transaction_type),
+  INDEX idx_created_at (created_at)
+);
+```
+
+#### 設計のポイント
+
+**1. 在庫の更新（トランザクション）:**
+
+```sql
+-- 入荷処理
+BEGIN TRANSACTION;
+
+-- 在庫を増やす
+UPDATE inventory 
+SET quantity = quantity + 100 
+WHERE product_id = 1 AND warehouse_id = 1;
+
+-- 履歴を記録
+INSERT INTO inventory_transactions 
+  (product_id, warehouse_id, transaction_type, quantity, reference_type, reference_id, notes)
+VALUES 
+  (1, 1, 'in', 100, 'purchase', 123, '入荷処理');
+
+COMMIT;
+
+-- 出荷処理
+BEGIN TRANSACTION;
+
+-- 在庫を減らす（利用可能在庫を確認）
+UPDATE inventory 
+SET quantity = quantity - 50,
+    reserved_quantity = reserved_quantity - 50
+WHERE product_id = 1 
+  AND warehouse_id = 1 
+  AND available_quantity >= 50;
+
+-- 履歴を記録
+INSERT INTO inventory_transactions 
+  (product_id, warehouse_id, transaction_type, quantity, reference_type, reference_id, notes)
+VALUES 
+  (1, 1, 'out', 50, 'order', 456, '出荷処理');
+
+COMMIT;
+```
+
+**2. 在庫の予約:**
+
+```sql
+-- 在庫を予約
+BEGIN TRANSACTION;
+
+UPDATE inventory 
+SET reserved_quantity = reserved_quantity + 10
+WHERE product_id = 1 
+  AND warehouse_id = 1 
+  AND available_quantity >= 10;
+
+INSERT INTO inventory_transactions 
+  (product_id, warehouse_id, transaction_type, quantity, reference_type, reference_id)
+VALUES 
+  (1, 1, 'reservation', 10, 'order', 789);
+
+COMMIT;
+
+-- 予約を解除（キャンセル時）
+BEGIN TRANSACTION;
+
+UPDATE inventory 
+SET reserved_quantity = reserved_quantity - 10
+WHERE product_id = 1 AND warehouse_id = 1;
+
+INSERT INTO inventory_transactions 
+  (product_id, warehouse_id, transaction_type, quantity, reference_type, reference_id)
+VALUES 
+  (1, 1, 'release', 10, 'order', 789);
+
+COMMIT;
+```
+
+### ユースケース3: ブログシステム
+
+#### 要件
+
+- 記事管理
+- カテゴリ管理
+- タグ管理
+- コメント機能
+- 閲覧数カウント
+
+#### テーブル設計
+
+```sql
+-- 記事テーブル
+CREATE TABLE articles (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  author_id INT NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  slug VARCHAR(255) UNIQUE NOT NULL,  -- URL用
+  content TEXT NOT NULL,
+  excerpt TEXT,  -- 抜粋
+  status ENUM('draft', 'published', 'archived') DEFAULT 'draft',
+  view_count INT DEFAULT 0,
+  published_at TIMESTAMP NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (author_id) REFERENCES users(id),
+  INDEX idx_author_id (author_id),
+  INDEX idx_status (status),
+  INDEX idx_published_at (published_at),
+  INDEX idx_slug (slug),
+  FULLTEXT INDEX idx_title_content (title, content)
+);
+
+-- カテゴリテーブル
+CREATE TABLE categories (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(100) UNIQUE NOT NULL,
+  slug VARCHAR(100) UNIQUE NOT NULL,
+  description TEXT,
+  parent_id INT NULL,  -- 階層構造用
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (parent_id) REFERENCES categories(id) ON DELETE SET NULL,
+  INDEX idx_parent_id (parent_id),
+  INDEX idx_slug (slug)
+);
+
+-- 記事カテゴリ中間テーブル
+CREATE TABLE article_categories (
+  article_id INT NOT NULL,
+  category_id INT NOT NULL,
+  PRIMARY KEY (article_id, category_id),
+  FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+  FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
+);
+
+-- タグテーブル
+CREATE TABLE tags (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(50) UNIQUE NOT NULL,
+  slug VARCHAR(50) UNIQUE NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_slug (slug)
+);
+
+-- 記事タグ中間テーブル
+CREATE TABLE article_tags (
+  article_id INT NOT NULL,
+  tag_id INT NOT NULL,
+  PRIMARY KEY (article_id, tag_id),
+  FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+  FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+);
+
+-- コメントテーブル
+CREATE TABLE article_comments (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  article_id INT NOT NULL,
+  user_id INT NULL,  -- 匿名コメントの場合はNULL
+  author_name VARCHAR(100),  -- 匿名コメント用
+  author_email VARCHAR(255),  -- 匿名コメント用
+  content TEXT NOT NULL,
+  parent_id INT NULL,  -- 返信コメント用
+  is_approved BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (parent_id) REFERENCES article_comments(id) ON DELETE CASCADE,
+  INDEX idx_article_id (article_id),
+  INDEX idx_user_id (user_id),
+  INDEX idx_parent_id (parent_id),
+  INDEX idx_is_approved (is_approved),
+  INDEX idx_created_at (created_at)
+);
+```
+
+#### 設計のポイント
+
+**1. 記事の取得（公開済みのみ）:**
+
+```sql
+-- 公開済み記事の一覧
+SELECT a.*, u.username as author_name, u.avatar_url as author_avatar
+FROM articles a
+JOIN users u ON a.author_id = u.id
+WHERE a.status = 'published'
+  AND a.published_at <= NOW()
+ORDER BY a.published_at DESC
+LIMIT 20 OFFSET 0;
+
+-- カテゴリとタグを含む記事の取得
+SELECT 
+  a.*,
+  GROUP_CONCAT(DISTINCT c.name) as categories,
+  GROUP_CONCAT(DISTINCT t.name) as tags
+FROM articles a
+LEFT JOIN article_categories ac ON a.id = ac.article_id
+LEFT JOIN categories c ON ac.category_id = c.id
+LEFT JOIN article_tags at ON a.id = at.article_id
+LEFT JOIN tags t ON at.tag_id = t.id
+WHERE a.id = 1
+GROUP BY a.id;
+```
+
+**2. 閲覧数の更新:**
+
+```sql
+-- 閲覧数を増やす（重複カウントを防ぐため、セッション管理が必要）
+UPDATE articles 
+SET view_count = view_count + 1 
+WHERE id = 1;
+```
+
+### ユースケース4: 予約システム
+
+#### 要件
+
+- 施設・サービスの予約
+- 予約可能時間の管理
+- 予約の変更・キャンセル
+- 予約履歴の管理
+
+#### テーブル設計
+
+```sql
+-- 施設テーブル
+CREATE TABLE facilities (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  capacity INT NOT NULL,  -- 収容人数
+  hourly_rate DECIMAL(10,2) NOT NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_is_active (is_active)
+);
+
+-- 予約可能時間テーブル
+CREATE TABLE available_slots (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  facility_id INT NOT NULL,
+  date DATE NOT NULL,
+  start_time TIME NOT NULL,
+  end_time TIME NOT NULL,
+  is_available BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (facility_id) REFERENCES facilities(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_facility_datetime (facility_id, date, start_time, end_time),
+  INDEX idx_facility_id (facility_id),
+  INDEX idx_date (date),
+  INDEX idx_is_available (is_available)
+);
+
+-- 予約テーブル
+CREATE TABLE reservations (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  facility_id INT NOT NULL,
+  reservation_date DATE NOT NULL,
+  start_time TIME NOT NULL,
+  end_time TIME NOT NULL,
+  number_of_people INT NOT NULL,
+  total_amount DECIMAL(10,2) NOT NULL,
+  status ENUM('pending', 'confirmed', 'cancelled', 'completed') DEFAULT 'pending',
+  payment_status ENUM('unpaid', 'paid', 'refunded') DEFAULT 'unpaid',
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  cancelled_at TIMESTAMP NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (facility_id) REFERENCES facilities(id),
+  INDEX idx_user_id (user_id),
+  INDEX idx_facility_id (facility_id),
+  INDEX idx_reservation_date (reservation_date),
+  INDEX idx_status (status),
+  INDEX idx_payment_status (payment_status)
+);
+
+-- 予約履歴テーブル（変更履歴を記録）
+CREATE TABLE reservation_history (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  reservation_id INT NOT NULL,
+  action ENUM('created', 'updated', 'cancelled', 'confirmed') NOT NULL,
+  changed_fields JSON,  -- 変更されたフィールドと値
+  changed_by INT,  -- 変更者
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (reservation_id) REFERENCES reservations(id) ON DELETE CASCADE,
+  INDEX idx_reservation_id (reservation_id),
+  INDEX idx_action (action),
+  INDEX idx_created_at (created_at)
+);
+```
+
+#### 設計のポイント
+
+**1. 予約の作成（重複チェック）:**
+
+```sql
+-- 予約の作成
+BEGIN TRANSACTION;
+
+-- 重複チェック
+SELECT COUNT(*) as conflict_count
+FROM reservations
+WHERE facility_id = 1
+  AND reservation_date = '2024-01-15'
+  AND status IN ('pending', 'confirmed')
+  AND (
+    (start_time < '14:00:00' AND end_time > '12:00:00') OR
+    (start_time < '16:00:00' AND end_time > '14:00:00')
+  );
+
+-- 重複がない場合のみ予約を作成
+INSERT INTO reservations 
+  (user_id, facility_id, reservation_date, start_time, end_time, number_of_people, total_amount, status)
+VALUES 
+  (1, 1, '2024-01-15', '12:00:00', '14:00:00', 5, 200.00, 'pending');
+
+-- 履歴を記録
+INSERT INTO reservation_history 
+  (reservation_id, action, changed_by)
+VALUES 
+  (LAST_INSERT_ID(), 'created', 1);
+
+COMMIT;
+```
+
+**2. 予約のキャンセル:**
+
+```sql
+-- 予約のキャンセル
+BEGIN TRANSACTION;
+
+UPDATE reservations 
+SET status = 'cancelled',
+    payment_status = 'refunded',
+    cancelled_at = NOW()
+WHERE id = 1 AND status = 'confirmed';
+
+-- 履歴を記録
+INSERT INTO reservation_history 
+  (reservation_id, action, changed_fields, changed_by)
+VALUES 
+  (1, 'cancelled', JSON_OBJECT('status', 'cancelled', 'payment_status', 'refunded'), 1);
+
+COMMIT;
+```
+
+### まとめ
+
+テーブル設計の実践例：
+
+1. **SNS**: ユーザー、投稿、いいね、コメント、フォロー
+2. **在庫管理システム**: 商品、倉庫、在庫、在庫履歴
+3. **ブログシステム**: 記事、カテゴリ、タグ、コメント
+4. **予約システム**: 施設、予約可能時間、予約、予約履歴
+
+これらの実践例を参考に、実際のテーブル設計を行えます。
+

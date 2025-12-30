@@ -1,0 +1,58 @@
+---
+title: "パフォーマンス最適化"
+label: "パフォーマンス最適化"
+---
+
+## パフォーマンス最適化
+
+### React.memo
+
+`React.memo`は、コンポーネントの再レンダリングを防ぐための高階コンポーネントです。
+
+```jsx
+import { memo } from 'react';
+
+const ExpensiveComponent = memo(function ExpensiveComponent({ data }) {
+  // 重い計算
+  return <div>{/* ... */}</div>;
+});
+```
+
+### useMemoとuseCallback
+
+```jsx
+import { useMemo, useCallback } from 'react';
+
+function Parent({ items }) {
+  const expensiveValue = useMemo(() => {
+    return items.reduce((sum, item) => sum + item.value, 0);
+  }, [items]);
+
+  const handleClick = useCallback(() => {
+    console.log('Clicked');
+  }, []);
+
+  return (
+    <div>
+      <ExpensiveComponent value={expensiveValue} onClick={handleClick} />
+    </div>
+  );
+}
+```
+
+### コード分割
+
+```jsx
+import { lazy, Suspense } from 'react';
+
+const LazyComponent = lazy(() => import('./LazyComponent'));
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LazyComponent />
+    </Suspense>
+  );
+}
+```
+

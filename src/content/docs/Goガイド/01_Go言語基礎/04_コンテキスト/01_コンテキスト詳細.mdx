@@ -1,0 +1,240 @@
+---
+title: "コンテキスト詳細"
+label: "コンテキスト詳細"
+---
+
+## コンテキスト詳細
+
+Goの`context`パッケージは、リクエストスコープの値、キャンセレーション、タイムアウトを管理するための標準的な方法を提供します。
+
+### なぜコンテキストが必要なのか
+
+#### ゴルーチンの課題
+
+**問題のあるコード:**
+
+```go
+func processRequest() {
+    go longRunningTask() // ゴルーチンを起動
+    // 問題: ゴルーチンをキャンセルできない
+    // 問題: タイムアウトを設定できない
+    // 問題: リクエストスコープの値を渡せない
+}
+```
+
+**コンテキストの解決:**
+
+```go
+func processRequest(ctx context.Context) {
+    go longRunningTask(ctx) // コンテキストを渡す
+    // メリット:
+    // - ゴルーチンをキャンセルできる
+    // - タイムアウトを設定できる
+    // - リクエストスコープの値を渡せる
+}
+```
+
+**メリット:**
+1. **キャンセレーション**: ゴルーチンやリクエストをキャンセル可能
+2. **タイムアウト**: タイムアウトを設定可能
+3. **値の伝播**: リクエストスコープの値を伝播可能
+
+### コンテキストの作成
+
+#### 基本コンテキスト
+
+```go
+// 空のコンテキスト
+ctx := context.Background()
+
+// TODOマーカー付きコンテキスト（開発中）
+ctx := context.TODO()
+```
+
+#### タイムアウト付きコンテキスト
+
+```go
+// 5秒後にタイムアウト
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+
+// 指定時刻にタイムアウト
+deadline := time.Now().Add(5 * time.Second)
+ctx, cancel := context.WithDeadline(context.Background(), deadline)
+defer cancel()
+```
+
+#### キャンセル可能なコンテキスト
+
+```go
+ctx, cancel := context.WithCancel(context.Background())
+defer cancel()
+
+// 手動でキャンセル
+cancel()
+```
+
+#### 値付きコンテキスト
+
+```go
+type userIDKey struct{}
+
+ctx := context.WithValue(context.Background(), userIDKey{}, "user-123")
+
+// 値の取得
+userID := ctx.Value(userIDKey{}).(string)
+```
+
+### コンテキストの使用
+
+#### タイムアウトの実装
+
+```go
+func fetchData(ctx context.Context) (string, error) {
+    // コンテキストがキャンセルされたかチェック
+    select {
+    case <-ctx.Done():
+        return "", ctx.Err()
+    case result := <-doWork():
+        return result, nil
+    }
+}
+
+func doWork() <-chan string {
+    ch := make(chan string)
+    go func() {
+        time.Sleep(2 * time.Second)
+        ch <- "result"
+    }()
+    return ch
+}
+
+// 使用例
+ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+defer cancel()
+
+result, err := fetchData(ctx)
+if err != nil {
+    log.Printf("Error: %v", err) // context deadline exceeded
+}
+```
+
+#### キャンセレーションの実装
+
+```go
+func processItems(ctx context.Context, items []string) error {
+    for _, item := range items {
+        select {
+        case <-ctx.Done():
+            return ctx.Err() // キャンセルされた
+        default:
+            // アイテムを処理
+            if err := processItem(ctx, item); err != nil {
+                return err
+            }
+        }
+    }
+    return nil
+}
+
+// 使用例
+ctx, cancel := context.WithCancel(context.Background())
+defer cancel()
+
+go func() {
+    time.Sleep(2 * time.Second)
+    cancel() // 2秒後にキャンセル
+}()
+
+err := processItems(ctx, items)
+if err != nil {
+    log.Printf("Cancelled: %v", err)
+}
+```
+
+### 実践的な例: HTTPリクエスト
+
+```go
+func makeRequest(ctx context.Context, url string) (*http.Response, error) {
+    req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+    if err != nil {
+        return nil, err
+    }
+    
+    client := &http.Client{}
+    return client.Do(req)
+}
+
+// 使用例
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+
+resp, err := makeRequest(ctx, "https://api.example.com/data")
+if err != nil {
+    if err == context.DeadlineExceeded {
+        log.Println("Request timeout")
+    }
+    return err
+}
+defer resp.Body.Close()
+```
+
+### 実践的な例: データベースクエリ
+
+```go
+func queryDatabase(ctx context.Context, query string) ([]Row, error) {
+    rows, err := db.QueryContext(ctx, query)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+    
+    var results []Row
+    for rows.Next() {
+        select {
+        case <-ctx.Done():
+            return nil, ctx.Err()
+        default:
+            var row Row
+            if err := rows.Scan(&row); err != nil {
+                return nil, err
+            }
+            results = append(results, row)
+        }
+    }
+    return results, nil
+}
+```
+
+### コンテキストの伝播
+
+```go
+func handler(ctx context.Context) {
+    // リクエストIDを追加
+    requestID := generateRequestID()
+    ctx = context.WithValue(ctx, "requestID", requestID)
+    
+    // サブ関数にコンテキストを伝播
+    processRequest(ctx)
+}
+
+func processRequest(ctx context.Context) {
+    requestID := ctx.Value("requestID").(string)
+    log.Printf("Processing request: %s", requestID)
+    
+    // さらにサブ関数に伝播
+    processSubRequest(ctx)
+}
+```
+
+### まとめ
+
+Goのコンテキストのポイント：
+
+- **タイムアウト**: WithTimeout/WithDeadlineによるタイムアウト設定
+- **キャンセレーション**: WithCancelによるキャンセル
+- **値の伝播**: WithValueによるリクエストスコープの値の伝播
+- **エラーハンドリング**: ctx.Err()によるエラー取得
+
+コンテキストは、Goの並行処理において不可欠な機能です。適切に使用することで、リソースの適切な管理とキャンセレーションを実現できます。
+

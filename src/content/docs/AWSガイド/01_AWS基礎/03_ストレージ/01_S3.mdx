@@ -1,0 +1,90 @@
+---
+title: "S3"
+label: "S3"
+---
+
+## S3 (Simple Storage Service)
+
+S3は、オブジェクトストレージサービスです。
+
+### S3の基本概念
+
+- **バケット**: オブジェクトを格納するコンテナ
+- **オブジェクト**: ファイルとメタデータ
+- **キー**: オブジェクトの一意の識別子
+- **リージョン**: バケットの物理的な場所
+
+### S3ストレージクラス
+
+```javascript
+// S3ストレージクラスの選択
+const storageClasses = {
+  STANDARD: '即座にアクセス可能、頻繁にアクセス',
+  STANDARD_IA: '即座にアクセス可能、アクセス頻度が低い',
+  GLACIER: 'アーカイブ、数時間でアクセス可能',
+  DEEP_ARCHIVE: '長期アーカイブ、12時間でアクセス可能'
+};
+
+// ライフサイクルポリシー
+const lifecyclePolicy = {
+  Rules: [
+    {
+      Id: 'TransitionToIA',
+      Status: 'Enabled',
+      Transitions: [
+        {
+          Days: 30,
+          StorageClass: 'STANDARD_IA'
+        }
+      ]
+    },
+    {
+      Id: 'TransitionToGlacier',
+      Status: 'Enabled',
+      Transitions: [
+        {
+          Days: 90,
+          StorageClass: 'GLACIER'
+        }
+      ]
+    }
+  ]
+};
+```
+
+### S3のセキュリティ
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:user/username"
+      },
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/*"
+    }
+  ]
+}
+```
+
+### 実践例: 静的Webサイトホスティング
+
+```json
+{
+  "WebsiteConfiguration": {
+    "IndexDocument": {
+      "Suffix": "index.html"
+    },
+    "ErrorDocument": {
+      "Key": "error.html"
+    }
+  }
+}
+```
+

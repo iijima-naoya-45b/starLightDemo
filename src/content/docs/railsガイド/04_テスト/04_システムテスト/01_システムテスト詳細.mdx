@@ -1,0 +1,75 @@
+---
+title: "システムテスト詳細"
+label: "システムテスト詳細"
+---
+
+## システムテスト詳細
+
+### Capybaraを使ったE2Eテスト
+
+```ruby
+# spec/system/users_spec.rb
+require 'rails_helper'
+
+RSpec.describe 'Users', type: :system do
+  let(:user) { create(:user) }
+
+  describe 'ユーザー登録' do
+    it '新規ユーザーを登録できること' do
+      visit new_user_registration_path
+      
+      fill_in 'メールアドレス', with: 'new@example.com'
+      fill_in 'パスワード', with: 'password123'
+      fill_in 'パスワード（確認）', with: 'password123'
+      click_button '登録'
+      
+      expect(page).to have_content('アカウント登録が完了しました')
+      expect(User.last.email).to eq('new@example.com')
+    end
+  end
+
+  describe 'ログイン' do
+    it 'ログインできること' do
+      visit new_user_session_path
+      
+      fill_in 'メールアドレス', with: user.email
+      fill_in 'パスワード', with: user.password
+      click_button 'ログイン'
+      
+      expect(page).to have_content('ログインしました')
+    end
+  end
+
+  describe 'JavaScriptを使った操作' do
+    it 'モーダルを開閉できること', js: true do
+      visit root_path
+      
+      click_button 'モーダルを開く'
+      expect(page).to have_css('.modal', visible: true)
+      
+      click_button '閉じる'
+      expect(page).not_to have_css('.modal', visible: true)
+    end
+  end
+end
+```
+
+### ドライバーの設定
+
+```ruby
+# spec/support/capybara.rb
+require 'capybara/rails'
+require 'selenium-webdriver'
+
+Capybara.register_driver :selenium_chrome_headless do |app|
+  options = Selenium::WebDriver::Chrome::Options.new
+  options.add_argument('--headless')
+  options.add_argument('--no-sandbox')
+  options.add_argument('--disable-dev-shm-usage')
+  
+  Capybara::Selenium::Driver.new(app, browser: :chrome, options: options)
+end
+
+Capybara.javascript_driver = :selenium_chrome_headless
+```
+

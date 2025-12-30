@@ -1,0 +1,107 @@
+---
+title: "アニメーション基礎"
+label: "アニメーション基礎"
+---
+
+## アニメーション基礎
+
+アニメーションは、ユーザー体験を向上させる重要な要素です。
+
+### なぜアニメーションが必要なのか
+
+#### アニメーションの効果
+
+**問題のある静的なUI:**
+
+```html
+<!-- 状態変化が突然 -->
+<button onclick="toggle()">Toggle</button>
+<div id="content" style="display: none;">Content</div>
+<!-- 問題点:
+    - 状態変化が突然で分かりにくい
+    - ユーザーが混乱する
+    - 操作感が悪い
+-->
+```
+
+**アニメーションのあるUI:**
+
+```html
+<!-- スムーズな状態変化 -->
+<button onclick="toggle()">Toggle</button>
+<div id="content" class="fade-in">Content</div>
+<!-- メリット:
+    - 状態変化が分かりやすい
+    - ユーザーが理解しやすい
+    - 操作感が良い
+-->
+```
+
+**メリット:**
+1. **フィードバック**: ユーザーの操作に対する視覚的なフィードバック
+2. **ガイダンス**: ユーザーの注意を引く
+3. **ブランドイメージ**: ブランドの個性を表現
+4. **ユーザー体験**: 操作感の向上
+
+### CSSアニメーション
+
+#### 基本的なアニメーション
+
+```css
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+```
+
+#### トランジション
+
+```css
+.button {
+  background-color: blue;
+  transition: background-color 0.3s ease;
+}
+
+.button:hover {
+  background-color: darkblue;
+}
+```
+
+### 実践例: フェードインアニメーション
+
+```css
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in-up {
+  animation: fadeInUp 0.5s ease-out;
+}
+```
+
+### まとめ
+
+アニメーションのポイント：
+
+- **フィードバック**: ユーザーの操作に対する視覚的なフィードバック
+- **ガイダンス**: ユーザーの注意を引く
+- **ブランドイメージ**: ブランドの個性を表現
+- **ユーザー体験**: 操作感の向上
+
+適切なアニメーションは、ユーザー体験を大幅に向上させます。
+

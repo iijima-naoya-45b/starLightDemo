@@ -1,0 +1,670 @@
+---
+title: "論理削除と物理削除の実践例"
+label: "論理削除と物理削除の実践例"
+---
+
+## 論理削除と物理削除の実践例
+
+実際のシステムを例に、論理削除と物理削除の実践的なユースケースを説明します。
+
+### ユースケース1: ECサイトの商品管理
+
+#### 要件
+
+- 商品の削除（販売終了）
+- 過去の注文との関連を保持
+- 商品の復元
+- 一定期間後の完全削除
+
+#### 実装
+
+```sql
+-- 商品テーブル
+CREATE TABLE products (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  price DECIMAL(10,2) NOT NULL,
+  stock_quantity INT NOT NULL DEFAULT 0,
+  status ENUM('active', 'inactive', 'deleted') DEFAULT 'active',
+  deleted_at TIMESTAMP NULL,
+  deleted_by INT NULL,
+  deletion_reason TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_status (status),
+  INDEX idx_deleted_at (deleted_at)
+);
+
+-- 商品の論理削除
+UPDATE products 
+SET status = 'deleted',
+    deleted_at = NOW(),
+    deleted_by = @current_user_id,
+    deletion_reason = '販売終了'
+WHERE id = 1;
+
+-- アクティブな商品の取得
+SELECT * FROM products WHERE status = 'active';
+
+-- 商品の復元
+UPDATE products 
+SET status = 'active',
+    deleted_at = NULL,
+    deleted_by = NULL,
+    deletion_reason = NULL
+WHERE id = 1;
+```
+
+**アプリケーション側の実装:**
+
+```javascript
+// 商品サービスの実装
+class ProductService {
+  // 商品の論理削除
+  async deleteProduct(productId, deletedBy, reason) {
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      
+      // 過去の注文があるか確認
+      const [orders] = await connection.query(
+        'SELECT COUNT(*) as count FROM order_items WHERE product_id = ?',
+        [productId]
+      );
+      
+      if (orders[0].count > 0) {
+        // 過去の注文がある場合は論理削除のみ
+        await connection.query(
+          `UPDATE products 
+           SET status = 'deleted',
+               deleted_at = NOW(),
+               deleted_by = ?,
+               deletion_reason = ?
+           WHERE id = ?`,
+          [deletedBy, reason, productId]
+        );
+      } else {
+        // 過去の注文がない場合は物理削除も可能
+        // ただし、ここでは論理削除のみ実施
+        await connection.query(
+          `UPDATE products 
+           SET status = 'deleted',
+               deleted_at = NOW(),
+               deleted_by = ?,
+               deletion_reason = ?
+           WHERE id = ?`,
+          [deletedBy, reason, productId]
+        );
+      }
+      
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+  
+  // 一定期間後の物理削除（バッチ処理）
+  async purgeDeletedProducts() {
+    // 1年以上前に削除され、過去の注文がない商品を物理削除
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      
+      const [products] = await connection.query(
+        `SELECT p.id 
+         FROM products p
+         LEFT JOIN order_items oi ON p.id = oi.product_id
+         WHERE p.deleted_at IS NOT NULL
+           AND p.deleted_at < DATE_SUB(NOW(), INTERVAL 1 YEAR)
+         GROUP BY p.id
+         HAVING COUNT(oi.id) = 0`
+      );
+      
+      for (const product of products) {
+        await connection.query('DELETE FROM products WHERE id = ?', [product.id]);
+      }
+      
+      await connection.commit();
+      return { deletedCount: products.length };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+}
+```
+
+### ユースケース2: メッセージングシステム
+
+#### 要件
+
+- メッセージの削除（ユーザーごと）
+- 相手側にはメッセージが残る
+- 両方が削除した場合のみ物理削除
+
+#### 実装
+
+```sql
+-- メッセージテーブル
+CREATE TABLE messages (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  sender_id INT NOT NULL,
+  receiver_id INT NOT NULL,
+  content TEXT NOT NULL,
+  sender_deleted_at TIMESTAMP NULL,  -- 送信者が削除した日時
+  receiver_deleted_at TIMESTAMP NULL,  -- 受信者が削除した日時
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (sender_id) REFERENCES users(id),
+  FOREIGN KEY (receiver_id) REFERENCES users(id),
+  INDEX idx_sender_id (sender_id),
+  INDEX idx_receiver_id (receiver_id),
+  INDEX idx_sender_deleted (sender_deleted_at),
+  INDEX idx_receiver_deleted (receiver_deleted_at)
+);
+
+-- 送信者がメッセージを削除
+UPDATE messages 
+SET sender_deleted_at = NOW()
+WHERE id = 1 AND sender_id = @current_user_id;
+
+-- 受信者がメッセージを削除
+UPDATE messages 
+SET receiver_deleted_at = NOW()
+WHERE id = 1 AND receiver_id = @current_user_id;
+
+-- 送信者のメッセージ一覧（削除されていないもの）
+SELECT * FROM messages 
+WHERE sender_id = @current_user_id 
+  AND sender_deleted_at IS NULL;
+
+-- 受信者のメッセージ一覧（削除されていないもの）
+SELECT * FROM messages 
+WHERE receiver_id = @current_user_id 
+  AND receiver_deleted_at IS NULL;
+
+-- 両方が削除したメッセージを物理削除（バッチ処理）
+DELETE FROM messages 
+WHERE sender_deleted_at IS NOT NULL 
+  AND receiver_deleted_at IS NOT NULL;
+```
+
+**アプリケーション側の実装:**
+
+```javascript
+// メッセージサービスの実装
+class MessageService {
+  // メッセージの削除（ユーザーごと）
+  async deleteMessage(messageId, userId) {
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      
+      // 送信者か受信者かを確認
+      const [message] = await connection.query(
+        'SELECT sender_id, receiver_id FROM messages WHERE id = ?',
+        [messageId]
+      );
+      
+      if (message.sender_id === userId) {
+        // 送信者が削除
+        await connection.query(
+          'UPDATE messages SET sender_deleted_at = NOW() WHERE id = ?',
+          [messageId]
+        );
+      } else if (message.receiver_id === userId) {
+        // 受信者が削除
+        await connection.query(
+          'UPDATE messages SET receiver_deleted_at = NOW() WHERE id = ?',
+          [messageId]
+        );
+      } else {
+        throw new Error('Unauthorized');
+      }
+      
+      // 両方が削除した場合は物理削除
+      await connection.query(
+        `DELETE FROM messages 
+         WHERE id = ? 
+           AND sender_deleted_at IS NOT NULL 
+           AND receiver_deleted_at IS NOT NULL`,
+        [messageId]
+      );
+      
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+  
+  // ユーザーのメッセージ一覧取得
+  async getUserMessages(userId) {
+    return await db.query(
+      `SELECT * FROM messages 
+       WHERE (sender_id = ? AND sender_deleted_at IS NULL)
+          OR (receiver_id = ? AND receiver_deleted_at IS NULL)
+       ORDER BY created_at DESC`,
+      [userId, userId]
+    );
+  }
+}
+```
+
+### ユースケース3: ファイル管理システム
+
+#### 要件
+
+- ファイルの削除
+- 一定期間の復元期間
+- 期間経過後の物理削除
+
+#### 実装
+
+```sql
+-- ファイルテーブル
+CREATE TABLE files (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  filename VARCHAR(255) NOT NULL,
+  file_path VARCHAR(255) NOT NULL,
+  file_size BIGINT NOT NULL,
+  mime_type VARCHAR(100),
+  deleted_at TIMESTAMP NULL,
+  purge_at TIMESTAMP NULL,  -- 物理削除予定日時（30日後）
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  INDEX idx_deleted_at (deleted_at),
+  INDEX idx_purge_at (purge_at)
+);
+
+-- ファイルの論理削除（30日後に物理削除予定）
+UPDATE files 
+SET deleted_at = NOW(),
+    purge_at = DATE_ADD(NOW(), INTERVAL 30 DAY)
+WHERE id = 1;
+
+-- ファイルの復元
+UPDATE files 
+SET deleted_at = NULL,
+    purge_at = NULL
+WHERE id = 1;
+
+-- 物理削除予定のファイルを削除（バッチ処理）
+DELETE FROM files 
+WHERE purge_at IS NOT NULL 
+  AND purge_at <= NOW();
+```
+
+**アプリケーション側の実装:**
+
+```javascript
+// ファイルサービスの実装
+class FileService {
+  // ファイルの削除
+  async deleteFile(fileId, userId) {
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      
+      // ファイルの所有者を確認
+      const [file] = await connection.query(
+        'SELECT user_id, file_path FROM files WHERE id = ?',
+        [fileId]
+      );
+      
+      if (file.user_id !== userId) {
+        throw new Error('Unauthorized');
+      }
+      
+      // 論理削除（30日後に物理削除予定）
+      await connection.query(
+        `UPDATE files 
+         SET deleted_at = NOW(),
+             purge_at = DATE_ADD(NOW(), INTERVAL 30 DAY)
+         WHERE id = ?`,
+        [fileId]
+      );
+      
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+  
+  // ファイルの復元
+  async restoreFile(fileId, userId) {
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      
+      // ファイルの所有者を確認
+      const [file] = await connection.query(
+        'SELECT user_id FROM files WHERE id = ?',
+        [fileId]
+      );
+      
+      if (file.user_id !== userId) {
+        throw new Error('Unauthorized');
+      }
+      
+      // 復元
+      await connection.query(
+        'UPDATE files SET deleted_at = NULL, purge_at = NULL WHERE id = ?',
+        [fileId]
+      );
+      
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+  
+  // 物理削除の実行（バッチ処理）
+  async purgeDeletedFiles() {
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      
+      // 物理削除予定のファイルを取得
+      const [files] = await connection.query(
+        'SELECT id, file_path FROM files WHERE purge_at IS NOT NULL AND purge_at <= NOW()'
+      );
+      
+      for (const file of files) {
+        // ファイルシステムからも削除
+        await fs.unlink(file.file_path);
+        
+        // データベースから削除
+        await connection.query('DELETE FROM files WHERE id = ?', [file.id]);
+      }
+      
+      await connection.commit();
+      return { deletedCount: files.length };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+}
+```
+
+### ユースケース4: コメントシステム
+
+#### 要件
+
+- コメントの削除
+- 削除理由の記録
+- 削除されたコメントの表示（「このコメントは削除されました」）
+
+#### 実装
+
+```sql
+-- コメントテーブル
+CREATE TABLE comments (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  post_id INT NOT NULL,
+  user_id INT NOT NULL,
+  content TEXT NOT NULL,
+  parent_id INT NULL,
+  is_deleted BOOLEAN DEFAULT FALSE,
+  deleted_at TIMESTAMP NULL,
+  deleted_by INT NULL,
+  deletion_reason ENUM('spam', 'inappropriate', 'user_request', 'moderator') NULL,
+  original_content TEXT,  -- 削除前の内容を保持（監査用）
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (post_id) REFERENCES posts(id),
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (parent_id) REFERENCES comments(id),
+  INDEX idx_post_id (post_id),
+  INDEX idx_is_deleted (is_deleted)
+);
+
+-- コメントの論理削除
+BEGIN TRANSACTION;
+
+-- 削除前の内容を保存
+UPDATE comments 
+SET original_content = content,
+    content = '[このコメントは削除されました]',
+    is_deleted = TRUE,
+    deleted_at = NOW(),
+    deleted_by = @current_user_id,
+    deletion_reason = 'inappropriate'
+WHERE id = 1;
+
+COMMIT;
+
+-- コメントの取得（削除されたコメントも含む）
+SELECT 
+  id,
+  post_id,
+  user_id,
+  CASE 
+    WHEN is_deleted THEN '[このコメントは削除されました]'
+    ELSE content
+  END as content,
+  is_deleted,
+  deleted_at,
+  created_at
+FROM comments
+WHERE post_id = 1
+ORDER BY created_at ASC;
+
+-- 削除されていないコメントのみ取得
+SELECT * FROM comments 
+WHERE post_id = 1 AND is_deleted = FALSE
+ORDER BY created_at ASC;
+```
+
+**アプリケーション側の実装:**
+
+```javascript
+// コメントサービスの実装
+class CommentService {
+  // コメントの削除
+  async deleteComment(commentId, deletedBy, reason) {
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      
+      // 削除前の内容を取得
+      const [comment] = await connection.query(
+        'SELECT content FROM comments WHERE id = ?',
+        [commentId]
+      );
+      
+      // 論理削除
+      await connection.query(
+        `UPDATE comments 
+         SET original_content = ?,
+             content = '[このコメントは削除されました]',
+             is_deleted = TRUE,
+             deleted_at = NOW(),
+             deleted_by = ?,
+             deletion_reason = ?
+         WHERE id = ?`,
+        [comment.content, deletedBy, reason, commentId]
+      );
+      
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+  
+  // コメントの取得（削除されたコメントも含む）
+  async getComments(postId, includeDeleted = false) {
+    let query = 'SELECT * FROM comments WHERE post_id = ?';
+    const params = [postId];
+    
+    if (!includeDeleted) {
+      query += ' AND is_deleted = FALSE';
+    }
+    
+    query += ' ORDER BY created_at ASC';
+    
+    return await db.query(query, params);
+  }
+  
+  // コメントの復元（管理者のみ）
+  async restoreComment(commentId) {
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      
+      // 元の内容を復元
+      await connection.query(
+        `UPDATE comments 
+         SET content = original_content,
+             original_content = NULL,
+             is_deleted = FALSE,
+             deleted_at = NULL,
+             deleted_by = NULL,
+             deletion_reason = NULL
+         WHERE id = ?`,
+        [commentId]
+      );
+      
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+}
+```
+
+### ユースケース5: 通知システム
+
+#### 要件
+
+- 通知の削除（ユーザーごと）
+- 既読・未読の管理
+- 一定期間後の自動削除
+
+#### 実装
+
+```sql
+-- 通知テーブル
+CREATE TABLE notifications (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  type VARCHAR(50) NOT NULL,  -- 'message', 'like', 'comment'など
+  title VARCHAR(255) NOT NULL,
+  content TEXT,
+  is_read BOOLEAN DEFAULT FALSE,
+  read_at TIMESTAMP NULL,
+  deleted_at TIMESTAMP NULL,  -- ユーザーが削除した日時
+  expires_at TIMESTAMP NULL,  -- 自動削除予定日時
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  INDEX idx_user_id (user_id),
+  INDEX idx_is_read (is_read),
+  INDEX idx_deleted_at (deleted_at),
+  INDEX idx_expires_at (expires_at)
+);
+
+-- 通知の削除（ユーザーごと）
+UPDATE notifications 
+SET deleted_at = NOW()
+WHERE id = 1 AND user_id = @current_user_id;
+
+-- ユーザーの通知一覧（削除されていないもの）
+SELECT * FROM notifications 
+WHERE user_id = @current_user_id 
+  AND deleted_at IS NULL
+ORDER BY created_at DESC;
+
+-- 期限切れの通知を物理削除（バッチ処理）
+DELETE FROM notifications 
+WHERE expires_at IS NOT NULL 
+  AND expires_at <= NOW();
+```
+
+**アプリケーション側の実装:**
+
+```javascript
+// 通知サービスの実装
+class NotificationService {
+  // 通知の作成
+  async createNotification(userId, type, title, content, expiresInDays = 30) {
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + expiresInDays);
+    
+    await db.query(
+      `INSERT INTO notifications 
+       (user_id, type, title, content, expires_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [userId, type, title, content, expiresAt]
+    );
+  }
+  
+  // 通知の削除（ユーザーごと）
+  async deleteNotification(notificationId, userId) {
+    await db.query(
+      'UPDATE notifications SET deleted_at = NOW() WHERE id = ? AND user_id = ?',
+      [notificationId, userId]
+    );
+  }
+  
+  // ユーザーの通知一覧
+  async getUserNotifications(userId, includeRead = true) {
+    let query = `
+      SELECT * FROM notifications 
+      WHERE user_id = ? AND deleted_at IS NULL
+    `;
+    const params = [userId];
+    
+    if (!includeRead) {
+      query += ' AND is_read = FALSE';
+    }
+    
+    query += ' ORDER BY created_at DESC';
+    
+    return await db.query(query, params);
+  }
+  
+  // 期限切れの通知を物理削除（バッチ処理）
+  async purgeExpiredNotifications() {
+    const [result] = await db.query(
+      'DELETE FROM notifications WHERE expires_at IS NOT NULL AND expires_at <= NOW()'
+    );
+    return { deletedCount: result.affectedRows };
+  }
+}
+```
+
+### まとめ
+
+論理削除と物理削除の実践例：
+
+1. **ECサイトの商品管理**: 論理削除→一定期間後の物理削除
+2. **メッセージングシステム**: ユーザーごとの論理削除→両方が削除した場合の物理削除
+3. **ファイル管理システム**: 論理削除→復元期間→物理削除
+4. **コメントシステム**: 論理削除（内容を置き換え）→復元可能
+5. **通知システム**: ユーザーごとの論理削除→期限切れの物理削除
+
+これらの実践例を参考に、適切な削除方法を選択できます。
+

@@ -1,0 +1,79 @@
+---
+title: "ECS"
+label: "ECS"
+---
+
+## ECS (Elastic Container Service)
+
+ECSは、Dockerコンテナを実行するためのマネージドサービスです。
+
+### ECSクラスターの設定
+
+```yaml
+Cluster:
+  Type: AWS::ECS::Cluster
+  Properties:
+    ClusterName: MyCluster
+    CapacityProviders:
+      - FARGATE
+      - FARGATE_SPOT
+
+Service:
+  Type: AWS::ECS::Service
+  Properties:
+    Cluster: !Ref Cluster
+    TaskDefinition: !Ref TaskDefinition
+    DesiredCount: 2
+    LaunchType: FARGATE
+    NetworkConfiguration:
+      AwsvpcConfiguration:
+        Subnets:
+          - !Ref Subnet1
+          - !Ref Subnet2
+        SecurityGroups:
+          - !Ref SecurityGroup
+        AssignPublicIp: ENABLED
+    LoadBalancers:
+      - ContainerName: my-container
+        ContainerPort: 80
+        TargetGroupArn: !Ref TargetGroup
+```
+
+### タスク定義
+
+```json
+{
+  "family": "my-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "containerDefinitions": [
+    {
+      "name": "my-container",
+      "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/my-app:latest",
+      "portMappings": [
+        {
+          "containerPort": 80,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "ENV",
+          "value": "production"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/my-task",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
+```
+

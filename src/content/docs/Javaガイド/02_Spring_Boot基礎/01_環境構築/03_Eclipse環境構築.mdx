@@ -1,0 +1,382 @@
+---
+title: "Eclipse環境構築（Mac/Windows）"
+label: "Eclipse環境構築"
+---
+
+## EclipseでのSpring Boot開発環境構築
+
+Eclipseは、Java開発で広く使用されている統合開発環境（IDE）です。この章では、Eclipseを使用したSpring Boot開発環境の構築手順を、Mac版とWindows版それぞれについて詳しく解説します。
+
+### 前提条件
+
+- JDKがインストールされていること（Java 17以上推奨）
+- Eclipse IDE for Enterprise Java and Web Developersがインストールされていること
+
+### Mac版の環境構築
+
+#### ステップ1: JDKのインストールと確認
+
+**Homebrewを使用する場合（推奨）:**
+
+```bash
+# OpenJDK 17をインストール
+brew install openjdk@17
+
+# または、OpenJDK 21をインストール
+brew install openjdk@21
+
+# インストール確認
+java -version
+javac -version
+```
+
+**環境変数の設定:**
+
+```bash
+# ~/.zshrc（または~/.bash_profile）に追加
+export JAVA_HOME=$(/usr/libexec/java_home -v 17)
+export PATH="$JAVA_HOME/bin:$PATH"
+
+# 設定を反映
+source ~/.zshrc  # zshを使用している場合
+# または
+source ~/.bash_profile  # bashを使用している場合
+
+# 確認
+echo $JAVA_HOME
+```
+
+#### ステップ2: Eclipseのインストール
+
+**方法1: Eclipse公式サイトからダウンロード（推奨）**
+
+1. [Eclipse公式サイト](https://www.eclipse.org/downloads/)にアクセス
+2. **Eclipse IDE for Enterprise Java and Web Developers**をダウンロード
+3. ダウンロードした`.dmg`ファイルを開いてインストール
+4. アプリケーションフォルダにEclipseをコピー
+
+**方法2: Homebrew Caskを使用**
+
+```bash
+brew install --cask eclipse-jee
+```
+
+#### ステップ3: Eclipseの起動とワークスペースの設定
+
+1. Eclipseを起動
+2. ワークスペースの場所を選択（デフォルト: `~/eclipse-workspace`）
+3. **Launch**をクリック
+
+#### ステップ4: Spring Tools 4（Spring Tool Suite）のインストール
+
+EclipseにSpring Boot開発用のプラグインをインストールします。
+
+**手順:**
+
+1. **Help** → **Eclipse Marketplace...**を選択
+2. 検索ボックスに「**Spring Tools 4**」と入力
+3. **Spring Tools 4 (aka Spring Tool Suite 4)**を選択
+4. **Install**をクリック
+5. インストール内容を確認して**Confirm**をクリック
+6. ライセンス条項に同意して**Finish**をクリック
+7. インストール完了後、Eclipseを再起動
+
+**または、手動でリポジトリを追加:**
+
+1. **Help** → **Install New Software...**を選択
+2. **Add...**をクリック
+3. 以下の情報を入力:
+   - **Name**: Spring Tools 4
+   - **Location**: `https://download.springsource.com/release/TOOLS/eclipse`
+4. **Add**をクリック
+5. **Spring Tools 4**を選択してインストール
+
+#### ステップ5: JDKの設定
+
+1. **Eclipse** → **Preferences**（Mac）または**Window** → **Preferences**（Windows）を選択
+2. **Java** → **Installed JREs**を選択
+3. **Add...**をクリック
+4. **Standard VM**を選択して**Next**をクリック
+5. **JRE home**にJDKのパスを指定:
+   ```bash
+   /Library/Java/JavaVirtualMachines/openjdk-17.jdk/Contents/Home
+   ```
+6. **Finish**をクリック
+7. 追加したJDKにチェックを入れて**Apply and Close**をクリック
+
+#### ステップ6: Spring Bootプロジェクトの作成
+
+**方法1: Spring Initializrを使用（推奨）**
+
+1. **File** → **New** → **Spring Starter Project**を選択
+2. プロジェクト情報を入力:
+   - **Name**: `my-spring-boot-app`
+   - **Type**: Maven
+   - **Packaging**: Jar
+   - **Java Version**: 17
+   - **Language**: Java
+3. **Next**をクリック
+4. 必要な依存関係を選択:
+   - **Spring Web**
+   - **Spring Data JPA**
+   - **H2 Database**（開発用）
+   - **Spring Boot DevTools**
+5. **Finish**をクリック
+
+**方法2: Spring Initializr Webサイトからインポート**
+
+1. [Spring Initializr](https://start.spring.io/)にアクセス
+2. プロジェクト設定を選択:
+   - **Project**: Maven
+   - **Language**: Java
+   - **Spring Boot**: 3.1.0（最新版）
+   - **Packaging**: Jar
+   - **Java**: 17
+3. 依存関係を追加:
+   - Spring Web
+   - Spring Data JPA
+   - H2 Database
+4. **Generate**をクリックしてZIPファイルをダウンロード
+5. ZIPファイルを解凍
+6. Eclipseで**File** → **Import** → **Existing Maven Projects**を選択
+7. 解凍したフォルダを選択して**Finish**をクリック
+
+### Windows版の環境構築
+
+#### ステップ1: JDKのインストールと確認
+
+**方法1: Oracle JDKをインストール**
+
+1. [Oracle JDK](https://www.oracle.com/java/technologies/downloads/)からインストーラーをダウンロード
+2. インストーラーを実行してインストール
+3. インストール先を確認（例: `C:\Program Files\Java\jdk-17`）
+
+**方法2: OpenJDKをインストール**
+
+1. [Adoptium](https://adoptium.net/)からインストーラーをダウンロード
+2. インストーラーを実行してインストール
+
+**環境変数の設定:**
+
+1. **システムのプロパティ**を開く
+2. **詳細設定**タブを選択
+3. **環境変数**をクリック
+4. **システム環境変数**で**新規**をクリック
+5. 以下の変数を追加:
+   - **変数名**: `JAVA_HOME`
+   - **変数値**: JDKのインストールパス（例: `C:\Program Files\Java\jdk-17`）
+6. **Path**変数を編集して、`%JAVA_HOME%\bin`を追加
+7. **OK**をクリックして設定を保存
+
+**確認:**
+
+```cmd
+java -version
+javac -version
+echo %JAVA_HOME%
+```
+
+#### ステップ2: Eclipseのインストール
+
+1. [Eclipse公式サイト](https://www.eclipse.org/downloads/)にアクセス
+2. **Eclipse IDE for Enterprise Java and Web Developers**をダウンロード
+3. ダウンロードしたZIPファイルを解凍
+4. 解凍したフォルダ内の`eclipse.exe`を実行
+
+**注意:** Windowsでは、Eclipseをインストールするのではなく、解凍して使用します。
+
+#### ステップ3: Eclipseの起動とワークスペースの設定
+
+1. `eclipse.exe`をダブルクリックして起動
+2. ワークスペースの場所を選択（デフォルト: `C:\Users\<ユーザー名>\eclipse-workspace`）
+3. **Launch**をクリック
+
+#### ステップ4: Spring Tools 4のインストール
+
+Mac版と同じ手順でSpring Tools 4をインストールします。
+
+1. **Help** → **Eclipse Marketplace...**を選択
+2. 「**Spring Tools 4**」で検索
+3. **Spring Tools 4 (aka Spring Tool Suite 4)**をインストール
+4. Eclipseを再起動
+
+#### ステップ5: JDKの設定
+
+1. **Window** → **Preferences**を選択
+2. **Java** → **Installed JREs**を選択
+3. **Add...**をクリック
+4. **Standard VM**を選択して**Next**をクリック
+5. **JRE home**にJDKのパスを指定（例: `C:\Program Files\Java\jdk-17`）
+6. **Finish**をクリック
+7. 追加したJDKにチェックを入れて**Apply and Close**をクリック
+
+#### ステップ6: Spring Bootプロジェクトの作成
+
+Mac版と同じ手順でSpring Bootプロジェクトを作成します。
+
+### プロジェクトの実行とデバッグ
+
+#### プロジェクトの実行
+
+1. プロジェクトを右クリック
+2. **Run As** → **Spring Boot App**を選択
+3. コンソールに起動ログが表示される
+4. ブラウザで`http://localhost:8080`にアクセス
+
+#### デバッグモードでの実行
+
+1. プロジェクトを右クリック
+2. **Debug As** → **Spring Boot App**を選択
+3. ブレークポイントを設定してデバッグ
+
+#### 実行設定のカスタマイズ
+
+1. **Run** → **Run Configurations...**を選択
+2. **Spring Boot App**を選択
+3. **New launch configuration**をクリック
+4. 設定をカスタマイズ:
+   - **Project**: プロジェクトを選択
+   - **Main type**: メインクラスを選択
+   - **Arguments**: VM引数やプログラム引数を設定
+5. **Apply**をクリック
+
+### よくある問題と解決方法
+
+#### 問題1: JDKが見つからない
+
+**症状:**
+```
+Error: Could not find or load main class
+```
+
+**解決方法:**
+
+1. **Window** → **Preferences** → **Java** → **Installed JREs**を確認
+2. JDKが正しく設定されているか確認
+3. プロジェクトのプロパティで**Java Build Path** → **Libraries**を確認
+
+#### 問題2: Mavenの依存関係が解決できない
+
+**症状:**
+```
+Could not resolve dependencies
+```
+
+**解決方法:**
+
+1. プロジェクトを右クリック
+2. **Maven** → **Update Project...**を選択
+3. **Force Update of Snapshots/Releases**にチェックを入れる
+4. **OK**をクリック
+
+#### 問題3: Spring Bootアプリケーションが起動しない
+
+**症状:**
+```
+Application failed to start
+```
+
+**解決方法:**
+
+1. **Console**ビューでエラーメッセージを確認
+2. `application.properties`または`application.yml`の設定を確認
+3. ポート番号が使用中でないか確認（デフォルト: 8080）
+
+#### 問題4: コード補完が効かない
+
+**解決方法:**
+
+1. **Project** → **Clean...**を選択
+2. プロジェクトを選択して**Clean**をクリック
+3. **Project** → **Build Project**を選択
+4. **Window** → **Preferences** → **Java** → **Editor** → **Content Assist**で設定を確認
+
+### Eclipseの便利な機能
+
+#### 1. コードテンプレート
+
+**設定方法:**
+
+1. **Window** → **Preferences** → **Java** → **Editor** → **Templates**を選択
+2. **New...**をクリックしてテンプレートを作成
+
+**よく使うテンプレート:**
+
+- `sysout` → `System.out.println()`
+- `main` → `public static void main(String[] args)`
+- `test` → JUnitテストメソッド
+
+#### 2. コードフォーマット
+
+**設定方法:**
+
+1. **Window** → **Preferences** → **Java** → **Code Style** → **Formatter**を選択
+2. **New...**をクリックしてフォーマッターを作成
+3. チームで共有する場合は、`.xml`ファイルをエクスポート
+
+#### 3. クイックフィックス
+
+**使い方:**
+
+- `Ctrl + 1`（Windows）または`Cmd + 1`（Mac）でクイックフィックスメニューを表示
+- エラーや警告の修正候補が表示される
+
+#### 4. リファクタリング
+
+**よく使うリファクタリング:**
+
+- **Rename**: `Alt + Shift + R`（変数名やメソッド名の変更）
+- **Extract Method**: `Alt + Shift + M`（メソッドの抽出）
+- **Extract Variable**: `Alt + Shift + L`（変数の抽出）
+
+#### 5. コード検索
+
+**機能:**
+
+- **Open Type**: `Ctrl + Shift + T`（クラス名で検索）
+- **Open Resource**: `Ctrl + Shift + R`（ファイル名で検索）
+- **Quick Access**: `Ctrl + 3`（コマンド検索）
+
+### Spring Boot DevToolsの設定
+
+Spring Boot DevToolsを使用すると、コード変更時に自動的にアプリケーションを再起動できます。
+
+**設定方法:**
+
+1. `pom.xml`に依存関係が追加されているか確認:
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-devtools</artifactId>
+    <scope>runtime</scope>
+    <optional>true</optional>
+</dependency>
+```
+
+2. **Window** → **Preferences** → **General** → **Workspace**を選択
+3. **Build automatically**にチェックを入れる
+
+**動作:**
+
+- Javaファイルを保存すると、自動的に再コンパイル
+- クラスパス上のリソースが変更されると、自動的に再起動
+
+### まとめ
+
+EclipseでのSpring Boot開発環境構築のポイント：
+
+1. **JDKのインストール**: Java 17以上を推奨
+2. **Eclipse IDE for Enterprise Java and Web Developers**: エンタープライズ開発向けのEclipseを使用
+3. **Spring Tools 4**: Spring Boot開発用のプラグインをインストール
+4. **Spring Initializr**: プロジェクトの作成を簡単に
+5. **Maven**: 依存関係の管理
+6. **Spring Boot DevTools**: 開発効率の向上
+
+**Mac版とWindows版の違い:**
+
+- **JDKのパス**: Macは`/Library/Java/JavaVirtualMachines/`、Windowsは`C:\Program Files\Java\`
+- **環境変数の設定**: Macは`.zshrc`や`.bash_profile`、Windowsはシステムの環境変数設定
+- **Eclipseのインストール**: Macは`.dmg`ファイル、WindowsはZIPファイルを解凍
+
+適切な環境構築により、効率的なSpring Boot開発が可能になります。
+

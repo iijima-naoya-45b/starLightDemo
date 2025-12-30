@@ -1,0 +1,51 @@
+---
+title: "なぜChrome拡張機能か"
+label: "なぜChrome拡張機能か"
+---
+
+## なぜChrome拡張機能か
+
+Chrome拡張機能は、ブラウザの機能を拡張し、Web開発やデバッグを効率化する強力なツールです。
+
+### Chrome拡張機能の特徴
+
+#### 1. ブラウザレベルのアクセス
+
+```javascript
+// 通常のWebページでは不可能な操作が可能
+chrome.tabs.query({ active: true }, (tabs) => {
+  // すべてのタブにアクセス
+});
+
+chrome.storage.local.set({ key: 'value' }, () => {
+  // ブラウザストレージへの直接アクセス
+});
+```
+
+#### 2. ネットワークリクエストのインターセプト
+
+```javascript
+// Web Request APIでリクエストを監視・変更
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    // リクエストをインターセプトして処理
+  },
+  { urls: ['<all_urls>'] },
+  ['blocking']
+);
+```
+
+#### 3. DOM操作とページスクリプト注入
+
+```javascript
+// Content ScriptでページのDOMを操作
+document.querySelector('button').click();
+```
+
+### 開発者ツールとしての活用
+
+- **APIデバッグ**: リクエスト/レスポンスの詳細な監視
+- **パフォーマンス分析**: ネットワークタイミングの可視化
+- **セキュリティテスト**: 脆弱性の検出
+- **自動化**: 繰り返し作業の自動化
+

@@ -1,0 +1,111 @@
+---
+title: "Eloquent ORM"
+label: "Eloquent ORM"
+---
+
+## Eloquent ORM
+
+Eloquentは、LaravelのORM（Object-Relational Mapping）です。
+
+### 基本的な操作
+
+```php
+<?php
+// 全件取得
+$users = User::all();
+
+// 条件検索
+$user = User::where('email', 'john@example.com')->first();
+
+// 作成
+$user = User::create([
+    'name' => 'John Doe',
+    'email' => 'john@example.com',
+    'password' => bcrypt('password')
+]);
+
+// 更新
+$user->update(['name' => 'Jane Doe']);
+
+// 削除
+$user->delete();
+```
+
+### リレーション
+
+```php
+<?php
+// 1対多
+class User extends Model
+{
+    public function posts()
+    {
+        return $this->hasMany(Post::class);
+    }
+}
+
+class Post extends Model
+{
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+}
+
+// 使用例
+$user = User::find(1);
+$posts = $user->posts;  // ユーザーの投稿を取得
+
+// Eager Loading（N+1問題の解決）
+$users = User::with('posts')->get();
+```
+
+### スコープ
+
+```php
+<?php
+class User extends Model
+{
+    // ローカルスコープ
+    public function scopeActive($query)
+    {
+        return $query->where('active', true);
+    }
+
+    public function scopeEmail($query, $email)
+    {
+        return $query->where('email', $email);
+    }
+}
+
+// 使用例
+$activeUsers = User::active()->get();
+$user = User::active()->email('john@example.com')->first();
+```
+
+### アクセサとミューテータ
+
+```php
+<?php
+class User extends Model
+{
+    // アクセサ
+    public function getFullNameAttribute()
+    {
+        return "{$this->first_name} {$this->last_name}";
+    }
+
+    // ミューテータ
+    public function setPasswordAttribute($value)
+    {
+        $this->attributes['password'] = bcrypt($value);
+    }
+}
+
+// 使用例
+$user = User::find(1);
+echo $user->full_name;  // アクセサを使用
+
+$user->password = 'newpassword';  // ミューテータが自動的に実行
+```
+

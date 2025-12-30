@@ -1,0 +1,44 @@
+---
+title: "GraphQL"
+label: "GraphQL"
+---
+
+## GraphQL
+
+Railsでは、**graphql-ruby**を使用してGraphQL APIを実装できます。
+
+### graphql-rubyの設定
+
+#### Gemの追加
+
+```ruby
+# Gemfile
+gem 'graphql'
+```
+
+#### スキーマの定義
+
+```ruby
+# app/graphql/types/user_type.rb
+module Types
+  class UserType < Types::BaseObject
+    field :id, ID, null: false
+    field :name, String, null: false
+    field :email, String, null: false
+  end
+end
+
+# app/graphql/types/query_type.rb
+module Types
+  class QueryType < Types::BaseObject
+    field :user, Types::UserType, null: true do
+      argument :id, ID, required: true
+    end
+
+    def user(id:)
+      User.find(id)
+    end
+  end
+end
+```
+

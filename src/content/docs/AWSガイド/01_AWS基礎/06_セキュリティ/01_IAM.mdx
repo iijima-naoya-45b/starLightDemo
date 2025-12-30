@@ -1,0 +1,64 @@
+---
+title: "IAM"
+label: "IAM"
+---
+
+## IAM (Identity and Access Management)
+
+IAMは、AWSリソースへのアクセスを管理するサービスです。
+
+### IAMポリシー
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/*",
+      "Condition": {
+        "IpAddress": {
+          "aws:SourceIp": "203.0.113.0/24"
+        }
+      }
+    }
+  ]
+}
+```
+
+### IAMロール
+
+```yaml
+EC2Role:
+  Type: AWS::IAM::Role
+  Properties:
+    AssumeRolePolicyDocument:
+      Version: '2012-10-17'
+      Statement:
+        - Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action: sts:AssumeRole
+    Policies:
+      - PolicyName: S3Access
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+              Resource: 'arn:aws:s3:::my-bucket/*'
+```
+
+### ベストプラクティス
+
+1. **最小権限の原則**: 必要な権限のみを付与
+2. **MFAの有効化**: 重要な操作には多要素認証
+3. **ロールベースアクセス**: ユーザーではなくロールを使用
+4. **定期的な監査**: 未使用の権限を削除
+

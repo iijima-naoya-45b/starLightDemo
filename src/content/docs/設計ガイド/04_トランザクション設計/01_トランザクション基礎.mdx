@@ -1,0 +1,441 @@
+---
+title: "トランザクション基礎"
+label: "トランザクション基礎"
+---
+
+## トランザクション基礎
+
+データベースのトランザクション設計は、データの整合性を保つための重要な仕組みです。適切なトランザクション設計により、複数の操作を1つの単位として実行し、すべて成功するか、すべて失敗するかを保証できます。
+
+### なぜトランザクションが必要なのか
+
+トランザクションは、データベースの整合性を保つための重要な仕組みです。トランザクションが適切に管理されていないと、以下のような問題が発生します：
+
+**データの不整合:**
+- 一部の操作だけが実行され、データの不整合が発生する
+- エラーが発生した場合、一部のデータだけが更新される
+- 並行処理により、予期しないデータの状態が発生する
+
+**実際の事例:**
+
+**事例1: 送金処理でのデータ不整合**
+
+ある銀行システムで、送金処理にトランザクションを使用していませんでした：
+
+```javascript
+// トランザクションなしの送金処理
+function transferMoney(fromAccount, toAccount, amount) {
+  // 送金元の残高を減らす
+  updateBalance(fromAccount, -amount);
+  
+  // ここでサーバーがクラッシュした場合...
+  // 送金元の残高は減っているが、送金先の残高は増えていない
+  // → 100万円が消失
+  
+  // 送金先の残高を増やす
+  updateBalance(toAccount, amount);
+}
+```
+
+**発生した問題:**
+- サーバーがクラッシュした場合、送金元の残高だけが減り、送金先の残高が増えない
+- 100万円が消失し、顧客からクレームが発生
+- データの復旧に1週間かかる
+
+**トランザクションによる解決:**
+トランザクションを使用することで、すべての操作が成功するか、すべて失敗するかを保証：
+
+```javascript
+// トランザクションを使用した送金処理
+function transferMoney(fromAccount, toAccount, amount) {
+  beginTransaction();
+  
+  try {
+    updateBalance(fromAccount, -amount);
+    updateBalance(toAccount, amount);
+    commitTransaction();  // すべて成功した場合のみコミット
+  } catch (error) {
+    rollbackTransaction();  // エラーが発生した場合、すべてロールバック
+    throw error;
+  }
+}
+```
+
+**結果:**
+- データの不整合が発生しなくなる
+- エラーが発生しても、データの整合性が保たれる
+- 顧客からのクレームがなくなる
+
+**事例2: 在庫管理での並行処理の問題**
+
+あるECサイトで、在庫管理にトランザクションを使用していませんでした：
+
+```javascript
+// トランザクションなしの在庫管理
+function purchaseProduct(productId, quantity) {
+  // 在庫を確認
+  const stock = getStock(productId);
+  
+  // 在庫が十分か確認
+  if (stock >= quantity) {
+    // 在庫を減らす
+    decreaseStock(productId, quantity);
+    
+    // 注文を作成
+    createOrder(productId, quantity);
+  }
+}
+```
+
+**発生した問題:**
+- 2人のユーザーが同時に最後の1個の商品を購入しようとした場合、両方とも購入できてしまう
+- 在庫がマイナスになり、データの不整合が発生
+- 実際には在庫がないのに、注文が作成される
+
+**トランザクションによる解決:**
+トランザクションとロックを使用することで、並行処理の問題を解決：
+
+```javascript
+// トランザクションを使用した在庫管理
+function purchaseProduct(productId, quantity) {
+  beginTransaction();
+  
+  try {
+    // 在庫をロックして確認
+    const stock = getStockForUpdate(productId);  // FOR UPDATEでロック
+    
+    if (stock >= quantity) {
+      decreaseStock(productId, quantity);
+      createOrder(productId, quantity);
+      commitTransaction();
+    } else {
+      rollbackTransaction();
+      throw new InsufficientStockException();
+    }
+  } catch (error) {
+    rollbackTransaction();
+    throw error;
+  }
+}
+```
+
+**結果:**
+- 在庫の不整合が発生しなくなる
+- 並行処理でも正しく動作する
+- データの整合性が保たれる
+
+#### 問題のある処理
+
+**問題のある処理:**
+
+```javascript
+// 口座間の送金処理（トランザクションなし）
+function transferMoney(fromAccount, toAccount, amount) {
+  // 送金元の残高を減らす
+  updateBalance(fromAccount, -amount);
+  
+  // ここでエラーが発生した場合...
+  // 送金元の残高は減っているが、送金先の残高は増えていない
+  
+  // 送金先の残高を増やす
+  updateBalance(toAccount, amount);
+}
+// 問題点:
+// - 途中でエラーが発生すると、データの不整合が発生
+// - 一部の処理だけが実行される
+```
+
+**トランザクションの解決:**
+
+```javascript
+// トランザクションを使用
+function transferMoney(fromAccount, toAccount, amount) {
+  beginTransaction();
+  
+  try {
+    // 送金元の残高を減らす
+    updateBalance(fromAccount, -amount);
+    
+    // 送金先の残高を増やす
+    updateBalance(toAccount, amount);
+    
+    commitTransaction();
+  } catch (error) {
+    rollbackTransaction();
+    throw error;
+  }
+}
+// メリット:
+// - すべての処理が成功するか、すべて失敗するか
+// - データの整合性が保たれる
+```
+
+**メリット:**
+1. **データ整合性**: すべての処理が成功するか、すべて失敗するか
+   - トランザクション内のすべての操作が、1つの単位として実行される
+   - エラーが発生した場合、すべての操作がロールバックされる
+   - データの不整合が発生しない
+
+2. **エラー処理**: エラー時にロールバック
+   - エラーが発生した場合、自動的にロールバックされる
+   - データの整合性が保たれる
+   - エラーハンドリングが容易
+
+3. **並行性制御**: 複数のトランザクションを適切に制御
+   - 複数のトランザクションが同時に実行されても、データの整合性が保たれる
+   - デッドロックを防ぐ仕組みが提供される
+   - パフォーマンスを最適化できる
+
+### ACID特性
+
+ACID特性は、トランザクションが満たすべき4つの重要な特性です。これらの特性により、データの整合性と信頼性が保証されます。
+
+**なぜACID特性が重要なのか:**
+
+ACID特性は、データベースの信頼性を保証するための重要な仕組みです。これらの特性が保証されていないと、以下のような問題が発生します：
+
+- **データの不整合**: 一部の操作だけが実行され、データの不整合が発生する
+- **データ損失**: エラーが発生した場合、データが損失する可能性がある
+- **並行処理の問題**: 複数のトランザクションが同時に実行されると、予期しない結果が発生する
+- **障害時の問題**: システム障害が発生した場合、データの整合性が保てない
+
+#### 1. Atomicity (原子性)
+
+トランザクションはすべて成功するか、すべて失敗するかのどちらかです。
+
+**例:**
+
+```sql
+BEGIN TRANSACTION;
+
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+
+-- すべて成功した場合
+COMMIT;
+
+-- エラーが発生した場合
+ROLLBACK;
+```
+
+#### 2. Consistency (一貫性)
+
+トランザクション前後でデータベースの整合性が保たれます。
+
+**例:**
+
+```sql
+-- 整合性制約: 残高は0以上
+BEGIN TRANSACTION;
+
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+-- 残高が0未満になる場合はエラー
+
+COMMIT;
+```
+
+#### 3. Isolation (分離性)
+
+複数のトランザクションが同時に実行されても、互いに影響しません。
+
+**例:**
+
+```sql
+-- トランザクションA
+BEGIN TRANSACTION;
+SELECT balance FROM accounts WHERE id = 1;
+-- トランザクションBの変更は見えない
+
+-- トランザクションB
+BEGIN TRANSACTION;
+UPDATE accounts SET balance = balance + 100 WHERE id = 1;
+COMMIT;
+
+-- トランザクションA
+COMMIT;
+```
+
+#### 4. Durability (永続性)
+
+コミットされたトランザクションは、システム障害が発生しても永続化されます。
+
+### トランザクションの分離レベル
+
+**なぜ分離レベルが重要なのか:**
+
+分離レベルは、複数のトランザクションが同時に実行される際の、データの見え方を制御する重要な仕組みです。分離レベルが不適切だと、以下のような問題が発生します：
+
+- **ダーティリード**: 他のトランザクションの未コミットの変更を読んでしまう
+- **ノンリピータブルリード**: 同じトランザクション内で同じクエリを実行しても、結果が異なる
+- **ファントムリード**: トランザクション中に新しいレコードが追加され、結果が変わる
+- **パフォーマンスの問題**: 分離レベルが高すぎると、パフォーマンスが低下する
+
+**分離レベルの選択基準:**
+
+- **READ UNCOMMITTED**: パフォーマンスが最優先で、データの整合性がそれほど重要でない場合
+- **READ COMMITTED**: バランスが取れた選択で、多くのアプリケーションで使用される
+- **REPEATABLE READ**: データの整合性が重要で、ファントムリードが許容できる場合
+- **SERIALIZABLE**: データの整合性が最優先で、パフォーマンスがそれほど重要でない場合
+
+#### 1. READ UNCOMMITTED
+
+**最も緩い分離レベル:**
+
+**なぜREAD UNCOMMITTEDが問題なのか:**
+
+READ UNCOMMITTEDは、他のトランザクションの未コミットの変更も読むことができる分離レベルです。この分離レベルでは、以下のような問題が発生します：
+
+- **ダーティリード**: 他のトランザクションがロールバックした変更を読んでしまう
+- **データの不整合**: 一時的なデータを読んでしまい、誤った判断をする可能性がある
+- **ビジネスロジックの誤り**: 未コミットのデータに基づいて処理を行うと、誤った結果が発生する
+
+**実際の事例:**
+
+```sql
+-- トランザクションA
+BEGIN TRANSACTION;
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+-- まだコミットしていない
+
+-- トランザクションB（READ UNCOMMITTED）
+BEGIN TRANSACTION;
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SELECT balance FROM accounts WHERE id = 1;
+-- トランザクションAの未コミットの変更を読んでしまう
+-- もしトランザクションAがロールバックした場合、誤ったデータを読んだことになる
+
+-- トランザクションA
+ROLLBACK;  -- ロールバックした場合、トランザクションBは誤ったデータを読んだことになる
+```
+
+```sql
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+-- 他のトランザクションの未コミットの変更も読める
+-- ダーティリードが発生する可能性
+```
+
+#### 2. READ COMMITTED
+
+**デフォルトの分離レベル（多くのDBMS）:**
+
+```sql
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+-- コミット済みの変更のみ読める
+-- ダーティリードは防げるが、ノンリピータブルリードが発生する可能性
+```
+
+#### 3. REPEATABLE READ
+
+**MySQLのデフォルト:**
+
+```sql
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+
+-- 同じトランザクション内で同じクエリを実行しても同じ結果
+-- ファントムリードが発生する可能性
+```
+
+#### 4. SERIALIZABLE
+
+**最も厳しい分離レベル:**
+
+```sql
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+-- すべてのトランザクションが順次実行されるように見える
+-- パフォーマンスが低下する可能性
+```
+
+### 実践例: 送金処理
+
+```sql
+-- 送金処理のトランザクション
+BEGIN TRANSACTION;
+
+-- 送金元の残高を確認
+SELECT balance FROM accounts WHERE id = 1 FOR UPDATE;
+
+-- 残高が十分か確認
+-- (アプリケーション側で確認)
+
+-- 送金元の残高を減らす
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+
+-- 送金先の残高を増やす
+UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+
+-- 送金履歴を記録
+INSERT INTO transactions (from_account_id, to_account_id, amount, created_at)
+VALUES (1, 2, 100, NOW());
+
+COMMIT;
+```
+
+### デッドロック
+
+#### デッドロックの発生
+
+**例:**
+
+```sql
+-- トランザクションA
+BEGIN TRANSACTION;
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+-- トランザクションBがid=2をロックしているため待機
+
+-- トランザクションB
+BEGIN TRANSACTION;
+UPDATE accounts SET balance = balance - 100 WHERE id = 2;
+UPDATE accounts SET balance = balance + 100 WHERE id = 1;
+-- トランザクションAがid=1をロックしているため待機
+-- → デッドロック発生
+```
+
+#### デッドロックの対策
+
+**1. ロックの順序を統一:**
+
+```sql
+-- 常にIDの小さい順にロック
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+```
+
+**2. タイムアウトの設定:**
+
+```sql
+SET innodb_lock_wait_timeout = 50;
+```
+
+**3. リトライロジック:**
+
+```javascript
+function transferMoneyWithRetry(fromAccount, toAccount, amount, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return transferMoney(fromAccount, toAccount, amount);
+    } catch (error) {
+      if (error.code === 'DEADLOCK' && i < maxRetries - 1) {
+        // リトライ
+        await sleep(100 * (i + 1)); // 指数バックオフ
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+```
+
+### まとめ
+
+トランザクション設計のポイント：
+
+- **ACID特性**: Atomicity、Consistency、Isolation、Durability
+- **分離レベル**: READ UNCOMMITTED、READ COMMITTED、REPEATABLE READ、SERIALIZABLE
+- **デッドロック対策**: ロックの順序統一、タイムアウト、リトライロジック
+
+適切なトランザクション設計により、データ整合性と並行性を確保できます。
+

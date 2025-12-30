@@ -1,0 +1,71 @@
+---
+title: "Lambda詳細"
+label: "Lambda詳細"
+---
+
+## Lambda詳細
+
+### Lambda関数の設定
+
+```yaml
+LambdaFunction:
+  Type: AWS::Lambda::Function
+  Properties:
+    FunctionName: MyFunction
+    Runtime: python3.11
+    Handler: index.lambda_handler
+    Role: !GetAtt LambdaExecutionRole.Arn
+    Code:
+      ZipFile: |
+        def lambda_handler(event, context):
+            return {'statusCode': 200, 'body': 'Hello'}
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        ENV: production
+    Layers:
+      - !Ref LambdaLayer
+```
+
+### Lambdaレイヤー
+
+```yaml
+LambdaLayer:
+  Type: AWS::Lambda::LayerVersion
+  Properties:
+    LayerName: MyLayer
+    Content:
+      S3Bucket: my-bucket
+      S3Key: layer.zip
+    CompatibleRuntimes:
+      - python3.11
+```
+
+### API Gatewayとの統合
+
+```yaml
+ApiGateway:
+  Type: AWS::ApiGateway::RestApi
+  Properties:
+    Name: MyAPI
+
+Resource:
+  Type: AWS::ApiGateway::Resource
+  Properties:
+    RestApiId: !Ref ApiGateway
+    PathPart: users
+
+Method:
+  Type: AWS::ApiGateway::Method
+  Properties:
+    RestApiId: !Ref ApiGateway
+    ResourceId: !Ref Resource
+    HttpMethod: GET
+    AuthorizationType: AWS_IAM
+    Integration:
+      Type: AWS_PROXY
+      IntegrationHttpMethod: POST
+      Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunction.Arn}/invocations'
+```
+

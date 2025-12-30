@@ -1,0 +1,269 @@
+---
+title: "Express基礎"
+label: "Express基礎"
+---
+
+## Express基礎
+
+Expressは、Node.jsで最も人気のあるWebアプリケーションフレームワークです。
+
+### なぜExpressが必要なのか
+
+#### ネイティブNode.jsの課題
+
+**問題のあるネイティブNode.jsコード:**
+
+```javascript
+const http = require('http');
+
+const server = http.createServer((req, res) => {
+  if (req.url === '/users' && req.method === 'GET') {
+    // ユーザー一覧を返す
+  } else if (req.url === '/users' && req.method === 'POST') {
+    // ユーザーを作成
+  } else if (req.url.startsWith('/users/') && req.method === 'GET') {
+    // ユーザー詳細を返す
+    const userId = req.url.split('/')[2];
+  }
+  // 問題点:
+  // - ルーティングが複雑
+  // - ミドルウェアがない
+  // - リクエストボディのパースが手動
+  // - エラーハンドリングが困難
+});
+```
+
+**Expressの解決:**
+
+```javascript
+const express = require('express');
+const app = express();
+
+app.use(express.json()); // ミドルウェア
+
+app.get('/users', (req, res) => {
+  // ユーザー一覧を返す
+});
+
+app.post('/users', (req, res) => {
+  // リクエストボディが自動的にパースされる
+  const user = req.body;
+});
+
+app.get('/users/:id', (req, res) => {
+  // パラメータが自動的に抽出される
+  const userId = req.params.id;
+});
+
+// メリット:
+// - シンプルなルーティング
+// - 豊富なミドルウェア
+// - 自動的なリクエストパース
+// - エラーハンドリングが容易
+```
+
+**メリット:**
+1. **シンプルなルーティング**: 直感的なAPI
+2. **ミドルウェア**: 横断的関心事の処理
+3. **エコシステム**: 豊富なミドルウェアパッケージ
+4. **柔軟性**: 最小限の制約で自由に設計可能
+
+### Expressのインストール
+
+```bash
+npm install express
+```
+
+### 基本的なアプリケーション
+
+```javascript
+const express = require('express');
+const app = express();
+const PORT = 3000;
+
+// ミドルウェア
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// ルーティング
+app.get('/', (req, res) => {
+  res.json({ message: 'Hello, Express!' });
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+```
+
+### ルーティング
+
+```javascript
+// 基本的なルート
+app.get('/users', (req, res) => {
+  res.json({ users: [] });
+});
+
+app.post('/users', (req, res) => {
+  const user = req.body;
+  // ユーザーを作成
+  res.status(201).json({ user });
+});
+
+app.get('/users/:id', (req, res) => {
+  const userId = req.params.id;
+  // ユーザーを取得
+  res.json({ user: { id: userId } });
+});
+
+app.put('/users/:id', (req, res) => {
+  const userId = req.params.id;
+  const userData = req.body;
+  // ユーザーを更新
+  res.json({ user: { id: userId, ...userData } });
+});
+
+app.delete('/users/:id', (req, res) => {
+  const userId = req.params.id;
+  // ユーザーを削除
+  res.status(204).send();
+});
+```
+
+### ルーターの使用
+
+```javascript
+// routes/users.js
+const express = require('express');
+const router = express.Router();
+
+router.get('/', (req, res) => {
+  res.json({ users: [] });
+});
+
+router.get('/:id', (req, res) => {
+  res.json({ user: { id: req.params.id } });
+});
+
+module.exports = router;
+
+// app.js
+const usersRouter = require('./routes/users');
+app.use('/users', usersRouter);
+```
+
+### ミドルウェア
+
+```javascript
+// カスタムミドルウェア
+const logger = (req, res, next) => {
+  console.log(`${req.method} ${req.path} - ${new Date().toISOString()}`);
+  next();
+};
+
+app.use(logger);
+
+// 認証ミドルウェア
+const authenticate = (req, res, next) => {
+  const token = req.headers.authorization;
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  // トークンの検証
+  req.user = { id: 1, name: 'John' };
+  next();
+};
+
+app.get('/protected', authenticate, (req, res) => {
+  res.json({ user: req.user });
+});
+```
+
+### エラーハンドリング
+
+```javascript
+// エラーハンドリングミドルウェア
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
+});
+
+// 404ハンドラー
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+```
+
+### 実践例: RESTful API
+
+```javascript
+const express = require('express');
+const app = express();
+
+app.use(express.json());
+
+// データストア（実際の実装ではデータベースを使用）
+let users = [
+  { id: 1, name: 'John', email: 'john@example.com' },
+  { id: 2, name: 'Jane', email: 'jane@example.com' }
+];
+
+// GET /users
+app.get('/users', (req, res) => {
+  res.json({ users });
+});
+
+// GET /users/:id
+app.get('/users/:id', (req, res) => {
+  const user = users.find(u => u.id === parseInt(req.params.id));
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  res.json({ user });
+});
+
+// POST /users
+app.post('/users', (req, res) => {
+  const { name, email } = req.body;
+  const newUser = {
+    id: users.length + 1,
+    name,
+    email
+  };
+  users.push(newUser);
+  res.status(201).json({ user: newUser });
+});
+
+// PUT /users/:id
+app.put('/users/:id', (req, res) => {
+  const userId = parseInt(req.params.id);
+  const userIndex = users.findIndex(u => u.id === userId);
+  if (userIndex === -1) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  users[userIndex] = { ...users[userIndex], ...req.body };
+  res.json({ user: users[userIndex] });
+});
+
+// DELETE /users/:id
+app.delete('/users/:id', (req, res) => {
+  const userId = parseInt(req.params.id);
+  users = users.filter(u => u.id !== userId);
+  res.status(204).send();
+});
+
+app.listen(3000, () => {
+  console.log('Server running on port 3000');
+});
+```
+
+### まとめ
+
+Expressのポイント：
+
+- **シンプルなルーティング**: 直感的なAPI
+- **ミドルウェア**: 横断的関心事の処理
+- **柔軟性**: 最小限の制約で自由に設計
+- **エコシステム**: 豊富なミドルウェアパッケージ
+
+Expressは、Node.jsでWebアプリケーションを構築するための最も一般的なフレームワークです。
+

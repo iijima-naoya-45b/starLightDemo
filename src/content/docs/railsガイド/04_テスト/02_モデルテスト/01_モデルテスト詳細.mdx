@@ -1,0 +1,112 @@
+---
+title: "モデルテスト詳細"
+label: "モデルテスト詳細"
+---
+
+## モデルテスト詳細
+
+### バリデーションテスト
+
+```ruby
+# spec/models/user_spec.rb
+require 'rails_helper'
+
+RSpec.describe User, type: :model do
+  describe 'バリデーション' do
+    context '有効な属性の場合' do
+      it 'ユーザーは有効であること' do
+        user = build(:user, email: 'test@example.com')
+        expect(user).to be_valid
+      end
+    end
+
+    context 'メールアドレスが無効な場合' do
+      it 'ユーザーは無効であること' do
+        user = build(:user, email: 'invalid_email')
+        expect(user).to be_invalid
+        expect(user.errors[:email]).to include('は不正な値です')
+      end
+    end
+
+    context 'メールアドレスが重複している場合' do
+      it 'ユーザーは無効であること' do
+        create(:user, email: 'test@example.com')
+        user = build(:user, email: 'test@example.com')
+        expect(user).to be_invalid
+        expect(user.errors[:email]).to include('はすでに存在します')
+      end
+    end
+  end
+
+  describe 'アソシエーション' do
+    it '複数の投稿を持つこと' do
+      user = create(:user)
+      post1 = create(:post, user: user)
+      post2 = create(:post, user: user)
+      
+      expect(user.posts).to include(post1, post2)
+    end
+
+    it 'ユーザーが削除されると投稿も削除されること' do
+      user = create(:user)
+      post = create(:post, user: user)
+      
+      expect { user.destroy }.to change { Post.count }.by(-1)
+    end
+  end
+
+  describe 'スコープ' do
+    it 'アクティブなユーザーのみを返すこと' do
+      active_user = create(:user, active: true)
+      inactive_user = create(:user, active: false)
+      
+      expect(User.active).to include(active_user)
+      expect(User.active).not_to include(inactive_user)
+    end
+  end
+
+  describe 'メソッド' do
+    describe '#full_name' do
+      it 'フルネームを返すこと' do
+        user = create(:user, first_name: 'John', last_name: 'Doe')
+        expect(user.full_name).to eq('John Doe')
+      end
+    end
+  end
+end
+```
+
+### Factory Botの詳細設定
+
+```ruby
+# spec/factories/users.rb
+FactoryBot.define do
+  factory :user do
+    sequence(:email) { |n| "user#{n}@example.com" }
+    password { 'password123' }
+    password_confirmation { 'password123' }
+    first_name { 'John' }
+    last_name { 'Doe' }
+    active { true }
+
+    # トレイト
+    trait :admin do
+      role { 'admin' }
+    end
+
+    trait :inactive do
+      active { false }
+    end
+
+    # コールバック
+    after(:create) do |user|
+      create_list(:post, 3, user: user)
+    end
+  end
+end
+
+# 使用例
+user = create(:user, :admin)
+inactive_user = create(:user, :inactive)
+```
+

@@ -1,0 +1,61 @@
+---
+title: "Recoil基礎"
+label: "Recoil基礎"
+---
+
+## Recoil基礎
+
+Recoilは、Facebookが開発したアトミックな状態管理ライブラリです。
+
+### インストール
+
+```bash
+npm install recoil
+```
+
+### Atomの定義
+
+```jsx
+import { atom } from 'recoil';
+
+export const countState = atom({
+  key: 'countState',
+  default: 0,
+});
+```
+
+### Selectorの定義
+
+```jsx
+import { selector } from 'recoil';
+import { countState } from './atoms';
+
+export const doubleCountState = selector({
+  key: 'doubleCountState',
+  get: ({ get }) => {
+    const count = get(countState);
+    return count * 2;
+  },
+});
+```
+
+### コンポーネントでの使用
+
+```jsx
+import { useRecoilState, useRecoilValue } from 'recoil';
+import { countState, doubleCountState } from './atoms';
+
+function Counter() {
+  const [count, setCount] = useRecoilState(countState);
+  const doubleCount = useRecoilValue(doubleCountState);
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <p>Double: {doubleCount}</p>
+      <button onClick={() => setCount(count + 1)}>+</button>
+    </div>
+  );
+}
+```
+

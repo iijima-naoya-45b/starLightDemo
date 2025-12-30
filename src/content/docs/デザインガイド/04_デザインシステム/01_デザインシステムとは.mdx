@@ -1,0 +1,180 @@
+---
+title: "デザインシステムとは"
+label: "デザインシステムとは"
+---
+
+## デザインシステムとは
+
+デザインシステムは、一貫性のあるUIを構築するためのガイドラインとコンポーネントの集合です。
+
+### なぜデザインシステムが必要なのか
+
+#### 問題のある開発プロセス
+
+**問題のある開発プロセス:**
+
+```javascript
+// 開発者Aのボタン
+function ButtonA() {
+  return <button style={{ background: 'blue', padding: '10px' }}>Button</button>;
+}
+
+// 開発者Bのボタン
+function ButtonB() {
+  return <button style={{ background: '#0066cc', padding: '12px' }}>Button</button>;
+}
+// 問題点:
+// - 一貫性がない
+// - 保守が困難
+// - ブランドイメージが統一されない
+```
+
+**デザインシステムの解決:**
+
+```javascript
+// デザインシステムに基づいた統一されたコンポーネント
+function Button({ variant, size, children }) {
+  const styles = designSystem.button[variant][size];
+  return <button style={styles}>{children}</button>;
+}
+
+// 使用例
+<Button variant="primary" size="medium">Button</Button>
+// メリット:
+// - 一貫性がある
+// - 保守しやすい
+// - ブランドイメージが統一される
+```
+
+**メリット:**
+1. **一貫性**: 統一されたデザイン
+2. **効率性**: 再利用可能なコンポーネント
+3. **品質**: テスト済みのコンポーネント
+4. **協業**: デザイナーと開発者の連携
+
+### デザインシステムの要素
+
+#### 1. デザイントークン
+
+```javascript
+// デザイントークンの定義
+const tokens = {
+  colors: {
+    primary: '#3b82f6',
+    secondary: '#6b7280',
+    success: '#10b981',
+    danger: '#ef4444',
+  },
+  spacing: {
+    xs: '0.25rem',
+    sm: '0.5rem',
+    md: '1rem',
+    lg: '1.5rem',
+    xl: '2rem',
+  },
+  typography: {
+    fontFamily: {
+      sans: ['Inter', 'sans-serif'],
+      mono: ['Fira Code', 'monospace'],
+    },
+    fontSize: {
+      sm: '0.875rem',
+      base: '1rem',
+      lg: '1.125rem',
+      xl: '1.25rem',
+    },
+  },
+};
+```
+
+#### 2. コンポーネントライブラリ
+
+```javascript
+// Buttonコンポーネント
+function Button({ variant = 'primary', size = 'medium', children }) {
+  const baseStyles = {
+    padding: tokens.spacing.md,
+    borderRadius: '0.25rem',
+    fontWeight: 600,
+  };
+  
+  const variantStyles = {
+    primary: { backgroundColor: tokens.colors.primary, color: 'white' },
+    secondary: { backgroundColor: tokens.colors.secondary, color: 'white' },
+  };
+  
+  return (
+    <button style={{ ...baseStyles, ...variantStyles[variant] }}>
+      {children}
+    </button>
+  );
+}
+```
+
+#### 3. ドキュメント
+
+```markdown
+# Button Component
+
+## Usage
+
+```jsx
+<Button variant="primary" size="medium">Click me</Button>
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| variant | 'primary' \| 'secondary' | 'primary' | Button variant |
+| size | 'small' \| 'medium' \| 'large' | 'medium' | Button size |
+```
+
+### 実践例: デザインシステムの構築
+
+```javascript
+// design-system/tokens.js
+export const tokens = {
+  colors: {
+    primary: {
+      50: '#eff6ff',
+      100: '#dbeafe',
+      500: '#3b82f6',
+      900: '#1e3a8a',
+    },
+  },
+  spacing: {
+    xs: '0.25rem',
+    sm: '0.5rem',
+    md: '1rem',
+    lg: '1.5rem',
+    xl: '2rem',
+  },
+};
+
+// design-system/components/Button.jsx
+import { tokens } from '../tokens';
+
+export function Button({ variant = 'primary', size = 'medium', children }) {
+  const styles = {
+    padding: tokens.spacing[size],
+    backgroundColor: tokens.colors.primary[500],
+    color: 'white',
+    borderRadius: '0.25rem',
+  };
+  
+  return <button style={styles}>{children}</button>;
+}
+```
+
+### まとめ
+
+デザインシステムのポイント：
+
+- **一貫性**: 統一されたデザイン
+- **効率性**: 再利用可能なコンポーネント
+- **品質**: テスト済みのコンポーネント
+- **協業**: デザイナーと開発者の連携
+
+デザインシステムは、スケーラブルなUI開発を実現するための重要な基盤です。
+

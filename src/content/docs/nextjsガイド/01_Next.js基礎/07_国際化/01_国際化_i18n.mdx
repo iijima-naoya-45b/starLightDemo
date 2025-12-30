@@ -1,0 +1,330 @@
+---
+title: "国際化 (i18n)"
+label: "国際化 (i18n)"
+---
+
+## 国際化 (i18n)
+
+国際化（i18n）は、アプリケーションを複数の言語や地域に対応させるための技術です。Next.jsでは、**next-intl**を使用して国際化を実装できます。
+
+### なぜ国際化が必要なのか
+
+#### 単一言語アプリケーションの課題
+
+**問題のある単一言語アプリケーション:**
+
+```typescript
+// ハードコードされた日本語テキスト
+export default function HomePage() {
+  return (
+    <div>
+      <h1>ようこそ</h1>
+      <p>これはホームページです</p>
+      <button>ログイン</button>
+    </div>
+  );
+}
+
+// 問題点:
+// - 英語圏のユーザーには理解できない
+// - 多言語対応が困難
+// - テキストの変更が困難
+```
+
+**国際化の解決:**
+
+```typescript
+// 翻訳キーを使用
+export default function HomePage() {
+  const t = useTranslations();
+  
+  return (
+    <div>
+      <h1>{t('welcome')}</h1>
+      <p>{t('home.description')}</p>
+      <button>{t('login')}</button>
+    </div>
+  );
+}
+
+// メリット:
+// - 複数の言語に対応可能
+// - テキストの管理が容易
+// - 言語の切り替えが簡単
+```
+
+**メリット:**
+1. **多言語対応**: 複数の言語と地域に対応
+2. **保守性**: テキストの一元管理
+3. **ユーザー体験**: ユーザーの言語に合わせた表示
+4. **SEO**: 言語ごとのSEO最適化
+
+### next-intlの設定
+
+#### 依存関係の追加
+
+```bash
+npm install next-intl
+```
+
+#### 設定ファイルの作成
+
+```typescript
+// i18n.ts
+import { notFound } from 'next/navigation';
+import { getRequestConfig } from 'next-intl/server';
+
+export const locales = ['ja', 'en', 'zh'] as const;
+export type Locale = (typeof locales)[number];
+
+export default getRequestConfig(async ({ locale }) => {
+  if (!locales.includes(locale as Locale)) {
+    notFound();
+  }
+
+  return {
+    messages: (await import(`./messages/${locale}.json`)).default,
+  };
+});
+```
+
+#### Next.js設定の更新
+
+```typescript
+// next.config.ts
+import createNextIntlPlugin from 'next-intl/plugin';
+
+const withNextIntl = createNextIntlPlugin('./i18n.ts');
+
+export default withNextIntl({
+  // 他の設定
+});
+```
+
+#### メッセージファイルの作成
+
+**`messages/ja.json`:**
+
+```json
+{
+  "welcome": "ようこそ",
+  "home": {
+    "description": "これはホームページです"
+  },
+  "login": "ログイン",
+  "user": {
+    "greeting": "こんにちは、{name}さん",
+    "items": "{count}個のアイテム"
+  }
+}
+```
+
+**`messages/en.json`:**
+
+```json
+{
+  "welcome": "Welcome",
+  "home": {
+    "description": "This is the home page"
+  },
+  "login": "Login",
+  "user": {
+    "greeting": "Hello, {name}",
+    "items": "{count} items"
+  }
+}
+```
+
+### ミドルウェアの設定
+
+```typescript
+// middleware.ts
+import createMiddleware from 'next-intl/middleware';
+import { locales } from './i18n';
+
+export default createMiddleware({
+  locales,
+  defaultLocale: 'ja',
+  localePrefix: 'as-needed', // デフォルト言語の場合はプレフィックスなし
+});
+
+export const config = {
+  matcher: ['/((?!api|_next|_vercel|.*\\..*).*)'],
+};
+```
+
+### ページでの使用
+
+#### サーバーコンポーネント
+
+```typescript
+// app/[locale]/page.tsx
+import { useTranslations } from 'next-intl';
+import { getTranslations } from 'next-intl/server';
+
+export default async function HomePage({
+  params: { locale },
+}: {
+  params: { locale: string };
+}) {
+  const t = await getTranslations('home');
+
+  return (
+    <div>
+      <h1>{t('welcome')}</h1>
+      <p>{t('description')}</p>
+    </div>
+  );
+}
+```
+
+#### クライアントコンポーネント
+
+```typescript
+// components/UserGreeting.tsx
+'use client';
+
+import { useTranslations } from 'next-intl';
+
+export default function UserGreeting({ name }: { name: string }) {
+  const t = useTranslations('user');
+
+  return (
+    <div>
+      <p>{t('greeting', { name })}</p>
+      <p>{t('items', { count: 5 })}</p>
+    </div>
+  );
+}
+```
+
+### 言語の切り替え
+
+```typescript
+// components/LanguageSwitcher.tsx
+'use client';
+
+import { useLocale } from 'next-intl';
+import { useRouter, usePathname } from 'next/navigation';
+
+export default function LanguageSwitcher() {
+  const locale = useLocale();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const switchLocale = (newLocale: string) => {
+    const newPathname = pathname.replace(`/${locale}`, `/${newLocale}`);
+    router.push(newPathname);
+  };
+
+  return (
+    <select
+      value={locale}
+      onChange={(e) => switchLocale(e.target.value)}
+    >
+      <option value="ja">日本語</option>
+      <option value="en">English</option>
+      <option value="zh">中文</option>
+    </select>
+  );
+}
+```
+
+### 日付と数値のフォーマット
+
+```typescript
+// components/FormattedDate.tsx
+'use client';
+
+import { useFormatter } from 'next-intl';
+
+export default function FormattedDate({ date }: { date: Date }) {
+  const format = useFormatter();
+
+  return (
+    <div>
+      <p>{format.dateTime(date, { dateStyle: 'long' })}</p>
+      <p>{format.number(1234.56, { style: 'currency', currency: 'JPY' })}</p>
+      <p>{format.relativeTime(date)}</p>
+    </div>
+  );
+}
+```
+
+### 実践的な例: 多言語対応アプリ
+
+```typescript
+// app/[locale]/layout.tsx
+import { NextIntlClientProvider } from 'next-intl';
+import { getMessages } from 'next-intl/server';
+import { notFound } from 'next/navigation';
+import { locales } from '@/i18n';
+
+export function generateStaticParams() {
+  return locales.map((locale) => ({ locale }));
+}
+
+export default async function LocaleLayout({
+  children,
+  params: { locale },
+}: {
+  children: React.ReactNode;
+  params: { locale: string };
+}) {
+  if (!locales.includes(locale as any)) {
+    notFound();
+  }
+
+  const messages = await getMessages();
+
+  return (
+    <html lang={locale}>
+      <body>
+        <NextIntlClientProvider messages={messages}>
+          {children}
+        </NextIntlClientProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+### SEO最適化
+
+```typescript
+// app/[locale]/layout.tsx
+import { getTranslations } from 'next-intl/server';
+
+export async function generateMetadata({
+  params: { locale },
+}: {
+  params: { locale: string };
+}) {
+  const t = await getTranslations({ locale, namespace: 'metadata' });
+
+  return {
+    title: t('title'),
+    description: t('description'),
+    alternates: {
+      languages: {
+        'ja': '/ja',
+        'en': '/en',
+        'zh': '/zh',
+      },
+    },
+  };
+}
+```
+
+### まとめ
+
+Next.jsで国際化を実装するポイント：
+
+- **next-intl**: 国際化ライブラリ
+- **メッセージファイル**: 言語ごとの翻訳ファイル
+- **ミドルウェア**: 言語の自動検出とルーティング
+- **日付・数値フォーマット**: 地域に応じたフォーマット
+- **SEO最適化**: 言語ごとのメタデータ
+
+国際化は、グローバルなアプリケーションにおいて不可欠な機能です。適切に実装することで、世界中のユーザーに適切な体験を提供できます。
+

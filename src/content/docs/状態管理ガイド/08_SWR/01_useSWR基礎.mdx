@@ -1,0 +1,447 @@
+---
+title: "useSWR基礎"
+label: "useSWR基礎"
+---
+
+## useSWR基礎
+
+useSWRは、Vercelが開発したデータフェッチングライブラリです。シンプルで軽量なAPIを提供します。
+
+### なぜuseSWRが必要なのか
+
+#### 問題のあるデータフェッチング
+
+**従来のデータフェッチングの問題:**
+
+```typescript
+// 問題のある実装
+function UserProfile({ userId }: { userId: string }) {
+  const [user, setUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setIsLoading(true);
+    fetch(`/api/users/${userId}`)
+      .then(res => res.json())
+      .then(data => {
+        setUser(data);
+        setIsLoading(false);
+      })
+      .catch(err => {
+        setError(err);
+        setIsLoading(false);
+      });
+  }, [userId]);
+
+  if (isLoading) return <Loading />;
+  if (error) return <Error />;
+  return <div>{user.name}</div>;
+}
+
+// 問題点:
+// - キャッシュ機能がない
+// - 再取得のロジックが複雑
+// - エラーハンドリングが不十分
+// - ローディング状態の管理が煩雑
+```
+
+**useSWRの解決:**
+
+```typescript
+// useSWRを使用した実装
+import useSWR from 'swr';
+
+const fetcher = (url: string) => fetch(url).then(res => res.json());
+
+function UserProfile({ userId }: { userId: string }) {
+  const { data: user, error, isLoading } = useSWR(
+    `/api/users/${userId}`,
+    fetcher
+  );
+
+  if (isLoading) return <Loading />;
+  if (error) return <Error />;
+  return <div>{user.name}</div>;
+}
+
+// メリット:
+// - 自動キャッシュ
+// - 自動再検証（revalidation）
+// - シンプルなAPI
+// - 軽量
+```
+
+### インストール
+
+```bash
+npm install swr
+```
+
+### 基本的な使い方
+
+#### 1. SWRConfigの設定
+
+```typescript
+// app/layout.tsx または _app.tsx
+import { SWRConfig } from 'swr';
+
+const fetcher = (url: string) => fetch(url).then(res => res.json());
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <SWRConfig
+      value={{
+        fetcher,
+        revalidateOnFocus: true,  // ウィンドウフォーカス時に再検証
+        revalidateOnReconnect: true,  // ネットワーク再接続時に再検証
+        dedupingInterval: 2000,  // 2秒間は重複リクエストを防ぐ
+      }}
+    >
+      {children}
+    </SWRConfig>
+  );
+}
+```
+
+#### 2. useSWRの基本
+
+```typescript
+import useSWR from 'swr';
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+const fetcher = async (url: string): Promise<User> => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error('Failed to fetch user');
+  }
+  return response.json();
+};
+
+function UserProfile({ userId }: { userId: string }) {
+  const { 
+    data,        // 取得したデータ
+    error,       // エラーオブジェクト
+    isLoading,   // 初回ローディング中
+    isValidating, // 再検証中（キャッシュがあってもtrueになる）
+    mutate,      // 手動で再検証・更新
+  } = useSWR<User>(
+    `/api/users/${userId}`,  // キー（必須）
+    fetcher,                  // fetcher関数（必須）
+    {
+      revalidateOnFocus: true,  // ウィンドウフォーカス時に再検証
+      revalidateOnMount: true,  // マウント時に再検証
+      refreshInterval: 0,  // ポーリング間隔（0は無効）
+      dedupingInterval: 2000,  // 重複リクエストを防ぐ間隔
+      onSuccess: (data) => {
+        console.log('Success:', data);
+      },
+      onError: (error) => {
+        console.error('Error:', error);
+      },
+    }
+  );
+
+  if (isLoading) return <Loading />;
+  if (error) return <Error error={error} />;
+  return <div>{data.name}</div>;
+}
+```
+
+#### 3. 条件付きフェッチング
+
+```typescript
+function UserProfile({ userId }: { userId: string | null }) {
+  // userIdがnullの場合はフェッチしない
+  const { data: user } = useSWR(
+    userId ? `/api/users/${userId}` : null,
+    fetcher
+  );
+
+  if (!userId) return <div>Please select a user</div>;
+  if (!user) return <Loading />;
+  return <div>{user.name}</div>;
+}
+```
+
+### ミューテーション
+
+#### 1. mutate関数
+
+```typescript
+import useSWR, { mutate } from 'swr';
+
+function UserProfile({ userId }: { userId: string }) {
+  const { data: user, mutate } = useSWR(`/api/users/${userId}`, fetcher);
+
+  const handleUpdate = async () => {
+    // オプティミスティックアップデート
+    mutate(
+      { ...user, name: 'New Name' },  // 新しいデータ
+      false  // 再検証しない（すぐにUIを更新）
+    );
+
+    // サーバーに更新リクエスト
+    await fetch(`/api/users/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New Name' }),
+    });
+
+    // サーバーのデータで再検証
+    mutate();
+  };
+
+  return (
+    <div>
+      <div>{user?.name}</div>
+      <button onClick={handleUpdate}>Update</button>
+    </div>
+  );
+}
+```
+
+#### 2. useSWRMutation
+
+```typescript
+import useSWRMutation from 'swr/mutation';
+
+function CreateUserForm() {
+  const { trigger, isMutating } = useSWRMutation(
+    '/api/users',
+    async (url, { arg }: { arg: { name: string; email: string } }) => {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(arg),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to create user');
+      }
+      return response.json();
+    }
+  );
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    
+    try {
+      const newUser = await trigger({
+        name: formData.get('name') as string,
+        email: formData.get('email') as string,
+      });
+      console.log('User created:', newUser);
+    } catch (error) {
+      console.error('Failed to create user:', error);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input name="name" required />
+      <input name="email" type="email" required />
+      <button type="submit" disabled={isMutating}>
+        {isMutating ? 'Creating...' : 'Create User'}
+      </button>
+    </form>
+  );
+}
+```
+
+### 高度な使い方
+
+#### 1. グローバルなmutate
+
+```typescript
+import { mutate } from 'swr';
+
+// 任意の場所からキャッシュを更新
+function updateUserCache(userId: string, newData: User) {
+  mutate(`/api/users/${userId}`, newData, false);
+}
+
+// すべてのユーザーキャッシュを再検証
+function revalidateAllUsers() {
+  mutate(key => typeof key === 'string' && key.startsWith('/api/users'));
+}
+```
+
+#### 2. 無限スクロール
+
+```typescript
+import useSWRInfinite from 'swr/infinite';
+
+function InfinitePosts() {
+  const {
+    data,
+    size,
+    setSize,
+    isLoading,
+    isValidating,
+  } = useSWRInfinite(
+    (index) => `/api/posts?page=${index + 1}`,  // キー生成関数
+    fetcher,
+    {
+      revalidateFirstPage: false,  // 最初のページは再検証しない
+    }
+  );
+
+  const posts = data ? data.flat() : [];
+  const isLoadingMore = isLoading || (size > 0 && data && typeof data[size - 1] === 'undefined');
+  const isEmpty = data?.[0]?.length === 0;
+  const isReachingEnd = isEmpty || (data && data[data.length - 1]?.length < 10);
+
+  return (
+    <div>
+      {posts.map(post => (
+        <div key={post.id}>{post.title}</div>
+      ))}
+      <button
+        onClick={() => setSize(size + 1)}
+        disabled={isLoadingMore || isReachingEnd}
+      >
+        {isLoadingMore ? 'Loading...' : isReachingEnd ? 'No more posts' : 'Load More'}
+      </button>
+    </div>
+  );
+}
+```
+
+#### 3. オプティミスティックアップデート
+
+```typescript
+function LikeButton({ postId }: { postId: string }) {
+  const { data: post, mutate } = useSWR(`/api/posts/${postId}`, fetcher);
+
+  const handleLike = async () => {
+    // オプティミスティックアップデート
+    mutate(
+      { ...post, likes: post.likes + 1, isLiked: true },
+      false
+    );
+
+    try {
+      // サーバーにリクエスト
+      await fetch(`/api/posts/${postId}/like`, { method: 'POST' });
+      // サーバーのデータで再検証
+      mutate();
+    } catch (error) {
+      // エラー時はロールバック
+      mutate();
+    }
+  };
+
+  return (
+    <button onClick={handleLike}>
+      Like ({post?.likes})
+    </button>
+  );
+}
+```
+
+### 実践的なパターン
+
+#### 1. カスタムフック
+
+```typescript
+// hooks/useUser.ts
+import useSWR from 'swr';
+
+const fetcher = (url: string) => fetch(url).then(res => res.json());
+
+export function useUser(userId: string) {
+  return useSWR(
+    userId ? `/api/users/${userId}` : null,
+    fetcher
+  );
+}
+
+// コンポーネントで使用
+function UserProfile({ userId }: { userId: string }) {
+  const { data: user, isLoading } = useUser(userId);
+  // ...
+}
+```
+
+#### 2. エラーハンドリング
+
+```typescript
+// utils/swrConfig.ts
+import { SWRConfiguration } from 'swr';
+
+export const swrConfig: SWRConfiguration = {
+  onError: (error, key) => {
+    // グローバルなエラーハンドリング
+    console.error('SWR Error:', error, key);
+    
+    // 404エラーは特別に処理
+    if (error.status === 404) {
+      console.log('Resource not found:', key);
+    }
+    
+    // エラー通知サービスに送信
+    // errorReportingService.report(error);
+  },
+  onSuccess: (data, key) => {
+    console.log('SWR Success:', key);
+  },
+  onErrorRetry: (error, key, config, revalidate, { retryCount }) => {
+    // 404エラーはリトライしない
+    if (error.status === 404) return;
+    
+    // 最大3回までリトライ
+    if (retryCount >= 3) return;
+    
+    // 指数バックオフでリトライ
+    setTimeout(() => revalidate({ retryCount }), 5000 * 2 ** retryCount);
+  },
+};
+```
+
+#### 3. TypeScript型安全性
+
+```typescript
+// types/user.ts
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+// hooks/useUser.ts
+import useSWR from 'swr';
+import { User } from '@/types/user';
+
+const fetcher = async (url: string): Promise<User> => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error('Failed to fetch user');
+  }
+  return response.json();
+};
+
+export function useUser(userId: string) {
+  return useSWR<User>(
+    userId ? `/api/users/${userId}` : null,
+    fetcher
+  );
+}
+```
+
+### まとめ
+
+useSWRの基礎：
+
+- **基本的な使い方**: useSWR、SWRConfig
+- **ミューテーション**: mutate関数、useSWRMutation
+- **高度な使い方**: 無限スクロール、オプティミスティックアップデート
+- **実践的なパターン**: カスタムフック、エラーハンドリング、TypeScript型安全性
+
+useSWRを活用することで、シンプルで効率的なデータフェッチングを実現できます。
+

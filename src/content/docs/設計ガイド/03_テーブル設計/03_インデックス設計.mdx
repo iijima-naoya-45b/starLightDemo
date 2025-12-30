@@ -1,0 +1,219 @@
+---
+title: "インデックス設計"
+label: "インデックス設計"
+---
+
+## インデックス設計
+
+データベースのインデックス設計について説明します。
+
+### なぜインデックスが必要なのか
+
+#### インデックスなしの検索
+
+**問題:**
+
+```sql
+-- インデックスなしのテーブル
+SELECT * FROM users WHERE email = 'john@example.com';
+-- 問題点:
+// - フルテーブルスキャンが発生
+// - 大量データの場合、非常に遅い
+// - O(n)の時間計算量
+```
+
+**インデックスありの検索:**
+
+```sql
+-- インデックスありのテーブル
+CREATE INDEX idx_email ON users(email);
+
+SELECT * FROM users WHERE email = 'john@example.com';
+-- メリット:
+// - インデックスを使用した高速検索
+// - O(log n)の時間計算量
+// - 大量データでも高速
+```
+
+**メリット:**
+1. **検索速度**: 検索が高速化
+2. **ソート速度**: ソートが高速化
+3. **JOIN速度**: JOINが高速化
+
+### インデックスの種類
+
+#### 1. プライマリキーインデックス
+
+**自動的に作成される:**
+
+```sql
+CREATE TABLE users (
+  id INT PRIMARY KEY AUTO_INCREMENT,  -- プライマリキーインデックスが自動作成
+  name VARCHAR(255)
+);
+```
+
+#### 2. ユニークインデックス
+
+**重複を防ぐ:**
+
+```sql
+CREATE TABLE users (
+  id INT PRIMARY KEY,
+  email VARCHAR(255) UNIQUE  -- ユニークインデックスが自動作成
+);
+
+-- または明示的に
+CREATE UNIQUE INDEX idx_email ON users(email);
+```
+
+#### 3. 通常のインデックス
+
+**検索を高速化:**
+
+```sql
+CREATE INDEX idx_name ON users(name);
+```
+
+#### 4. 複合インデックス
+
+**複数のカラムにインデックス:**
+
+```sql
+CREATE INDEX idx_name_email ON users(name, email);
+```
+
+**複合インデックスの順序:**
+
+```sql
+-- 良い例: よく検索されるカラムを先に
+CREATE INDEX idx_status_created ON orders(status, created_at);
+
+-- 悪い例: 順序が不適切
+CREATE INDEX idx_created_status ON orders(created_at, status);
+```
+
+### インデックスの設計原則
+
+#### 1. 検索頻度の高いカラム
+
+**WHERE句でよく使われるカラム:**
+
+```sql
+-- よく検索されるカラム
+SELECT * FROM users WHERE email = 'john@example.com';
+CREATE INDEX idx_email ON users(email);
+```
+
+#### 2. JOINで使われるカラム
+
+**外部キーにインデックス:**
+
+```sql
+-- JOINで使われるカラム
+SELECT * FROM orders o
+JOIN users u ON o.user_id = u.id;
+CREATE INDEX idx_user_id ON orders(user_id);
+```
+
+#### 3. ORDER BYで使われるカラム
+
+**ソートで使われるカラム:**
+
+```sql
+-- ソートで使われるカラム
+SELECT * FROM users ORDER BY created_at DESC;
+CREATE INDEX idx_created_at ON users(created_at);
+```
+
+#### 4. カバリングインデックス
+
+**クエリに必要なすべてのカラムを含む:**
+
+```sql
+-- カバリングインデックス
+CREATE INDEX idx_user_covering ON users(id, name, email);
+
+-- このクエリはインデックスのみで実行可能
+SELECT id, name, email FROM users WHERE id = 1;
+```
+
+### インデックスのデメリット
+
+#### 1. ストレージ使用量
+
+インデックスは追加のストレージを使用します。
+
+#### 2. 更新コスト
+
+データの挿入、更新、削除時にインデックスも更新されます。
+
+**例:**
+
+```sql
+-- インデックスが多いと更新が遅くなる
+INSERT INTO users (name, email) VALUES ('John', 'john@example.com');
+-- すべてのインデックスが更新される
+```
+
+### 実践例: インデックス設計
+
+```sql
+-- ユーザーテーブル
+CREATE TABLE users (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  username VARCHAR(50) UNIQUE NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  status VARCHAR(20) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_status (status),
+  INDEX idx_created_at (created_at),
+  INDEX idx_status_created (status, created_at)  -- 複合インデックス
+);
+
+-- 注文テーブル
+CREATE TABLE orders (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  status VARCHAR(20) NOT NULL,
+  total DECIMAL(10,2) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  INDEX idx_user_id (user_id),
+  INDEX idx_status (status),
+  INDEX idx_created_at (created_at),
+  INDEX idx_user_status (user_id, status)  -- 複合インデックス
+);
+```
+
+### インデックスの確認
+
+#### 1. インデックスの一覧
+
+```sql
+SHOW INDEXES FROM users;
+```
+
+#### 2. クエリの実行計画
+
+```sql
+EXPLAIN SELECT * FROM users WHERE email = 'john@example.com';
+```
+
+**実行計画の確認ポイント:**
+- **type**: `ref`や`range`が理想的（`ALL`は避ける）
+- **key**: 使用されているインデックス
+- **rows**: スキャンされる行数
+
+### まとめ
+
+インデックス設計のポイント：
+
+- **検索頻度**: よく検索されるカラムにインデックス
+- **JOIN**: 外部キーにインデックス
+- **ソート**: ORDER BYで使われるカラムにインデックス
+- **複合インデックス**: よく一緒に検索されるカラムに複合インデックス
+- **デメリット**: ストレージ使用量と更新コストを考慮
+
+適切なインデックス設計により、クエリのパフォーマンスを大幅に向上できます。
+

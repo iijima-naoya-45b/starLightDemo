@@ -1,0 +1,522 @@
+---
+title: "ユースケース別の非機能要件"
+label: "ユースケース別の非機能要件"
+---
+
+## ユースケース別の非機能要件
+
+実際のシステムを例に、ユースケースごとに必要な非機能要件を説明します。
+
+### ユースケース1: ECサイト
+
+#### 要件概要
+
+- **機能**: 商品の閲覧、検索、購入、決済
+- **想定ユーザー数**: 10,000人/日
+- **ピーク時**: 20,000人/時間
+
+#### フロントエンドの非機能要件
+
+**パフォーマンス:**
+- **LCP**: 2.5秒以内（商品一覧ページ）
+- **FID**: 100ミリ秒以内（検索機能）
+- **CLS**: 0.1以下（画像読み込み時のレイアウトシフト防止）
+- **バンドルサイズ**: 200KB以下（gzip圧縮後）
+
+**実装例:**
+
+ECサイトの商品一覧ページのパフォーマンスを最適化する実装例を示します。コード分割と画像の最適化により、初期表示を高速化し、LCPを2.5秒以内に抑えます。
+
+```typescript
+// 商品一覧ページの最適化
+import { lazy, Suspense } from 'react';
+import Image from 'next/image';
+
+// コード分割
+// lazy関数を使用して、ProductListコンポーネントを動的にインポート
+// これにより、初期バンドルサイズを削減し、必要なタイミングでコンポーネントを読み込む
+const ProductList = lazy(() => import('./ProductList'));
+
+function ProductPage() {
+  return (
+    // Suspenseコンポーネントで、非同期に読み込まれるコンポーネントをラップ
+    // fallbackで、読み込み中に表示するコンポーネントを指定
+    <Suspense fallback={<Loading />}>
+      <ProductList />
+    </Suspense>
+  );
+}
+
+// 画像の最適化
+// Next.jsのImageコンポーネントを使用して、画像を自動的に最適化
+function ProductImage({ src, alt }) {
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      width={300}
+      height={300}
+      loading="lazy"  // 遅延読み込み: 画面に表示されるまで画像を読み込まない
+      placeholder="blur"  // ぼかしプレースホルダー: 画像読み込み中にぼかし画像を表示
+    />
+  );
+}
+```
+
+この実装により、商品一覧ページのLCPを2.5秒以内に抑え、ユーザー体験を向上させます。
+
+**セキュリティ:**
+- **XSS対策**: ユーザー入力のサニタイズ
+- **CSRF対策**: CSRFトークンの実装
+- **決済情報の保護**: PCI DSS準拠
+
+**実装例:**
+
+ECサイトの決済処理におけるCSRF対策の実装例を示します。CSRFトークンをリクエストヘッダーに含めることで、不正なリクエストを防ぎます。
+
+```typescript
+// CSRF対策
+// HTMLのmetaタグからCSRFトークンを取得
+// サーバー側で生成されたトークンを、クライアント側で取得して使用する
+const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+// 決済処理の関数
+// 商品IDを受け取り、決済APIを呼び出す
+async function purchase(productId: string) {
+  const response = await fetch('/api/purchase', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': csrfToken,  // CSRFトークンをヘッダーに追加
+    },
+    body: JSON.stringify({ productId }),
+  });
+  return response.json();
+}
+```
+
+この実装により、CSRF攻撃を防ぎ、決済処理のセキュリティを確保します。
+
+#### バックエンドの非機能要件
+
+**パフォーマンス:**
+- **APIレスポンスタイム**: 200ミリ秒以内（p95）
+- **商品検索**: 500ミリ秒以内（p95）
+- **決済処理**: 1秒以内（p95）
+- **スループット**: 1000 RPS以上
+
+**実装例:**
+
+ECサイトのバックエンドにおけるパフォーマンス最適化とトランザクション管理の実装例を示します。キャッシュを使用して検索性能を向上させ、トランザクションで在庫管理と注文作成の整合性を保証します。
+
+```java
+// 商品検索の最適化
+// @Serviceアノテーションで、このクラスがサービス層のコンポーネントであることを示す
+@Service
+public class ProductService {
+    // @Cacheableアノテーションで、メソッドの結果をキャッシュ
+    // valueでキャッシュ名を指定、keyでキャッシュキーを指定（キーワードをキーとして使用）
+    // 同じキーワードで検索した場合、2回目以降はデータベースにアクセスせず、キャッシュから結果を返す
+    @Cacheable(value = "products", key = "#keyword")
+    public List<Product> searchProducts(String keyword, int page, int size) {
+        // キャッシュを使用してパフォーマンスを向上
+        return productRepository.search(keyword, page, size);
+    }
+    
+    // @Transactionalアノテーションで、このメソッドをトランザクション内で実行
+    // 在庫チェックと注文作成を1つのトランザクションで実行することで、データ整合性を保証
+    @Transactional
+    public Order createOrder(OrderRequest request) {
+        // 在庫チェックと注文作成をトランザクションで実行
+        // 商品を取得し、存在しない場合は例外をスロー
+        Product product = productRepository.findById(request.getProductId())
+            .orElseThrow(() -> new ProductNotFoundException());
+        
+        // 在庫が不足している場合は例外をスロー
+        if (product.getStock() < request.getQuantity()) {
+            throw new InsufficientStockException();
+        }
+        
+        // 在庫を減らす
+        product.decreaseStock(request.getQuantity());
+        productRepository.save(product);
+        
+        // 注文を作成
+        Order order = new Order(request);
+        return orderRepository.save(order);
+    }
+}
+```
+
+この実装により、商品検索を500ミリ秒以内に抑え、在庫管理と注文作成の整合性を保証します。
+
+**セキュリティ:**
+- **認証・認可**: JWTトークン、ロールベースアクセス制御
+- **決済情報の保護**: 暗号化、PCI DSS準拠
+- **レート制限**: 100リクエスト/分/ユーザー
+
+**可用性:**
+- **稼働率**: 99.9%以上
+- **決済処理の可用性**: 99.99%以上（決済は特に重要）
+
+**実装例:**
+
+決済処理の可用性を向上させるための実装例を示します。リトライ機能とサーキットブレーカーを組み合わせることで、一時的な障害に対して自動的にリトライし、障害が継続する場合はフォールバック処理を実行します。
+
+```java
+// 決済処理の可用性向上
+// @Serviceアノテーションで、このクラスがサービス層のコンポーネントであることを示す
+@Service
+public class PaymentService {
+    // @Retryableアノテーションで、PaymentExceptionが発生した場合に自動的にリトライ
+    // maxAttemptsで最大リトライ回数を指定（3回までリトライ）
+    // @CircuitBreakerアノテーションで、サーキットブレーカーパターンを実装
+    // 障害が継続する場合、サーキットを開いてフォールバックメソッドを呼び出す
+    @Retryable(value = {PaymentException.class}, maxAttempts = 3)
+    @CircuitBreaker(name = "paymentService", fallbackMethod = "processPaymentFallback")
+    public PaymentResult processPayment(PaymentRequest request) {
+        // 決済処理
+        // 外部の決済ゲートウェイにリクエストを送信
+        return paymentGateway.charge(request);
+    }
+    
+    // フォールバックメソッド
+    // 決済処理が失敗した場合、またはサーキットが開いている場合に呼び出される
+    public PaymentResult processPaymentFallback(PaymentRequest request, Exception e) {
+        // フォールバック処理（キューに保存して後で処理）
+        // 決済リクエストをキューに保存し、後で再処理する
+        paymentQueue.enqueue(request);
+        return PaymentResult.pending();  // 保留状態を返す
+    }
+}
+```
+
+この実装により、決済処理の可用性を99.99%以上に保ち、一時的な障害に対して自動的にリトライします。
+
+#### インフラの非機能要件
+
+**可用性:**
+- **稼働率**: 99.9%以上
+- **マルチAZ構成**: 複数のアベイラビリティゾーンに配置
+- **データベースレプリケーション**: マスター・スレーブ構成
+
+**スケーラビリティ:**
+- **自動スケーリング**: CPU使用率70%でスケールアウト
+- **ロードバランシング**: ALBでリクエストを分散
+- **キャッシュ**: Redisで商品情報をキャッシュ
+
+**実装例:**
+
+```yaml
+# Kubernetesでの自動スケーリング
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-server
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+```
+
+**セキュリティ:**
+- **WAF**: SQLインジェクション、XSS対策
+- **DDoS対策**: CloudFlare、AWS Shield
+- **データ暗号化**: TLS/SSL、データベース暗号化
+
+**監視:**
+- **メトリクス**: CPU、メモリ、リクエスト数、エラー率
+- **アラート**: CPU使用率80%以上、エラー率5%以上
+- **ログ**: アクセスログ、エラーログ、決済ログ
+
+### ユースケース2: リアルタイムチャットアプリケーション
+
+#### 要件概要
+
+- **機能**: リアルタイムメッセージ送受信、通知
+- **想定ユーザー数**: 5,000人/日
+- **同時接続数**: 1,000接続
+
+#### フロントエンドの非機能要件
+
+**パフォーマンス:**
+- **メッセージ送信**: 100ミリ秒以内
+- **メッセージ受信**: リアルタイム（WebSocket）
+- **通知表示**: 500ミリ秒以内
+
+**実装例:**
+
+```typescript
+// WebSocket接続の管理
+import { useEffect, useState } from 'react';
+import { io } from 'socket.io-client';
+
+function ChatRoom({ roomId }: { roomId: string }) {
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+
+  useEffect(() => {
+    const newSocket = io('https://api.example.com', {
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+    });
+
+    newSocket.on('connect', () => {
+      newSocket.emit('joinRoom', roomId);
+    });
+
+    newSocket.on('message', (message: Message) => {
+      setMessages(prev => [...prev, message]);
+    });
+
+    setSocket(newSocket);
+
+    return () => {
+      newSocket.close();
+    };
+  }, [roomId]);
+
+  const sendMessage = (text: string) => {
+    if (socket) {
+      socket.emit('message', { roomId, text });
+    }
+  };
+
+  return (
+    <div>
+      {messages.map(msg => (
+        <div key={msg.id}>{msg.text}</div>
+      ))}
+      <input onKeyPress={(e) => {
+        if (e.key === 'Enter') {
+          sendMessage(e.currentTarget.value);
+        }
+      }} />
+    </div>
+  );
+}
+```
+
+**可用性:**
+- **接続の維持**: 自動再接続機能
+- **オフライン対応**: メッセージのキューイング
+
+#### バックエンドの非機能要件
+
+**パフォーマンス:**
+- **メッセージ送信**: 50ミリ秒以内（p95）
+- **メッセージ配信**: 100ミリ秒以内（p95）
+- **同時接続数**: 10,000接続以上
+
+**実装例:**
+
+```java
+// WebSocketサーバーの実装
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry config) {
+        config.enableSimpleBroker("/topic");
+        config.setApplicationDestinationPrefixes("/app");
+    }
+
+    @Override
+    public void registerStompEndpoints(StompEndpointRegistry registry) {
+        registry.addEndpoint("/ws")
+            .setAllowedOrigins("*")
+            .withSockJS();
+    }
+}
+
+@Controller
+public class ChatController {
+    @MessageMapping("/chat.sendMessage")
+    @SendTo("/topic/public")
+    public ChatMessage sendMessage(@Payload ChatMessage chatMessage) {
+        // メッセージを保存
+        messageService.save(chatMessage);
+        
+        // メッセージを配信
+        return chatMessage;
+    }
+}
+```
+
+**スケーラビリティ:**
+- **水平スケーリング**: 複数のサーバーでWebSocket接続を分散
+- **メッセージブローカー**: Redis Pub/Sub、RabbitMQ
+
+**実装例:**
+
+```java
+// Redis Pub/Subを使用したメッセージ配信
+@Service
+public class MessageService {
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
+    
+    public void sendMessage(String roomId, Message message) {
+        // メッセージを保存
+        messageRepository.save(message);
+        
+        // Redis Pub/Subで配信
+        redisTemplate.convertAndSend("room:" + roomId, message);
+    }
+}
+```
+
+**可用性:**
+- **稼働率**: 99.9%以上
+- **接続の維持**: ハートビート機能
+
+#### インフラの非機能要件
+
+**スケーラビリティ:**
+- **WebSocket接続の分散**: セッションアフィニティの設定
+- **メッセージブローカー**: Redis Cluster、RabbitMQ Cluster
+
+**実装例:**
+
+```yaml
+# ALBでのセッションアフィニティ設定
+resource "aws_lb_target_group" "websocket" {
+  name     = "websocket-tg"
+  port     = 8080
+  protocol = "HTTP"
+  
+  stickiness {
+    enabled = true
+    type    = "lb_cookie"
+    cookie_duration = 86400
+  }
+}
+```
+
+**監視:**
+- **WebSocket接続数**: アクティブ接続数の監視
+- **メッセージ送受信数**: メッセージ数の監視
+- **レイテンシ**: メッセージ送信から受信までの時間
+
+### ユースケース3: データ分析プラットフォーム
+
+#### 要件概要
+
+- **機能**: 大量データの分析、レポート生成
+- **想定データ量**: 1TB/日
+- **分析処理時間**: 10分以内
+
+#### フロントエンドの非機能要件
+
+**パフォーマンス:**
+- **レポート表示**: 3秒以内（キャッシュ使用時）
+- **データ可視化**: 5秒以内（大量データの場合）
+
+**実装例:**
+
+```typescript
+// データ可視化の最適化
+import { useQuery } from '@tanstack/react-query';
+
+function ReportPage({ reportId }: { reportId: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['report', reportId],
+    queryFn: () => fetchReport(reportId),
+    staleTime: 5 * 60 * 1000,  // 5分間キャッシュ
+  });
+
+  if (isLoading) return <Loading />;
+  
+  return <Chart data={data} />;
+}
+```
+
+#### バックエンドの非機能要件
+
+**パフォーマンス:**
+- **データ分析処理**: 10分以内（1TBのデータ）
+- **レポート生成**: 30秒以内
+- **バッチ処理**: 夜間実行
+
+**実装例:**
+
+```java
+// バッチ処理の実装
+@Scheduled(cron = "0 0 2 * * ?")  // 毎日午前2時
+public void processDailyData() {
+    // 大量データの処理
+    List<Data> data = dataRepository.findByDate(LocalDate.now().minusDays(1));
+    
+    // 並列処理で高速化
+    data.parallelStream()
+        .forEach(this::processData);
+    
+    // 結果を保存
+    analysisRepository.save(analysisResult);
+}
+```
+
+**スケーラビリティ:**
+- **水平スケーリング**: 複数のワーカーで処理を分散
+- **データパーティショニング**: データを分割して処理
+
+#### インフラの非機能要件
+
+**ストレージ:**
+- **データレイク**: S3、データの長期保存
+- **データウェアハウス**: Redshift、分析用データベース
+- **バックアップ**: 日次バックアップ、30日間保持
+
+**実装例:**
+
+```yaml
+# S3バケットの設定
+resource "aws_s3_bucket" "data_lake" {
+  bucket = "data-lake-${var.environment}"
+  
+  versioning {
+    enabled = true
+  }
+  
+  lifecycle_rule {
+    id      = "archive"
+    enabled = true
+    
+    transition {
+      days          = 30
+      storage_class = "GLACIER"
+    }
+    
+    expiration {
+      days = 365
+    }
+  }
+}
+```
+
+**コンピューティング:**
+- **バッチ処理**: ECS Fargate、Lambda
+- **分析処理**: EMR、Glue
+
+### まとめ
+
+ユースケース別の非機能要件：
+
+- **ECサイト**: パフォーマンス、セキュリティ、可用性が重要
+- **リアルタイムチャット**: リアルタイム性、スケーラビリティが重要
+- **データ分析プラットフォーム**: 処理性能、ストレージ、バッチ処理が重要
+
+各ユースケースに応じて、適切な非機能要件を定義・実装することが重要です。
+

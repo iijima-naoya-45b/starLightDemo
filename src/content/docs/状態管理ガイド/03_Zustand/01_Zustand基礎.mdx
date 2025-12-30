@@ -1,0 +1,62 @@
+---
+title: "Zustand基礎"
+label: "Zustand基礎"
+---
+
+## Zustand基礎
+
+Zustandは、シンプルでミニマリストな状態管理ライブラリです。
+
+### インストール
+
+```bash
+npm install zustand
+```
+
+### Storeの作成
+
+```jsx
+import { create } from 'zustand';
+
+const useStore = create((set) => ({
+  count: 0,
+  increment: () => set((state) => ({ count: state.count + 1 })),
+  decrement: () => set((state) => ({ count: state.count - 1 })),
+}));
+```
+
+### コンポーネントでの使用
+
+```jsx
+function Counter() {
+  const { count, increment, decrement } = useStore();
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={increment}>+</button>
+      <button onClick={decrement}>-</button>
+    </div>
+  );
+}
+```
+
+### ミドルウェア
+
+```jsx
+import { create } from 'zustand';
+import { devtools, persist } from 'zustand/middleware';
+
+const useStore = create(
+  devtools(
+    persist(
+      (set) => ({
+        count: 0,
+        increment: () => set((state) => ({ count: state.count + 1 })),
+      }),
+      { name: 'counter-storage' }
+    )
+  )
+);
+```
+

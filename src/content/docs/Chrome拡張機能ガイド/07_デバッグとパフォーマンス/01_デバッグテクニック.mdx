@@ -1,0 +1,176 @@
+---
+title: "デバッグテクニック"
+label: "デバッグテクニック"
+---
+
+## デバッグテクニック
+
+### Service Workerのデバッグ
+
+```javascript
+// background.js
+// エラーハンドリング
+self.addEventListener('error', (event) => {
+  console.error('Service Worker Error:', event.error);
+  chrome.storage.local.set({ 
+    lastError: {
+      message: event.error.message,
+      stack: event.error.stack,
+      timestamp: Date.now()
+    }
+  });
+});
+
+// 未処理のPromise拒否
+self.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled Promise Rejection:', event.reason);
+});
+```
+
+### Content Scriptのデバッグ
+
+```javascript
+// content.js
+// デバッグモード
+const DEBUG = true;
+
+function debugLog(...args) {
+  if (DEBUG) {
+    console.log('[Content Script]', ...args);
+  }
+}
+
+// エラーのキャッチ
+window.addEventListener('error', (event) => {
+  debugLog('Error:', event.error);
+  chrome.runtime.sendMessage({
+    type: 'ERROR',
+    error: {
+      message: event.error.message,
+      stack: event.error.stack,
+      url: event.filename,
+      line: event.lineno
+    }
+  });
+});
+```
+
+### パフォーマンス監視
+
+```javascript
+// パフォーマンス測定
+class PerformanceMonitor {
+  constructor() {
+    this.metrics = [];
+  }
+
+  start(label) {
+    performance.mark(`${label}-start`);
+  }
+
+  end(label) {
+    performance.mark(`${label}-end`);
+    performance.measure(label, `${label}-start`, `${label}-end`);
+    
+    const measure = performance.getEntriesByName(label)[0];
+    this.metrics.push({
+      label,
+      duration: measure.duration,
+      timestamp: Date.now()
+    });
+  }
+
+  getMetrics() {
+    return this.metrics;
+  }
+}
+
+const perfMonitor = new PerformanceMonitor();
+
+// 使用例
+perfMonitor.start('data-loading');
+await loadData();
+perfMonitor.end('data-loading');
+```
+
+### メモリリークの検出
+
+```javascript
+// メモリ使用量の監視
+function checkMemoryUsage() {
+  if (performance.memory) {
+    const used = performance.memory.usedJSHeapSize;
+    const total = performance.memory.totalJSHeapSize;
+    const limit = performance.memory.jsHeapSizeLimit;
+    
+    console.log(`Memory: ${(used / 1024 / 1024).toFixed(2)}MB / ${(total / 1024 / 1024).toFixed(2)}MB`);
+    
+    if (used / limit > 0.9) {
+      console.warn('Memory usage is high!');
+    }
+  }
+}
+
+// 定期的にチェック
+setInterval(checkMemoryUsage, 5000);
+```
+
+### ログの管理
+
+```javascript
+// 構造化ログ
+class Logger {
+  constructor() {
+    this.logs = [];
+  }
+
+  log(level, message, data = {}) {
+    const logEntry = {
+      level,
+      message,
+      data,
+      timestamp: Date.now(),
+      url: window.location.href
+    };
+
+    this.logs.push(logEntry);
+    
+    // コンソールに出力
+    console[level](`[${level.toUpperCase()}]`, message, data);
+    
+    // ストレージに保存（最新100件）
+    if (this.logs.length > 100) {
+      this.logs.shift();
+    }
+    
+    chrome.storage.local.set({ logs: this.logs });
+  }
+
+  info(message, data) {
+    this.log('info', message, data);
+  }
+
+  error(message, data) {
+    this.log('error', message, data);
+  }
+
+  warn(message, data) {
+    this.log('warn', message, data);
+  }
+}
+
+const logger = new Logger();
+```
+
+### まとめ
+
+デバッグとパフォーマンス最適化のポイント：
+
+- **エラーハンドリング**: 適切なエラーキャッチとログ
+- **パフォーマンス測定**: Performance APIの活用
+- **メモリ監視**: メモリリークの検出
+- **構造化ログ**: デバッグ情報の管理
+- **Service Worker**: イベント駆動の理解
+
+適切なデバッグ手法により、拡張機能の品質を向上させることができます。
+

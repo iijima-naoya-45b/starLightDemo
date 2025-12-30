@@ -1,0 +1,485 @@
+---
+title: "TanStack Query詳細"
+label: "TanStack Query詳細"
+---
+
+## TanStack Query詳細
+
+TanStack Query（旧React Query）の詳細な使い方と実践的なパターンを説明します。
+
+### なぜTanStack Queryが必要なのか
+
+#### 問題のあるデータフェッチング
+
+**従来のデータフェッチングの問題:**
+
+```typescript
+// 問題のある実装
+function UserProfile({ userId }: { userId: string }) {
+  const [user, setUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setIsLoading(true);
+    fetch(`/api/users/${userId}`)
+      .then(res => res.json())
+      .then(data => {
+        setUser(data);
+        setIsLoading(false);
+      })
+      .catch(err => {
+        setError(err);
+        setIsLoading(false);
+      });
+  }, [userId]);
+
+  if (isLoading) return <Loading />;
+  if (error) return <Error />;
+  return <div>{user.name}</div>;
+}
+
+// 問題点:
+// - キャッシュ機能がない（同じデータを何度も取得）
+// - 再取得のロジックが複雑
+// - エラーハンドリングが不十分
+// - ローディング状態の管理が煩雑
+// - 複数のコンポーネントで同じデータを取得する場合、重複リクエストが発生
+```
+
+**TanStack Queryの解決:**
+
+```typescript
+// TanStack Queryを使用した実装
+import { useQuery } from '@tanstack/react-query';
+
+function UserProfile({ userId }: { userId: string }) {
+  const { data: user, isLoading, error } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetch(`/api/users/${userId}`).then(res => res.json()),
+    staleTime: 5 * 60 * 1000,  // 5分間は新鮮とみなす
+    cacheTime: 10 * 60 * 1000,  // 10分間キャッシュ
+  });
+
+  if (isLoading) return <Loading />;
+  if (error) return <Error />;
+  return <div>{user.name}</div>;
+}
+
+// メリット:
+// - 自動キャッシュ（同じデータは再取得しない）
+// - 自動再取得（ウィンドウフォーカス時など）
+// - エラーハンドリングが簡単
+// - ローディング状態の管理が簡単
+// - 複数のコンポーネントで同じデータを共有
+```
+
+### 基本的な使い方
+
+#### 1. セットアップ
+
+```typescript
+// app/layout.tsx または _app.tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,  // デフォルトのstaleTime
+      cacheTime: 10 * 60 * 1000,  // デフォルトのcacheTime
+      retry: 3,  // エラー時のリトライ回数
+      refetchOnWindowFocus: true,  // ウィンドウフォーカス時に再取得
+    },
+  },
+});
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      {children}
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
+  );
+}
+```
+
+#### 2. useQueryの詳細
+
+```typescript
+import { useQuery } from '@tanstack/react-query';
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+function UserProfile({ userId }: { userId: string }) {
+  const { 
+    data,           // 取得したデータ
+    isLoading,      // 初回ローディング中
+    isFetching,     // 再取得中（キャッシュがあってもtrueになる）
+    isError,        // エラーが発生したか
+    error,          // エラーオブジェクト
+    isSuccess,      // 成功したか
+    refetch,        // 手動で再取得
+    status,         // 'loading' | 'error' | 'success'
+    fetchStatus,    // 'fetching' | 'paused' | 'idle'
+  } = useQuery<User, Error>({
+    queryKey: ['user', userId],  // キャッシュキー（必須）
+    queryFn: async () => {        // データ取得関数（必須）
+      const response = await fetch(`/api/users/${userId}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch user');
+      }
+      return response.json();
+    },
+    enabled: true,  // クエリを実行するか（条件付き実行）
+    staleTime: 5 * 60 * 1000,  // データが新鮮とみなされる時間
+    cacheTime: 10 * 60 * 1000,  // キャッシュを保持する時間
+    retry: 3,  // エラー時のリトライ回数
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),  // リトライ間隔
+    refetchOnWindowFocus: true,  // ウィンドウフォーカス時に再取得
+    refetchOnMount: true,  // マウント時に再取得
+    refetchOnReconnect: true,  // ネットワーク再接続時に再取得
+  });
+
+  if (isLoading) return <Loading />;
+  if (isError) return <Error error={error} />;
+  if (isSuccess) return <div>{data.name}</div>;
+  
+  return null;
+}
+```
+
+#### 3. useMutationの詳細
+
+```typescript
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+
+interface CreateUserInput {
+  name: string;
+  email: string;
+}
+
+function CreateUserForm() {
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: async (input: CreateUserInput) => {
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to create user');
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      // 成功時の処理
+      // 1. キャッシュを無効化して再取得
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      
+      // 2. キャッシュを直接更新
+      queryClient.setQueryData(['user', data.id], data);
+      
+      // 3. オプティミスティックアップデートのロールバック
+      queryClient.setQueryData(['users'], (old: User[] | undefined) => {
+        return old ? [...old, data] : [data];
+      });
+    },
+    onError: (error) => {
+      // エラー時の処理
+      console.error('Failed to create user:', error);
+    },
+    onMutate: async (newUser) => {
+      // ミューテーション実行前の処理（オプティミスティックアップデート）
+      // キャンセル可能なクエリをキャンセル
+      await queryClient.cancelQueries({ queryKey: ['users'] });
+      
+      // 現在のデータをスナップショット
+      const previousUsers = queryClient.getQueryData<User[]>(['users']);
+      
+      // オプティミスティックアップデート
+      queryClient.setQueryData(['users'], (old: User[] | undefined) => {
+        return old ? [...old, { ...newUser, id: 'temp' }] : [{ ...newUser, id: 'temp' }];
+      });
+      
+      // ロールバック用のコンテキストを返す
+      return { previousUsers };
+    },
+    onSettled: () => {
+      // 成功・失敗に関わらず実行される処理
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    
+    mutation.mutate({
+      name: formData.get('name') as string,
+      email: formData.get('email') as string,
+    });
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input name="name" required />
+      <input name="email" type="email" required />
+      <button type="submit" disabled={mutation.isLoading}>
+        {mutation.isLoading ? 'Creating...' : 'Create User'}
+      </button>
+      {mutation.isError && <div>Error: {mutation.error.message}</div>}
+    </form>
+  );
+}
+```
+
+### 高度な使い方
+
+#### 1. 依存クエリ
+
+```typescript
+// ユーザー情報を取得してから、そのユーザーの投稿を取得
+function UserPosts({ userId }: { userId: string }) {
+  // 1つ目のクエリ: ユーザー情報
+  const { data: user } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  });
+
+  // 2つ目のクエリ: ユーザーの投稿（ユーザー情報が取得できてから実行）
+  const { data: posts } = useQuery({
+    queryKey: ['posts', userId],
+    queryFn: () => fetchUserPosts(userId),
+    enabled: !!user,  // ユーザー情報が取得できてから実行
+  });
+
+  if (!user) return <Loading />;
+  if (!posts) return <Loading />;
+  
+  return (
+    <div>
+      <h1>{user.name}の投稿</h1>
+      {posts.map(post => (
+        <div key={post.id}>{post.title}</div>
+      ))}
+    </div>
+  );
+}
+```
+
+#### 2. 並列クエリ
+
+```typescript
+import { useQueries } from '@tanstack/react-query';
+
+function UserDashboard({ userIds }: { userIds: string[] }) {
+  const userQueries = useQueries({
+    queries: userIds.map(userId => ({
+      queryKey: ['user', userId],
+      queryFn: () => fetchUser(userId),
+    })),
+  });
+
+  const isLoading = userQueries.some(query => query.isLoading);
+  const users = userQueries.map(query => query.data).filter(Boolean);
+
+  if (isLoading) return <Loading />;
+  
+  return (
+    <div>
+      {users.map(user => (
+        <div key={user.id}>{user.name}</div>
+      ))}
+    </div>
+  );
+}
+```
+
+#### 3. 無限スクロール
+
+```typescript
+import { useInfiniteQuery } from '@tanstack/react-query';
+
+function InfinitePosts() {
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['posts'],
+    queryFn: ({ pageParam = 1 }) => fetchPosts(pageParam),
+    getNextPageParam: (lastPage, pages) => {
+      // 次のページがあるかどうかを判定
+      return lastPage.hasNextPage ? pages.length + 1 : undefined;
+    },
+  });
+
+  return (
+    <div>
+      {data?.pages.map((page, i) => (
+        <div key={i}>
+          {page.posts.map(post => (
+            <div key={post.id}>{post.title}</div>
+          ))}
+        </div>
+      ))}
+      <button
+        onClick={() => fetchNextPage()}
+        disabled={!hasNextPage || isFetchingNextPage}
+      >
+        {isFetchingNextPage ? 'Loading...' : 'Load More'}
+      </button>
+    </div>
+  );
+}
+```
+
+#### 4. オプティミスティックアップデート
+
+```typescript
+function LikeButton({ postId }: { postId: string }) {
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: () => likePost(postId),
+    onMutate: async () => {
+      // 進行中のクエリをキャンセル
+      await queryClient.cancelQueries({ queryKey: ['post', postId] });
+      
+      // 現在のデータのスナップショット
+      const previousPost = queryClient.getQueryData(['post', postId]);
+      
+      // オプティミスティックアップデート
+      queryClient.setQueryData(['post', postId], (old: Post | undefined) => {
+        if (!old) return old;
+        return {
+          ...old,
+          likes: old.likes + 1,
+          isLiked: true,
+        };
+      });
+      
+      return { previousPost };
+    },
+    onError: (err, variables, context) => {
+      // エラー時はロールバック
+      if (context?.previousPost) {
+        queryClient.setQueryData(['post', postId], context.previousPost);
+      }
+    },
+    onSettled: () => {
+      // 最終的にサーバーのデータと同期
+      queryClient.invalidateQueries({ queryKey: ['post', postId] });
+    },
+  });
+
+  return (
+    <button onClick={() => mutation.mutate()}>
+      Like
+    </button>
+  );
+}
+```
+
+### 実践的なパターン
+
+#### 1. カスタムフック
+
+```typescript
+// hooks/useUser.ts
+import { useQuery } from '@tanstack/react-query';
+
+export function useUser(userId: string) {
+  return useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+// コンポーネントで使用
+function UserProfile({ userId }: { userId: string }) {
+  const { data: user, isLoading } = useUser(userId);
+  // ...
+}
+```
+
+#### 2. エラーハンドリング
+
+```typescript
+// utils/queryClient.ts
+import { QueryClient } from '@tanstack/react-query';
+
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        // 404エラーはリトライしない
+        if (error instanceof Error && error.message.includes('404')) {
+          return false;
+        }
+        return failureCount < 3;
+      },
+      onError: (error) => {
+        // グローバルなエラーハンドリング
+        console.error('Query error:', error);
+        // エラー通知サービスに送信
+        // errorReportingService.report(error);
+      },
+    },
+    mutations: {
+      onError: (error) => {
+        // グローバルなミューテーションエラーハンドリング
+        console.error('Mutation error:', error);
+      },
+    },
+  },
+});
+```
+
+#### 3. TypeScript型安全性
+
+```typescript
+// types/user.ts
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+// hooks/useUser.ts
+import { useQuery } from '@tanstack/react-query';
+import { User } from '@/types/user';
+
+export function useUser(userId: string) {
+  return useQuery<User, Error>({
+    queryKey: ['user', userId],
+    queryFn: async (): Promise<User> => {
+      const response = await fetch(`/api/users/${userId}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch user');
+      }
+      return response.json();
+    },
+  });
+}
+```
+
+### まとめ
+
+TanStack Queryの詳細：
+
+- **基本的な使い方**: useQuery、useMutation
+- **高度な使い方**: 依存クエリ、並列クエリ、無限スクロール、オプティミスティックアップデート
+- **実践的なパターン**: カスタムフック、エラーハンドリング、TypeScript型安全性
+
+TanStack Queryを活用することで、効率的で堅牢なデータフェッチングを実現できます。
+

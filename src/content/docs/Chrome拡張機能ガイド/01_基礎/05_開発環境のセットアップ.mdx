@@ -1,0 +1,157 @@
+---
+title: "開発環境のセットアップ"
+label: "開発環境のセットアップ"
+---
+
+## 開発環境のセットアップ
+
+Chrome拡張機能の開発環境をセットアップする方法を説明します。
+
+### 必要なツール
+
+#### 1. Google Chrome
+
+Chrome拡張機能を開発するには、Google Chromeブラウザが必要です。
+
+- **ダウンロード**: [Google Chrome](https://www.google.com/chrome/)
+
+#### 2. テキストエディタ
+
+コードを編集するためのテキストエディタが必要です。
+
+- **Visual Studio Code**: 推奨
+- **Sublime Text**
+- **Atom**
+
+### Visual Studio Codeのセットアップ
+
+#### 1. 拡張機能のインストール
+
+Chrome拡張機能の開発に便利な拡張機能をインストールします。
+
+- **Chrome Extension**: Chrome拡張機能の開発を支援
+- **Prettier**: コードフォーマッター
+- **ESLint**: JavaScriptのリンター
+
+#### 2. ワークスペースの設定
+
+```json
+// .vscode/settings.json
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "files.associations": {
+    "manifest.json": "jsonc"
+  }
+}
+```
+
+### プロジェクトテンプレートの作成
+
+#### 1. 基本的なプロジェクト構造
+
+```bash
+# プロジェクトの作成
+mkdir my-extension
+cd my-extension
+
+# フォルダ構造の作成
+mkdir icons
+touch manifest.json
+touch background.js
+touch content.js
+touch popup.html
+touch popup.js
+touch options.html
+touch options.js
+touch styles.css
+```
+
+#### 2. package.jsonの作成（オプション）
+
+TypeScriptやビルドツールを使用する場合：
+
+```json
+{
+  "name": "my-extension",
+  "version": "1.0.0",
+  "description": "My Chrome Extension",
+  "scripts": {
+    "build": "webpack --mode production",
+    "dev": "webpack --mode development --watch"
+  },
+  "devDependencies": {
+    "webpack": "^5.0.0",
+    "webpack-cli": "^4.0.0"
+  }
+}
+```
+
+### デバッグの設定
+
+#### 1. Chrome DevToolsの使い方
+
+**Background Scriptのデバッグ:**
+
+1. `chrome://extensions/` を開く
+2. 拡張機能の「サービスワーカー」リンクをクリック
+3. DevToolsが開き、デバッグが可能
+
+**Content Scriptのデバッグ:**
+
+1. Content Scriptが注入されたページでDevToolsを開く
+2. ConsoleタブでContent Scriptのログを確認
+3. Sourcesタブでブレークポイントを設定
+
+**Popupのデバッグ:**
+
+1. Popupを開いた状態で右クリック
+2. 「検証」を選択してDevToolsを開く
+
+#### 2. ログの活用
+
+```javascript
+// console.logの使用
+console.log('デバッグ情報:', data);
+
+// console.errorの使用
+console.error('エラー:', error);
+
+// console.tableの使用（オブジェクト配列の表示）
+console.table([{ name: 'John', age: 30 }]);
+```
+
+### ホットリロードの設定
+
+#### 1. 拡張機能の自動リロード
+
+開発効率を向上させるために、拡張機能の自動リロードを設定します。
+
+```javascript
+// background.js
+// 開発モードでの自動リロード
+if (chrome.runtime.reload) {
+  chrome.runtime.reload();
+}
+```
+
+#### 2. ファイル監視ツールの使用
+
+```bash
+# nodemonを使用した自動リロード
+npm install -g nodemon
+nodemon --watch . --exec "echo 'File changed'"
+```
+
+### まとめ
+
+開発環境のセットアップ：
+
+1. **必要なツール**: Google Chrome、テキストエディタ
+2. **Visual Studio Code**: 拡張機能とワークスペース設定
+3. **プロジェクトテンプレート**: 基本的なプロジェクト構造
+4. **デバッグ**: Chrome DevToolsの使い方
+5. **ホットリロード**: 開発効率の向上
+
+適切な開発環境をセットアップすることで、効率的にChrome拡張機能を開発できます。
+

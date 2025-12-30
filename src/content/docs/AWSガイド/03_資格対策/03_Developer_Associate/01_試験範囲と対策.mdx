@@ -1,0 +1,205 @@
+---
+title: "Developer Associate 試験範囲と対策"
+label: "Developer Associate 試験範囲と対策"
+---
+
+## Developer Associate 試験範囲と対策
+
+### 試験範囲
+
+#### 1. 開発とデプロイ（22%）
+
+**主要トピック:**
+- CI/CDパイプライン
+- CodeCommit、CodeBuild、CodeDeploy
+- Lambda関数の開発
+- コンテナのデプロイ
+
+**よく出る問題:**
+
+```yaml
+# CodePipelineの設定
+Pipeline:
+  Type: AWS::CodePipeline::Pipeline
+  Properties:
+    Stages:
+      - Name: Source
+        Actions:
+          - Name: SourceAction
+            ActionTypeId:
+              Category: Source
+              Owner: AWS
+              Provider: CodeCommit
+      - Name: Build
+        Actions:
+          - Name: BuildAction
+            ActionTypeId:
+              Category: Build
+              Owner: AWS
+              Provider: CodeBuild
+      - Name: Deploy
+        Actions:
+          - Name: DeployAction
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Provider: CodeDeploy
+```
+
+#### 2. セキュリティ（26%）
+
+**主要トピック:**
+- IAMロールとポリシー
+- 暗号化（KMS）
+- Secrets Manager
+- VPCエンドポイント
+
+**よく出る問題:**
+
+```python
+# Lambda関数でのSecrets Manager使用
+import boto3
+import json
+
+def lambda_handler(event, context):
+    secrets_client = boto3.client('secretsmanager')
+    
+    secret = secrets_client.get_secret_value(
+        SecretId='my-db-credentials'
+    )
+    
+    credentials = json.loads(secret['SecretString'])
+    
+    # データベース接続
+    # ...
+```
+
+#### 3. 開発とデプロイ（30%）
+
+**主要トピック:**
+- API Gateway
+- Lambda関数
+- DynamoDB
+- SQS、SNS
+
+**よく出る問題:**
+
+```python
+# Lambda関数とDynamoDBの連携
+import boto3
+import json
+
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('Users')
+
+def lambda_handler(event, context):
+    # DynamoDBから取得
+    response = table.get_item(
+        Key={'id': event['userId']}
+    )
+    
+    user = response.get('Item')
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps(user)
+    }
+```
+
+#### 4. トラブルシューティング（22%）
+
+**主要トピック:**
+- CloudWatch Logs
+- X-Ray
+- デバッグ手法
+- エラーハンドリング
+
+**よく出る問題:**
+
+```python
+# X-Rayトレーシング
+from aws_xray_sdk.core import xray_recorder
+from aws_xray_sdk.core import patch_all
+
+patch_all()
+
+@xray_recorder.capture('my_function')
+def my_function():
+    # 関数の処理
+    pass
+```
+
+### 対策方法
+
+#### 1. Lambda関数の開発
+
+```python
+# Lambda関数のベストプラクティス
+import json
+import boto3
+from decimal import Decimal
+
+def lambda_handler(event, context):
+    # エラーハンドリング
+    try:
+        # 処理
+        result = process_data(event)
+        return {
+            'statusCode': 200,
+            'body': json.dumps(result, default=decimal_default)
+        }
+    except Exception as e:
+        # エラーログ
+        print(f'Error: {str(e)}')
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
+
+def decimal_default(obj):
+    if isinstance(obj, Decimal):
+        return float(obj)
+    raise TypeError
+```
+
+#### 2. API Gatewayの設定
+
+```yaml
+ApiGateway:
+  Type: AWS::ApiGateway::RestApi
+  Properties:
+    Name: MyAPI
+    EndpointConfiguration:
+      Types:
+        - REGIONAL
+
+Resource:
+  Type: AWS::ApiGateway::Resource
+  Properties:
+    RestApiId: !Ref ApiGateway
+    PathPart: users
+
+Method:
+  Type: AWS::ApiGateway::Method
+  Properties:
+    RestApiId: !Ref ApiGateway
+    ResourceId: !Ref Resource
+    HttpMethod: GET
+    Integration:
+      Type: AWS_PROXY
+      IntegrationHttpMethod: POST
+      Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunction.Arn}/invocations'
+```
+
+### まとめ
+
+Developer Associate試験のポイント：
+
+- **Lambda関数**: サーバーレス開発の理解
+- **API Gateway**: RESTful APIの構築
+- **DynamoDB**: NoSQLデータベースの操作
+- **CI/CD**: デプロイメントパイプライン
+- **デバッグ**: CloudWatchとX-Rayの活用
+
+実践的な開発経験が重要です。
+

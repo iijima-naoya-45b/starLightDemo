@@ -1,0 +1,31 @@
+---
+title: "セキュリティ"
+label: "セキュリティ"
+---
+
+## セキュリティ
+
+Djangoのセキュリティ機能について解説します。
+
+### CSRF対策
+
+```python
+# settings.py
+CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_HTTPONLY = True
+```
+
+### XSS対策
+
+```python
+# テンプレートで自動エスケープ
+{{ user_input|escape }}
+```
+
+### SQLインジェクション対策
+
+```python
+# ORMを使用（自動的にエスケープ）
+User.objects.filter(name=user_input)
+```
+

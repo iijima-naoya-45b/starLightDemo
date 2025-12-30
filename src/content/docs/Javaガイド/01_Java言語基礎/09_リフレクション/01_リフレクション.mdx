@@ -1,0 +1,364 @@
+---
+title: "リフレクション"
+label: "リフレクション"
+---
+
+## リフレクション（Reflection）
+
+リフレクションは、実行時にクラスの情報を取得し、動的に操作する機能です。この章では、リフレクションの使い方について詳しく解説します。
+
+### リフレクションとは
+
+リフレクションを使用すると、実行時にクラスのメタデータ（フィールド、メソッド、コンストラクタなど）にアクセスし、動的に操作できます。
+
+**用途:**
+- フレームワークの実装（Spring、JPAなど）
+- テストフレームワーク（JUnit、Mockitoなど）
+- シリアライゼーション（Jackson、Gsonなど）
+- 動的プロキシの作成
+
+### Classオブジェクトの取得
+
+```java
+// 方法1: クラスリテラル
+Class<String> stringClass = String.class;
+
+// 方法2: オブジェクトから取得
+String str = "Hello";
+Class<?> strClass = str.getClass();
+
+// 方法3: クラス名から取得
+Class<?> clazz = Class.forName("java.lang.String");
+
+// 方法4: プリミティブ型
+Class<Integer> intClass = int.class;
+Class<Integer> integerClass = Integer.class;
+```
+
+### クラス情報の取得
+
+```java
+Class<?> clazz = String.class;
+
+// クラス名
+String simpleName = clazz.getSimpleName();  // "String"
+String canonicalName = clazz.getCanonicalName();  // "java.lang.String"
+String name = clazz.getName();  // "java.lang.String"
+
+// 修飾子
+int modifiers = clazz.getModifiers();
+boolean isPublic = Modifier.isPublic(modifiers);
+boolean isAbstract = Modifier.isAbstract(modifiers);
+boolean isFinal = Modifier.isFinal(modifiers);
+
+// スーパークラス
+Class<?> superClass = clazz.getSuperclass();
+
+// 実装しているインターフェース
+Class<?>[] interfaces = clazz.getInterfaces();
+
+// パッケージ
+Package pkg = clazz.getPackage();
+```
+
+### フィールドの操作
+
+```java
+class Person {
+    private String name;
+    public int age;
+    protected String email;
+}
+
+Class<?> clazz = Person.class;
+
+// すべてのフィールドを取得
+Field[] allFields = clazz.getDeclaredFields();
+
+// 公開フィールドを取得
+Field[] publicFields = clazz.getFields();
+
+// 特定のフィールドを取得
+try {
+    Field nameField = clazz.getDeclaredField("name");
+    
+    // フィールドの情報
+    String fieldName = nameField.getName();
+    Class<?> fieldType = nameField.getType();
+    int fieldModifiers = nameField.getModifiers();
+    
+    // フィールドの値の取得・設定
+    Person person = new Person();
+    nameField.setAccessible(true);  // privateフィールドにアクセス
+    nameField.set(person, "Alice");
+    String name = (String) nameField.get(person);
+    
+} catch (NoSuchFieldException | IllegalAccessException e) {
+    e.printStackTrace();
+}
+```
+
+### メソッドの操作
+
+```java
+class Calculator {
+    public int add(int a, int b) {
+        return a + b;
+    }
+    
+    private int multiply(int a, int b) {
+        return a * b;
+    }
+}
+
+Class<?> clazz = Calculator.class;
+
+// すべてのメソッドを取得
+Method[] allMethods = clazz.getDeclaredMethods();
+
+// 公開メソッドを取得
+Method[] publicMethods = clazz.getMethods();
+
+// 特定のメソッドを取得
+try {
+    Method addMethod = clazz.getMethod("add", int.class, int.class);
+    
+    // メソッドの情報
+    String methodName = addMethod.getName();
+    Class<?> returnType = addMethod.getReturnType();
+    Class<?>[] parameterTypes = addMethod.getParameterTypes();
+    
+    // メソッドの呼び出し
+    Calculator calc = new Calculator();
+    Object result = addMethod.invoke(calc, 3, 5);
+    System.out.println(result);  // 8
+    
+    // privateメソッドの呼び出し
+    Method multiplyMethod = clazz.getDeclaredMethod("multiply", int.class, int.class);
+    multiplyMethod.setAccessible(true);
+    Object result2 = multiplyMethod.invoke(calc, 3, 5);
+    System.out.println(result2);  // 15
+    
+} catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+    e.printStackTrace();
+}
+```
+
+### コンストラクタの操作
+
+```java
+class Person {
+    private String name;
+    private int age;
+    
+    public Person() {}
+    
+    public Person(String name) {
+        this.name = name;
+    }
+    
+    public Person(String name, int age) {
+        this.name = name;
+        this.age = age;
+    }
+}
+
+Class<?> clazz = Person.class;
+
+// すべてのコンストラクタを取得
+Constructor<?>[] constructors = clazz.getDeclaredConstructors();
+
+// 公開コンストラクタを取得
+Constructor<?>[] publicConstructors = clazz.getConstructors();
+
+// 特定のコンストラクタを取得
+try {
+    // 引数なしコンストラクタ
+    Constructor<?> noArgConstructor = clazz.getConstructor();
+    Person person1 = (Person) noArgConstructor.newInstance();
+    
+    // 引数1つのコンストラクタ
+    Constructor<?> oneArgConstructor = clazz.getConstructor(String.class);
+    Person person2 = (Person) oneArgConstructor.newInstance("Alice");
+    
+    // 引数2つのコンストラクタ
+    Constructor<?> twoArgConstructor = clazz.getConstructor(String.class, int.class);
+    Person person3 = (Person) twoArgConstructor.newInstance("Bob", 30);
+    
+} catch (NoSuchMethodException | InstantiationException | 
+         IllegalAccessException | InvocationTargetException e) {
+    e.printStackTrace();
+}
+```
+
+### アノテーションの操作
+
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.METHOD)
+@interface MyAnnotation {
+    String value() default "";
+    int count() default 0;
+}
+
+class MyClass {
+    @MyAnnotation(value = "test", count = 5)
+    public void myMethod() {
+    }
+}
+
+Class<?> clazz = MyClass.class;
+
+// クラスレベルのアノテーション
+Annotation[] classAnnotations = clazz.getAnnotations();
+
+// 特定のアノテーションを取得
+MyAnnotation annotation = clazz.getAnnotation(MyAnnotation.class);
+
+// メソッドのアノテーション
+try {
+    Method method = clazz.getMethod("myMethod");
+    MyAnnotation methodAnnotation = method.getAnnotation(MyAnnotation.class);
+    
+    if (methodAnnotation != null) {
+        String value = methodAnnotation.value();
+        int count = methodAnnotation.count();
+        System.out.println("Value: " + value + ", Count: " + count);
+    }
+    
+} catch (NoSuchMethodException e) {
+    e.printStackTrace();
+}
+```
+
+### 動的プロキシ
+
+```java
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Proxy;
+
+interface UserService {
+    void createUser(String name);
+    void deleteUser(String name);
+}
+
+class UserServiceImpl implements UserService {
+    @Override
+    public void createUser(String name) {
+        System.out.println("Creating user: " + name);
+    }
+    
+    @Override
+    public void deleteUser(String name) {
+        System.out.println("Deleting user: " + name);
+    }
+}
+
+// InvocationHandlerの実装
+class LoggingHandler implements InvocationHandler {
+    private Object target;
+    
+    public LoggingHandler(Object target) {
+        this.target = target;
+    }
+    
+    @Override
+    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        System.out.println("Calling method: " + method.getName());
+        long start = System.currentTimeMillis();
+        
+        Object result = method.invoke(target, args);
+        
+        long duration = System.currentTimeMillis() - start;
+        System.out.println("Method " + method.getName() + " took " + duration + "ms");
+        
+        return result;
+    }
+}
+
+// プロキシの作成
+UserService realService = new UserServiceImpl();
+InvocationHandler handler = new LoggingHandler(realService);
+
+UserService proxy = (UserService) Proxy.newProxyInstance(
+    UserService.class.getClassLoader(),
+    new Class[]{UserService.class},
+    handler
+);
+
+// プロキシ経由でメソッドを呼び出し
+proxy.createUser("Alice");  // ログが出力される
+```
+
+### 実践例
+
+#### オブジェクトのシリアライゼーション
+
+```java
+public class ObjectSerializer {
+    
+    public Map<String, Object> toMap(Object obj) throws IllegalAccessException {
+        Map<String, Object> map = new HashMap<>();
+        Class<?> clazz = obj.getClass();
+        
+        for (Field field : clazz.getDeclaredFields()) {
+            field.setAccessible(true);
+            Object value = field.get(field);
+            map.put(field.getName(), value);
+        }
+        
+        return map;
+    }
+    
+    public <T> T fromMap(Map<String, Object> map, Class<T> clazz) 
+            throws NoSuchMethodException, IllegalAccessException, 
+                   InstantiationException, InvocationTargetException {
+        T instance = clazz.getDeclaredConstructor().newInstance();
+        
+        for (Field field : clazz.getDeclaredFields()) {
+            field.setAccessible(true);
+            Object value = map.get(field.getName());
+            if (value != null) {
+                field.set(instance, value);
+            }
+        }
+        
+        return instance;
+    }
+}
+```
+
+### パフォーマンスの考慮
+
+リフレクションは便利ですが、パフォーマンスに影響を与える可能性があります。
+
+```java
+// 遅い: 毎回リフレクションを使用
+for (int i = 0; i < 1000000; i++) {
+    Method method = clazz.getMethod("methodName");
+    method.invoke(obj, args);
+}
+
+// 速い: メソッドを一度取得して再利用
+Method method = clazz.getMethod("methodName");
+method.setAccessible(true);  // アクセスチェックをスキップ
+for (int i = 0; i < 1000000; i++) {
+    method.invoke(obj, args);
+}
+```
+
+### まとめ
+
+リフレクションのポイント：
+
+- **Classオブジェクト**: クラス情報へのアクセス
+- **フィールド操作**: フィールドの取得・設定
+- **メソッド操作**: メソッドの取得・呼び出し
+- **コンストラクタ操作**: インスタンスの動的作成
+- **アノテーション**: 実行時のアノテーション情報取得
+- **動的プロキシ**: プロキシパターンの実装
+- **パフォーマンス**: 適切なキャッシュと最適化
+
+リフレクションを適切に使用することで、柔軟で拡張性の高いコードを書けます。
+
+

@@ -1,0 +1,990 @@
+---
+title: "カスタムバリデーション"
+label: "カスタムバリデーション"
+---
+
+## カスタムバリデーションの実装
+
+Spring Bootでは、Bean Validation（JSR-303/JSR-380）の標準アノテーション（`@NotNull`、`@NotBlank`、`@Size`など）に加えて、**カスタムバリデーション**を作成することができます。この章では、ビジネスロジックに特化したカスタムバリデーションの実装方法について、シニアエンジニアの視点から詳しく解説します。
+
+### なぜカスタムバリデーションが必要なのか
+
+#### 標準アノテーションの限界
+
+**問題のあるコード:**
+
+```java
+public class UserCreateRequestDTO {
+    
+    @NotBlank(message = "メールアドレスは必須です")
+    @Email(message = "有効なメールアドレスを入力してください")
+    private String email;
+    
+    @NotBlank(message = "パスワードは必須です")
+    @Size(min = 8, max = 100, message = "パスワードは8文字以上100文字以内で入力してください")
+    private String password;
+    
+    // 問題: ビジネスルールに特化したバリデーションができない
+    // 例: パスワードに大文字、小文字、数字、記号を含む必要がある
+    // 例: メールアドレスが特定のドメインでないことを確認
+    // 例: 電話番号の形式が特定の国に準拠しているか
+}
+```
+
+**具体的な問題:**
+
+1. **複雑なビジネスルールの表現が困難**: 標準アノテーションだけでは表現できない複雑なルールがある
+2. **再利用性の欠如**: 同じバリデーションロジックを複数の場所で重複して実装する必要がある
+3. **テストの困難**: バリデーションロジックがコントローラーやサービス層に散在し、テストが困難
+
+#### カスタムバリデーションのメリット
+
+1. **ビジネスロジックの明確化**: バリデーションルールがアノテーションとして明確に表現される
+2. **再利用性**: 同じバリデーションを複数のフィールドやクラスで再利用できる
+3. **保守性**: バリデーションロジックが一箇所に集約され、変更が容易
+4. **テストの容易性**: バリデーションロジックを独立してテストできる
+
+### カスタムバリデーションの基本実装
+
+#### ステップ1: カスタムアノテーションの作成
+
+**基本的なカスタムアノテーション:**
+
+```java
+package com.example.myapp.validation;
+
+import javax.validation.Constraint;
+import javax.validation.Payload;
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+/**
+ * パスワードの強度を検証するカスタムバリデーション
+ * 
+ * パスワードは以下の条件を満たす必要があります:
+ * - 8文字以上
+ * - 大文字を含む
+ * - 小文字を含む
+ * - 数字を含む
+ * - 記号を含む
+ */
+@Documented
+@Constraint(validatedBy = StrongPasswordValidator.class)  // バリデーションロジックを実装するクラス
+@Target({ElementType.FIELD, ElementType.PARAMETER})  // フィールドとパラメータに適用可能
+@Retention(RetentionPolicy.RUNTIME)  // 実行時に利用可能
+public @interface StrongPassword {
+    
+    // デフォルトのエラーメッセージ
+    String message() default "パスワードは8文字以上で、大文字、小文字、数字、記号を含む必要があります";
+    
+    // バリデーショングループ（デフォルトは空）
+    Class<?>[] groups() default {};
+    
+    // カスタムペイロード（エラーの詳細情報を渡すために使用）
+    Class<? extends Payload>[] payload() default {};
+    
+    // カスタムパラメータ: 最小文字数
+    int minLength() default 8;
+    
+    // カスタムパラメータ: 大文字を含む必要があるか
+    boolean requireUpperCase() default true;
+    
+    // カスタムパラメータ: 小文字を含む必要があるか
+    boolean requireLowerCase() default true;
+    
+    // カスタムパラメータ: 数字を含む必要があるか
+    boolean requireDigit() default true;
+    
+    // カスタムパラメータ: 記号を含む必要があるか
+    boolean requireSpecialChar() default true;
+}
+```
+
+#### ステップ2: バリデータークラスの実装
+
+**基本的なバリデータークラス:**
+
+```java
+package com.example.myapp.validation;
+
+import javax.validation.ConstraintValidator;
+import javax.validation.ConstraintValidatorContext;
+
+/**
+ * StrongPasswordアノテーションのバリデーションロジックを実装
+ */
+public class StrongPasswordValidator implements ConstraintValidator<StrongPassword, String> {
+    
+    private int minLength;
+    private boolean requireUpperCase;
+    private boolean requireLowerCase;
+    private boolean requireDigit;
+    private boolean requireSpecialChar;
+    
+    /**
+     * アノテーションのパラメータを初期化
+     */
+    @Override
+    public void initialize(StrongPassword constraintAnnotation) {
+        this.minLength = constraintAnnotation.minLength();
+        this.requireUpperCase = constraintAnnotation.requireUpperCase();
+        this.requireLowerCase = constraintAnnotation.requireLowerCase();
+        this.requireDigit = constraintAnnotation.requireDigit();
+        this.requireSpecialChar = constraintAnnotation.requireSpecialChar();
+    }
+    
+    /**
+     * 実際のバリデーションロジック
+     * 
+     * @param value 検証対象の値
+     * @param context バリデーションコンテキスト（エラーメッセージのカスタマイズなどに使用）
+     * @return バリデーションが成功した場合true、失敗した場合false
+     */
+    @Override
+    public boolean isValid(String value, ConstraintValidatorContext context) {
+        // nullの場合は@NotNullなどの他のバリデーションに委譲
+        if (value == null) {
+            return true;
+        }
+        
+        // 最小文字数のチェック
+        if (value.length() < minLength) {
+            addConstraintViolation(context, 
+                String.format("パスワードは%d文字以上である必要があります", minLength));
+            return false;
+        }
+        
+        // 大文字のチェック
+        if (requireUpperCase && !value.matches(".*[A-Z].*")) {
+            addConstraintViolation(context, "パスワードには大文字を含む必要があります");
+            return false;
+        }
+        
+        // 小文字のチェック
+        if (requireLowerCase && !value.matches(".*[a-z].*")) {
+            addConstraintViolation(context, "パスワードには小文字を含む必要があります");
+            return false;
+        }
+        
+        // 数字のチェック
+        if (requireDigit && !value.matches(".*\\d.*")) {
+            addConstraintViolation(context, "パスワードには数字を含む必要があります");
+            return false;
+        }
+        
+        // 記号のチェック
+        if (requireSpecialChar && !value.matches(".*[!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?].*")) {
+            addConstraintViolation(context, "パスワードには記号を含む必要があります");
+            return false;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * カスタムエラーメッセージを追加
+     */
+    private void addConstraintViolation(ConstraintValidatorContext context, String message) {
+        context.disableDefaultConstraintViolation();
+        context.buildConstraintViolationWithTemplate(message)
+               .addConstraintViolation();
+    }
+}
+```
+
+#### ステップ3: DTOでの使用
+
+**カスタムバリデーションの適用:**
+
+```java
+public class UserCreateRequestDTO {
+    
+    @NotBlank(message = "名前は必須です")
+    @Size(min = 1, max = 100, message = "名前は1文字以上100文字以内で入力してください")
+    private String name;
+    
+    @NotBlank(message = "メールアドレスは必須です")
+    @Email(message = "有効なメールアドレスを入力してください")
+    private String email;
+    
+    @NotBlank(message = "パスワードは必須です")
+    @StrongPassword(
+        minLength = 8,
+        requireUpperCase = true,
+        requireLowerCase = true,
+        requireDigit = true,
+        requireSpecialChar = true,
+        message = "パスワードは8文字以上で、大文字、小文字、数字、記号を含む必要があります"
+    )
+    private String password;
+    
+    // getter/setter
+}
+```
+
+**コントローラーでの使用:**
+
+```java
+@RestController
+@RequestMapping("/api/users")
+@Validated
+public class UserController {
+    
+    private final UserService userService;
+    
+    @PostMapping
+    public ResponseEntity<UserResponseDTO> createUser(
+            @Valid @RequestBody UserCreateRequestDTO request) {
+        // カスタムバリデーションが自動的に実行される
+        // バリデーションエラーがある場合は400 Bad Requestが返される
+        UserResponseDTO createdUser = userService.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(createdUser);
+    }
+}
+```
+
+### 実践的なカスタムバリデーション例
+
+#### 例1: 電話番号の形式検証
+
+**カスタムアノテーション:**
+
+```java
+package com.example.myapp.validation;
+
+import javax.validation.Constraint;
+import javax.validation.Payload;
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+/**
+ * 電話番号の形式を検証するカスタムバリデーション
+ */
+@Documented
+@Constraint(validatedBy = PhoneNumberValidator.class)
+@Target({ElementType.FIELD, ElementType.PARAMETER})
+@Retention(RetentionPolicy.RUNTIME)
+public @interface PhoneNumber {
+    
+    String message() default "有効な電話番号を入力してください";
+    
+    Class<?>[] groups() default {};
+    
+    Class<? extends Payload>[] payload() default {};
+    
+    // 国コード（例: "JP" = 日本、"US" = アメリカ）
+    String country() default "JP";
+    
+    // フォーマットを許可するか（例: "090-1234-5678"）
+    boolean allowFormatting() default true;
+}
+```
+
+**バリデータークラス:**
+
+```java
+package com.example.myapp.validation;
+
+import javax.validation.ConstraintValidator;
+import javax.validation.ConstraintValidatorContext;
+import java.util.regex.Pattern;
+
+public class PhoneNumberValidator implements ConstraintValidator<PhoneNumber, String> {
+    
+    private String country;
+    private boolean allowFormatting;
+    
+    // 各国の電話番号パターン
+    private static final Pattern JP_PATTERN_WITH_FORMAT = 
+        Pattern.compile("^0\\d{1,4}-\\d{1,4}-\\d{4}$");
+    private static final Pattern JP_PATTERN_WITHOUT_FORMAT = 
+        Pattern.compile("^0\\d{9,10}$");
+    
+    private static final Pattern US_PATTERN_WITH_FORMAT = 
+        Pattern.compile("^\\(\\d{3}\\)\\s?\\d{3}-\\d{4}$");
+    private static final Pattern US_PATTERN_WITHOUT_FORMAT = 
+        Pattern.compile("^\\d{10}$");
+    
+    @Override
+    public void initialize(PhoneNumber constraintAnnotation) {
+        this.country = constraintAnnotation.country();
+        this.allowFormatting = constraintAnnotation.allowFormatting();
+    }
+    
+    @Override
+    public boolean isValid(String value, ConstraintValidatorContext context) {
+        if (value == null) {
+            return true;
+        }
+        
+        Pattern pattern = getPatternForCountry();
+        if (pattern == null) {
+            return false;
+        }
+        
+        boolean isValid = pattern.matcher(value).matches();
+        if (!isValid) {
+            context.disableDefaultConstraintViolation();
+            context.buildConstraintViolationWithTemplate(
+                String.format("%sの電話番号形式が正しくありません", getCountryName()))
+               .addConstraintViolation();
+        }
+        
+        return isValid;
+    }
+    
+    private Pattern getPatternForCountry() {
+        switch (country.toUpperCase()) {
+            case "JP":
+                return allowFormatting ? JP_PATTERN_WITH_FORMAT : JP_PATTERN_WITHOUT_FORMAT;
+            case "US":
+                return allowFormatting ? US_PATTERN_WITH_FORMAT : US_PATTERN_WITHOUT_FORMAT;
+            default:
+                return null;
+        }
+    }
+    
+    private String getCountryName() {
+        switch (country.toUpperCase()) {
+            case "JP":
+                return "日本";
+            case "US":
+                return "アメリカ";
+            default:
+                return country;
+        }
+    }
+}
+```
+
+**使用例:**
+
+```java
+public class UserCreateRequestDTO {
+    
+    @NotBlank(message = "電話番号は必須です")
+    @PhoneNumber(country = "JP", allowFormatting = true, 
+                 message = "有効な日本の電話番号を入力してください（例: 090-1234-5678）")
+    private String phoneNumber;
+    
+    // getter/setter
+}
+```
+
+#### 例2: 日付範囲の検証
+
+**カスタムアノテーション:**
+
+```java
+package com.example.myapp.validation;
+
+import javax.validation.Constraint;
+import javax.validation.Payload;
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+/**
+ * 日付が指定された範囲内にあることを検証するカスタムバリデーション
+ */
+@Documented
+@Constraint(validatedBy = DateRangeValidator.class)
+@Target({ElementType.TYPE})  // クラスレベルに適用
+@Retention(RetentionPolicy.RUNTIME)
+public @interface ValidDateRange {
+    
+    String message() default "開始日は終了日より前である必要があります";
+    
+    Class<?>[] groups() default {};
+    
+    Class<? extends Payload>[] payload() default {};
+    
+    // 開始日フィールド名
+    String startDateField() default "startDate";
+    
+    // 終了日フィールド名
+    String endDateField() default "endDate";
+}
+```
+
+**バリデータークラス:**
+
+```java
+package com.example.myapp.validation;
+
+import javax.validation.ConstraintValidator;
+import javax.validation.ConstraintValidatorContext;
+import java.lang.reflect.Field;
+import java.time.LocalDate;
+
+public class ValidDateRangeValidator implements ConstraintValidator<ValidDateRange, Object> {
+    
+    private String startDateField;
+    private String endDateField;
+    
+    @Override
+    public void initialize(ValidDateRange constraintAnnotation) {
+        this.startDateField = constraintAnnotation.startDateField();
+        this.endDateField = constraintAnnotation.endDateField();
+    }
+    
+    @Override
+    public boolean isValid(Object value, ConstraintValidatorContext context) {
+        if (value == null) {
+            return true;
+        }
+        
+        try {
+            LocalDate startDate = getDateFieldValue(value, startDateField);
+            LocalDate endDate = getDateFieldValue(value, endDateField);
+            
+            if (startDate == null || endDate == null) {
+                return true;  // nullチェックは@NotNullなどで行う
+            }
+            
+            if (startDate.isAfter(endDate)) {
+                context.disableDefaultConstraintViolation();
+                context.buildConstraintViolationWithTemplate(
+                    String.format("%sは%sより前である必要があります", startDateField, endDateField))
+                   .addPropertyNode(startDateField)
+                   .addConstraintViolation();
+                return false;
+            }
+            
+            return true;
+        } catch (Exception e) {
+            // リフレクションエラーが発生した場合は検証をスキップ
+            return false;
+        }
+    }
+    
+    private LocalDate getDateFieldValue(Object obj, String fieldName) throws Exception {
+        Field field = obj.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        Object value = field.get(obj);
+        return value instanceof LocalDate ? (LocalDate) value : null;
+    }
+}
+```
+
+**使用例:**
+
+```java
+@ValidDateRange(
+    startDateField = "checkInDate",
+    endDateField = "checkOutDate",
+    message = "チェックイン日はチェックアウト日より前である必要があります"
+)
+public class ReservationRequestDTO {
+    
+    @NotNull(message = "チェックイン日は必須です")
+    private LocalDate checkInDate;
+    
+    @NotNull(message = "チェックアウト日は必須です")
+    private LocalDate checkOutDate;
+    
+    // getter/setter
+}
+```
+
+#### 例3: データベースとの整合性検証
+
+**カスタムアノテーション:**
+
+```java
+package com.example.myapp.validation;
+
+import javax.validation.Constraint;
+import javax.validation.Payload;
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+/**
+ * データベースに存在することを検証するカスタムバリデーション
+ */
+@Documented
+@Constraint(validatedBy = ExistsInDatabaseValidator.class)
+@Target({ElementType.FIELD, ElementType.PARAMETER})
+@Retention(RetentionPolicy.RUNTIME)
+public @interface ExistsInDatabase {
+    
+    String message() default "指定された値はデータベースに存在しません";
+    
+    Class<?>[] groups() default {};
+    
+    Class<? extends Payload>[] payload() default {};
+    
+    // 検証対象のエンティティクラス
+    Class<?> entityClass();
+    
+    // 検証対象のフィールド名
+    String fieldName() default "id";
+}
+```
+
+**バリデータークラス:**
+
+```java
+package com.example.myapp.validation;
+
+import javax.validation.ConstraintValidator;
+import javax.validation.ConstraintValidatorContext;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Component;
+
+import java.lang.reflect.Method;
+
+@Component
+public class ExistsInDatabaseValidator implements ConstraintValidator<ExistsInDatabase, Object> {
+    
+    @Autowired
+    private ApplicationContext applicationContext;
+    
+    private Class<?> entityClass;
+    private String fieldName;
+    private JpaRepository<?, ?> repository;
+    
+    @Override
+    public void initialize(ExistsInDatabase constraintAnnotation) {
+        this.entityClass = constraintAnnotation.entityClass();
+        this.fieldName = constraintAnnotation.fieldName();
+        
+        // リポジトリを取得（命名規則に基づく: Entity名 + Repository）
+        String repositoryBeanName = getRepositoryBeanName();
+        this.repository = (JpaRepository<?, ?>) applicationContext.getBean(repositoryBeanName);
+    }
+    
+    @Override
+    public boolean isValid(Object value, ConstraintValidatorContext context) {
+        if (value == null) {
+            return true;
+        }
+        
+        try {
+            boolean exists = repository.existsById(value);
+            if (!exists) {
+                context.disableDefaultConstraintViolation();
+                context.buildConstraintViolationWithTemplate(
+                    String.format("%sが%sに存在しません", fieldName, entityClass.getSimpleName()))
+                   .addConstraintViolation();
+            }
+            return exists;
+        } catch (Exception e) {
+            // エラーが発生した場合は検証をスキップ
+            return false;
+        }
+    }
+    
+    private String getRepositoryBeanName() {
+        String entityName = entityClass.getSimpleName();
+        String repositoryName = entityName + "Repository";
+        return Character.toLowerCase(repositoryName.charAt(0)) + repositoryName.substring(1);
+    }
+}
+```
+
+**注意:** 上記の実装は簡略化されています。実際の実装では、より堅牢なエラーハンドリングとリポジトリの取得方法が必要です。
+
+**より実用的な実装:**
+
+```java
+package com.example.myapp.validation;
+
+import javax.validation.ConstraintValidator;
+import javax.validation.ConstraintValidatorContext;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
+import org.springframework.data.repository.CrudRepository;
+import org.springframework.stereotype.Component;
+
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+
+@Component
+public class ExistsInDatabaseValidator implements ConstraintValidator<ExistsInDatabase, Object> {
+    
+    @Autowired
+    private ApplicationContext applicationContext;
+    
+    private Class<?> entityClass;
+    private String fieldName;
+    private CrudRepository<?, ?> repository;
+    
+    @Override
+    public void initialize(ExistsInDatabase constraintAnnotation) {
+        this.entityClass = constraintAnnotation.entityClass();
+        this.fieldName = constraintAnnotation.fieldName();
+        
+        // リポジトリを検索
+        this.repository = findRepository(entityClass);
+    }
+    
+    @Override
+    public boolean isValid(Object value, ConstraintValidatorContext context) {
+        if (value == null) {
+            return true;
+        }
+        
+        if (repository == null) {
+            return false;
+        }
+        
+        try {
+            boolean exists = repository.existsById(value);
+            if (!exists) {
+                context.disableDefaultConstraintViolation();
+                context.buildConstraintViolationWithTemplate(
+                    String.format("%sが%sに存在しません", fieldName, entityClass.getSimpleName()))
+                   .addConstraintViolation();
+            }
+            return exists;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
+    private CrudRepository<?, ?> findRepository(Class<?> entityClass) {
+        return applicationContext.getBeansOfType(CrudRepository.class)
+            .values()
+            .stream()
+            .filter(repo -> {
+                Type[] interfaces = repo.getClass().getGenericInterfaces();
+                for (Type type : interfaces) {
+                    if (type instanceof ParameterizedType) {
+                        ParameterizedType paramType = (ParameterizedType) type;
+                        Type[] args = paramType.getActualTypeArguments();
+                        if (args.length > 0 && args[0].equals(entityClass)) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            })
+            .findFirst()
+            .orElse(null);
+    }
+}
+```
+
+**使用例:**
+
+```java
+public class OrderCreateRequestDTO {
+    
+    @NotNull(message = "ユーザーIDは必須です")
+    @ExistsInDatabase(
+        entityClass = User.class,
+        fieldName = "userId",
+        message = "指定されたユーザーは存在しません"
+    )
+    private Long userId;
+    
+    // getter/setter
+}
+```
+
+### 複合バリデーション（クラスレベル）
+
+複数のフィールドにまたがるバリデーションを実装する方法について解説します。
+
+**カスタムアノテーション:**
+
+```java
+package com.example.myapp.validation;
+
+import javax.validation.Constraint;
+import javax.validation.Payload;
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+/**
+ * パスワードとパスワード確認が一致することを検証するカスタムバリデーション
+ */
+@Documented
+@Constraint(validatedBy = PasswordMatchValidator.class)
+@Target({ElementType.TYPE})  // クラスレベルに適用
+@Retention(RetentionPolicy.RUNTIME)
+public @interface PasswordMatch {
+    
+    String message() default "パスワードとパスワード確認が一致しません";
+    
+    Class<?>[] groups() default {};
+    
+    Class<? extends Payload>[] payload() default {};
+    
+    // パスワードフィールド名
+    String passwordField() default "password";
+    
+    // パスワード確認フィールド名
+    String passwordConfirmField() default "passwordConfirm";
+}
+```
+
+**バリデータークラス:**
+
+```java
+package com.example.myapp.validation;
+
+import javax.validation.ConstraintValidator;
+import javax.validation.ConstraintValidatorContext;
+import java.lang.reflect.Field;
+
+public class PasswordMatchValidator implements ConstraintValidator<PasswordMatch, Object> {
+    
+    private String passwordField;
+    private String passwordConfirmField;
+    
+    @Override
+    public void initialize(PasswordMatch constraintAnnotation) {
+        this.passwordField = constraintAnnotation.passwordField();
+        this.passwordConfirmField = constraintAnnotation.passwordConfirmField();
+    }
+    
+    @Override
+    public boolean isValid(Object value, ConstraintValidatorContext context) {
+        if (value == null) {
+            return true;
+        }
+        
+        try {
+            String password = getFieldValue(value, passwordField);
+            String passwordConfirm = getFieldValue(value, passwordConfirmField);
+            
+            if (password == null && passwordConfirm == null) {
+                return true;  // nullチェックは@NotNullなどで行う
+            }
+            
+            if (password == null || passwordConfirm == null) {
+                return true;  // 片方だけnullの場合は他のバリデーションに委譲
+            }
+            
+            if (!password.equals(passwordConfirm)) {
+                context.disableDefaultConstraintViolation();
+                context.buildConstraintViolationWithTemplate(
+                    "パスワードとパスワード確認が一致しません")
+                   .addPropertyNode(passwordConfirmField)
+                   .addConstraintViolation();
+                return false;
+            }
+            
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
+    private String getFieldValue(Object obj, String fieldName) throws Exception {
+        Field field = obj.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        Object value = field.get(obj);
+        return value != null ? value.toString() : null;
+    }
+}
+```
+
+**使用例:**
+
+```java
+@PasswordMatch(
+    passwordField = "password",
+    passwordConfirmField = "passwordConfirm",
+    message = "パスワードとパスワード確認が一致しません"
+)
+public class UserCreateRequestDTO {
+    
+    @NotBlank(message = "パスワードは必須です")
+    @StrongPassword
+    private String password;
+    
+    @NotBlank(message = "パスワード確認は必須です")
+    private String passwordConfirm;
+    
+    // getter/setter
+}
+```
+
+### バリデーショングループの活用
+
+異なるシナリオで異なるバリデーションルールを適用する場合、**バリデーショングループ**を使用します。
+
+**バリデーショングループの定義:**
+
+```java
+package com.example.myapp.validation;
+
+/**
+ * バリデーショングループの定義
+ */
+public interface ValidationGroups {
+    
+    // 作成時のバリデーション
+    interface Create {}
+    
+    // 更新時のバリデーション
+    interface Update {}
+    
+    // 削除時のバリデーション
+    interface Delete {}
+}
+```
+
+**DTOでの使用:**
+
+```java
+public class UserRequestDTO {
+    
+    @NotNull(groups = {ValidationGroups.Update.class, ValidationGroups.Delete.class},
+             message = "IDは必須です")
+    private Long id;
+    
+    @NotBlank(groups = {ValidationGroups.Create.class, ValidationGroups.Update.class},
+              message = "名前は必須です")
+    @Size(min = 1, max = 100, 
+          groups = {ValidationGroups.Create.class, ValidationGroups.Update.class},
+          message = "名前は1文字以上100文字以内で入力してください")
+    private String name;
+    
+    @NotBlank(groups = {ValidationGroups.Create.class},
+              message = "メールアドレスは必須です")
+    @Email(groups = {ValidationGroups.Create.class, ValidationGroups.Update.class},
+           message = "有効なメールアドレスを入力してください")
+    private String email;
+    
+    @NotBlank(groups = {ValidationGroups.Create.class},
+              message = "パスワードは必須です")
+    @StrongPassword(groups = {ValidationGroups.Create.class})
+    private String password;
+    
+    // getter/setter
+}
+```
+
+**コントローラーでの使用:**
+
+```java
+@RestController
+@RequestMapping("/api/users")
+@Validated
+public class UserController {
+    
+    private final UserService userService;
+    
+    @PostMapping
+    public ResponseEntity<UserResponseDTO> createUser(
+            @Validated(ValidationGroups.Create.class) 
+            @RequestBody UserRequestDTO request) {
+        UserResponseDTO createdUser = userService.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(createdUser);
+    }
+    
+    @PutMapping("/{id}")
+    public ResponseEntity<UserResponseDTO> updateUser(
+            @PathVariable Long id,
+            @Validated(ValidationGroups.Update.class) 
+            @RequestBody UserRequestDTO request) {
+        UserResponseDTO updatedUser = userService.update(id, request);
+        return ResponseEntity.ok(updatedUser);
+    }
+    
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteUser(
+            @Validated(ValidationGroups.Delete.class) 
+            @RequestBody UserRequestDTO request) {
+        userService.delete(request.getId());
+        return ResponseEntity.noContent().build();
+    }
+}
+```
+
+### エラーメッセージの国際化
+
+カスタムバリデーションのエラーメッセージを国際化する方法について解説します。
+
+**メッセージプロパティファイル（messages.properties）:**
+
+```properties
+# デフォルト（日本語）
+strongPassword.message=パスワードは8文字以上で、大文字、小文字、数字、記号を含む必要があります
+phoneNumber.message=有効な電話番号を入力してください
+passwordMatch.message=パスワードとパスワード確認が一致しません
+```
+
+**メッセージプロパティファイル（messages_en.properties）:**
+
+```properties
+# 英語
+strongPassword.message=Password must be at least 8 characters and contain uppercase, lowercase, digit, and special character
+phoneNumber.message=Please enter a valid phone number
+passwordMatch.message=Password and password confirmation do not match
+```
+
+**アノテーションでの使用:**
+
+```java
+@StrongPassword(message = "{strongPassword.message}")
+private String password;
+
+@PhoneNumber(message = "{phoneNumber.message}")
+private String phoneNumber;
+```
+
+**設定クラス:**
+
+```java
+@Configuration
+public class ValidationConfig {
+    
+    @Bean
+    public MessageSource messageSource() {
+        ReloadableResourceBundleMessageSource messageSource = 
+            new ReloadableResourceBundleMessageSource();
+        messageSource.setBasename("classpath:messages");
+        messageSource.setDefaultEncoding("UTF-8");
+        return messageSource;
+    }
+    
+    @Bean
+    public LocalValidatorFactoryBean validator() {
+        LocalValidatorFactoryBean factory = new LocalValidatorFactoryBean();
+        factory.setValidationMessageSource(messageSource());
+        return factory;
+    }
+}
+```
+
+### まとめ
+
+カスタムバリデーションを実装することで、以下のメリットが得られます：
+
+1. **ビジネスロジックの明確化**: バリデーションルールがアノテーションとして明確に表現される
+2. **再利用性**: 同じバリデーションを複数の場所で再利用できる
+3. **保守性**: バリデーションロジックが一箇所に集約され、変更が容易
+4. **テストの容易性**: バリデーションロジックを独立してテストできる
+5. **国際化対応**: エラーメッセージを簡単に国際化できる
+
+**シニアエンジニアとして考慮すべき点:**
+
+1. **パフォーマンス**: データベースアクセスを伴うバリデーションは、パフォーマンスに注意
+2. **エラーハンドリング**: バリデーションエラーが発生した場合の適切なエラーレスポンス設計
+3. **テストカバレッジ**: カスタムバリデーションのテストを十分に実施
+4. **ドキュメント化**: カスタムバリデーションの仕様を明確にドキュメント化
+5. **再利用性と柔軟性のバランス**: 過度に複雑なカスタムバリデーションは避け、適切な抽象化レベルを維持
+
+これらの原則に従うことで、保守性が高く、テストしやすいバリデーションシステムを構築できます。
+

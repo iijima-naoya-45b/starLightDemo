@@ -1,0 +1,525 @@
+---
+title: "パフォーマンスチューニング虎の巻"
+label: "パフォーマンスチューニング虎の巻"
+---
+
+## パフォーマンスチューニング虎の巻
+
+Spring Bootアプリケーションのパフォーマンスを向上させるための実践的なテクニックを、問題の特定から解決まで体系的に解説します。
+
+### パフォーマンスチューニングの基本フロー
+
+```
+1. 問題の特定（プロファイリング）
+   ↓
+2. ボトルネックの分析
+   ↓
+3. 最適化の実施
+   ↓
+4. 効果の測定
+   ↓
+5. 繰り返し改善
+```
+
+### 1. データベースクエリの最適化
+
+#### 問題の特定
+
+```java
+// パフォーマンスログを有効化
+# application.properties
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+logging.level.org.hibernate.SQL=DEBUG
+logging.level.org.hibernate.type.descriptor.sql.BasicBinder=TRACE
+```
+
+#### クエリの最適化テクニック
+
+**1. インデックスの活用**
+
+```java
+@Entity
+@Table(name = "users", indexes = {
+    @Index(name = "idx_email", columnList = "email"),
+    @Index(name = "idx_name_email", columnList = "name,email")
+})
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @Column(name = "email", nullable = false)
+    private String email;  // インデックスが設定される
+    
+    @Column(name = "name", nullable = false)
+    private String name;
+}
+
+// 複合インデックスを使用したクエリ
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    // インデックスを活用した検索
+    List<User> findByEmail(String email);  // idx_emailを使用
+    List<User> findByNameAndEmail(String name, String email);  // idx_name_emailを使用
+}
+```
+
+**2. 必要なカラムのみ取得（プロジェクション）**
+
+```java
+// 悪い例: すべてのカラムを取得
+List<User> users = userRepository.findAll();
+for (User user : users) {
+    System.out.println(user.getName());  // nameだけ使用しているのに、全カラムを取得
+}
+
+// 良い例: 必要なカラムのみ取得
+public interface UserNameOnly {
+    String getName();
+}
+
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    List<UserNameOnly> findAllProjectedBy();
+    
+    // または、@Queryを使用
+    @Query("SELECT u.name FROM User u")
+    List<String> findAllNames();
+}
+```
+
+**3. バッチ処理の最適化**
+
+```java
+@Service
+@Transactional
+public class UserService {
+    @Autowired
+    private UserRepository userRepository;
+    
+    public void saveUsersInBatch(List<User> users) {
+        int batchSize = 50;
+        for (int i = 0; i < users.size(); i += batchSize) {
+            List<User> batch = users.subList(i, Math.min(i + batchSize, users.size()));
+            userRepository.saveAll(batch);
+            userRepository.flush();  // バッチごとにフラッシュ
+            userRepository.clear();  // エンティティマネージャーをクリア
+        }
+    }
+}
+
+// application.properties
+spring.jpa.properties.hibernate.jdbc.batch_size=50
+spring.jpa.properties.hibernate.order_inserts=true
+spring.jpa.properties.hibernate.order_updates=true
+```
+
+**4. ページングの活用**
+
+```java
+@Service
+public class UserService {
+    @Autowired
+    private UserRepository userRepository;
+    
+    // 悪い例: すべてのデータを取得
+    public List<User> getAllUsers() {
+        return userRepository.findAll();  // 10万件のデータを一度に取得
+    }
+    
+    // 良い例: ページングを使用
+    public Page<User> getUsers(int page, int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        return userRepository.findAll(pageable);  // 必要な分だけ取得
+    }
+}
+```
+
+### 2. N+1問題の解決
+
+#### 問題の特定
+
+```java
+// ログでN+1問題を確認
+// 以下のようなログが大量に出力される場合、N+1問題が発生している可能性が高い
+// SELECT * FROM users
+// SELECT * FROM orders WHERE user_id = 1
+// SELECT * FROM orders WHERE user_id = 2
+// SELECT * FROM orders WHERE user_id = 3
+// ...
+```
+
+#### 解決方法
+
+**1. JOIN FETCHの使用**
+
+```java
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    // JOIN FETCHで一度に取得
+    @Query("SELECT DISTINCT u FROM User u JOIN FETCH u.orders")
+    List<User> findAllWithOrders();
+    
+    // 条件付きJOIN FETCH
+    @Query("SELECT u FROM User u JOIN FETCH u.orders o WHERE o.status = :status")
+    List<User> findUsersWithOrdersByStatus(@Param("status") OrderStatus status);
+}
+```
+
+**2. @EntityGraphの使用**
+
+```java
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    @EntityGraph(attributePaths = {"orders"})
+    List<User> findAll();
+    
+    @EntityGraph(attributePaths = {"orders", "orders.orderItems"})
+    Optional<User> findById(Long id);
+}
+```
+
+**3. バッチサイズの設定**
+
+```java
+@Entity
+public class User {
+    @OneToMany(fetch = FetchType.LAZY)
+    @BatchSize(size = 50)
+    private List<Order> orders;
+}
+```
+
+### 3. キャッシングの活用
+
+#### Spring Cacheの設定
+
+```java
+@Configuration
+@EnableCaching
+public class CacheConfig {
+    
+    @Bean
+    public CacheManager cacheManager(RedisConnectionFactory connectionFactory) {
+        RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
+            .entryTtl(Duration.ofMinutes(10))
+            .serializeKeysWith(RedisSerializationContext.SerializationPair
+                .fromSerializer(new StringRedisSerializer()))
+            .serializeValuesWith(RedisSerializationContext.SerializationPair
+                .fromSerializer(new GenericJackson2JsonRedisSerializer()));
+        
+        return RedisCacheManager.builder(connectionFactory)
+            .cacheDefaults(config)
+            .build();
+    }
+}
+```
+
+#### キャッシュの使用
+
+```java
+@Service
+public class UserService {
+    @Autowired
+    private UserRepository userRepository;
+    
+    // キャッシュを使用
+    @Cacheable(value = "users", key = "#id")
+    public User findById(Long id) {
+        return userRepository.findById(id).orElseThrow();
+    }
+    
+    // キャッシュを更新
+    @CachePut(value = "users", key = "#user.id")
+    public User updateUser(User user) {
+        return userRepository.save(user);
+    }
+    
+    // キャッシュを削除
+    @CacheEvict(value = "users", key = "#id")
+    public void deleteUser(Long id) {
+        userRepository.deleteById(id);
+    }
+    
+    // すべてのキャッシュを削除
+    @CacheEvict(value = "users", allEntries = true)
+    public void clearAllCache() {
+        // キャッシュをクリア
+    }
+}
+```
+
+### 4. コネクションプールの最適化
+
+#### HikariCPの設定
+
+```properties
+# application.properties
+spring.datasource.hikari.maximum-pool-size=20
+spring.datasource.hikari.minimum-idle=5
+spring.datasource.hikari.connection-timeout=30000
+spring.datasource.hikari.idle-timeout=600000
+spring.datasource.hikari.max-lifetime=1800000
+spring.datasource.hikari.leak-detection-threshold=60000
+```
+
+#### プールサイズの計算
+
+```java
+// 推奨されるプールサイズの計算式
+// connections = ((core_count * 2) + effective_spindle_count)
+
+// 例: 4コアCPU、1つのディスクの場合
+// connections = (4 * 2) + 1 = 9
+// ただし、実際の負荷に応じて調整が必要
+```
+
+### 5. 非同期処理の活用
+
+#### @Asyncの設定
+
+```java
+@Configuration
+@EnableAsync
+public class AsyncConfig {
+    
+    @Bean(name = "taskExecutor")
+    public Executor taskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(5);
+        executor.setMaxPoolSize(10);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("async-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        return executor;
+    }
+}
+```
+
+#### 非同期処理の実装
+
+```java
+@Service
+public class EmailService {
+    
+    @Async("taskExecutor")
+    public CompletableFuture<Void> sendEmail(String to, String subject, String body) {
+        // メール送信処理（時間がかかる）
+        try {
+            Thread.sleep(1000);  // メール送信のシミュレーション
+            System.out.println("Email sent to: " + to);
+            return CompletableFuture.completedFuture(null);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+}
+
+@Service
+public class UserService {
+    @Autowired
+    private EmailService emailService;
+    
+    @Transactional
+    public User createUser(UserCreateRequest request) {
+        User user = userRepository.save(convertToEntity(request));
+        
+        // 非同期でメール送信（ブロックしない）
+        emailService.sendEmail(user.getEmail(), "Welcome", "Welcome message");
+        
+        return user;  // メール送信を待たずに返す
+    }
+}
+```
+
+### 6. メモリの最適化
+
+#### 不要なデータの削除
+
+```java
+@Service
+public class UserService {
+    @Autowired
+    private UserRepository userRepository;
+    
+    // 悪い例: すべてのデータをメモリに読み込む
+    public void processAllUsers() {
+        List<User> users = userRepository.findAll();  // 10万件をメモリに読み込む
+        for (User user : users) {
+            processUser(user);
+        }
+    }
+    
+    // 良い例: ストリーム処理でメモリ効率を向上
+    public void processAllUsers() {
+        int pageSize = 100;
+        int page = 0;
+        Page<User> userPage;
+        
+        do {
+            Pageable pageable = PageRequest.of(page, pageSize);
+            userPage = userRepository.findAll(pageable);
+            
+            for (User user : userPage.getContent()) {
+                processUser(user);
+            }
+            
+            page++;
+        } while (userPage.hasNext());
+    }
+}
+```
+
+#### ガベージコレクションの最適化
+
+```bash
+# JVMオプションの設定
+java -Xms2g -Xmx4g \
+     -XX:+UseG1GC \
+     -XX:MaxGCPauseMillis=200 \
+     -XX:+PrintGCDetails \
+     -XX:+PrintGCTimeStamps \
+     -jar myapp.jar
+```
+
+### 7. ロギングの最適化
+
+#### ログレベルの調整
+
+```properties
+# application.properties
+# 本番環境では、不要なログを無効化
+logging.level.root=INFO
+logging.level.com.example.myapp=INFO
+logging.level.org.springframework.web=WARN
+logging.level.org.hibernate.SQL=WARN  # SQLログは本番では無効化
+```
+
+#### 非同期ロギング
+
+```xml
+<!-- logback-spring.xml -->
+<configuration>
+    <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <appender-ref ref="FILE"/>
+    </appender>
+    
+    <root level="INFO">
+        <appender-ref ref="ASYNC_FILE"/>
+    </root>
+</configuration>
+```
+
+### 8. プロファイリングツールの使用
+
+#### JProfilerの使用
+
+```java
+// プロファイリングポイントの設定
+@Service
+public class UserService {
+    public User findById(Long id) {
+        // プロファイリング開始
+        long startTime = System.currentTimeMillis();
+        
+        User user = userRepository.findById(id).orElseThrow();
+        
+        // プロファイリング終了
+        long duration = System.currentTimeMillis() - startTime;
+        if (duration > 100) {
+            log.warn("Slow query detected: findById took {}ms", duration);
+        }
+        
+        return user;
+    }
+}
+```
+
+#### Spring Boot Actuatorの使用
+
+```xml
+<!-- pom.xml -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-actuator</artifactId>
+</dependency>
+```
+
+```properties
+# application.properties
+management.endpoints.web.exposure.include=health,metrics,prometheus
+management.metrics.export.prometheus.enabled=true
+```
+
+### 9. パフォーマンステスト
+
+#### 負荷テストの実施
+
+```java
+@Test
+public void testUserServicePerformance() {
+    // 1000件のユーザーを作成
+    List<User> users = createTestUsers(1000);
+    
+    long startTime = System.currentTimeMillis();
+    
+    for (User user : users) {
+        userService.findById(user.getId());
+    }
+    
+    long duration = System.currentTimeMillis() - startTime;
+    
+    // 1000件の取得が1秒以内に完了すること
+    assertThat(duration).isLessThan(1000);
+    
+    // 1件あたりの平均時間
+    double averageTime = (double) duration / users.size();
+    System.out.println("Average time per user: " + averageTime + "ms");
+}
+```
+
+### 10. チェックリスト
+
+パフォーマンスチューニングのチェックリスト：
+
+#### データベース関連
+- [ ] 適切なインデックスが設定されているか
+- [ ] N+1問題が発生していないか
+- [ ] 必要なカラムのみ取得しているか
+- [ ] バッチ処理が最適化されているか
+- [ ] ページングが適切に使用されているか
+- [ ] コネクションプールサイズが適切か
+
+#### キャッシング関連
+- [ ] 頻繁にアクセスされるデータがキャッシュされているか
+- [ ] キャッシュの有効期限が適切に設定されているか
+- [ ] キャッシュの更新戦略が適切か
+
+#### 非同期処理関連
+- [ ] 時間のかかる処理が非同期化されているか
+- [ ] スレッドプールサイズが適切か
+
+#### メモリ関連
+- [ ] メモリリークが発生していないか
+- [ ] 不要なデータがメモリに残っていないか
+- [ ] ガベージコレクションが適切に動作しているか
+
+### まとめ
+
+パフォーマンスチューニングのポイント：
+
+1. **問題の特定**: プロファイリングツールを使用してボトルネックを特定
+2. **データベース最適化**: インデックス、JOIN FETCH、バッチ処理
+3. **キャッシング**: 頻繁にアクセスされるデータをキャッシュ
+4. **非同期処理**: 時間のかかる処理を非同期化
+5. **メモリ最適化**: 不要なデータの削除、ストリーム処理
+6. **継続的な改善**: パフォーマンステストを実施し、継続的に改善
+
+これらのテクニックを適切に組み合わせることで、アプリケーションのパフォーマンスを大幅に向上させることができます。
+
+

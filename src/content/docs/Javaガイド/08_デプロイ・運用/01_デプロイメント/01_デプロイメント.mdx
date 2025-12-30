@@ -1,0 +1,528 @@
+---
+title: "デプロイメント（Docker・Kubernetes）"
+label: "デプロイメント"
+---
+
+## Spring Bootアプリケーションのデプロイメント
+
+Spring BootアプリケーションをDockerとKubernetesを使用してデプロイする方法について解説します。
+
+### Dockerでのデプロイメント
+
+#### Dockerfileの作成
+
+**基本的なDockerfile:**
+
+```dockerfile
+# マルチステージビルドを使用
+# ビルドステージ
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /app
+
+# 依存関係をコピーしてキャッシュを活用
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+# ソースコードをコピーしてビルド
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+# 実行ステージ
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+
+# ビルドしたJARファイルをコピー
+COPY --from=build /app/target/*.jar app.jar
+
+# 非rootユーザーで実行
+RUN addgroup -S spring && adduser -S spring -G spring
+USER spring:spring
+
+# ポートを公開
+EXPOSE 8080
+
+# アプリケーションを起動
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
+
+**Gradleを使用する場合:**
+
+```dockerfile
+FROM gradle:8-jdk17 AS build
+WORKDIR /app
+
+COPY build.gradle settings.gradle ./
+COPY gradle ./gradle
+RUN gradle dependencies --no-daemon
+
+COPY src ./src
+RUN gradle build --no-daemon -x test
+
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+
+COPY --from=build /app/build/libs/*.jar app.jar
+
+RUN addgroup -S spring && adduser -S spring -G spring
+USER spring:spring
+
+EXPOSE 8080
+
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
+
+#### .dockerignoreの作成
+
+```dockerignore
+target/
+!target/*.jar
+.gradle/
+.idea/
+*.iml
+.git/
+.gitignore
+README.md
+.env
+*.log
+```
+
+#### Dockerイメージのビルドと実行
+
+```bash
+# イメージのビルド
+docker build -t myapp:latest .
+
+# コンテナの実行
+docker run -p 8080:8080 \
+  -e SPRING_PROFILES_ACTIVE=prod \
+  -e DB_HOST=postgres \
+  -e DB_USERNAME=myuser \
+  -e DB_PASSWORD=mypassword \
+  myapp:latest
+
+# バックグラウンドで実行
+docker run -d -p 8080:8080 \
+  --name myapp \
+  -e SPRING_PROFILES_ACTIVE=prod \
+  myapp:latest
+
+# ログの確認
+docker logs -f myapp
+
+# コンテナの停止
+docker stop myapp
+
+# コンテナの削除
+docker rm myapp
+```
+
+#### Docker Composeでの実行
+
+**docker-compose.yml:**
+
+```yaml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/mydb
+      - SPRING_DATASOURCE_USERNAME=myuser
+      - SPRING_DATASOURCE_PASSWORD=mypassword
+    depends_on:
+      - postgres
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=mydb
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=mypassword
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+
+networks:
+  app-network:
+    driver: bridge
+```
+
+**実行コマンド:**
+
+```bash
+# サービスの起動
+docker-compose up -d
+
+# ログの確認
+docker-compose logs -f app
+
+# サービスの停止
+docker-compose down
+
+# ボリュームも含めて削除
+docker-compose down -v
+```
+
+### Kubernetesでのデプロイメント
+
+#### Deploymentの作成
+
+**deployment.yaml:**
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+  labels:
+    app: myapp
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: myapp
+        image: myapp:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "prod"
+        - name: SPRING_DATASOURCE_URL
+          valueFrom:
+            secretKeyRef:
+              name: myapp-secrets
+              key: datasource-url
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: myapp-secrets
+              key: datasource-username
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: myapp-secrets
+              key: datasource-password
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 5
+```
+
+#### Serviceの作成
+
+**service.yaml:**
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: myapp-service
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    app: myapp
+```
+
+#### ConfigMapの作成
+
+**configmap.yaml:**
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: myapp-config
+data:
+  application.properties: |
+    server.port=8080
+    spring.jpa.hibernate.ddl-auto=validate
+    logging.level.root=INFO
+    logging.level.com.example.myapp=DEBUG
+```
+
+#### Secretの作成
+
+**secret.yaml:**
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: myapp-secrets
+type: Opaque
+data:
+  datasource-url: amRiYzpwb3N0Z3Jlc3FsOi8vcG9zdGdyZXM6NTQzMi9teWRi  # base64エンコード
+  datasource-username: bXl1c2Vy  # base64エンコード
+  datasource-password: bXlwYXNzd29yZA==  # base64エンコード
+```
+
+**Secretの作成コマンド:**
+
+```bash
+# コマンドラインから作成
+kubectl create secret generic myapp-secrets \
+  --from-literal=datasource-url=jdbc:postgresql://postgres:5432/mydb \
+  --from-literal=datasource-username=myuser \
+  --from-literal=datasource-password=mypassword
+```
+
+#### Ingressの作成
+
+**ingress.yaml:**
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myapp-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: myapp.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: myapp-service
+            port:
+              number: 80
+```
+
+#### デプロイメントの実行
+
+```bash
+# すべてのリソースをデプロイ
+kubectl apply -f deployment.yaml
+kubectl apply -f service.yaml
+kubectl apply -f configmap.yaml
+kubectl apply -f secret.yaml
+kubectl apply -f ingress.yaml
+
+# デプロイメントの状態確認
+kubectl get deployments
+kubectl get pods
+kubectl get services
+
+# ログの確認
+kubectl logs -f deployment/myapp
+
+# ポッドの詳細確認
+kubectl describe pod <pod-name>
+
+# デプロイメントの削除
+kubectl delete -f deployment.yaml
+kubectl delete -f service.yaml
+kubectl delete -f configmap.yaml
+kubectl delete -f secret.yaml
+kubectl delete -f ingress.yaml
+```
+
+### Spring Boot Actuatorの設定
+
+#### 依存関係の追加
+
+**Maven:**
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-actuator</artifactId>
+</dependency>
+```
+
+**Gradle:**
+
+```groovy
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+}
+```
+
+#### application.propertiesの設定
+
+```properties
+# Actuatorの有効化
+management.endpoints.web.exposure.include=health,info,metrics,prometheus
+management.endpoint.health.show-details=when-authorized
+
+# ヘルスチェックの詳細設定
+management.endpoint.health.probes.enabled=true
+management.health.livenessState.enabled=true
+management.health.readinessState.enabled=true
+
+# メトリクスの設定
+management.metrics.export.prometheus.enabled=true
+```
+
+#### ヘルスチェックエンドポイント
+
+```bash
+# 基本的なヘルスチェック
+curl http://localhost:8080/actuator/health
+
+# 詳細なヘルスチェック
+curl http://localhost:8080/actuator/health/liveness
+curl http://localhost:8080/actuator/health/readiness
+
+# カスタムヘルスチェック
+@Component
+public class CustomHealthIndicator implements HealthIndicator {
+    
+    @Override
+    public Health health() {
+        // カスタムヘルスチェックロジック
+        if (isHealthy()) {
+            return Health.up()
+                .withDetail("status", "OK")
+                .build();
+        } else {
+            return Health.down()
+                .withDetail("status", "ERROR")
+                .build();
+        }
+    }
+    
+    private boolean isHealthy() {
+        // ヘルスチェックロジック
+        return true;
+    }
+}
+```
+
+### CI/CDパイプラインの例
+
+#### GitHub Actions
+
+**.github/workflows/deploy.yml:**
+
+```yaml
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+    
+    - name: Build with Maven
+      run: mvn clean package -DskipTests
+    
+    - name: Build Docker image
+      run: docker build -t myapp:${{ github.sha }} .
+    
+    - name: Push to Docker Hub
+      run: |
+        echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+        docker tag myapp:${{ github.sha }} myapp:latest
+        docker push myapp:${{ github.sha }}
+        docker push myapp:latest
+    
+    - name: Deploy to Kubernetes
+      run: |
+        echo "${{ secrets.KUBECONFIG }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+        kubectl set image deployment/myapp myapp=myapp:${{ github.sha }}
+        kubectl rollout status deployment/myapp
+```
+
+### パフォーマンス最適化
+
+#### JVMオプションの設定
+
+```dockerfile
+ENTRYPOINT ["java", \
+  "-Xms512m", \
+  "-Xmx1024m", \
+  "-XX:+UseG1GC", \
+  "-XX:MaxGCPauseMillis=200", \
+  "-XX:+UseStringDeduplication", \
+  "-jar", "app.jar"]
+```
+
+#### リソース制限の設定
+
+```yaml
+resources:
+  requests:
+    memory: "512Mi"
+    cpu: "500m"
+  limits:
+    memory: "1Gi"
+    cpu: "1000m"
+```
+
+### まとめ
+
+Spring Bootアプリケーションのデプロイメントのポイント：
+
+- **Docker**: コンテナ化による環境の統一
+- **Docker Compose**: ローカル開発環境の構築
+- **Kubernetes**: 本番環境でのスケーラブルなデプロイメント
+- **Spring Boot Actuator**: ヘルスチェックとメトリクス
+- **CI/CD**: 自動化されたデプロイメントパイプライン
+- **リソース管理**: 適切なリソース制限の設定
+
+これらの手法により、Spring Bootアプリケーションを安全かつ効率的にデプロイできます。
+
+

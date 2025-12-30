@@ -1,0 +1,412 @@
+---
+title: "バックエンドの非機能要件"
+label: "バックエンドの非機能要件"
+---
+
+## バックエンドの非機能要件
+
+バックエンドの非機能要件は、システムの安定性、セキュリティ、パフォーマンスに直接影響する重要な要件です。
+
+### バックエンドで着目すべき非機能要件
+
+#### 1. パフォーマンス要件
+
+**レスポンスタイム:**
+- **APIレスポンスタイム**: 200ミリ秒以内（p95）
+- **データベースクエリ**: 100ミリ秒以内（p95）
+- **外部API呼び出し**: タイムアウト5秒
+
+**実装例:**
+
+パフォーマンス要件を満たすための実装例を示します。タイムアウト設定により、レスポンスが遅いリクエストを適切に処理できます。また、メトリクスを収集することで、パフォーマンスの問題を早期に発見できます。
+
+```java
+// Spring Bootでのタイムアウト設定
+// @RestControllerアノテーションで、このクラスがREST APIのコントローラーであることを示す
+@RestController
+public class UserController {
+    // @GetMappingでGETリクエストを処理
+    // @Timedアノテーションで、このメソッドの実行時間をメトリクスとして収集
+    // percentilesで、50パーセンタイル、95パーセンタイル、99パーセンタイルを記録
+    @GetMapping("/users/{id}")
+    @Timed(value = "user.get", percentiles = {0.5, 0.95, 0.99})
+    public ResponseEntity<User> getUser(@PathVariable String id) {
+        // CompletableFutureを使用して非同期処理を実装
+        // orTimeoutで200ミリ秒のタイムアウトを設定
+        // 200ミリ秒を超えた場合は、TimeoutExceptionが発生する
+        return CompletableFuture
+            .supplyAsync(() -> userService.getUser(id))
+            .orTimeout(200, TimeUnit.MILLISECONDS)
+            .join();
+    }
+}
+```
+
+この実装により、APIレスポンスタイムを200ミリ秒以内に保ち、パフォーマンスの問題を監視できます。
+
+**スループット:**
+- **RPS（Requests Per Second）**: 1000 RPS以上
+- **同時接続数**: 10000接続以上
+
+**実装例:**
+
+スループットを向上させるためのスレッドプール設定の実装例を示します。適切なスレッドプールサイズを設定することで、同時に処理できるリクエスト数を増やし、スループットを向上させます。
+
+```java
+// スレッドプールの設定
+// @Configurationアノテーションで、このクラスが設定クラスであることを示す
+@Configuration
+public class AsyncConfig implements AsyncConfigurer {
+    @Override
+    public Executor getAsyncExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        // コアスレッド数: 常に保持するスレッド数（10スレッド）
+        executor.setCorePoolSize(10);
+        // 最大スレッド数: 負荷が高い場合に増やせる最大スレッド数（50スレッド）
+        executor.setMaxPoolSize(50);
+        // キュー容量: スレッドがすべて使用中の場合に待機するリクエスト数（1000リクエスト）
+        executor.setQueueCapacity(1000);
+        // スレッド名のプレフィックス: ログで識別しやすくするため
+        executor.setThreadNamePrefix("async-");
+        executor.initialize();
+        return executor;
+    }
+}
+```
+
+この実装により、1000 RPS以上のスループットを実現し、同時に10,000接続以上を処理できます。
+
+#### 2. セキュリティ要件
+
+**認証・認可:**
+- JWTトークンの実装
+- ロールベースアクセス制御（RBAC）
+- セッション管理
+
+**実装例:**
+
+認証・認可を実装するためのSpring Securityの設定例を示します。URLパターンに応じて、アクセス権限を制御します。JWTトークンを使用することで、ステートレスな認証を実現します。
+
+```java
+// Spring Securityでの認証・認可
+// @Configurationアノテーションで、このクラスが設定クラスであることを示す
+// @EnableWebSecurityアノテーションで、Spring Securityを有効化
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            // リクエストの認可設定
+            .authorizeHttpRequests(auth -> auth
+                // /api/public/**は認証なしでアクセス可能
+                .requestMatchers("/api/public/**").permitAll()
+                // /api/admin/**はADMINロールを持つユーザーのみアクセス可能
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                // その他のリクエストは認証が必要
+                .anyRequest().authenticated()
+            )
+            // OAuth2リソースサーバーの設定
+            // JWTトークンを使用した認証を有効化
+            .oauth2ResourceServer(oauth2 -> oauth2
+                .jwt(jwt -> jwt.decoder(jwtDecoder()))
+            );
+        return http.build();
+    }
+}
+```
+
+この実装により、適切な認証・認可を実現し、セキュリティを確保できます。
+
+**データ保護:**
+- パスワードのハッシュ化（bcrypt、Argon2）
+- 機密情報の暗号化
+- SQLインジェクション対策
+
+**実装例:**
+
+データ保護を実装するための例を示します。パスワードのハッシュ化により、平文のパスワードを保存せずに済みます。JPAを使用することで、SQLインジェクション攻撃を自動的に防げます。
+
+```java
+// パスワードのハッシュ化
+// @Serviceアノテーションで、このクラスがサービス層のコンポーネントであることを示す
+@Service
+public class PasswordService {
+    // BCryptPasswordEncoderを使用してパスワードをハッシュ化
+    // BCryptは、ソルトを自動生成し、複数回のハッシュ化を行うため、セキュリティが高い
+    private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+    
+    // パスワードをハッシュ化して返す
+    // 同じパスワードでも、毎回異なるハッシュ値が生成される（ソルトが異なるため）
+    public String encode(String rawPassword) {
+        return encoder.encode(rawPassword);
+    }
+    
+    // 平文のパスワードとハッシュ化されたパスワードを比較
+    // ログイン時に、ユーザーが入力したパスワードとデータベースに保存されているハッシュを比較
+    public boolean matches(String rawPassword, String encodedPassword) {
+        return encoder.matches(rawPassword, encodedPassword);
+    }
+}
+
+// SQLインジェクション対策（JPAを使用）
+// @Repositoryアノテーションで、このインターフェースがリポジトリ層のコンポーネントであることを示す
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    // JPQL（Java Persistence Query Language）を使用したクエリ
+    // :emailはパラメータ化クエリで、自動的にエスケープされるため、SQLインジェクション攻撃を防げる
+    // ユーザー入力がそのままSQLに埋め込まれることはない
+    @Query("SELECT u FROM User u WHERE u.email = :email")
+    Optional<User> findByEmail(@Param("email") String email);
+}
+```
+
+この実装により、パスワードを安全に保存し、SQLインジェクション攻撃を防げます。
+
+**APIセキュリティ:**
+- レート制限
+- CORS設定
+- HTTPS必須
+
+**実装例:**
+
+```java
+// レート制限
+@Configuration
+public class RateLimitConfig {
+    @Bean
+    public RateLimiter rateLimiter() {
+        return RateLimiter.create(100.0);  // 100リクエスト/秒
+    }
+}
+
+@RestController
+public class ApiController {
+    @Autowired
+    private RateLimiter rateLimiter;
+    
+    @GetMapping("/api/data")
+    public ResponseEntity<?> getData() {
+        if (!rateLimiter.tryAcquire()) {
+            return ResponseEntity.status(429).build();
+        }
+        // 処理
+    }
+}
+```
+
+#### 3. 可用性要件
+
+**稼働率:**
+- **目標稼働率**: 99.9%（年間約8.76時間のダウンタイム）
+- **目標稼働率**: 99.99%（年間約52.56分のダウンタイム）
+
+**実装例:**
+
+```java
+// ヘルスチェックエンドポイント
+@RestController
+public class HealthController {
+    @GetMapping("/health")
+    public ResponseEntity<Map<String, String>> health() {
+        Map<String, String> status = new HashMap<>();
+        status.put("status", "UP");
+        status.put("database", checkDatabase() ? "UP" : "DOWN");
+        status.put("cache", checkCache() ? "UP" : "DOWN");
+        
+        HttpStatus httpStatus = status.values().stream()
+            .allMatch("UP"::equals) ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE;
+        
+        return ResponseEntity.status(httpStatus).body(status);
+    }
+}
+```
+
+**障害復旧:**
+- 自動フェイルオーバー
+- データベースレプリケーション
+- バックアップとリストア
+
+**実装例:**
+
+```java
+// リトライ機能
+@Retryable(value = {SQLException.class}, maxAttempts = 3)
+public User getUser(Long id) {
+    return userRepository.findById(id)
+        .orElseThrow(() -> new UserNotFoundException(id));
+}
+
+// サーキットブレーカー
+@Service
+public class UserService {
+    @CircuitBreaker(name = "userService", fallbackMethod = "getUserFallback")
+    public User getUser(Long id) {
+        return userRepository.findById(id)
+            .orElseThrow(() -> new UserNotFoundException(id));
+    }
+    
+    public User getUserFallback(Long id, Exception e) {
+        // フォールバック処理
+        return getCachedUser(id);
+    }
+}
+```
+
+#### 4. スケーラビリティ要件
+
+**水平スケーリング:**
+- ステートレスな設計
+- セッションの外部化（Redis）
+- ロードバランサー対応
+
+**実装例:**
+
+```java
+// セッションの外部化
+@Configuration
+public class SessionConfig {
+    @Bean
+    public RedisConnectionFactory connectionFactory() {
+        return new LettuceConnectionFactory();
+    }
+    
+    @Bean
+    public RedisTemplate<String, Object> redisTemplate() {
+        RedisTemplate<String, Object> template = new RedisTemplate<>();
+        template.setConnectionFactory(connectionFactory());
+        return template;
+    }
+}
+```
+
+**垂直スケーリング:**
+- リソース使用率の最適化
+- メモリリークの防止
+- GCチューニング
+
+#### 5. データ整合性要件
+
+**トランザクション管理:**
+- ACID特性の保証
+- 分散トランザクションの対応
+- 楽観的ロック・悲観的ロック
+
+**実装例:**
+
+```java
+// トランザクション管理
+@Service
+@Transactional
+public class OrderService {
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Order createOrder(OrderRequest request) {
+        // 在庫チェック
+        Product product = productRepository.findById(request.getProductId())
+            .orElseThrow(() -> new ProductNotFoundException(request.getProductId()));
+        
+        if (product.getStock() < request.getQuantity()) {
+            throw new InsufficientStockException();
+        }
+        
+        // 在庫を減らす
+        product.decreaseStock(request.getQuantity());
+        productRepository.save(product);
+        
+        // 注文を作成
+        Order order = new Order(request);
+        return orderRepository.save(order);
+    }
+}
+```
+
+#### 6. ログ・監視要件
+
+**ログ:**
+- 構造化ログ（JSON形式）
+- ログレベル（ERROR、WARN、INFO、DEBUG）
+- ログの集約（ELK Stack、CloudWatch）
+
+**実装例:**
+
+```java
+// 構造化ログ
+@Slf4j
+@RestController
+public class UserController {
+    @GetMapping("/users/{id}")
+    public ResponseEntity<User> getUser(@PathVariable String id) {
+        log.info("Getting user", Map.of(
+            "userId", id,
+            "timestamp", Instant.now()
+        ));
+        
+        User user = userService.getUser(id);
+        
+        log.info("User retrieved", Map.of(
+            "userId", id,
+            "userName", user.getName()
+        ));
+        
+        return ResponseEntity.ok(user);
+    }
+}
+```
+
+**監視:**
+- メトリクスの収集（Prometheus、CloudWatch）
+- アラートの設定
+- ダッシュボードの作成
+
+### バックエンドの非機能要件チェックリスト
+
+#### パフォーマンス
+- [ ] APIレスポンスタイムが200ミリ秒以内（p95）
+- [ ] データベースクエリが100ミリ秒以内（p95）
+- [ ] スループットが1000 RPS以上
+- [ ] 同時接続数が10000接続以上
+
+#### セキュリティ
+- [ ] 認証・認可が実装されている
+- [ ] パスワードがハッシュ化されている
+- [ ] SQLインジェクション対策が実装されている
+- [ ] レート制限が実装されている
+- [ ] HTTPSが使用されている
+
+#### 可用性
+- [ ] 稼働率が99.9%以上
+- [ ] ヘルスチェックエンドポイントが実装されている
+- [ ] リトライ機能が実装されている
+- [ ] サーキットブレーカーが実装されている
+- [ ] バックアップとリストアが実装されている
+
+#### スケーラビリティ
+- [ ] ステートレスな設計になっている
+- [ ] セッションが外部化されている
+- [ ] ロードバランサーに対応している
+- [ ] 水平スケーリングが可能
+
+#### データ整合性
+- [ ] トランザクション管理が実装されている
+- [ ] ACID特性が保証されている
+- [ ] 楽観的ロック・悲観的ロックが適切に使用されている
+
+#### ログ・監視
+- [ ] 構造化ログが実装されている
+- [ ] メトリクスが収集されている
+- [ ] アラートが設定されている
+- [ ] ダッシュボードが作成されている
+
+### まとめ
+
+バックエンドの非機能要件：
+
+- **パフォーマンス**: レスポンスタイム、スループット、同時接続数
+- **セキュリティ**: 認証・認可、データ保護、APIセキュリティ
+- **可用性**: 稼働率、障害復旧、リトライ機能
+- **スケーラビリティ**: 水平スケーリング、垂直スケーリング
+- **データ整合性**: トランザクション管理、ACID特性
+- **ログ・監視**: 構造化ログ、メトリクス収集、アラート
+
+適切な非機能要件を定義・実装することで、安定したバックエンドシステムを構築できます。
+

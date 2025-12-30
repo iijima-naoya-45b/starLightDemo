@@ -1,0 +1,63 @@
+---
+title: "RDS"
+label: "RDS"
+---
+
+## RDS (Relational Database Service)
+
+RDSは、マネージドリレーショナルデータベースサービスです。
+
+### RDSエンジン
+
+- **MySQL**: オープンソースRDBMS
+- **PostgreSQL**: 高度な機能を持つRDBMS
+- **Aurora**: AWS独自の高性能データベース
+- **MariaDB**: MySQL互換
+- **Oracle**: エンタープライズ向け
+- **SQL Server**: Microsoft SQL Server
+
+### マルチAZ配置
+
+```yaml
+Resources:
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: mysql
+      EngineVersion: '8.0'
+      DBInstanceClass: db.t3.medium
+      MultiAZ: true
+      StorageType: gp3
+      AllocatedStorage: 100
+      MasterUsername: admin
+      MasterUserPassword: !Ref DBPassword
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: '03:00-04:00'
+```
+
+### リードレプリカ
+
+```yaml
+ReadReplica:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    SourceDBInstanceIdentifier: !Ref DBInstance
+    DBInstanceClass: db.t3.medium
+    PubliclyAccessible: false
+```
+
+### 実践例: Aurora Serverless
+
+```yaml
+AuroraCluster:
+  Type: AWS::RDS::DBCluster
+  Properties:
+    Engine: aurora-mysql
+    EngineMode: serverless
+    ScalingConfiguration:
+      MinCapacity: 2
+      MaxCapacity: 16
+      AutoPause: true
+      SecondsUntilAutoPause: 300
+```
+

@@ -1,0 +1,138 @@
+---
+title: "その他のフック"
+label: "その他のフック"
+---
+
+## その他のフック
+
+### useContext
+
+`useContext`は、Contextの値を取得するためのフックです。
+
+```jsx
+import { createContext, useContext } from 'react';
+
+const ThemeContext = createContext('light');
+
+function ThemedButton() {
+  const theme = useContext(ThemeContext);
+  return <button className={theme}>Themed Button</button>;
+}
+```
+
+### useReducer
+
+`useReducer`は、複雑な状態管理に適したフックです。
+
+```jsx
+import { useReducer } from 'react';
+
+function reducer(state, action) {
+  switch (action.type) {
+    case 'increment':
+      return { count: state.count + 1 };
+    case 'decrement':
+      return { count: state.count - 1 };
+    default:
+      throw new Error();
+  }
+}
+
+function Counter() {
+  const [state, dispatch] = useReducer(reducer, { count: 0 });
+
+  return (
+    <div>
+      <p>Count: {state.count}</p>
+      <button onClick={() => dispatch({ type: 'increment' })}>+</button>
+      <button onClick={() => dispatch({ type: 'decrement' })}>-</button>
+    </div>
+  );
+}
+```
+
+### useMemo
+
+`useMemo`は、計算結果をメモ化するためのフックです。
+
+```jsx
+import { useMemo } from 'react';
+
+function ExpensiveComponent({ items }) {
+  const expensiveValue = useMemo(() => {
+    return items.reduce((sum, item) => sum + item.value, 0);
+  }, [items]);
+
+  return <div>Total: {expensiveValue}</div>;
+}
+```
+
+### useCallback
+
+`useCallback`は、関数をメモ化するためのフックです。
+
+```jsx
+import { useCallback, useState } from 'react';
+
+function Parent() {
+  const [count, setCount] = useState(0);
+
+  const handleClick = useCallback(() => {
+    setCount(count + 1);
+  }, [count]);
+
+  return <Child onClick={handleClick} />;
+}
+```
+
+### useRef
+
+`useRef`は、DOM要素への参照を保持するためのフックです。
+
+```jsx
+import { useRef } from 'react';
+
+function TextInput() {
+  const inputRef = useRef(null);
+
+  const focusInput = () => {
+    inputRef.current.focus();
+  };
+
+  return (
+    <div>
+      <input ref={inputRef} type="text" />
+      <button onClick={focusInput}>Focus Input</button>
+    </div>
+  );
+}
+```
+
+### カスタムフック
+
+```jsx
+function useCounter(initialValue = 0) {
+  const [count, setCount] = useState(initialValue);
+
+  const increment = () => setCount(count + 1);
+  const decrement = () => setCount(count - 1);
+  const reset = () => setCount(initialValue);
+
+  return { count, increment, decrement, reset };
+}
+
+// 使用例
+function Counter() {
+  const { count, increment, decrement, reset } = useCounter(0);
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={increment}>+</button>
+      <button onClick={decrement}>-</button>
+      <button onClick={reset}>Reset</button>
+    </div>
+  );
+}
+```
+

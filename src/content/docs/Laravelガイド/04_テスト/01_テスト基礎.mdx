@@ -1,0 +1,93 @@
+---
+title: "テスト基礎"
+label: "テスト基礎"
+---
+
+## Laravelテスト基礎
+
+### テストの作成
+
+```bash
+# テストファイルの作成
+php artisan make:test UserTest
+
+# Featureテスト
+php artisan make:test UserTest --unit
+```
+
+### Featureテスト
+
+```php
+<?php
+// tests/Feature/UserTest.php
+namespace Tests\Feature;
+
+use Tests\TestCase;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+class UserTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_user_can_be_created()
+    {
+        $user = User::factory()->create([
+            'name' => 'John Doe',
+            'email' => 'john@example.com',
+        ]);
+
+        $this->assertDatabaseHas('users', [
+            'email' => 'john@example.com',
+        ]);
+    }
+
+    public function test_user_can_login()
+    {
+        $user = User::factory()->create([
+            'password' => bcrypt('password'),
+        ]);
+
+        $response = $this->postJson('/api/login', [
+            'email' => $user->email,
+            'password' => 'password',
+        ]);
+
+        $response->assertStatus(200)
+                 ->assertJsonStructure(['token']);
+    }
+}
+```
+
+### ファクトリー
+
+```php
+<?php
+// database/factories/UserFactory.php
+namespace Database\Factories;
+
+use App\Models\User;
+use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
+
+class UserFactory extends Factory
+{
+    protected $model = User::class;
+
+    public function definition()
+    {
+        return [
+            'name' => $this->faker->name(),
+            'email' => $this->faker->unique()->safeEmail(),
+            'email_verified_at' => now(),
+            'password' => bcrypt('password'),
+            'remember_token' => Str::random(10),
+        ];
+    }
+}
+
+// 使用例
+$user = User::factory()->create();
+$users = User::factory()->count(10)->create();
+```
+

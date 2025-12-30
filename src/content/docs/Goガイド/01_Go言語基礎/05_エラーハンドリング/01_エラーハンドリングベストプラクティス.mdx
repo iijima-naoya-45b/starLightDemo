@@ -1,0 +1,219 @@
+---
+title: "エラーハンドリングベストプラクティス"
+label: "エラーハンドリングベストプラクティス"
+---
+
+## エラーハンドリングベストプラクティス
+
+Goのエラーハンドリングは、他の言語とは異なるアプローチを取ります。適切なエラーハンドリングにより、堅牢で保守性の高いコードを書くことができます。
+
+### なぜエラーハンドリングが重要なのか
+
+#### エラーを無視する問題
+
+**問題のあるコード:**
+
+```go
+func processFile(filename string) {
+    file, _ := os.Open(filename) // エラーを無視
+    defer file.Close()
+    
+    data := make([]byte, 100)
+    file.Read(data) // エラーを無視
+    // 問題: エラーが発生しても気づかない
+    // 問題: デバッグが困難
+}
+```
+
+**適切なエラーハンドリング:**
+
+```go
+func processFile(filename string) error {
+    file, err := os.Open(filename)
+    if err != nil {
+        return fmt.Errorf("failed to open file: %w", err)
+    }
+    defer file.Close()
+    
+    data := make([]byte, 100)
+    if _, err := file.Read(data); err != nil {
+        return fmt.Errorf("failed to read file: %w", err)
+    }
+    return nil
+}
+```
+
+**メリット:**
+1. **エラーの可視化**: エラーが発生した箇所が明確
+2. **デバッグの容易さ**: エラーの原因を追跡可能
+3. **堅牢性**: エラーに対する適切な処理
+
+### エラーのラッピング
+
+#### エラーラッピングの基本
+
+```go
+import (
+    "errors"
+    "fmt"
+)
+
+// エラーをラップしてコンテキストを追加
+func processUser(id int) error {
+    user, err := getUser(id)
+    if err != nil {
+        return fmt.Errorf("failed to process user %d: %w", id, err)
+    }
+    
+    if err := validateUser(user); err != nil {
+        return fmt.Errorf("user validation failed: %w", err)
+    }
+    
+    return nil
+}
+```
+
+#### カスタムエラー型
+
+```go
+type UserError struct {
+    UserID int
+    Message string
+    Err error
+}
+
+func (e *UserError) Error() string {
+    return fmt.Sprintf("user %d: %s: %v", e.UserID, e.Message, e.Err)
+}
+
+func (e *UserError) Unwrap() error {
+    return e.Err
+}
+
+// 使用例
+func getUser(id int) (*User, error) {
+    user, err := db.Query(id)
+    if err != nil {
+        return nil, &UserError{
+            UserID:  id,
+            Message: "failed to query user",
+            Err:     err,
+        }
+    }
+    return user, nil
+}
+```
+
+### エラーのチェック
+
+#### errors.Isとerrors.As
+
+```go
+import (
+    "errors"
+    "os"
+)
+
+// errors.Is: エラーの種類をチェック
+func checkFile(filename string) error {
+    _, err := os.Stat(filename)
+    if err != nil {
+        if errors.Is(err, os.ErrNotExist) {
+            return fmt.Errorf("file does not exist: %s", filename)
+        }
+        return fmt.Errorf("failed to stat file: %w", err)
+    }
+    return nil
+}
+
+// errors.As: エラーの型をチェック
+func handleUserError(err error) {
+    var userErr *UserError
+    if errors.As(err, &userErr) {
+        log.Printf("User error: %d - %s", userErr.UserID, userErr.Message)
+    }
+}
+```
+
+### エラーのロギング
+
+```go
+import (
+    "log"
+    "os"
+)
+
+func processRequest(req *Request) error {
+    if err := validateRequest(req); err != nil {
+        log.Printf("Validation error: %v", err)
+        return err
+    }
+    
+    if err := processData(req); err != nil {
+        log.Printf("Processing error: %v", err)
+        return fmt.Errorf("failed to process request: %w", err)
+    }
+    
+    return nil
+}
+
+// 構造化ロギング
+func processRequestStructured(req *Request) error {
+    logger := log.New(os.Stdout, "", log.LstdFlags)
+    
+    if err := validateRequest(req); err != nil {
+        logger.Printf("level=error msg=\"validation failed\" error=%v", err)
+        return err
+    }
+    
+    return nil
+}
+```
+
+### 実践的な例: エラーハンドリングパターン
+
+```go
+// エラーを返す関数
+func divide(a, b float64) (float64, error) {
+    if b == 0 {
+        return 0, errors.New("division by zero")
+    }
+    return a / b, nil
+}
+
+// エラーをチェックして処理
+func calculate(a, b float64) error {
+    result, err := divide(a, b)
+    if err != nil {
+        return fmt.Errorf("calculation failed: %w", err)
+    }
+    
+    log.Printf("Result: %f", result)
+    return nil
+}
+
+// エラーの種類に応じた処理
+func handleCalculation(a, b float64) {
+    err := calculate(a, b)
+    if err != nil {
+        if errors.Is(err, errors.New("division by zero")) {
+            log.Println("Cannot divide by zero")
+        } else {
+            log.Printf("Unexpected error: %v", err)
+        }
+    }
+}
+```
+
+### まとめ
+
+Goのエラーハンドリングのポイント：
+
+- **エラーのチェック**: すべてのエラーを適切にチェック
+- **エラーのラッピング**: コンテキストを追加してエラーをラップ
+- **カスタムエラー型**: 独自のエラー型を定義
+- **errors.Is/As**: エラーの種類や型をチェック
+- **ロギング**: 適切なログレベルでエラーを記録
+
+適切なエラーハンドリングは、堅牢で保守性の高いコードを書くための重要な要素です。
+

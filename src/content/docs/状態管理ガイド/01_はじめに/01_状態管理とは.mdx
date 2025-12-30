@@ -1,0 +1,53 @@
+---
+title: "状態管理とは"
+label: "状態管理とは"
+---
+
+## 状態管理とは
+
+状態管理は、アプリケーションのデータとUIの状態を管理するための仕組みです。
+
+### 状態の種類
+
+#### 1. ローカル状態
+
+```jsx
+function Counter() {
+  const [count, setCount] = useState(0); // ローカル状態
+  return <div>{count}</div>;
+}
+```
+
+#### 2. グローバル状態
+
+```jsx
+// Zustandを使用したグローバル状態
+import { create } from 'zustand';
+
+const useStore = create((set) => ({
+  count: 0,
+  increment: () => set((state) => ({ count: state.count + 1 })),
+}));
+```
+
+#### 3. サーバー状態
+
+```jsx
+// React Queryを使用したサーバー状態
+import { useQuery } from '@tanstack/react-query';
+
+function UserProfile({ userId }) {
+  const { data } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  });
+  return <div>{data?.name}</div>;
+}
+```
+
+### 状態管理の選択基準
+
+- **ローカル状態**: `useState`、`useReducer`
+- **グローバル状態**: Context API、Zustand、Redux、Jotai
+- **サーバー状態**: React Query、SWR
+

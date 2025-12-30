@@ -1,0 +1,760 @@
+---
+title: "バックエンドの危険な行為と対策"
+label: "バックエンドの危険な行為と対策"
+---
+
+## バックエンドの危険な行為と対策
+
+バックエンドのセキュリティは、システム全体のセキュリティを決定する重要な要素です。危険な行為を理解し、適切な対策を実施することが重要です。
+
+### なぜバックエンドのセキュリティが重要なのか
+
+バックエンドは、データベースやビジネスロジックを扱うため、以下のような特徴があります：
+
+- **データへの直接アクセス**: データベースに直接アクセスする
+- **ビジネスロジックの実行**: 重要なビジネスロジックを実行する
+- **認証・認可の実装**: 認証・認可のロジックを実装する
+
+これらの特徴により、バックエンドでは特に注意が必要です。
+
+### 危険な行為1: SQLインジェクション
+
+#### なぜSQLインジェクションが危険なのか
+
+SQLインジェクションは、悪意のあるSQLコードを注入する攻撃です。SQLインジェクションが成功すると、以下のような問題が発生します：
+
+- **データベースへの不正アクセス**: データベースに直接アクセスできる
+- **データの漏洩**: すべてのデータが漏洩する可能性がある
+- **データの改ざん**: データが改ざんされる可能性がある
+- **データベースの破壊**: データベースが破壊される可能性がある
+
+#### 危険な実装例
+
+**問題のある実装:**
+
+```java
+// 危険な実装: 文字列連結でSQLを構築
+@RestController
+public class UserController {
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+    
+    @GetMapping("/users")
+    public List<User> getUsers(@RequestParam String name) {
+        // 危険: ユーザー入力をそのままSQLに埋め込む
+        String sql = "SELECT * FROM users WHERE name = '" + name + "'";
+        return jdbcTemplate.query(sql, new UserRowMapper());
+    }
+}
+
+// 攻撃例:
+// リクエスト: GET /users?name=' OR '1'='1
+// 実行されるSQL: SELECT * FROM users WHERE name = '' OR '1'='1'
+// → すべてのユーザーが取得される
+```
+
+**なぜ危険なのか:**
+
+- ユーザー入力をそのままSQLに埋め込むと、SQLインジェクション攻撃が可能になる
+- 攻撃者が任意のSQLを実行できる
+- データベースのすべてのデータが漏洩する可能性がある
+
+**実際の攻撃例:**
+
+```sql
+-- 攻撃者が以下のリクエストを送信:
+-- GET /users?name=' OR '1'='1' --
+
+-- 実行されるSQL:
+SELECT * FROM users WHERE name = '' OR '1'='1' --'
+
+-- 結果:
+-- すべてのユーザーが取得される
+
+-- より深刻な攻撃:
+-- GET /users?name='; DROP TABLE users; --
+
+-- 実行されるSQL:
+SELECT * FROM users WHERE name = ''; DROP TABLE users; --'
+
+-- 結果:
+-- usersテーブルが削除される
+```
+
+#### 安全な実装例
+
+**対策1: パラメータ化クエリを使用**
+
+```java
+// 安全な実装: パラメータ化クエリを使用
+@RestController
+public class UserController {
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+    
+    @GetMapping("/users")
+    public List<User> getUsers(@RequestParam String name) {
+        // パラメータ化クエリを使用
+        String sql = "SELECT * FROM users WHERE name = ?";
+        return jdbcTemplate.query(sql, new Object[]{name}, new UserRowMapper());
+    }
+}
+
+// メリット:
+// - ユーザー入力が自動的にエスケープされる
+// - SQLインジェクション攻撃を防げる
+// - パフォーマンスも向上（クエリプランの再利用）
+```
+
+**対策2: JPA/Hibernateを使用**
+
+```java
+// 安全な実装: JPA/Hibernateを使用
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    // メソッド名から自動的にクエリが生成される（パラメータ化クエリ）
+    List<User> findByName(String name);
+    
+    // または、@QueryアノテーションでJPQLを使用
+    @Query("SELECT u FROM User u WHERE u.name = :name")
+    List<User> findByName(@Param("name") String name);
+}
+
+// メリット:
+// - JPQLは自動的にパラメータ化クエリに変換される
+// - SQLインジェクション攻撃を防げる
+// - 型安全なクエリが書ける
+```
+
+**対策3: 入力値の検証**
+
+```java
+// 入力値の検証を追加
+@RestController
+public class UserController {
+    @Autowired
+    private UserRepository userRepository;
+    
+    @GetMapping("/users")
+    public List<User> getUsers(@RequestParam @NotBlank @Size(max = 100) String name) {
+        // バリデーションにより、不正な入力を防ぐ
+        return userRepository.findByName(name);
+    }
+}
+
+// バリデーションの効果:
+// - 空文字や長すぎる文字列を防ぐ
+// - SQLインジェクション攻撃の可能性を減らす
+// - データの整合性を保つ
+```
+
+### 危険な行為2: 認証・認可の不備
+
+#### なぜ認証・認可の不備が危険なのか
+
+認証・認可が不適切だと、以下のような問題が発生します：
+
+- **不正アクセス**: 認証されていないユーザーがアクセスできる
+- **権限の誤用**: 権限のないユーザーが操作を実行できる
+- **セッションハイジャック**: セッション情報が盗まれ、不正アクセスが発生する
+
+#### 危険な実装例
+
+**問題のある実装:**
+
+```java
+// 危険な実装: 認証チェックがない
+@RestController
+public class UserController {
+    @GetMapping("/users/{id}")
+    public User getUser(@PathVariable Long id) {
+        // 認証チェックがない
+        return userRepository.findById(id).orElse(null);
+    }
+    
+    @DeleteMapping("/users/{id}")
+    public void deleteUser(@PathVariable Long id) {
+        // 認証チェックがない
+        userRepository.deleteById(id);
+    }
+}
+
+// 問題点:
+// - 誰でもユーザー情報を取得できる
+// - 誰でもユーザーを削除できる
+// - セキュリティが確保されていない
+```
+
+**なぜ危険なのか:**
+
+- 認証チェックがないため、誰でもAPIにアクセスできる
+- 権限チェックがないため、権限のないユーザーも操作を実行できる
+- セキュリティホールが発生する
+
+**実際の攻撃例:**
+
+```bash
+# 攻撃者が以下のリクエストを送信:
+# GET /api/users/1
+# → 認証なしでユーザー情報を取得できる
+
+# DELETE /api/users/1
+# → 認証なしでユーザーを削除できる
+
+# これにより、すべてのユーザー情報が漏洩し、ユーザーが削除される
+```
+
+#### 安全な実装例
+
+**対策1: Spring Securityを使用**
+
+```java
+// 安全な実装: Spring Securityを使用
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/public/**").permitAll()  // 公開API
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")  // 管理者のみ
+                .requestMatchers("/api/users/**").authenticated()  // 認証が必要
+                .anyRequest().authenticated()
+            )
+            .oauth2ResourceServer(oauth2 -> oauth2
+                .jwt(jwt -> jwt.decoder(jwtDecoder()))
+            );
+        return http.build();
+    }
+}
+
+// コントローラーで認証情報を取得
+@RestController
+public class UserController {
+    @GetMapping("/api/users/me")
+    public User getCurrentUser(Authentication authentication) {
+        // 認証されたユーザーの情報を取得
+        String userId = authentication.getName();
+        return userRepository.findById(Long.parseLong(userId)).orElse(null);
+    }
+    
+    @DeleteMapping("/api/users/{id}")
+    @PreAuthorize("hasRole('ADMIN')")  // 管理者のみ実行可能
+    public void deleteUser(@PathVariable Long id) {
+        userRepository.deleteById(id);
+    }
+}
+```
+
+**対策2: リソースベースの認可**
+
+```java
+// リソースベースの認可を実装
+@RestController
+public class UserController {
+    @GetMapping("/api/users/{id}")
+    public User getUser(@PathVariable Long id, Authentication authentication) {
+        User user = userRepository.findById(id).orElseThrow();
+        
+        // 自分のリソースのみアクセス可能
+        String currentUserId = authentication.getName();
+        if (!user.getId().toString().equals(currentUserId) && 
+            !hasRole(authentication, "ADMIN")) {
+            throw new AccessDeniedException("Access denied");
+        }
+        
+        return user;
+    }
+    
+    private boolean hasRole(Authentication authentication, String role) {
+        return authentication.getAuthorities().stream()
+            .anyMatch(a -> a.getAuthority().equals("ROLE_" + role));
+    }
+}
+```
+
+### 危険な行為3: パスワードの不適切な管理
+
+#### なぜパスワードの不適切な管理が危険なのか
+
+パスワードの管理が不適切だと、以下のような問題が発生します：
+
+- **パスワードの漏洩**: パスワードが平文で保存され、漏洩する
+- **ブルートフォース攻撃**: 弱いパスワードが推測される
+- **パスワードリスト攻撃**: 漏洩したパスワードリストが使用される
+
+#### 危険な実装例
+
+**問題のある実装:**
+
+```java
+// 危険な実装: パスワードを平文で保存
+@Service
+public class UserService {
+    @Autowired
+    private UserRepository userRepository;
+    
+    public void createUser(String email, String password) {
+        User user = new User();
+        user.setEmail(email);
+        user.setPassword(password);  // 危険: 平文で保存
+        userRepository.save(user);
+    }
+    
+    public boolean authenticate(String email, String password) {
+        User user = userRepository.findByEmail(email);
+        return user != null && user.getPassword().equals(password);  // 危険: 平文で比較
+    }
+}
+
+// 問題点:
+// - パスワードが平文で保存される
+// - データベースが漏洩すると、すべてのパスワードが漏洩する
+// - パスワードが推測される可能性がある
+```
+
+**なぜ危険なのか:**
+
+- パスワードが平文で保存されると、データベースが漏洩した際にすべてのパスワードが漏洩する
+- パスワードが推測される可能性がある
+- 同じパスワードを使用している他のサービスも危険になる
+
+**実際の攻撃例:**
+
+```sql
+-- 攻撃者がデータベースにアクセス:
+-- SELECT email, password FROM users;
+
+-- 結果:
+-- email: user@example.com, password: password123
+-- email: admin@example.com, password: admin123
+
+-- 攻撃者は以下のことが可能:
+-- 1. すべてのアカウントにログインできる
+-- 2. パスワードリスト攻撃に使用できる
+-- 3. 他のサービスでも同じパスワードを試す
+```
+
+#### 安全な実装例
+
+**対策1: パスワードのハッシュ化**
+
+```java
+// 安全な実装: パスワードをハッシュ化
+@Service
+public class UserService {
+    @Autowired
+    private UserRepository userRepository;
+    
+    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    
+    public void createUser(String email, String password) {
+        User user = new User();
+        user.setEmail(email);
+        // パスワードをハッシュ化して保存
+        user.setPasswordHash(passwordEncoder.encode(password));
+        userRepository.save(user);
+    }
+    
+    public boolean authenticate(String email, String password) {
+        User user = userRepository.findByEmail(email);
+        if (user == null) {
+            return false;
+        }
+        // ハッシュ化されたパスワードと比較
+        return passwordEncoder.matches(password, user.getPasswordHash());
+    }
+}
+
+// メリット:
+// - パスワードがハッシュ化されて保存される
+// - データベースが漏洩しても、パスワードは復元できない
+// - 同じパスワードでも異なるハッシュ値が生成される（ソルトが異なるため）
+```
+
+**対策2: パスワードの強度チェック**
+
+```java
+// パスワードの強度をチェック
+@Service
+public class PasswordService {
+    public boolean isStrongPassword(String password) {
+        // パスワードの強度をチェック
+        if (password.length() < 12) {
+            return false;  // 12文字以上
+        }
+        
+        boolean hasUpper = password.chars().anyMatch(Character::isUpperCase);
+        boolean hasLower = password.chars().anyMatch(Character::isLowerCase);
+        boolean hasDigit = password.chars().anyMatch(Character::isDigit);
+        boolean hasSpecial = password.chars().anyMatch(ch -> "!@#$%^&*".indexOf(ch) >= 0);
+        
+        // 大文字、小文字、数字、記号を含む必要がある
+        return hasUpper && hasLower && hasDigit && hasSpecial;
+    }
+}
+
+// 使用例:
+@Service
+public class UserService {
+    @Autowired
+    private PasswordService passwordService;
+    
+    public void createUser(String email, String password) {
+        if (!passwordService.isStrongPassword(password)) {
+            throw new IllegalArgumentException("Password is too weak");
+        }
+        // パスワードを作成
+    }
+}
+```
+
+**対策3: パスワードリセット機能の適切な実装**
+
+```java
+// パスワードリセット機能の適切な実装
+@Service
+public class PasswordResetService {
+    @Autowired
+    private UserRepository userRepository;
+    
+    @Autowired
+    private EmailService emailService;
+    
+    public void requestPasswordReset(String email) {
+        User user = userRepository.findByEmail(email);
+        if (user == null) {
+            // ユーザーが存在しない場合でも、同じメッセージを返す（情報漏洩を防ぐ）
+            return;
+        }
+        
+        // リセットトークンを生成（ランダムで推測不可能な文字列）
+        String resetToken = generateSecureToken();
+        
+        // トークンをデータベースに保存（有効期限: 1時間）
+        user.setPasswordResetToken(resetToken);
+        user.setPasswordResetTokenExpiry(LocalDateTime.now().plusHours(1));
+        userRepository.save(user);
+        
+        // メールでリセットリンクを送信
+        String resetLink = "https://example.com/reset-password?token=" + resetToken;
+        emailService.sendPasswordResetEmail(user.getEmail(), resetLink);
+    }
+    
+    public void resetPassword(String token, String newPassword) {
+        User user = userRepository.findByPasswordResetToken(token);
+        
+        if (user == null || user.getPasswordResetTokenExpiry().isBefore(LocalDateTime.now())) {
+            throw new IllegalArgumentException("Invalid or expired token");
+        }
+        
+        // パスワードを更新
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setPasswordResetToken(null);
+        user.setPasswordResetTokenExpiry(null);
+        userRepository.save(user);
+    }
+    
+    private String generateSecureToken() {
+        // セキュアなランダムトークンを生成
+        SecureRandom random = new SecureRandom();
+        byte[] bytes = new byte[32];
+        random.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+}
+```
+
+### 危険な行為4: 不適切なエラーハンドリング
+
+#### なぜ不適切なエラーハンドリングが危険なのか
+
+エラーハンドリングが不適切だと、以下のような問題が発生します：
+
+- **情報漏洩**: エラーメッセージに機密情報が含まれる
+- **システム情報の漏洩**: エラーメッセージにシステムの内部情報が含まれる
+- **攻撃の手がかり**: エラーメッセージが攻撃の手がかりになる
+
+#### 危険な実装例
+
+**問題のある実装:**
+
+```java
+// 危険な実装: 詳細なエラーメッセージを返す
+@RestController
+public class UserController {
+    @GetMapping("/users/{id}")
+    public User getUser(@PathVariable Long id) {
+        try {
+            return userRepository.findById(id).orElse(null);
+        } catch (Exception e) {
+            // 危険: 詳細なエラーメッセージを返す
+            throw new ResponseStatusException(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "Error: " + e.getMessage() + "\nStack: " + 
+                Arrays.toString(e.getStackTrace()) + "\nSQL: " + getSql(e)
+            );
+        }
+    }
+}
+
+// 問題点:
+// - エラーメッセージにスタックトレースが含まれる
+// - SQLエラーが表示される
+// - システムの内部情報が漏洩する
+```
+
+**なぜ危険なのか:**
+
+- エラーメッセージにスタックトレースが含まれると、システムの構造が分かる
+- SQLエラーが表示されると、データベースの構造が分かる
+- システムの内部情報が漏洩すると、攻撃の手がかりになる
+
+**実際の攻撃例:**
+
+```bash
+# 攻撃者が以下のリクエストを送信:
+# GET /api/users/1' OR '1'='1
+
+# エラーメッセージ:
+# "Error: SQL syntax error near 'SELECT * FROM users WHERE id = '1' OR '1'='1'"
+# "Stack: [com.example.UserController.getUser(UserController.java:25), ...]"
+# "SQL: SELECT * FROM users WHERE id = '1' OR '1'='1'"
+
+# 攻撃者は以下の情報を取得:
+# 1. SQLインジェクションが可能であることが分かる
+# 2. データベースの構造が分かる
+# 3. システムの内部構造が分かる
+```
+
+#### 安全な実装例
+
+**対策1: 汎用的なエラーメッセージを返す**
+
+```java
+// 安全な実装: 汎用的なエラーメッセージを返す
+@RestController
+@ControllerAdvice
+public class GlobalExceptionHandler {
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleException(Exception e) {
+        // エラーの詳細はログに記録
+        log.error("Error occurred", e);
+        
+        // ユーザーには汎用的なエラーメッセージを返す
+        ErrorResponse error = new ErrorResponse(
+            "INTERNAL_SERVER_ERROR",
+            "エラーが発生しました。しばらくしてから再度お試しください。"
+        );
+        
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+    }
+}
+
+// エラーレスポンスのクラス
+public class ErrorResponse {
+    private String code;
+    private String message;
+    
+    // コンストラクタ、ゲッター、セッター
+}
+
+// メリット:
+// - エラーの詳細はログに記録されるが、ユーザーには表示されない
+// - システムの内部情報が漏洩しない
+// - 攻撃の手がかりが減る
+```
+
+**対策2: エラーログの適切な管理**
+
+```java
+// エラーログを適切に管理
+@Service
+public class ErrorLoggingService {
+    public void logError(Exception e, HttpServletRequest request) {
+        // エラーの詳細をログに記録
+        log.error("Error occurred", e, Map.of(
+            "path", request.getRequestURI(),
+            "method", request.getMethod(),
+            "timestamp", Instant.now()
+        ));
+        
+        // エラー報告サービスに送信（Sentryなど）
+        errorReportingService.captureException(e, Map.of(
+            "path", request.getRequestURI(),
+            "method", request.getMethod()
+        ));
+    }
+}
+
+// 注意点:
+// - 機密情報（パスワード、トークンなど）はログに含めない
+// - 個人情報はマスクする
+// - ログのアクセスを制限する
+```
+
+### 危険な行為5: 不適切なファイルアップロード処理
+
+#### なぜ不適切なファイルアップロード処理が危険なのか
+
+ファイルアップロード処理が不適切だと、以下のような問題が発生します：
+
+- **マルウェアのアップロード**: 悪意のあるファイルがアップロードされる
+- **サーバーへの不正アクセス**: アップロードされたファイルが実行され、サーバーに不正アクセスされる
+- **ストレージの浪費**: 大きなファイルがアップロードされ、ストレージが浪費される
+
+#### 危険な実装例
+
+**問題のある実装:**
+
+```java
+// 危険な実装: ファイルの検証がない
+@RestController
+public class FileController {
+    @PostMapping("/upload")
+    public ResponseEntity<String> uploadFile(@RequestParam("file") MultipartFile file) {
+        // 危険: ファイルの検証がない
+        String filename = file.getOriginalFilename();
+        file.transferTo(new File("/uploads/" + filename));
+        return ResponseEntity.ok("File uploaded");
+    }
+}
+
+// 問題点:
+// - ファイルの種類をチェックしていない
+// - ファイルサイズをチェックしていない
+// - ファイル名を検証していない
+// - パストラバーサル攻撃の可能性がある
+```
+
+**なぜ危険なのか:**
+
+- ファイルの種類をチェックしないと、実行可能ファイルがアップロードされる可能性がある
+- ファイルサイズをチェックしないと、大きなファイルがアップロードされ、ストレージが浪費される
+- ファイル名を検証しないと、パストラバーサル攻撃が可能になる
+
+**実際の攻撃例:**
+
+```bash
+# 攻撃者が以下のファイルをアップロード:
+# ファイル名: ../../../etc/passwd
+# 内容: システムファイルの内容
+
+# これにより、システムファイルが上書きされる可能性がある
+
+# または、PHPファイルをアップロード:
+# ファイル名: shell.php
+# 内容: <?php system($_GET['cmd']); ?>
+
+# これにより、サーバーで任意のコマンドが実行される
+```
+
+#### 安全な実装例
+
+**対策1: ファイルの検証**
+
+```java
+// 安全な実装: ファイルの検証を実装
+@RestController
+public class FileController {
+    private static final List<String> ALLOWED_EXTENSIONS = List.of("jpg", "jpeg", "png", "gif");
+    private static final long MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+    
+    @PostMapping("/upload")
+    public ResponseEntity<String> uploadFile(@RequestParam("file") MultipartFile file) {
+        // ファイルサイズをチェック
+        if (file.getSize() > MAX_FILE_SIZE) {
+            return ResponseEntity.badRequest().body("File size exceeds limit");
+        }
+        
+        // ファイルの種類をチェック
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null) {
+            return ResponseEntity.badRequest().body("Invalid filename");
+        }
+        
+        String extension = getFileExtension(originalFilename);
+        if (!ALLOWED_EXTENSIONS.contains(extension.toLowerCase())) {
+            return ResponseEntity.badRequest().body("File type not allowed");
+        }
+        
+        // ファイル名をサニタイズ（パストラバーサル攻撃を防ぐ）
+        String sanitizedFilename = sanitizeFilename(originalFilename);
+        
+        // ファイルの内容を検証（MIMEタイプのチェック）
+        String contentType = file.getContentType();
+        if (!isAllowedContentType(contentType)) {
+            return ResponseEntity.badRequest().body("Invalid content type");
+        }
+        
+        // ファイルを保存
+        String savedFilename = UUID.randomUUID().toString() + "." + extension;
+        file.transferTo(new File("/uploads/" + savedFilename));
+        
+        return ResponseEntity.ok("File uploaded: " + savedFilename);
+    }
+    
+    private String getFileExtension(String filename) {
+        int lastDot = filename.lastIndexOf('.');
+        return lastDot > 0 ? filename.substring(lastDot + 1) : "";
+    }
+    
+    private String sanitizeFilename(String filename) {
+        // 危険な文字を除去
+        return filename.replaceAll("[^a-zA-Z0-9._-]", "");
+    }
+    
+    private boolean isAllowedContentType(String contentType) {
+        return contentType != null && (
+            contentType.equals("image/jpeg") ||
+            contentType.equals("image/png") ||
+            contentType.equals("image/gif")
+        );
+    }
+}
+```
+
+**対策2: ファイルのスキャン**
+
+```java
+// アップロードされたファイルをスキャン
+@Service
+public class FileScanService {
+    public boolean scanFile(MultipartFile file) {
+        try {
+            // ウイルススキャンサービスを使用（ClamAVなど）
+            byte[] fileContent = file.getBytes();
+            return virusScanner.scan(fileContent);
+        } catch (IOException e) {
+            log.error("File scan failed", e);
+            return false;
+        }
+    }
+}
+
+// 使用例:
+@PostMapping("/upload")
+public ResponseEntity<String> uploadFile(@RequestParam("file") MultipartFile file) {
+    // ファイルをスキャン
+    if (!fileScanService.scanFile(file)) {
+        return ResponseEntity.badRequest().body("File contains malware");
+    }
+    
+    // ファイルを保存
+    // ...
+}
+```
+
+### まとめ
+
+バックエンドの危険な行為と対策：
+
+- **SQLインジェクション**: パラメータ化クエリ、JPA/Hibernate、入力値の検証
+- **認証・認可の不備**: Spring Security、リソースベースの認可
+- **パスワードの不適切な管理**: パスワードのハッシュ化、強度チェック、リセット機能の適切な実装
+- **不適切なエラーハンドリング**: 汎用的なエラーメッセージ、エラーログの適切な管理
+- **不適切なファイルアップロード処理**: ファイルの検証、ファイルのスキャン
+
+適切なセキュリティ対策により、バックエンドのセキュリティを確保できます。
+
