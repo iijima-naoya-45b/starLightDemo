@@ -1,0 +1,343 @@
+---
+title: "インフラ選定基準の基礎"
+label: "インフラ選定基準の基礎"
+---
+
+## インフラ選定基準の基礎
+
+インフラの選定は、システムのパフォーマンス、可用性、コスト、セキュリティに直接影響します。適切な選定基準により、最適なインフラを選択できます。
+
+### なぜインフラ選定基準が重要なのか
+
+#### インフラ選定の影響
+
+**実際の事例:**
+
+あるプロジェクトで、インフラ選定を適切に行わなかったため、以下のような問題が発生しました：
+
+- **問題**: 初期コストを重視し、低スペックのサーバーを選択
+- **影響**: トラフィック増加時にパフォーマンスが低下
+- **結果**: スケールアップが必要になり、結果的にコストが増加
+
+**インフラ選定の重要性:**
+- **パフォーマンス**: システムのパフォーマンスに直接影響
+- **コスト**: 長期的なコストに影響
+- **スケーラビリティ**: 将来の拡張性に影響
+- **可用性**: システムの可用性に影響
+
+### インフラ選定の基本原則
+
+#### 1. 要件の明確化
+
+**要件の明確化:**
+
+インフラを選定する前に、以下の要件を明確にします：
+
+- **パフォーマンス要件**: レスポンスタイム、スループット
+- **可用性要件**: 稼働率、RTO、RPO
+- **スケーラビリティ要件**: 予想されるトラフィック、成長率
+- **セキュリティ要件**: セキュリティレベル、コンプライアンス
+- **コスト要件**: 予算、コスト制約
+
+**要件定義の例:**
+
+```typescript
+interface InfrastructureRequirements {
+  // パフォーマンス要件
+  performance: {
+    responseTime: number; // レスポンスタイム（ms）
+    throughput: number; // スループット（req/s）
+    concurrentUsers: number; // 同時接続ユーザー数
+  };
+  
+  // 可用性要件
+  availability: {
+    uptime: number; // 稼働率（%）
+    rto: number; // Recovery Time Objective（分）
+    rpo: number; // Recovery Point Objective（分）
+  };
+  
+  // スケーラビリティ要件
+  scalability: {
+    expectedTraffic: number; // 予想トラフィック（req/day）
+    growthRate: number; // 成長率（%/年）
+    peakTraffic: number; // ピークトラフィック（req/s）
+  };
+  
+  // セキュリティ要件
+  security: {
+    compliance: string[]; // コンプライアンス要件
+    encryption: boolean; // 暗号化の必要性
+    accessControl: boolean; // アクセス制御の必要性
+  };
+  
+  // コスト要件
+  cost: {
+    budget: number; // 予算（円/月）
+    costOptimization: boolean; // コスト最適化の必要性
+  };
+}
+```
+
+#### 2. 選定基準の設定
+
+**選定基準の設定:**
+
+インフラを選定する際は、以下の基準を設定します：
+
+- **パフォーマンス**: 要件を満たすか
+- **可用性**: 要件を満たすか
+- **スケーラビリティ**: 将来の拡張に対応できるか
+- **セキュリティ**: セキュリティ要件を満たすか
+- **コスト**: 予算内か、コストパフォーマンスは良いか
+- **運用性**: 運用が容易か
+- **サポート**: サポートが充実しているか
+
+**選定基準の例:**
+
+```typescript
+interface SelectionCriteria {
+  performance: {
+    weight: number; // 重み（0-1）
+    threshold: number; // 閾値
+  };
+  availability: {
+    weight: number;
+    threshold: number;
+  };
+  scalability: {
+    weight: number;
+    threshold: number;
+  };
+  security: {
+    weight: number;
+    threshold: number;
+  };
+  cost: {
+    weight: number;
+    threshold: number;
+  };
+  operability: {
+    weight: number;
+    threshold: number;
+  };
+  support: {
+    weight: number;
+    threshold: number;
+  };
+}
+```
+
+### インフラ選定のプロセス
+
+#### 1. 候補の選定
+
+**候補の選定:**
+
+要件を満たす候補を選定します：
+
+- **クラウドプロバイダー**: AWS、GCP、Azureなど
+- **オンプレミス**: 自社サーバー、データセンター
+- **ハイブリッド**: クラウドとオンプレミスの組み合わせ
+
+**候補選定の例:**
+
+```typescript
+interface InfrastructureCandidate {
+  name: string; // インフラの名前
+  type: 'cloud' | 'on-premise' | 'hybrid'; // タイプ
+  provider?: string; // プロバイダー（クラウドの場合）
+  specifications: {
+    cpu: number; // CPUコア数
+    memory: number; // メモリ（GB）
+    storage: number; // ストレージ（GB）
+    network: number; // ネットワーク帯域（Gbps）
+  };
+  features: string[]; // 特徴
+  pricing: {
+    monthly: number; // 月額料金
+    hourly?: number; // 時間料金（オプション）
+  };
+}
+```
+
+#### 2. 評価と比較
+
+**評価と比較:**
+
+各候補を評価し、比較します：
+
+- **スコアリング**: 各基準に対してスコアを付与
+- **重み付け**: 重要度に応じて重みを設定
+- **総合評価**: 重み付けしたスコアの合計で評価
+
+**評価の例:**
+
+```typescript
+interface InfrastructureEvaluation {
+  candidate: InfrastructureCandidate;
+  scores: {
+    performance: number; // 0-100
+    availability: number;
+    scalability: number;
+    security: number;
+    cost: number;
+    operability: number;
+    support: number;
+  };
+  weightedScore: number; // 重み付けスコア
+  pros: string[]; // メリット
+  cons: string[]; // デメリット
+}
+```
+
+#### 3. 決定と実装
+
+**決定と実装:**
+
+評価結果に基づいて決定し、実装します：
+
+- **決定**: 最適な候補を選択
+- **実装計画**: 実装計画を策定
+- **実装**: インフラを構築
+- **検証**: 要件を満たしているか検証
+
+### インフラ選定の実践例
+
+#### ケース1: 小規模Webアプリケーション
+
+**要件:**
+
+```typescript
+const requirements: InfrastructureRequirements = {
+  performance: {
+    responseTime: 500, // 500ms以下
+    throughput: 100, // 100 req/s
+    concurrentUsers: 50, // 50ユーザー
+  },
+  availability: {
+    uptime: 99.0, // 99%
+    rto: 60, // 60分
+    rpo: 60, // 60分
+  },
+  scalability: {
+    expectedTraffic: 100000, // 10万 req/day
+    growthRate: 20, // 20%/年
+    peakTraffic: 10, // 10 req/s
+  },
+  security: {
+    compliance: [],
+    encryption: true,
+    accessControl: true,
+  },
+  cost: {
+    budget: 50000, // 5万円/月
+    costOptimization: true,
+  },
+};
+```
+
+**選定結果:**
+
+- **推奨**: AWS EC2 t3.small + RDS db.t3.micro
+- **理由**: 
+  - コスト効率が良い
+  - スケーリングが容易
+  - 管理が簡単
+
+#### ケース2: 中規模ECサイト
+
+**要件:**
+
+```typescript
+const requirements: InfrastructureRequirements = {
+  performance: {
+    responseTime: 200, // 200ms以下
+    throughput: 1000, // 1000 req/s
+    concurrentUsers: 500, // 500ユーザー
+  },
+  availability: {
+    uptime: 99.9, // 99.9%
+    rto: 30, // 30分
+    rpo: 15, // 15分
+  },
+  scalability: {
+    expectedTraffic: 10000000, // 1000万 req/day
+    growthRate: 50, // 50%/年
+    peakTraffic: 500, // 500 req/s
+  },
+  security: {
+    compliance: ['PCI-DSS'], // 決済情報の保護
+    encryption: true,
+    accessControl: true,
+  },
+  cost: {
+    budget: 500000, // 50万円/月
+    costOptimization: true,
+  },
+};
+```
+
+**選定結果:**
+
+- **推奨**: AWS ECS + RDS Multi-AZ + CloudFront + WAF
+- **理由**: 
+  - 高可用性
+  - 自動スケーリング
+  - セキュリティが充実
+  - コストパフォーマンスが良い
+
+#### ケース3: 大規模SaaSアプリケーション
+
+**要件:**
+
+```typescript
+const requirements: InfrastructureRequirements = {
+  performance: {
+    responseTime: 100, // 100ms以下
+    throughput: 10000, // 10000 req/s
+    concurrentUsers: 10000, // 1万ユーザー
+  },
+  availability: {
+    uptime: 99.99, // 99.99%
+    rto: 10, // 10分
+    rpo: 5, // 5分
+  },
+  scalability: {
+    expectedTraffic: 1000000000, // 10億 req/day
+    growthRate: 100, // 100%/年
+    peakTraffic: 10000, // 10000 req/s
+  },
+  security: {
+    compliance: ['SOC2', 'ISO27001'],
+    encryption: true,
+    accessControl: true,
+  },
+  cost: {
+    budget: 5000000, // 500万円/月
+    costOptimization: true,
+  },
+};
+```
+
+**選定結果:**
+
+- **推奨**: Kubernetes + マイクロサービス + マルチリージョン
+- **理由**: 
+  - 高いスケーラビリティ
+  - 高可用性
+  - グローバル展開が容易
+  - コスト最適化が可能
+
+### まとめ
+
+インフラ選定基準のポイント：
+
+- **要件の明確化**: パフォーマンス、可用性、スケーラビリティ、セキュリティ、コストの要件を明確にする
+- **選定基準の設定**: 各基準の重みと閾値を設定する
+- **評価と比較**: 各候補を評価し、比較する
+- **決定と実装**: 評価結果に基づいて決定し、実装する
+- **継続的な見直し**: 要件の変化に応じて見直す
+
+適切なインフラ選定により、システムのパフォーマンス、可用性、コストを最適化できます。
+

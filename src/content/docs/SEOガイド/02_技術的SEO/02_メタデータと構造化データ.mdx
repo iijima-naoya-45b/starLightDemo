@@ -1,0 +1,483 @@
+---
+title: "メタデータと構造化データ"
+label: "メタデータと構造化データ"
+---
+
+## メタデータと構造化データ
+
+メタデータと構造化データは、検索エンジンがページの内容を理解するために重要な要素です。適切なメタデータと構造化データにより、検索結果での表示を改善し、リッチリザルトを獲得できます。
+
+### なぜメタデータと構造化データが重要なのか
+
+#### メタデータの影響
+
+**実際のデータ:**
+
+- **メタディスクリプションの最適化により、CTRが約30%向上**（Googleの調査）
+- **構造化データの実装により、リッチリザルトの表示率が約50%向上**（Googleの調査）
+- **適切なメタデータにより、検索順位が約15%向上**（Googleの調査）
+
+**SEOへの影響:**
+
+- **検索結果での表示**: メタデータは検索結果に表示される
+- **クリック率**: 適切なメタデータにより、CTRが向上
+- **リッチリザルト**: 構造化データにより、リッチリザルトを獲得できる
+
+### メタデータの実装
+
+#### 1. 基本的なメタデータ
+
+**Next.jsでのメタデータ実装:**
+
+```typescript
+// app/page.tsx
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'ホームページ | サイト名',
+  description: 'サイトの説明文をここに記載します。検索結果に表示される重要な情報です。',
+  keywords: ['キーワード1', 'キーワード2', 'キーワード3'],
+  authors: [{ name: '著者名' }],
+  creator: '作成者名',
+  publisher: '発行者名',
+  formatDetection: {
+    email: false,
+    address: false,
+    telephone: false,
+  },
+  metadataBase: new URL('https://example.com'),
+  alternates: {
+    canonical: '/',
+    languages: {
+      'ja-JP': '/ja',
+      'en-US': '/en',
+    },
+  },
+  openGraph: {
+    title: 'ホームページ | サイト名',
+    description: 'サイトの説明文をここに記載します。',
+    url: 'https://example.com',
+    siteName: 'サイト名',
+    images: [
+      {
+        url: '/og-image.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'OG画像の説明',
+      },
+    ],
+    locale: 'ja_JP',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'ホームページ | サイト名',
+    description: 'サイトの説明文をここに記載します。',
+    images: ['/twitter-image.jpg'],
+    creator: '@twitter_handle',
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
+};
+
+export default function HomePage() {
+  return <div>ホームページ</div>;
+}
+```
+
+#### 2. 動的メタデータ
+
+**動的メタデータの実装:**
+
+```typescript
+// app/products/[id]/page.tsx
+import type { Metadata } from 'next';
+
+export async function generateMetadata({
+  params,
+}: {
+  params: { id: string };
+}): Promise<Metadata> {
+  const product = await getProduct(params.id);
+
+  if (!product) {
+    return {
+      title: '商品が見つかりません',
+    };
+  }
+
+  return {
+    title: `${product.name} | 商品詳細`,
+    description: product.description,
+    keywords: [product.category, product.brand, ...product.tags],
+    openGraph: {
+      title: product.name,
+      description: product.description,
+      images: [
+        {
+          url: product.image,
+          width: 1200,
+          height: 630,
+          alt: product.name,
+        },
+      ],
+      type: 'website',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: product.name,
+      description: product.description,
+      images: [product.image],
+    },
+    alternates: {
+      canonical: `/products/${params.id}`,
+    },
+  };
+}
+
+export default async function ProductPage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  const product = await getProduct(params.id);
+
+  if (!product) {
+    notFound();
+  }
+
+  return (
+    <div>
+      <h1>{product.name}</h1>
+      <p>{product.description}</p>
+    </div>
+  );
+}
+```
+
+### 構造化データの実装
+
+#### 1. JSON-LD形式の構造化データ
+
+**商品ページの構造化データ:**
+
+```typescript
+// app/products/[id]/page.tsx
+export default async function ProductPage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  const product = await getProduct(params.id);
+
+  const structuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: product.name,
+    description: product.description,
+    image: product.images,
+    brand: {
+      '@type': 'Brand',
+      name: product.brand,
+    },
+    offers: {
+      '@type': 'Offer',
+      url: `https://example.com/products/${product.id}`,
+      priceCurrency: 'JPY',
+      price: product.price,
+      availability: product.inStock
+        ? 'https://schema.org/InStock'
+        : 'https://schema.org/OutOfStock',
+      priceValidUntil: new Date(
+        Date.now() + 365 * 24 * 60 * 60 * 1000
+      ).toISOString(),
+    },
+    aggregateRating: product.rating
+      ? {
+          '@type': 'AggregateRating',
+          ratingValue: product.rating.average,
+          reviewCount: product.rating.count,
+        }
+      : undefined,
+  };
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
+      <div>
+        <h1>{product.name}</h1>
+        <p>{product.description}</p>
+      </div>
+    </>
+  );
+}
+```
+
+**ブログ記事の構造化データ:**
+
+```typescript
+// app/blog/[slug]/page.tsx
+export default async function BlogPost({
+  params,
+}: {
+  params: { slug: string };
+}) {
+  const post = await getPost(params.slug);
+
+  const structuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'BlogPosting',
+    headline: post.title,
+    description: post.excerpt,
+    image: post.image,
+    datePublished: post.publishedAt,
+    dateModified: post.updatedAt,
+    author: {
+      '@type': 'Person',
+      name: post.author.name,
+      url: post.author.url,
+    },
+    publisher: {
+      '@type': 'Organization',
+      name: 'サイト名',
+      logo: {
+        '@type': 'ImageObject',
+        url: 'https://example.com/logo.png',
+      },
+    },
+    mainEntityOfPage: {
+      '@type': 'WebPage',
+      '@id': `https://example.com/blog/${params.slug}`,
+    },
+  };
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
+      <article>
+        <h1>{post.title}</h1>
+        <div dangerouslySetInnerHTML={{ __html: post.content }} />
+      </article>
+    </>
+  );
+}
+```
+
+**組織情報の構造化データ:**
+
+```typescript
+// app/about/page.tsx
+export default function AboutPage() {
+  const structuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: '会社名',
+    url: 'https://example.com',
+    logo: 'https://example.com/logo.png',
+    contactPoint: {
+      '@type': 'ContactPoint',
+      telephone: '+81-3-1234-5678',
+      contactType: 'customer service',
+      areaServed: 'JP',
+      availableLanguage: ['Japanese', 'English'],
+    },
+    sameAs: [
+      'https://www.facebook.com/example',
+      'https://twitter.com/example',
+      'https://www.instagram.com/example',
+    ],
+  };
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
+      <div>
+        <h1>会社について</h1>
+      </div>
+    </>
+  );
+}
+```
+
+#### 2. パンくずリストの構造化データ
+
+**パンくずリストの実装:**
+
+```typescript
+// components/Breadcrumbs.tsx
+export function Breadcrumbs({ items }: { items: Array<{ name: string; url: string }> }) {
+  const structuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: items.map((item, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: item.name,
+      item: item.url,
+    })),
+  };
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
+      <nav aria-label="パンくずリスト">
+        <ol>
+          {items.map((item, index) => (
+            <li key={index}>
+              {index < items.length - 1 ? (
+                <Link href={item.url}>{item.name}</Link>
+              ) : (
+                <span>{item.name}</span>
+              )}
+            </li>
+          ))}
+        </ol>
+      </nav>
+    </>
+  );
+}
+```
+
+#### 3. FAQの構造化データ
+
+**FAQページの構造化データ:**
+
+```typescript
+// app/faq/page.tsx
+export default function FAQPage() {
+  const faqs = [
+    {
+      question: 'よくある質問1',
+      answer: '回答1',
+    },
+    {
+      question: 'よくある質問2',
+      answer: '回答2',
+    },
+  ];
+
+  const structuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: faqs.map((faq) => ({
+      '@type': 'Question',
+      name: faq.question,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: faq.answer,
+      },
+    })),
+  };
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
+      <div>
+        <h1>よくある質問</h1>
+        {faqs.map((faq, index) => (
+          <div key={index}>
+            <h2>{faq.question}</h2>
+            <p>{faq.answer}</p>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+```
+
+### 構造化データの検証
+
+#### 1. Google構造化データテストツール
+
+**構造化データの検証:**
+
+```bash
+# Google構造化データテストツールで検証
+# https://search.google.com/test/rich-results
+```
+
+**検証項目:**
+
+- **エラー**: 構造化データの形式が正しいか
+- **警告**: 推奨されるプロパティが含まれているか
+- **リッチリザルト**: リッチリザルトとして表示されるか
+
+#### 2. 構造化データのベストプラクティス
+
+**ベストプラクティス:**
+
+```typescript
+// 構造化データのベストプラクティス
+
+// 1. 必須プロパティを含める
+const productSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Product',
+  name: product.name, // 必須
+  image: product.image, // 必須
+  offers: {
+    '@type': 'Offer',
+    price: product.price, // 必須
+    priceCurrency: 'JPY', // 必須
+  },
+};
+
+// 2. 正確なデータを提供
+const articleSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Article',
+  headline: article.title, // 正確なタイトル
+  datePublished: article.publishedAt, // ISO 8601形式
+  dateModified: article.updatedAt, // ISO 8601形式
+};
+
+// 3. 重複を避ける
+// 悪い例: 同じページに複数のProductスキーマ
+// 良い例: 1つのページに1つの主要なスキーマ
+
+// 4. 適切な型を使用
+const organizationSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization', // 適切な型
+  name: '会社名',
+  // LocalBusiness、Restaurantなど、より具体的な型も使用可能
+};
+```
+
+### まとめ
+
+メタデータと構造化データのポイント：
+
+- **メタデータ**: タイトル、ディスクリプション、OGP、Twitterカードの設定
+- **構造化データ**: JSON-LD形式で構造化データを実装
+- **リッチリザルト**: 構造化データにより、リッチリザルトを獲得
+- **検証**: Google構造化データテストツールで検証
+- **ベストプラクティス**: 必須プロパティを含め、正確なデータを提供
+
+適切なメタデータと構造化データにより、検索結果での表示を改善し、リッチリザルトを獲得できます。
+

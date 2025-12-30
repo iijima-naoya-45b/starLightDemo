@@ -1,0 +1,292 @@
+---
+title: "パフォーマンス関連の用語"
+label: "パフォーマンス関連の用語"
+---
+
+## パフォーマンス関連の用語
+
+### ボトルネック（Bottleneck）
+
+**定義:**
+ボトルネックは、システム全体のパフォーマンスを制限する部分を表します。
+
+**なぜ重要なのか:**
+- **パフォーマンスの改善**: ボトルネックを特定し、改善できる
+- **リソースの最適化**: リソースを効率的に使用できる
+
+**使用例:**
+
+```typescript
+// ボトルネックの例
+// 1. データベースクエリが遅い
+// 2. ネットワークレイテンシが高い
+// 3. CPU使用率が高い
+// 4. メモリ不足
+
+// ボトルネックの特定
+async function identifyBottleneck() {
+  const startTime = Date.now();
+  
+  // データベースクエリ
+  const dbStart = Date.now();
+  await db.query('SELECT * FROM users');
+  const dbTime = Date.now() - dbStart;
+  
+  // API呼び出し
+  const apiStart = Date.now();
+  await fetch('https://api.example.com/data');
+  const apiTime = Date.now() - apiStart;
+  
+  console.log(`Database: ${dbTime}ms`);
+  console.log(`API: ${apiTime}ms`);
+  
+  // 最も時間がかかっている部分がボトルネック
+}
+```
+
+**関連用語:**
+- Performance
+- Optimization
+- Profiling
+
+---
+
+### キャッシュ（Cache）
+
+**定義:**
+キャッシュは、頻繁にアクセスされるデータを一時的に保存し、高速にアクセスできるようにする仕組みです。
+
+**なぜ重要なのか:**
+- **パフォーマンス**: データベースへのアクセスを削減できる
+- **スケーラビリティ**: システムの負荷を軽減できる
+- **コスト**: データベースのコストを削減できる
+
+**使用例:**
+
+```typescript
+// キャッシュの実装例
+import Redis from 'ioredis';
+
+const redis = new Redis();
+
+async function getUser(userId: string) {
+  // キャッシュから取得を試みる
+  const cached = await redis.get(`user:${userId}`);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+  
+  // キャッシュにない場合はデータベースから取得
+  const user = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+  
+  // キャッシュに保存（TTL: 1時間）
+  await redis.setex(`user:${userId}`, 3600, JSON.stringify(user));
+  
+  return user;
+}
+```
+
+**関連用語:**
+- Redis
+- Memcached
+- CDN
+
+---
+
+### CDN（Content Delivery Network）
+
+**定義:**
+CDNは、コンテンツを地理的に分散したサーバーに配置し、ユーザーに近いサーバーから配信する仕組みです。
+
+**なぜ重要なのか:**
+- **パフォーマンス**: コンテンツの配信速度が向上する
+- **スケーラビリティ**: オリジンサーバーの負荷を軽減できる
+- **可用性**: サーバーの障害の影響を軽減できる
+
+**使用例:**
+
+```typescript
+// CDNの使用例
+// 静的アセット（画像、CSS、JavaScript）をCDNに配置
+
+// Next.jsでのCDN設定
+// next.config.js
+module.exports = {
+  images: {
+    domains: ['cdn.example.com'],
+  },
+  assetPrefix: 'https://cdn.example.com',
+};
+```
+
+**関連用語:**
+- Cache
+- Edge Computing
+- Load Balancer
+
+---
+
+### ロードバランサー（Load Balancer）
+
+**定義:**
+ロードバランサーは、複数のサーバーにリクエストを分散する仕組みです。
+
+**なぜ重要なのか:**
+- **可用性**: サーバーの障害の影響を軽減できる
+- **スケーラビリティ**: トラフィックを複数のサーバーに分散できる
+- **パフォーマンス**: サーバーの負荷を分散できる
+
+**使用例:**
+
+```typescript
+// ロードバランシングの例
+// 1. Round Robin（ラウンドロビン）
+//    リクエストを順番に分散
+
+// 2. Least Connections（最小接続）
+//    接続数が最も少ないサーバーに分散
+
+// 3. IP Hash（IPハッシュ）
+//    クライアントのIPアドレスに基づいて分散
+
+// Nginxでの設定例
+// upstream backend {
+//   server server1.example.com;
+//   server server2.example.com;
+//   server server3.example.com;
+// }
+```
+
+**関連用語:**
+- Load Balancing
+- High Availability
+- Failover
+
+---
+
+### スロットル（Throttle）
+
+**定義:**
+スロットルは、一定時間内に実行できる処理の数を制限する仕組みです。
+
+**なぜ重要なのか:**
+- **リソースの保護**: サーバーのリソースを保護できる
+- **公平性**: すべてのユーザーに公平にリソースを提供できる
+- **セキュリティ**: DDoS攻撃を防げる
+
+**使用例:**
+
+```typescript
+// スロットルの実装例
+function throttle<T extends (...args: any[]) => any>(
+  func: T,
+  limit: number
+): T {
+  let inThrottle: boolean;
+  
+  return ((...args: any[]) => {
+    if (!inThrottle) {
+      func(...args);
+      inThrottle = true;
+      setTimeout(() => (inThrottle = false), limit);
+    }
+  }) as T;
+}
+
+// 使用例
+const throttledFunction = throttle(() => {
+  console.log('Called');
+}, 1000); // 1秒に1回のみ実行
+```
+
+**関連用語:**
+- Rate Limiting
+- Debounce
+- Quota
+
+---
+
+### レート制限（Rate Limiting）
+
+**定義:**
+レート制限は、一定時間内に実行できるリクエストの数を制限する仕組みです。
+
+**なぜ重要なのか:**
+- **APIの保護**: APIを過剰なリクエストから保護できる
+- **公平性**: すべてのユーザーに公平にAPIを提供できる
+- **コスト**: APIのコストを制御できる
+
+**使用例:**
+
+```typescript
+// レート制限の実装例
+import Redis from 'ioredis';
+
+const redis = new Redis();
+
+async function rateLimit(userId: string, limit: number, window: number) {
+  const key = `rate_limit:${userId}`;
+  const current = await redis.incr(key);
+  
+  if (current === 1) {
+    await redis.expire(key, window);
+  }
+  
+  if (current > limit) {
+    throw new Error('Rate limit exceeded');
+  }
+  
+  return current;
+}
+
+// 使用例
+// 1分間に10回まで
+await rateLimit(userId, 10, 60);
+```
+
+**関連用語:**
+- Throttle
+- Quota
+- API Gateway
+
+---
+
+### デバウンス（Debounce）
+
+**定義:**
+デバウンスは、連続して発生するイベントを、最後のイベントのみを処理するようにする仕組みです。
+
+**なぜ重要なのか:**
+- **パフォーマンス**: 不要な処理を削減できる
+- **ユーザー体験**: ユーザーの操作に応答できる
+
+**使用例:**
+
+```typescript
+// デバウンスの実装例
+function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): T {
+  let timeout: NodeJS.Timeout;
+  
+  return ((...args: any[]) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  }) as T;
+}
+
+// 使用例: 検索入力
+const debouncedSearch = debounce((query: string) => {
+  console.log('Searching for:', query);
+}, 300); // 300ms待機
+
+// ユーザーが入力するたびに呼び出されるが、
+// 300ms以内に次の入力がない場合のみ実行される
+```
+
+**関連用語:**
+- Throttle
+- Performance
+- Optimization
+

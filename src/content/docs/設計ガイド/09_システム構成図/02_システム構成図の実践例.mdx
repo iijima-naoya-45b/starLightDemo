@@ -1,0 +1,303 @@
+---
+title: "システム構成図の実践例"
+label: "システム構成図の実践例"
+---
+
+## システム構成図の実践例
+
+実際のプロジェクトで使用されるシステム構成図の例を紹介します。
+
+### ECサイトのシステム構成図
+
+#### 論理構成図
+
+```mermaid
+graph TB
+    User[ユーザー] --> Frontend[フロントエンド]
+    Frontend --> API[API Gateway]
+    API --> Auth[認証サービス]
+    API --> Product[商品サービス]
+    API --> Order[注文サービス]
+    API --> Payment[決済サービス]
+    Product --> DB[(商品DB)]
+    Order --> DB2[(注文DB)]
+    Payment --> DB3[(決済DB)]
+    Auth --> DB4[(ユーザーDB)]
+    
+    style User fill:#e1f5ff
+    style Frontend fill:#fff4e1
+    style API fill:#e8f5e9
+    style Auth fill:#f3e5f5
+    style Product fill:#f3e5f5
+    style Order fill:#f3e5f5
+    style Payment fill:#f3e5f5
+    style DB fill:#ffebee
+    style DB2 fill:#ffebee
+    style DB3 fill:#ffebee
+    style DB4 fill:#ffebee
+```
+
+**説明:**
+
+- **フロントエンド**: Next.jsで構築されたSPA
+- **API Gateway**: すべてのAPIリクエストをルーティング
+- **認証サービス**: ユーザー認証と認可を担当
+- **商品サービス**: 商品情報の管理
+- **注文サービス**: 注文の処理
+- **決済サービス**: 決済処理（Stripe連携）
+
+#### 物理構成図
+
+```mermaid
+graph TB
+    subgraph "AWS リージョン: ap-northeast-1"
+        subgraph "Public Subnet"
+            ALB[Application Load Balancer]
+            subgraph "Auto Scaling Group"
+                EC2_1[EC2 Instance 1<br/>t3.medium]
+                EC2_2[EC2 Instance 2<br/>t3.medium]
+            end
+        end
+        
+        subgraph "Private Subnet"
+            RDS[(RDS PostgreSQL<br/>db.t3.large<br/>Multi-AZ)]
+            Redis[(ElastiCache Redis<br/>cache.t3.medium)]
+            S3[S3<br/>静的ファイル]
+        end
+        
+        CloudFront[CloudFront CDN]
+        Route53[Route 53]
+    end
+    
+    User[ユーザー] --> Route53
+    Route53 --> CloudFront
+    CloudFront --> ALB
+    ALB --> EC2_1
+    ALB --> EC2_2
+    EC2_1 --> RDS
+    EC2_2 --> RDS
+    EC2_1 --> Redis
+    EC2_2 --> Redis
+    EC2_1 --> S3
+    EC2_2 --> S3
+    
+    style User fill:#e1f5ff
+    style Route53 fill:#fff4e1
+    style CloudFront fill:#fff4e1
+    style ALB fill:#e8f5e9
+    style EC2_1 fill:#f3e5f5
+    style EC2_2 fill:#f3e5f5
+    style RDS fill:#ffebee
+    style Redis fill:#ffebee
+    style S3 fill:#ffebee
+```
+
+**説明:**
+
+- **CloudFront**: 静的コンテンツの配信とキャッシュ
+- **Application Load Balancer**: リクエストの分散
+- **EC2 Auto Scaling**: 負荷に応じて自動スケーリング
+- **RDS Multi-AZ**: 高可用性のためのマルチAZ構成
+- **ElastiCache**: セッション管理とキャッシュ
+- **S3**: 静的ファイルの保存
+
+### マイクロサービスアーキテクチャの構成図
+
+#### 論理構成図
+
+```mermaid
+graph TB
+    User[ユーザー] --> Gateway[API Gateway]
+    
+    Gateway --> Auth[認証サービス]
+    Gateway --> UserService[ユーザーサービス]
+    Gateway --> ProductService[商品サービス]
+    Gateway --> OrderService[注文サービス]
+    Gateway --> PaymentService[決済サービス]
+    Gateway --> NotificationService[通知サービス]
+    
+    UserService --> UserDB[(ユーザーDB)]
+    ProductService --> ProductDB[(商品DB)]
+    OrderService --> OrderDB[(注文DB)]
+    PaymentService --> PaymentDB[(決済DB)]
+    
+    OrderService --> PaymentService
+    OrderService --> NotificationService
+    PaymentService --> NotificationService
+    
+    subgraph "Message Queue"
+        SQS[SQS]
+    end
+    
+    OrderService --> SQS
+    PaymentService --> SQS
+    SQS --> NotificationService
+    
+    style User fill:#e1f5ff
+    style Gateway fill:#e8f5e9
+    style Auth fill:#f3e5f5
+    style UserService fill:#f3e5f5
+    style ProductService fill:#f3e5f5
+    style OrderService fill:#f3e5f5
+    style PaymentService fill:#f3e5f5
+    style NotificationService fill:#f3e5f5
+    style UserDB fill:#ffebee
+    style ProductDB fill:#ffebee
+    style OrderDB fill:#ffebee
+    style PaymentDB fill:#ffebee
+    style SQS fill:#fff9c4
+```
+
+**説明:**
+
+- **API Gateway**: すべてのリクエストのエントリーポイント
+- **各マイクロサービス**: 独立したサービスとして実装
+- **メッセージキュー**: 非同期処理のためのSQS
+- **サービス間通信**: HTTP/RESTまたはメッセージキュー経由
+
+### サーバーレスアーキテクチャの構成図
+
+#### 論理構成図
+
+```mermaid
+graph TB
+    User[ユーザー] --> CloudFront[CloudFront]
+    CloudFront --> APIGateway[API Gateway]
+    
+    APIGateway --> Lambda1[Lambda: 認証]
+    APIGateway --> Lambda2[Lambda: 商品取得]
+    APIGateway --> Lambda3[Lambda: 注文処理]
+    
+    Lambda1 --> Cognito[Cognito]
+    Lambda2 --> DynamoDB1[(DynamoDB: 商品)]
+    Lambda3 --> DynamoDB2[(DynamoDB: 注文)]
+    
+    Lambda3 --> SQS[SQS]
+    SQS --> Lambda4[Lambda: 決済処理]
+    Lambda4 --> DynamoDB3[(DynamoDB: 決済)]
+    
+    Lambda2 --> S3[S3: 商品画像]
+    Lambda3 --> SNS[SNS: 通知]
+    
+    style User fill:#e1f5ff
+    style CloudFront fill:#fff4e1
+    style APIGateway fill:#e8f5e9
+    style Lambda1 fill:#f3e5f5
+    style Lambda2 fill:#f3e5f5
+    style Lambda3 fill:#f3e5f5
+    style Lambda4 fill:#f3e5f5
+    style Cognito fill:#fff9c4
+    style DynamoDB1 fill:#ffebee
+    style DynamoDB2 fill:#ffebee
+    style DynamoDB3 fill:#ffebee
+    style S3 fill:#ffebee
+    style SQS fill:#fff9c4
+    style SNS fill:#fff9c4
+```
+
+**説明:**
+
+- **API Gateway**: RESTful APIのエントリーポイント
+- **Lambda**: サーバーレス関数でビジネスロジックを実装
+- **DynamoDB**: NoSQLデータベース
+- **SQS**: 非同期処理のためのメッセージキュー
+- **SNS**: 通知のためのPub/Subサービス
+
+### データフロー図
+
+#### ECサイトの注文処理フロー
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザー
+    participant Frontend as フロントエンド
+    participant API as API Gateway
+    participant Order as 注文サービス
+    participant Payment as 決済サービス
+    participant DB as データベース
+    participant Queue as メッセージキュー
+    participant Notification as 通知サービス
+    
+    User->>Frontend: 注文を送信
+    Frontend->>API: POST /orders
+    API->>Order: 注文作成リクエスト
+    Order->>DB: 注文データを保存
+    DB-->>Order: 注文IDを返却
+    Order->>Payment: 決済リクエスト
+    Payment->>DB: 決済データを保存
+    Payment-->>Order: 決済完了
+    Order->>Queue: 注文完了イベントを送信
+    Queue->>Notification: イベントを受信
+    Notification->>User: 注文確認メールを送信
+    Order-->>API: 注文完了レスポンス
+    API-->>Frontend: 注文完了
+    Frontend-->>User: 注文完了画面を表示
+```
+
+**説明:**
+
+- **シーケンス図**: 時系列での処理の流れを表現
+- **各ステップ**: 明確に処理の流れを表現
+- **エラーハンドリング**: エラー時の処理も記載
+
+### セキュリティ構成図
+
+#### セキュリティレイヤーの構成
+
+```mermaid
+graph TB
+    Internet[インターネット] --> WAF[WAF]
+    WAF --> CloudFront[CloudFront]
+    CloudFront --> ALB[Application Load Balancer]
+    ALB --> EC2[EC2 Instance]
+    
+    subgraph "セキュリティグループ"
+        EC2 --> DB[(RDS)]
+        EC2 --> Cache[(ElastiCache)]
+    end
+    
+    subgraph "VPC"
+        subgraph "Public Subnet"
+            ALB
+        end
+        subgraph "Private Subnet"
+            EC2
+            DB
+            Cache
+        end
+    end
+    
+    IAM[IAM Role] --> EC2
+    SecretsManager[Secrets Manager] --> EC2
+    
+    style Internet fill:#ffcccc
+    style WAF fill:#ffebee
+    style CloudFront fill:#fff4e1
+    style ALB fill:#e8f5e9
+    style EC2 fill:#f3e5f5
+    style DB fill:#ffebee
+    style Cache fill:#ffebee
+    style IAM fill:#fff9c4
+    style SecretsManager fill:#fff9c4
+```
+
+**説明:**
+
+- **WAF**: Web Application Firewallで攻撃を防御
+- **セキュリティグループ**: ネットワークレベルのセキュリティ
+- **VPC**: プライベートネットワークの構築
+- **IAM**: アクセス制御
+- **Secrets Manager**: 機密情報の管理
+
+### まとめ
+
+システム構成図の実践例のポイント：
+
+- **目的に応じた図**: 目的に応じて適切な図を選択
+- **明確な説明**: 各コンポーネントの役割を明確に説明
+- **データフロー**: データの流れを明確に表現
+- **セキュリティ**: セキュリティレイヤーも表現
+- **ツールの活用**: Mermaidなどのツールを活用
+
+適切なシステム構成図により、システムの全体像を理解し、コミュニケーションを円滑にできます。
+
