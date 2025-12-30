@@ -1,0 +1,455 @@
+---
+title: Djangoテスト完全ガイド
+sidebar:
+    label: テスト
+---
+
+# Djangoテスト完全ガイド
+
+Djangoアプリケーションのテストを、実務で使える実装例とともに詳しく解説します。
+
+## 1. テストとは
+
+### テストの重要性
+
+テストは、アプリケーションの品質を保証し、リファクタリングを安全に行うために不可欠です。
+
+```
+テストの種類
+   ├─ 単体テスト（Unit Test）
+   ├─ 統合テスト（Integration Test）
+   └─ E2Eテスト（End-to-End Test）
+```
+
+## 2. Djangoのテストフレームワーク
+
+### 基本的なテスト
+
+```python
+# tests.py
+from django.test import TestCase
+from django.contrib.auth.models import User
+from .models import Post
+
+class PostModelTest(TestCase):
+    def setUp(self):
+        """テストの前準備"""
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123'
+        )
+        self.post = Post.objects.create(
+            title='Test Post',
+            content='Test Content',
+            author=self.user
+        )
+    
+    def test_post_creation(self):
+        """投稿の作成テスト"""
+        self.assertEqual(self.post.title, 'Test Post')
+        self.assertEqual(self.post.author, self.user)
+    
+    def test_post_str(self):
+        """投稿の文字列表現テスト"""
+        self.assertEqual(str(self.post), 'Test Post')
+```
+
+### テストの実行
+
+```bash
+# すべてのテストを実行
+python manage.py test
+
+# 特定のアプリのテストを実行
+python manage.py test blog
+
+# 特定のテストクラスを実行
+python manage.py test blog.tests.PostModelTest
+
+# 特定のテストメソッドを実行
+python manage.py test blog.tests.PostModelTest.test_post_creation
+```
+
+## 3. モデルのテスト
+
+### モデルのテスト例
+
+```python
+# tests/test_models.py
+from django.test import TestCase
+from django.core.exceptions import ValidationError
+from .models import Post, Comment
+
+class PostModelTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='testuser',
+            password='testpass123'
+        )
+    
+    def test_post_creation(self):
+        """投稿の作成テスト"""
+        post = Post.objects.create(
+            title='Test Post',
+            content='Test Content',
+            author=self.user
+        )
+        self.assertEqual(Post.objects.count(), 1)
+        self.assertEqual(post.title, 'Test Post')
+    
+    def test_post_slug_generation(self):
+        """スラッグの自動生成テスト"""
+        post = Post.objects.create(
+            title='Test Post',
+            content='Test Content',
+            author=self.user
+        )
+        self.assertEqual(post.slug, 'test-post')
+    
+    def test_post_published_status(self):
+        """公開状態のテスト"""
+        post = Post.objects.create(
+            title='Test Post',
+            content='Test Content',
+            author=self.user,
+            is_published=True
+        )
+        self.assertTrue(post.is_published)
+```
+
+## 4. ビューのテスト
+
+### 関数ベースビューのテスト
+
+```python
+# tests/test_views.py
+from django.test import TestCase, Client
+from django.urls import reverse
+from django.contrib.auth.models import User
+from .models import Post
+
+class PostViewTest(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(
+            username='testuser',
+            password='testpass123'
+        )
+        self.post = Post.objects.create(
+            title='Test Post',
+            content='Test Content',
+            author=self.user
+        )
+    
+    def test_post_list_view(self):
+        """投稿一覧ビューのテスト"""
+        response = self.client.get(reverse('post_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Test Post')
+    
+    def test_post_detail_view(self):
+        """投稿詳細ビューのテスト"""
+        response = self.client.get(reverse('post_detail', args=[self.post.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Test Post')
+        self.assertContains(response, 'Test Content')
+    
+    def test_post_create_view_requires_login(self):
+        """投稿作成ビューはログインが必要"""
+        response = self.client.get(reverse('post_create'))
+        self.assertEqual(response.status_code, 302)  # リダイレクト
+    
+    def test_post_create_view_with_login(self):
+        """ログイン後の投稿作成テスト"""
+        self.client.login(username='testuser', password='testpass123')
+        response = self.client.get(reverse('post_create'))
+        self.assertEqual(response.status_code, 200)
+```
+
+### クラスベースビューのテスト
+
+```python
+# tests/test_views.py
+from django.test import TestCase, Client
+from django.urls import reverse
+from django.contrib.auth.models import User
+from .models import Post
+
+class PostListViewTest(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(
+            username='testuser',
+            password='testpass123'
+        )
+        self.post = Post.objects.create(
+            title='Test Post',
+            content='Test Content',
+            author=self.user
+        )
+    
+    def test_get_queryset(self):
+        """クエリセットのテスト"""
+        response = self.client.get(reverse('post_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertQuerysetEqual(
+            response.context['post_list'],
+            ['<Post: Test Post>']
+        )
+```
+
+## 5. フォームのテスト
+
+### フォームのテスト例
+
+```python
+# tests/test_forms.py
+from django.test import TestCase
+from .forms import PostForm
+from .models import Post
+from django.contrib.auth.models import User
+
+class PostFormTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='testuser',
+            password='testpass123'
+        )
+    
+    def test_valid_form(self):
+        """有効なフォームのテスト"""
+        form_data = {
+            'title': 'Test Post',
+            'content': 'Test Content'
+        }
+        form = PostForm(data=form_data)
+        self.assertTrue(form.is_valid())
+    
+    def test_invalid_form(self):
+        """無効なフォームのテスト"""
+        form_data = {
+            'title': '',  # 必須フィールドが空
+            'content': 'Test Content'
+        }
+        form = PostForm(data=form_data)
+        self.assertFalse(form.is_valid())
+        self.assertIn('title', form.errors)
+```
+
+## 6. APIのテスト
+
+### Django REST Frameworkのテスト
+
+```python
+# tests/test_api.py
+from rest_framework.test import APITestCase
+from rest_framework import status
+from django.contrib.auth.models import User
+from .models import Post
+
+class PostAPITest(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='testuser',
+            password='testpass123'
+        )
+        self.post = Post.objects.create(
+            title='Test Post',
+            content='Test Content',
+            author=self.user
+        )
+    
+    def test_get_post_list(self):
+        """投稿一覧の取得テスト"""
+        url = reverse('api:post-list')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+    
+    def test_create_post(self):
+        """投稿の作成テスト"""
+        self.client.force_authenticate(user=self.user)
+        url = reverse('api:post-list')
+        data = {
+            'title': 'New Post',
+            'content': 'New Content'
+        }
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Post.objects.count(), 2)
+    
+    def test_update_post(self):
+        """投稿の更新テスト"""
+        self.client.force_authenticate(user=self.user)
+        url = reverse('api:post-detail', args=[self.post.pk])
+        data = {
+            'title': 'Updated Post',
+            'content': 'Updated Content'
+        }
+        response = self.client.patch(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.post.refresh_from_db()
+        self.assertEqual(self.post.title, 'Updated Post')
+```
+
+## 7. フィクスチャの使用
+
+### フィクスチャの作成
+
+```bash
+# フィクスチャの作成
+python manage.py dumpdata blog.Post --indent 2 > fixtures/posts.json
+```
+
+### フィクスチャの使用
+
+```python
+# tests.py
+from django.test import TestCase
+
+class PostTest(TestCase):
+    fixtures = ['posts.json', 'users.json']
+    
+    def test_post_count(self):
+        """フィクスチャからのデータ読み込みテスト"""
+        self.assertEqual(Post.objects.count(), 10)
+```
+
+## 8. モックの使用
+
+### unittest.mockの使用
+
+```python
+# tests/test_views.py
+from unittest.mock import patch, MagicMock
+from django.test import TestCase
+from django.urls import reverse
+
+class PostViewTest(TestCase):
+    @patch('blog.views.send_email')
+    def test_post_creation_sends_email(self, mock_send_email):
+        """投稿作成時にメールが送信されるテスト"""
+        mock_send_email.return_value = True
+        response = self.client.post(reverse('post_create'), {
+            'title': 'Test Post',
+            'content': 'Test Content'
+        })
+        self.assertTrue(mock_send_email.called)
+```
+
+## 9. カバレッジの測定
+
+### coverageの使用
+
+```bash
+# coverageのインストール
+pip install coverage
+
+# テストの実行とカバレッジの測定
+coverage run --source='.' manage.py test
+
+# カバレッジレポートの表示
+coverage report
+
+# HTMLレポートの生成
+coverage html
+```
+
+## 10. 実務でのベストプラクティス
+
+### パターン1: テストの構造化
+
+```python
+# tests/
+#   ├── __init__.py
+#   ├── test_models.py
+#   ├── test_views.py
+#   ├── test_forms.py
+#   ├── test_api.py
+#   └── factories.py
+
+# factories.py（Factory Boyを使用）
+import factory
+from django.contrib.auth.models import User
+from .models import Post
+
+class UserFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = User
+    
+    username = factory.Sequence(lambda n: f'user{n}')
+    email = factory.LazyAttribute(lambda obj: f'{obj.username}@example.com')
+
+class PostFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Post
+    
+    title = factory.Sequence(lambda n: f'Post {n}')
+    content = factory.Faker('text')
+    author = factory.SubFactory(UserFactory)
+```
+
+### パターン2: テストの実行設定
+
+```python
+# settings/test.py
+from .base import *
+
+# テスト用のデータベース設定
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': ':memory:'
+    }
+}
+
+# パスワードハッシャーの高速化
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.MD5PasswordHasher',
+]
+```
+
+## 11. よくある問題と解決策
+
+### 問題1: テストが遅い
+
+**原因:**
+- データベースへのアクセスが多い
+- フィクスチャが大きい
+
+**解決策:**
+```python
+# メモリ内データベースの使用
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': ':memory:'
+    }
+}
+
+# トランザクションの使用
+from django.test import TransactionTestCase
+
+class FastTest(TransactionTestCase):
+    # トランザクションを有効化
+    pass
+```
+
+### 問題2: テストが失敗する
+
+**原因:**
+- テストデータの準備が不十分
+- アサーションが間違っている
+
+**解決策:**
+```python
+# デバッグ情報の出力
+def test_something(self):
+    response = self.client.get('/')
+    print(response.content)  # レスポンス内容を確認
+    print(response.status_code)  # ステータスコードを確認
+    self.assertEqual(response.status_code, 200)
+```
+
+これで、Djangoのテストの基礎知識と実務での使い方を理解できるようになりました。

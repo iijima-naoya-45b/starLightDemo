@@ -1,45 +1,128 @@
 ---
-title: "ECS"
-label: "ECS"
+title: ECS完全ガイド
+sidebar:
+    label: ECS
 ---
 
-## ECS (Elastic Container Service)
+# ECS (Elastic Container Service) 完全ガイド
 
-ECSは、Dockerコンテナを実行するためのマネージドサービスです。
+ECSは、Dockerコンテナを実行するためのマネージドサービスです。実務で使える実装例とデプロイ戦略を詳しく解説します。
 
-### ECSクラスターの設定
+## 1. ECSとは
 
-```yaml
-Cluster:
-  Type: AWS::ECS::Cluster
-  Properties:
-    ClusterName: MyCluster
-    CapacityProviders:
-      - FARGATE
-      - FARGATE_SPOT
+### ECSの役割
 
-Service:
-  Type: AWS::ECS::Service
-  Properties:
-    Cluster: !Ref Cluster
-    TaskDefinition: !Ref TaskDefinition
-    DesiredCount: 2
-    LaunchType: FARGATE
-    NetworkConfiguration:
-      AwsvpcConfiguration:
-        Subnets:
-          - !Ref Subnet1
-          - !Ref Subnet2
-        SecurityGroups:
-          - !Ref SecurityGroup
-        AssignPublicIp: ENABLED
-    LoadBalancers:
-      - ContainerName: my-container
-        ContainerPort: 80
-        TargetGroupArn: !Ref TargetGroup
+ECSは、Dockerコンテナのオーケストレーションを提供するマネージドサービスです。コンテナのデプロイ、スケーリング、管理を自動化します。
+
+```
+Dockerイメージ
+   ↓
+ECSクラスター
+   ├─ タスク定義（コンテナの設定）
+   ├─ サービス（タスクの管理）
+   └─ タスク（実行中のコンテナ）
 ```
 
-### タスク定義
+### なぜECSが必要か
+
+**問題のある構成（EC2上でDockerを直接実行）:**
+
+```bash
+# 問題: EC2上でDockerを直接実行
+# 1. コンテナの手動起動
+docker run -d my-app:latest
+
+# 2. トラフィック増加時に手動でスケール
+docker run -d my-app:latest
+docker run -d my-app:latest
+
+# 3. 障害発生時に手動で復旧
+docker ps  # 停止したコンテナを確認
+docker start container-id  # 手動で再起動
+
+# 問題点:
+# 1. 手動管理が必要
+# 2. スケーリングが困難
+# 3. 障害復旧が遅い
+# 4. ロードバランシングが困難
+```
+
+**解決: ECSによる自動管理**
+
+```yaml
+# 解決: ECSサービスによる自動管理
+Resources:
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      DesiredCount: 3  # 3つのタスクを自動的に維持
+      TaskDefinition: !Ref TaskDefinition
+      LoadBalancers:
+        - ContainerName: my-container
+          ContainerPort: 80
+          TargetGroupArn: !Ref TargetGroup
+
+# メリット:
+# 1. 自動管理（タスクの起動、停止、再起動）
+# 2. 自動スケーリング（トラフィックに応じて自動スケール）
+# 3. 自動障害復旧（タスクが停止したら自動で再起動）
+# 4. ロードバランシング（ALB/NLBと統合）
+```
+
+## 2. ECSの起動タイプ
+
+### Fargate
+
+Fargateは、サーバー管理なしでコンテナを実行できる起動タイプです。
+
+```yaml
+Resources:
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref Subnet1
+            - !Ref Subnet2
+          SecurityGroups:
+            - !Ref SecurityGroup
+          AssignPublicIp: ENABLED
+```
+
+### EC2
+
+EC2起動タイプは、EC2インスタンス上でコンテナを実行します。
+
+```yaml
+Resources:
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: MyCluster
+      CapacityProviders:
+        - EC2
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0c55b159cbfafe1f0
+      InstanceType: t3.medium
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          yum update -y
+          yum install -y docker
+          systemctl start docker
+          systemctl enable docker
+          usermod -a -G docker ec2-user
+```
+
+## 3. タスク定義
+
+### 基本的なタスク定義
 
 ```json
 {
@@ -62,6 +145,10 @@ Service:
         {
           "name": "ENV",
           "value": "production"
+        },
+        {
+          "name": "DATABASE_URL",
+          "value": "postgresql://..."
         }
       ],
       "logConfiguration": {
@@ -71,9 +158,265 @@ Service:
           "awslogs-region": "us-east-1",
           "awslogs-stream-prefix": "ecs"
         }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -f http://localhost:80/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
       }
     }
   ]
 }
 ```
+
+### 複数コンテナのタスク定義
+
+```json
+{
+  "family": "multi-container-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "containerDefinitions": [
+    {
+      "name": "web",
+      "image": "my-app:latest",
+      "portMappings": [
+        {
+          "containerPort": 80
+        }
+      ],
+      "dependsOn": [
+        {
+          "containerName": "sidecar",
+          "condition": "START"
+        }
+      ]
+    },
+    {
+      "name": "sidecar",
+      "image": "sidecar:latest",
+      "essential": false
+    }
+  ]
+}
+```
+
+## 4. サービス
+
+### 基本的なサービス
+
+```yaml
+Resources:
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 3
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref Subnet1
+            - !Ref Subnet2
+          SecurityGroups:
+            - !Ref SecurityGroup
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        - ContainerName: my-container
+          ContainerPort: 80
+          TargetGroupArn: !Ref TargetGroup
+      HealthCheckGracePeriodSeconds: 60
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DeploymentController:
+        Type: ECS
+```
+
+### デプロイ戦略
+
+```yaml
+Resources:
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      DeploymentConfiguration:
+        # ローリングアップデート
+        MaximumPercent: 200  # 最大200%までスケールアップ
+        MinimumHealthyPercent: 100  # 最小100%を維持
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+```
+
+## 5. オートスケーリング
+
+### ターゲット追跡スケーリング
+
+```yaml
+Resources:
+  ScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 2
+      ResourceId: !Sub 'service/${Cluster}/${Service}'
+      RoleARN: !GetAtt AutoScalingRole.Arn
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  ScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: TargetTrackingScaling
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70.0
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+```
+
+## 6. ECR（Elastic Container Registry）
+
+### ECRへのイメージプッシュ
+
+```bash
+# ECRリポジトリの作成
+aws ecr create-repository --repository-name my-app
+
+# ログイン
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin \
+  123456789012.dkr.ecr.us-east-1.amazonaws.com
+
+# イメージのビルド
+docker build -t my-app .
+
+# タグ付け
+docker tag my-app:latest \
+  123456789012.dkr.ecr.us-east-1.amazonaws.com/my-app:latest
+
+# プッシュ
+docker push \
+  123456789012.dkr.ecr.us-east-1.amazonaws.com/my-app:latest
+```
+
+### ECRライフサイクルポリシー
+
+```json
+{
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "Keep last 10 images",
+      "selection": {
+        "tagStatus": "tagged",
+        "tagPrefixList": ["v"],
+        "countType": "imageCountMoreThan",
+        "countNumber": 10
+      },
+      "action": {
+        "type": "expire"
+      }
+    }
+  ]
+}
+```
+
+## 7. 実務でのベストプラクティス
+
+### パターン1: ブルー/グリーンデプロイメント
+
+```yaml
+Resources:
+  # ブルーサービス
+  BlueService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: my-app-blue
+      TaskDefinition: !Ref BlueTaskDefinition
+      DesiredCount: 3
+
+  # グリーンサービス
+  GreenService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: my-app-green
+      TaskDefinition: !Ref GreenTaskDefinition
+      DesiredCount: 0  # 最初は0、段階的に増やす
+```
+
+### パターン2: カナリアデプロイメント
+
+```yaml
+Resources:
+  ProductionService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: my-app-production
+      TaskDefinition: !Ref ProductionTaskDefinition
+      DesiredCount: 9  # 90%のトラフィック
+
+  CanaryService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: my-app-canary
+      TaskDefinition: !Ref CanaryTaskDefinition
+      DesiredCount: 1  # 10%のトラフィック
+```
+
+## 8. よくある問題と解決策
+
+### 問題1: タスクが起動しない
+
+**原因:**
+- イメージが存在しない
+- リソースが不足している
+- セキュリティグループでポートが開いていない
+
+**解決策:**
+```bash
+# タスクの状態を確認
+aws ecs describe-tasks \
+  --cluster my-cluster \
+  --tasks task-id
+
+# タスクのログを確認
+aws logs get-log-events \
+  --log-group-name /ecs/my-task \
+  --log-stream-name ecs/my-container/task-id
+```
+
+### 問題2: サービスが更新されない
+
+**原因:**
+- タスク定義が更新されていない
+- デプロイが失敗している
+
+**解決策:**
+```bash
+# サービスの状態を確認
+aws ecs describe-services \
+  --cluster my-cluster \
+  --services my-service
+
+# デプロイ履歴の確認
+aws ecs describe-services \
+  --cluster my-cluster \
+  --services my-service \
+  --query 'services[0].deployments'
+```
+
+これで、ECSの基礎知識と実務での使い方を理解できるようになりました。
 

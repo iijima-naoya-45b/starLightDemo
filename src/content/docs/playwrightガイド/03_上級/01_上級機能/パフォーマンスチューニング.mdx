@@ -1,36 +1,398 @@
 ---
-title: "パフォーマンスチューニング"
-label: "パフォーマンスチューニング"
+title: パフォーマンスチューニング
+sidebar:
+    label: パフォーマンスチューニング
 ---
 
-Playwrightのパフォーマンスチューニング方法を以下に示します。
+# Playwrightパフォーマンスチューニング完全ガイド
 
-## 並列テストの実行
+Playwrightテストの実行速度を向上させ、リソース使用量を最適化する方法を詳しく解説します。
 
-Playwrightでは、並列にテストを実行することで、テストスイートの実行時間を短縮できます。
+## 1. 並列テストの実行
+
+### 基本的な並列実行設定
 
 ```javascript
 // playwright.config.js
-module.exports = {
-  projects: [
-    { name: 'firefox', use: { browserName: 'firefox' } },
-    { name: 'webkit', use: { browserName: 'webkit' } },
-    { name: 'chromium', use: { browserName: 'chromium' } },
-  ],
-};
+const { defineConfig } = require('@playwright/test');
+
+module.exports = defineConfig({
+  // 並列実行するworkerの数
+  workers: process.env.CI ? 2 : 4,
+  
+  // 完全に並列実行
+  fullyParallel: true,
+  
+  // または、ファイル単位で並列実行
+  // fullyParallel: false,
+});
 ```
 
-## ヘッドレスモード
-
-ヘッドレスモードでテストを実行することで、リソースの消費を抑えることができます。
+### プロジェクトごとの並列実行
 
 ```javascript
-const { chromium } = require('playwright');
-
-(async () => {
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage();
-  await page.goto('https://example.com');
-  await browser.close();
-})();
+module.exports = defineConfig({
+  projects: [
+    {
+      name: 'chromium',
+      use: { browserName: 'chromium' },
+    },
+    {
+      name: 'firefox',
+      use: { browserName: 'firefox' },
+    },
+    {
+      name: 'webkit',
+      use: { browserName: 'webkit' },
+    },
+  ],
+  
+  // 各プロジェクトが並列実行される
+  fullyParallel: true,
+});
 ```
+
+### Worker数の最適化
+
+```javascript
+module.exports = defineConfig({
+  // CPUコア数に応じて自動決定
+  workers: undefined,
+  
+  // または、明示的に指定
+  workers: process.env.CI ? 2 : require('os').cpus().length,
+  
+  // 最大worker数を制限
+  workers: Math.min(4, require('os').cpus().length),
+});
+```
+
+## 2. ヘッドレスモードの活用
+
+### ヘッドレスモードの設定
+
+```javascript
+// playwright.config.js
+module.exports = defineConfig({
+  use: {
+    // CI環境ではヘッドレスモード
+    headless: process.env.CI ? true : false,
+    
+    // または、常にヘッドレス
+    headless: true,
+  },
+});
+```
+
+### ヘッドレスモードのパフォーマンス比較
+
+```javascript
+// ヘッドレスモード: 約20-30%高速
+// ヘッド付きモード: デバッグに便利
+
+// 開発環境: ヘッド付き
+// CI環境: ヘッドレス
+```
+
+## 3. ブラウザコンテキストの再利用
+
+### コンテキストの共有
+
+```javascript
+// 悪い例: 各テストで新しいコンテキストを作成
+test('テスト1', async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  // テスト処理...
+  await context.close();
+});
+
+// 良い例: フィクスチャでコンテキストを再利用
+const { test } = require('@playwright/test');
+
+test('テスト1', async ({ page }) => {
+  // コンテキストは自動的に再利用される
+  await page.goto('https://example.com');
+});
+```
+
+### 認証状態の再利用
+
+```javascript
+// playwright.config.js
+module.exports = defineConfig({
+  projects: [
+    {
+      name: 'setup',
+      testMatch: /.*\.setup\.js/,
+    },
+    {
+      name: 'chromium',
+      use: {
+        storageState: 'playwright/.auth/user.json',
+      },
+      dependencies: ['setup'],
+    },
+  ],
+});
+```
+
+## 4. テストの最適化
+
+### 不要な待機を削減
+
+```javascript
+// 悪い例: 不要な待機
+test('テスト', async ({ page }) => {
+  await page.goto('https://example.com');
+  await page.waitForTimeout(5000); // 不要な待機
+  await page.getByRole('button').click();
+});
+
+// 良い例: 自動ウェイトを活用
+test('テスト', async ({ page }) => {
+  await page.goto('https://example.com');
+  // 要素が表示されるまで自動的に待機
+  await page.getByRole('button').click();
+});
+```
+
+### ネットワークリクエストの最適化
+
+```javascript
+test('ネットワークリクエストの最適化', async ({ page }) => {
+  // 不要なリソースをブロック
+  await page.route('**/*.{png,jpg,jpeg,gif,svg}', route => route.abort());
+  await page.route('**/*.{css}', route => route.abort());
+  
+  await page.goto('https://example.com');
+  // 画像やCSSが読み込まれないため、高速化
+});
+```
+
+### キャッシュの活用
+
+```javascript
+test('キャッシュの活用', async ({ context }) => {
+  // キャッシュを有効化
+  const page = await context.newPage();
+  
+  // 最初のアクセス
+  await page.goto('https://example.com');
+  
+  // 2回目のアクセス（キャッシュから読み込まれる）
+  await page.goto('https://example.com');
+});
+```
+
+## 5. テストデータの最適化
+
+### テストデータの事前準備
+
+```javascript
+// 悪い例: 各テストでデータを作成
+test('テスト1', async ({ page }) => {
+  // APIでデータを作成（時間がかかる）
+  await page.request.post('/api/users', { data: userData });
+  // テスト処理...
+});
+
+// 良い例: セットアップでデータを準備
+// setup.spec.js
+test('setup', async ({ page }) => {
+  // 一度だけデータを作成
+  await page.request.post('/api/users', { data: userData });
+  // 認証状態を保存
+  await page.context.storageState({ path: 'playwright/.auth/user.json' });
+});
+
+// test.spec.js
+test('テスト1', async ({ page }) => {
+  // セットアップ済みのデータを使用
+  await page.goto('https://example.com');
+  // テスト処理...
+});
+```
+
+## 6. タイムアウトの最適化
+
+### タイムアウト設定の調整
+
+```javascript
+// playwright.config.js
+module.exports = defineConfig({
+  // テスト全体のタイムアウト
+  timeout: 30 * 1000, // 30秒
+  
+  // 各アクションのタイムアウト
+  expect: {
+    timeout: 5 * 1000, // 5秒
+  },
+  
+  // プロジェクトごとに設定
+  projects: [
+    {
+      name: 'chromium',
+      timeout: 60 * 1000, // 60秒
+    },
+  ],
+});
+```
+
+## 7. リソースの最適化
+
+### 不要なリソースのブロック
+
+```javascript
+test('リソースの最適化', async ({ page }) => {
+  // 画像、フォント、CSSをブロック
+  await page.route('**/*.{png,jpg,jpeg,gif,svg,woff,woff2,css}', route => {
+    route.abort();
+  });
+  
+  await page.goto('https://example.com');
+  // ページの読み込みが高速化される
+});
+```
+
+### リソースの優先度設定
+
+```javascript
+test('リソースの優先度設定', async ({ page }) => {
+  // 重要なリソースのみを読み込む
+  await page.route('**/*', route => {
+    const resourceType = route.request().resourceType();
+    if (resourceType === 'image' || resourceType === 'font') {
+      route.abort();
+    } else {
+      route.continue();
+    }
+  });
+  
+  await page.goto('https://example.com');
+});
+```
+
+## 8. 実務での最適化パターン
+
+### パターン1: CI/CD環境での最適化
+
+```javascript
+// playwright.config.js
+module.exports = defineConfig({
+  workers: process.env.CI ? 2 : 4,
+  retries: process.env.CI ? 2 : 0,
+  
+  use: {
+    headless: true, // CI環境では常にヘッドレス
+    video: 'retain-on-failure', // 失敗時のみ動画を保存
+    screenshot: 'only-on-failure', // 失敗時のみスクリーンショット
+  },
+});
+```
+
+### パターン2: テストの分割
+
+```javascript
+// 大きなテストを小さなテストに分割
+// 悪い例
+test('大きなテスト', async ({ page }) => {
+  // 100行以上のテストコード
+});
+
+// 良い例
+test.describe('機能テスト', () => {
+  test('機能1', async ({ page }) => {
+    // 短いテスト
+  });
+  
+  test('機能2', async ({ page }) => {
+    // 短いテスト
+  });
+});
+```
+
+### パターン3: テストの並列化戦略
+
+```javascript
+// playwright.config.js
+module.exports = defineConfig({
+  // ファイル単位で並列実行
+  fullyParallel: true,
+  
+  // または、テスト単位で並列実行
+  fullyParallel: false,
+  
+  // 最大worker数
+  workers: 4,
+});
+```
+
+## 9. パフォーマンス測定
+
+### テスト実行時間の測定
+
+```javascript
+test('実行時間の測定', async ({ page }) => {
+  const startTime = Date.now();
+  
+  await page.goto('https://example.com');
+  await page.getByRole('button').click();
+  
+  const executionTime = Date.now() - startTime;
+  console.log(`Execution time: ${executionTime}ms`);
+  
+  // 実行時間が閾値以内であることを確認
+  expect(executionTime).toBeLessThan(5000);
+});
+```
+
+### メモリ使用量の監視
+
+```javascript
+test('メモリ使用量の監視', async ({ page, context }) => {
+  const initialMemory = process.memoryUsage().heapUsed;
+  
+  await page.goto('https://example.com');
+  // テスト処理...
+  
+  const finalMemory = process.memoryUsage().heapUsed;
+  const memoryIncrease = finalMemory - initialMemory;
+  
+  console.log(`Memory increase: ${memoryIncrease / 1024 / 1024}MB`);
+});
+```
+
+## 10. よくある問題と解決策
+
+### 問題1: テストが遅い
+
+**解決策:**
+- 並列実行を有効化
+- 不要なリソースをブロック
+- タイムアウトを最適化
+- テストデータの準備を最適化
+
+### 問題2: メモリ使用量が多い
+
+**解決策:**
+- コンテキストを適切に閉じる
+- 不要なページを閉じる
+- キャッシュをクリア
+
+```javascript
+test.afterEach(async ({ page, context }) => {
+  // テスト後にクリーンアップ
+  await page.close();
+  await context.close();
+});
+```
+
+### 問題3: CI環境でタイムアウトが発生する
+
+**解決策:**
+- タイムアウトを適切に設定
+- リトライを有効化
+- ネットワークリクエストを最適化
+
+これで、Playwrightのパフォーマンスチューニング方法を理解できるようになりました。

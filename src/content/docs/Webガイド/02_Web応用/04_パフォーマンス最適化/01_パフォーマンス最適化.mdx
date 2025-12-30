@@ -1,0 +1,78 @@
+---
+title: Webパフォーマンス最適化
+sidebar:
+    label: パフォーマンス最適化
+---
+
+# Webパフォーマンス最適化完全ガイド
+
+Webアプリケーションのパフォーマンスを向上させる実践的な手法を詳しく解説します。
+
+## 1. リソースの最適化
+
+### 画像の最適化
+
+```html
+<!-- 遅延読み込み -->
+<img src="image.jpg" loading="lazy" alt="Description">
+
+<!-- レスポンシブ画像 -->
+<img srcset="small.jpg 480w, large.jpg 800w" 
+     sizes="(max-width: 600px) 480px, 800px"
+     src="large.jpg" alt="Description">
+```
+
+### CSS/JavaScriptの最適化
+
+```html
+<!-- 非同期読み込み -->
+<script src="script.js" async></script>
+
+<!-- 遅延読み込み -->
+<script src="script.js" defer></script>
+
+<!-- モジュール -->
+<script type="module" src="module.js"></script>
+```
+
+## 2. HTTP/2の活用
+
+### マルチプレクシング
+
+- 1つのTCP接続で複数のリクエスト/レスポンスを並列処理
+- HTTP/1.1の制限を解決
+
+### サーバープッシュ
+
+```http
+Link: </style.css>; rel=preload; as=style
+```
+
+- サーバーがクライアントにリソースを事前に送信
+
+## 3. レンダリングの最適化
+
+### クリティカルCSS
+
+```html
+<style>
+  /* クリティカルCSSをインライン化 */
+  body { margin: 0; }
+  .header { ... }
+</style>
+```
+
+### リソースヒント
+
+```html
+<!-- DNSプリフェッチ -->
+<link rel="dns-prefetch" href="https://api.example.com">
+
+<!-- プリコネクト -->
+<link rel="preconnect" href="https://api.example.com">
+
+<!-- プリロード -->
+<link rel="preload" href="/font.woff2" as="font" type="font/woff2" crossorigin>
+```
+
+これで、Webパフォーマンス最適化の実践的な手法を理解できるようになりました。

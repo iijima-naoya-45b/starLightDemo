@@ -1,21 +1,317 @@
 ---
-title: "ELK Stack"
-label: "ELK Stack"
+title: ELK Stack
+sidebar:
+    label: ELK Stack
 ---
 
-## ELK Stack
+# ELK Stack完全ガイド
 
-ELK Stackは、Elasticsearch、Logstash、Kibanaの組み合わせです。ログの収集、処理、可視化を行います。
+ELK Stack（Elasticsearch、Logstash、Kibana）を使用したログ管理システムの構築方法を、実務で使える実装例とともに詳しく解説します。
 
-### Elasticsearch
+## 1. ELK Stackとは
 
-ログデータを保存・検索するための分散検索エンジンです。
+### ELK Stackの構成
 
-### Logstash
+ELK Stackは、ログの収集、処理、保存、可視化を行うためのオープンソースのツールセットです。
 
-ログデータを収集・変換・送信するためのデータ処理パイプラインです。
+```
+アプリケーション
+   ↓（ログを送信）
+Logstash（ログの収集・処理）
+   ↓
+Elasticsearch（ログの保存・検索）
+   ↓
+Kibana（ログの可視化）
+```
 
-### Kibana
+### 各コンポーネントの役割
 
-Elasticsearchのデータを可視化するためのダッシュボードです。
+#### Elasticsearch
+
+- ログデータを保存・検索するための分散検索エンジン
+- スケーラブルで高速な検索機能を提供
+
+#### Logstash
+
+- ログデータを収集・変換・送信するためのデータ処理パイプライン
+- 複数のソースからログを収集し、Elasticsearchに送信
+
+#### Kibana
+
+- Elasticsearchのデータを可視化するためのダッシュボード
+- ログの検索、分析、可視化を提供
+
+## 2. Logstashの設定
+
+### 基本的な設定
+
+```ruby
+# logstash.conf
+input {
+  # ファイルからログを読み込む
+  file {
+    path => "/var/log/app/*.log"
+    start_position => "beginning"
+    sincedb_path => "/dev/null"
+  }
+  
+  # Beatsからログを受信
+  beats {
+    port => 5044
+  }
+}
+
+filter {
+  # Grokパターンでログをパース
+  grok {
+    match => { "message" => "%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:level} %{GREEDYDATA:message}" }
+  }
+  
+  # 日付フィールドの変換
+  date {
+    match => [ "timestamp", "ISO8601" ]
+  }
+  
+  # フィールドの追加
+  mutate {
+    add_field => { "environment" => "production" }
+  }
+}
+
+output {
+  # Elasticsearchに送信
+  elasticsearch {
+    hosts => ["http://elasticsearch:9200"]
+    index => "app-logs-%{+YYYY.MM.dd}"
+  }
+  
+  # デバッグ用（標準出力）
+  stdout {
+    codec => rubydebug
+  }
+}
+```
+
+### Grokパターンの例
+
+```ruby
+# ログ形式: 2024-01-01 12:00:00 INFO User logged in
+grok {
+  match => { "message" => "%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:level} %{GREEDYDATA:message}" }
+}
+
+# カスタムパターン
+grok {
+  match => { "message" => "\[%{TIMESTAMP_ISO8601:timestamp}\] \[%{LOGLEVEL:level}\] %{GREEDYDATA:message}" }
+}
+```
+
+## 3. Filebeatの設定
+
+### Filebeatとは
+
+Filebeatは、ログファイルを監視し、LogstashやElasticsearchに送信する軽量なエージェントです。
+
+```yaml
+# filebeat.yml
+filebeat.inputs:
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/app/*.log
+    fields:
+      app: my-app
+      environment: production
+    fields_under_root: false
+    multiline.pattern: '^\d{4}-\d{2}-\d{2}'
+    multiline.negate: true
+    multiline.match: after
+
+output.logstash:
+  hosts: ["logstash:5044"]
+
+# または直接Elasticsearchに送信
+# output.elasticsearch:
+#   hosts: ["elasticsearch:9200"]
+#   index: "app-logs-%{+yyyy.MM.dd}"
+```
+
+## 4. Elasticsearchの設定
+
+### 基本的な設定
+
+```yaml
+# elasticsearch.yml
+cluster.name: my-cluster
+node.name: node-1
+network.host: 0.0.0.0
+http.port: 9200
+
+# インデックステンプレート
+index.number_of_shards: 1
+index.number_of_replicas: 1
+```
+
+### インデックステンプレート
+
+```json
+{
+  "index_patterns": ["app-logs-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 1
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": {
+          "type": "date"
+        },
+        "level": {
+          "type": "keyword"
+        },
+        "message": {
+          "type": "text"
+        },
+        "app": {
+          "type": "keyword"
+        }
+      }
+    }
+  }
+}
+```
+
+## 5. Kibanaの設定
+
+### インデックスパターンの作成
+
+```json
+{
+  "title": "app-logs-*",
+  "timeFieldName": "@timestamp"
+}
+```
+
+### ダッシュボードの作成
+
+```json
+{
+  "title": "Application Logs Dashboard",
+  "panels": [
+    {
+      "type": "visualization",
+      "id": "log-level-distribution",
+      "gridData": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 15
+      }
+    },
+    {
+      "type": "visualization",
+      "id": "error-logs",
+      "gridData": {
+        "x": 24,
+        "y": 0,
+        "w": 24,
+        "h": 15
+      }
+    }
+  ]
+}
+```
+
+## 6. 実務でのログ管理戦略
+
+### ログの構造化
+
+```json
+{
+  "@timestamp": "2024-01-01T12:00:00Z",
+  "level": "INFO",
+  "app": "my-app",
+  "environment": "production",
+  "message": "User logged in",
+  "user_id": "12345",
+  "ip_address": "192.168.1.1",
+  "request_id": "abc-123-def"
+}
+```
+
+### ログの保持期間
+
+```yaml
+# インデックスライフサイクル管理（ILM）
+PUT _ilm/policy/log-policy
+{
+  "policy": {
+    "phases": {
+      "hot": {
+        "actions": {
+          "rollover": {
+            "max_size": "50GB",
+            "max_age": "7d"
+          }
+        }
+      },
+      "warm": {
+        "min_age": "7d",
+        "actions": {
+          "shrink": {
+            "number_of_shards": 1
+          }
+        }
+      },
+      "delete": {
+        "min_age": "30d",
+        "actions": {
+          "delete": {}
+        }
+      }
+    }
+  }
+}
+```
+
+## 7. よくある問題と解決策
+
+### 問題1: ログが収集されない
+
+**原因:**
+- Filebeatの設定が間違っている
+- ログファイルのパスが正しくない
+
+**解決策:**
+```bash
+# Filebeatの状態を確認
+filebeat test config
+filebeat test output
+
+# ログファイルのパスを確認
+ls -la /var/log/app/
+```
+
+### 問題2: Elasticsearchのパフォーマンスが低い
+
+**原因:**
+- インデックスのシャード数が多すぎる
+- メモリが不足している
+
+**解決策:**
+```bash
+# インデックスの状態を確認
+curl http://localhost:9200/_cat/indices?v
+
+# シャード数を調整
+PUT /app-logs-*/_settings
+{
+  "index": {
+    "number_of_replicas": 0
+  }
+}
+```
+
+これで、ELK Stackを使ったログ管理システムの構築方法を理解できるようになりました。
 

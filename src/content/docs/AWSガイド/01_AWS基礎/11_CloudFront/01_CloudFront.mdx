@@ -1,0 +1,437 @@
+---
+title: CloudFront完全ガイド
+sidebar:
+    label: CloudFront
+---
+
+# CloudFront完全ガイド
+
+CloudFrontは、AWSのCDN（Content Delivery Network）サービスです。実務で使える設定と最適化を詳しく解説します。
+
+## 1. CloudFrontとは
+
+### CloudFrontの役割
+
+CloudFrontは、コンテンツをエッジロケーションにキャッシュし、ユーザーに近い場所から配信することで、レイテンシを削減します。
+
+```
+ユーザー（東京）
+   ↓
+CloudFrontエッジロケーション（東京）← キャッシュから配信（高速）
+   ↓（キャッシュなしの場合）
+オリジンサーバー（米国）← 元のサーバーから取得
+```
+
+### なぜCloudFrontが必要か
+
+**問題のある構成（CloudFrontなし）:**
+
+```bash
+# 問題: オリジンサーバーから直接配信
+# 1. レイテンシが大きい（サーバーが遠い場合）
+# 2. サーバーの負荷が高い
+# 3. 帯域幅コストが高い
+# 4. 可用性が低い（単一障害点）
+
+# 問題点:
+# 1. レイテンシの問題
+# 2. サーバー負荷
+# 3. コストの問題
+# 4. 可用性の問題
+```
+
+**解決: CloudFrontによるCDN**
+
+```yaml
+# 解決: CloudFrontディストリビューション
+Resources:
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: example.com.s3.amazonaws.com
+            Id: S3Origin
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+
+# メリット:
+# 1. レイテンシの削減（エッジロケーションから配信）
+# 2. サーバー負荷の軽減（キャッシュから配信）
+# 3. コストの削減（帯域幅コストの削減）
+# 4. 可用性の向上（複数のエッジロケーション）
+```
+
+## 2. CloudFrontの基本設定
+
+### 基本的なディストリビューション
+
+```yaml
+Resources:
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: My CloudFront Distribution
+        DefaultRootObject: index.html
+        Origins:
+          - DomainName: example.com.s3.amazonaws.com
+            Id: S3Origin
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${OAI}'
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          MinTTL: 0
+          DefaultTTL: 86400
+          MaxTTL: 31536000
+          Compress: true
+        PriceClass: PriceClass_100  # 北米とヨーロッパのみ
+        Aliases:
+          - www.example.com
+        ViewerCertificate:
+          AcmCertificateArn: !Ref SSLCertificate
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+```
+
+### Origin Access Identity（OAI）
+
+```yaml
+Resources:
+  OAI:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: OAI for S3 bucket
+
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${OAI}'
+            Action: s3:GetObject
+            Resource: !Sub '${S3Bucket}/*'
+```
+
+## 3. キャッシュ動作の設定
+
+### キャッシュポリシー
+
+```yaml
+Resources:
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        DefaultCacheBehavior:
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # Managed-CachingOptimized
+          # または
+          # CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # Managed-CachingDisabled
+```
+
+### カスタムキャッシュポリシー
+
+```yaml
+Resources:
+  CustomCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: MyCustomCachePolicy
+        DefaultTTL: 86400
+        MaxTTL: 31536000
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig:
+            CookieBehavior: whitelist
+            Cookies:
+              - session_id
+          HeadersConfig:
+            HeaderBehavior: whitelist
+            Headers:
+              - Authorization
+          QueryStringsConfig:
+            QueryStringBehavior: whitelist
+            QueryStrings:
+              - version
+```
+
+## 4. オリジンの種類
+
+### S3オリジン
+
+```yaml
+Resources:
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: my-bucket.s3.amazonaws.com
+            Id: S3Origin
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${OAI}'
+```
+
+### カスタムオリジン（ALB）
+
+```yaml
+Resources:
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: !GetAtt ApplicationLoadBalancer.DNSName
+            Id: ALBOrigin
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+              OriginSslProtocols:
+                - TLSv1.2
+```
+
+### カスタムオリジン（EC2）
+
+```yaml
+Resources:
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: ec2.example.com
+            Id: EC2Origin
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: match-viewer
+              OriginReadTimeout: 30
+              OriginKeepaliveTimeout: 5
+```
+
+## 5. ビヘイビアの設定
+
+### パスベースのビヘイビア
+
+```yaml
+Resources:
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: APIOrigin
+            ViewerProtocolPolicy: https-only
+            AllowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+            ForwardedValues:
+              QueryString: true
+              Headers:
+                - Authorization
+              Cookies:
+                Forward: all
+            MinTTL: 0
+            DefaultTTL: 0
+            MaxTTL: 0
+          - PathPattern: /static/*
+            TargetOriginId: S3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+            CachedMethods:
+              - GET
+              - HEAD
+            ForwardedValues:
+              QueryString: false
+            MinTTL: 86400
+            DefaultTTL: 86400
+            MaxTTL: 31536000
+```
+
+## 6. セキュリティ設定
+
+### SSL/TLS証明書
+
+```yaml
+Resources:
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        ViewerCertificate:
+          AcmCertificateArn: !Ref SSLCertificate
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+```
+
+### WAF統合
+
+```yaml
+Resources:
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        WebACLId: !Ref WebACL
+```
+
+### 署名付きURL
+
+```python
+# Pythonでの署名付きURL生成
+import boto3
+from botocore.signers import CloudFrontSigner
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+import time
+
+def rsa_signer(message):
+    with open('private_key.pem', 'rb') as key_file:
+        private_key = serialization.load_pem_private_key(
+            key_file.read(),
+            password=None
+        )
+    return private_key.sign(message, padding.PKCS1v15(), hashes.SHA1())
+
+key_id = 'APKAXXXXXXXXXXXXXXXX'
+url = 'https://d1234567890.cloudfront.net/private-file.jpg'
+expire_date = int(time.time()) + 3600  # 1時間後
+
+cloudfront_signer = CloudFrontSigner(key_id, rsa_signer)
+signed_url = cloudfront_signer.generate_presigned_url(
+    url,
+    date_less_than=expire_date
+)
+```
+
+## 7. 実務でのベストプラクティス
+
+### パターン1: 静的コンテンツの配信
+
+```yaml
+Resources:
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: static.example.com.s3.amazonaws.com
+            Id: S3StaticOrigin
+        DefaultCacheBehavior:
+          TargetOriginId: S3StaticOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          MinTTL: 86400
+          DefaultTTL: 86400
+          MaxTTL: 31536000
+          Compress: true
+```
+
+### パターン2: 動的コンテンツの配信
+
+```yaml
+Resources:
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: api.example.com
+            Id: APIOrigin
+        DefaultCacheBehavior:
+          TargetOriginId: APIOrigin
+          ViewerProtocolPolicy: https-only
+          AllowedMethods:
+            - GET
+            - POST
+            - PUT
+            - DELETE
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          MinTTL: 0
+          DefaultTTL: 0
+          MaxTTL: 0
+          ForwardedValues:
+            QueryString: true
+            Headers:
+              - Authorization
+              - Host
+```
+
+## 8. よくある問題と解決策
+
+### 問題1: キャッシュが更新されない
+
+**原因:**
+- TTLが長すぎる
+- キャッシュの無効化が必要
+
+**解決策:**
+```bash
+# キャッシュの無効化
+aws cloudfront create-invalidation \
+  --distribution-id E1234567890ABC \
+  --paths "/*"
+
+# 特定のパスのみ無効化
+aws cloudfront create-invalidation \
+  --distribution-id E1234567890ABC \
+  --paths "/images/*"
+```
+
+### 問題2: HTTPSエラー
+
+**原因:**
+- SSL証明書が正しく設定されていない
+- 証明書のドメイン名が一致していない
+
+**解決策:**
+```bash
+# ディストリビューションの設定を確認
+aws cloudfront get-distribution --id E1234567890ABC
+
+# SSL証明書の確認
+aws acm list-certificates
+```
+
+これで、CloudFrontの基礎知識と実務での使い方を理解できるようになりました。

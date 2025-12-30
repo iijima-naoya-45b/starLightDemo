@@ -1,0 +1,779 @@
+---
+title: Playwrightセットアップとベストプラクティス完全ガイド
+sidebar:
+    label: セットアップとベストプラクティス
+---
+
+# Playwrightセットアップとベストプラクティス完全ガイド
+
+Playwrightの実務で使えるセットアップ方法とベストプラクティスを、詳細な実装例とともに解説します。
+
+## 1. プロジェクトセットアップ
+
+### 1.1 初期セットアップ
+
+#### 新規プロジェクトの場合
+
+```bash
+# プロジェクトの初期化
+npm init -y
+
+# Playwrightのインストール
+npm install --save-dev @playwright/test
+
+# ブラウザのインストール
+npx playwright install
+
+# TypeScriptを使用する場合
+npm install --save-dev typescript @types/node
+```
+
+#### 既存プロジェクトへの追加
+
+```bash
+# 既存のプロジェクトにPlaywrightを追加
+npm install --save-dev @playwright/test
+
+# ブラウザのインストール
+npx playwright install
+
+# 設定ファイルの生成
+npx playwright install --with-deps
+```
+
+### 1.2 プロジェクト構造
+
+#### 推奨されるディレクトリ構造
+
+```
+project-root/
+├── tests/
+│   ├── e2e/
+│   │   ├── auth.spec.ts
+│   │   ├── navigation.spec.ts
+│   │   └── user-flow.spec.ts
+│   ├── api/
+│   │   ├── api.spec.ts
+│   │   └── api-helpers.ts
+│   ├── fixtures/
+│   │   ├── auth.ts
+│   │   └── database.ts
+│   └── utils/
+│       ├── helpers.ts
+│       └── constants.ts
+├── playwright.config.ts
+├── .env.local
+└── package.json
+```
+
+### 1.3 設定ファイルの作成
+
+#### 基本的な設定ファイル
+
+```typescript
+// playwright.config.ts
+import { defineConfig, devices } from '@playwright/test';
+
+export default defineConfig({
+  // テストファイルの場所
+  testDir: './tests/e2e',
+  
+  // テストファイルのパターン
+  testMatch: /.*\.spec\.(js|ts)/,
+  
+  // 完全並列実行
+  fullyParallel: true,
+  
+  // CI環境では失敗を禁止
+  forbidOnly: !!process.env.CI,
+  
+  // リトライ設定
+  retries: process.env.CI ? 2 : 0,
+  
+  // ワーカー数（並列実行数）
+  workers: process.env.CI ? 2 : undefined,
+  
+  // レポーター設定
+  reporter: [
+    ['list'],
+    ['html', { outputFolder: 'playwright-report' }],
+    ['junit', { outputFile: 'test-results/junit.xml' }],
+  ],
+  
+  // グローバル設定
+  use: {
+    baseURL: process.env.BASE_URL || 'http://localhost:3000',
+    trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+    actionTimeout: 10 * 1000, // 10秒
+    navigationTimeout: 30 * 1000, // 30秒
+  },
+  
+  // プロジェクト設定
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] },
+    },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
+    },
+  ],
+  
+  // 開発サーバーの起動
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://localhost:3000',
+    reuseExistingServer: !process.env.CI,
+    timeout: 120 * 1000,
+  },
+});
+```
+
+## 2. 環境別セットアップ
+
+### 2.1 開発環境
+
+#### 開発環境向けの設定
+
+```typescript
+// playwright.config.ts
+import { defineConfig, devices } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './tests/e2e',
+  
+  // 開発環境では並列実行を有効化
+  fullyParallel: true,
+  workers: undefined, // CPUコア数に応じて自動決定
+  
+  // 開発環境ではリトライなし（すぐにエラーを確認）
+  retries: 0,
+  
+  // 開発環境ではヘッドレスモードを無効化（ブラウザを表示）
+  use: {
+    headless: false,
+    baseURL: 'http://localhost:3000',
+    trace: 'on',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+  },
+  
+  reporter: 'html',
+  
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
+  
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://localhost:3000',
+    reuseExistingServer: true, // 既存のサーバーを再利用
+  },
+});
+```
+
+### 2.2 CI/CD環境
+
+#### CI/CD環境向けの設定
+
+```typescript
+// playwright.config.ts
+import { defineConfig, devices } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './tests/e2e',
+  
+  // CI環境では並列実行を制限
+  fullyParallel: true,
+  workers: process.env.CI ? 2 : undefined,
+  
+  // CI環境ではリトライを有効化
+  retries: process.env.CI ? 2 : 0,
+  
+  // CI環境ではヘッドレスモード
+  use: {
+    headless: true,
+    baseURL: process.env.BASE_URL || 'http://localhost:3000',
+    trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+  },
+  
+  reporter: process.env.CI ? [
+    ['list'],
+    ['html', { outputFolder: 'playwright-report' }],
+    ['junit', { outputFile: 'test-results/junit.xml' }],
+    ['github'], // GitHub Actions用
+  ] : 'html',
+  
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
+  
+  webServer: {
+    command: 'npm run build && npm run start',
+    url: process.env.BASE_URL || 'http://localhost:3000',
+    reuseExistingServer: false,
+  },
+});
+```
+
+### 2.3 環境変数の管理
+
+#### .envファイルの使用
+
+```bash
+# .env.local
+BASE_URL=http://localhost:3000
+API_URL=http://localhost:8000
+AUTH_TOKEN=your-auth-token
+DATABASE_URL=postgresql://user:password@localhost:5432/testdb
+```
+
+#### 環境変数の読み込み
+
+```typescript
+// playwright.config.ts
+import { defineConfig, devices } from '@playwright/test';
+import dotenv from 'dotenv';
+
+// 環境変数の読み込み
+dotenv.config({ path: '.env.local' });
+
+export default defineConfig({
+  use: {
+    baseURL: process.env.BASE_URL || 'http://localhost:3000',
+    extraHTTPHeaders: {
+      'Authorization': `Bearer ${process.env.AUTH_TOKEN}`,
+    },
+  },
+});
+```
+
+## 3. ベストプラクティス
+
+### 3.1 テストの構造化
+
+#### Page Object Model（POM）の使用
+
+```typescript
+// tests/pages/LoginPage.ts
+import { Page, Locator } from '@playwright/test';
+
+export class LoginPage {
+  readonly page: Page;
+  readonly emailInput: Locator;
+  readonly passwordInput: Locator;
+  readonly loginButton: Locator;
+  readonly errorMessage: Locator;
+
+  constructor(page: Page) {
+    this.page = page;
+    this.emailInput = page.getByLabel('Email');
+    this.passwordInput = page.getByLabel('Password');
+    this.loginButton = page.getByRole('button', { name: 'Login' });
+    this.errorMessage = page.getByTestId('error-message');
+  }
+
+  async goto() {
+    await this.page.goto('/login');
+  }
+
+  async login(email: string, password: string) {
+    await this.emailInput.fill(email);
+    await this.passwordInput.fill(password);
+    await this.loginButton.click();
+  }
+
+  async isLoggedIn() {
+    return await this.page.getByTestId('user-menu').isVisible();
+  }
+}
+```
+
+#### テストでの使用
+
+```typescript
+// tests/e2e/auth.spec.ts
+import { test, expect } from '@playwright/test';
+import { LoginPage } from '../pages/LoginPage';
+
+test.describe('認証フロー', () => {
+  test('ログイン成功', async ({ page }) => {
+    const loginPage = new LoginPage(page);
+    await loginPage.goto();
+    await loginPage.login('user@example.com', 'password123');
+    await expect(loginPage.isLoggedIn()).toBeTruthy();
+  });
+
+  test('ログイン失敗', async ({ page }) => {
+    const loginPage = new LoginPage(page);
+    await loginPage.goto();
+    await loginPage.login('user@example.com', 'wrong-password');
+    await expect(loginPage.errorMessage).toBeVisible();
+  });
+});
+```
+
+### 3.2 カスタムフィクスチャの活用
+
+#### 認証フィクスチャ
+
+```typescript
+// tests/fixtures/auth.ts
+import { test as base } from '@playwright/test';
+import { LoginPage } from '../pages/LoginPage';
+
+type AuthFixtures = {
+  authenticatedPage: Page;
+};
+
+export const test = base.extend<AuthFixtures>({
+  authenticatedPage: async ({ page }, use) => {
+    const loginPage = new LoginPage(page);
+    await loginPage.goto();
+    await loginPage.login(
+      process.env.TEST_USER_EMAIL || 'test@example.com',
+      process.env.TEST_USER_PASSWORD || 'password123'
+    );
+    await use(page);
+  },
+});
+
+export { expect } from '@playwright/test';
+```
+
+#### テストでの使用
+
+```typescript
+// tests/e2e/protected-page.spec.ts
+import { test, expect } from '../fixtures/auth';
+
+test('認証が必要なページへのアクセス', async ({ authenticatedPage }) => {
+  await authenticatedPage.goto('/dashboard');
+  await expect(authenticatedPage.getByText('Dashboard')).toBeVisible();
+});
+```
+
+### 3.3 テストデータの管理
+
+#### テストデータの分離
+
+```typescript
+// tests/utils/test-data.ts
+export const testUsers = {
+  admin: {
+    email: 'admin@example.com',
+    password: 'admin123',
+    role: 'admin',
+  },
+  user: {
+    email: 'user@example.com',
+    password: 'user123',
+    role: 'user',
+  },
+  guest: {
+    email: 'guest@example.com',
+    password: 'guest123',
+    role: 'guest',
+  },
+};
+
+export const testProducts = {
+  laptop: {
+    name: 'Laptop',
+    price: 999.99,
+    category: 'Electronics',
+  },
+  phone: {
+    name: 'Phone',
+    price: 699.99,
+    category: 'Electronics',
+  },
+};
+```
+
+#### テストでの使用
+
+```typescript
+// tests/e2e/product.spec.ts
+import { test, expect } from '@playwright/test';
+import { testProducts } from '../utils/test-data';
+
+test('商品の追加', async ({ page }) => {
+  await page.goto('/products');
+  await page.getByRole('button', { name: 'Add Product' }).click();
+  await page.getByLabel('Name').fill(testProducts.laptop.name);
+  await page.getByLabel('Price').fill(testProducts.laptop.price.toString());
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText(testProducts.laptop.name)).toBeVisible();
+});
+```
+
+### 3.4 ヘルパー関数の作成
+
+#### 共通処理のヘルパー化
+
+```typescript
+// tests/utils/helpers.ts
+import { Page } from '@playwright/test';
+
+export async function waitForApiResponse(
+  page: Page,
+  urlPattern: string | RegExp,
+  timeout = 30000
+) {
+  return await page.waitForResponse(
+    (response) => {
+      const url = response.url();
+      if (typeof urlPattern === 'string') {
+        return url.includes(urlPattern);
+      }
+      return urlPattern.test(url);
+    },
+    { timeout }
+  );
+}
+
+export async function fillForm(
+  page: Page,
+  fields: Record<string, string>
+) {
+  for (const [label, value] of Object.entries(fields)) {
+    await page.getByLabel(label).fill(value);
+  }
+}
+
+export async function clearAndFill(
+  page: Page,
+  selector: string,
+  value: string
+) {
+  await page.locator(selector).clear();
+  await page.locator(selector).fill(value);
+}
+```
+
+### 3.5 エラーハンドリング
+
+#### 堅牢なエラーハンドリング
+
+```typescript
+// tests/e2e/error-handling.spec.ts
+import { test, expect } from '@playwright/test';
+
+test('ネットワークエラーの処理', async ({ page }) => {
+  // ネットワークエラーをシミュレート
+  await page.route('**/api/**', (route) => {
+    route.abort('failed');
+  });
+
+  await page.goto('/');
+  
+  // エラーメッセージが表示されることを確認
+  await expect(page.getByText('Network error')).toBeVisible();
+});
+
+test('タイムアウトの処理', async ({ page }) => {
+  // 遅いAPIレスポンスをシミュレート
+  await page.route('**/api/slow', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 10000));
+    await route.continue();
+  });
+
+  await page.goto('/slow-page');
+  
+  // ローディング表示を確認
+  await expect(page.getByText('Loading...')).toBeVisible();
+});
+```
+
+### 3.6 パフォーマンステスト
+
+#### パフォーマンス測定
+
+```typescript
+// tests/e2e/performance.spec.ts
+import { test, expect } from '@playwright/test';
+
+test('ページロード時間の測定', async ({ page }) => {
+  const startTime = Date.now();
+  await page.goto('/');
+  const loadTime = Date.now() - startTime;
+  
+  // ページロード時間が2秒以内であることを確認
+  expect(loadTime).toBeLessThan(2000);
+});
+
+test('APIレスポンス時間の測定', async ({ page }) => {
+  const responsePromise = page.waitForResponse('**/api/products');
+  await page.goto('/products');
+  const response = await responsePromise;
+  
+  const responseTime = response.timing().responseEnd - response.timing().requestStart;
+  
+  // APIレスポンス時間が500ms以内であることを確認
+  expect(responseTime).toBeLessThan(500);
+});
+```
+
+## 4. CI/CD統合
+
+### 4.1 GitHub Actions
+
+#### GitHub Actionsの設定
+
+```yaml
+# .github/workflows/playwright.yml
+name: Playwright Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+      
+      - name: Run Playwright tests
+        run: npx playwright test
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
+          AUTH_TOKEN: ${{ secrets.AUTH_TOKEN }}
+      
+      - uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+```
+
+### 4.2 GitLab CI/CD
+
+#### GitLab CI/CDの設定
+
+```yaml
+# .gitlab-ci.yml
+stages:
+  - test
+
+playwright:
+  stage: test
+  image: mcr.microsoft.com/playwright:v1.40.0-focal
+  before_script:
+    - npm ci
+    - npx playwright install --with-deps
+  script:
+    - npx playwright test
+  artifacts:
+    when: always
+    paths:
+      - playwright-report/
+    expire_in: 30 days
+  variables:
+    BASE_URL: $CI_ENVIRONMENT_URL
+    AUTH_TOKEN: $CI_AUTH_TOKEN
+```
+
+## 5. デバッグとトラブルシューティング
+
+### 5.1 デバッグ方法
+
+#### Playwright Inspectorの使用
+
+```bash
+# デバッグモードでテストを実行
+npx playwright test --debug
+
+# 特定のテストをデバッグ
+npx playwright test auth.spec.ts --debug
+
+# UIモードで実行
+npx playwright test --ui
+```
+
+#### コード内でのデバッグ
+
+```typescript
+// tests/e2e/debug.spec.ts
+import { test } from '@playwright/test';
+
+test('デバッグ例', async ({ page }) => {
+  await page.goto('/');
+  
+  // ページを一時停止（デバッガーが接続可能）
+  await page.pause();
+  
+  // コンソールログを確認
+  page.on('console', (msg) => console.log('Browser console:', msg.text()));
+  
+  // ネットワークリクエストを監視
+  page.on('request', (request) => console.log('Request:', request.url()));
+  page.on('response', (response) => console.log('Response:', response.url(), response.status()));
+});
+```
+
+### 5.2 よくある問題と解決策
+
+#### 問題1: 要素が見つからない
+
+**原因:**
+- 要素がまだ読み込まれていない
+- セレクターが不正確
+
+**解決策:**
+
+```typescript
+// 悪い例
+await page.click('button');
+
+// 良い例: 適切なロケーターを使用
+await page.getByRole('button', { name: 'Submit' }).click();
+
+// または、明示的に待機
+await page.waitForSelector('button[type="submit"]');
+await page.click('button[type="submit"]');
+```
+
+#### 問題2: タイムアウトエラー
+
+**原因:**
+- ページの読み込みが遅い
+- ネットワークが遅い
+
+**解決策:**
+
+```typescript
+// タイムアウトを延長
+test('遅いページのテスト', async ({ page }) => {
+  await page.goto('/slow-page', { timeout: 60000 }); // 60秒
+});
+
+// または、設定ファイルでグローバルに設定
+// playwright.config.ts
+use: {
+  navigationTimeout: 60 * 1000, // 60秒
+}
+```
+
+#### 問題3: フレーキーなテスト
+
+**原因:**
+- タイミングの問題
+- 非同期処理の待機不足
+
+**解決策:**
+
+```typescript
+// 悪い例: 固定の待機時間
+await page.waitForTimeout(1000);
+
+// 良い例: 適切な待機
+await page.waitForLoadState('networkidle');
+await expect(page.getByText('Content')).toBeVisible();
+```
+
+## 6. 実務でのベストプラクティス
+
+### 6.1 テストの命名規則
+
+```typescript
+// 良い例: 明確で説明的な名前
+test('ユーザーがログインしてダッシュボードにアクセスできる', async ({ page }) => {
+  // ...
+});
+
+// 悪い例: 曖昧な名前
+test('test1', async ({ page }) => {
+  // ...
+});
+```
+
+### 6.2 テストの独立性
+
+```typescript
+// 良い例: 各テストが独立している
+test('商品の追加', async ({ page }) => {
+  // テストデータをセットアップ
+  await setupTestData(page);
+  // テストを実行
+  // ...
+  // テストデータをクリーンアップ
+  await cleanupTestData(page);
+});
+
+// 悪い例: 他のテストに依存
+test('商品の編集', async ({ page }) => {
+  // 前のテストで作成された商品に依存
+  // ...
+});
+```
+
+### 6.3 テストの並列実行
+
+```typescript
+// 並列実行を考慮したテスト
+test.describe('商品管理', () => {
+  test('商品の追加', async ({ page }) => {
+    // 一意の商品名を使用
+    const productName = `Product-${Date.now()}`;
+    // ...
+  });
+});
+```
+
+### 6.4 テストのメンテナンス性
+
+```typescript
+// 定数の使用
+const SELECTORS = {
+  loginButton: 'button[type="submit"]',
+  errorMessage: '[data-testid="error-message"]',
+};
+
+const TEST_DATA = {
+  validUser: {
+    email: 'user@example.com',
+    password: 'password123',
+  },
+};
+
+test('ログイン', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill(TEST_DATA.validUser.email);
+  await page.getByLabel('Password').fill(TEST_DATA.validUser.password);
+  await page.locator(SELECTORS.loginButton).click();
+});
+```
+
+これで、Playwrightのセットアップとベストプラクティスを実務で活用できるようになりました。
+

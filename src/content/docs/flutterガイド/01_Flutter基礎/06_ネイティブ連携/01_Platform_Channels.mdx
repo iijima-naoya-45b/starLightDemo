@@ -1,27 +1,279 @@
 ---
-title: "Platform Channels"
-label: "Platform Channels"
+title: Platform Channels
+sidebar:
+    label: Platform Channels
 ---
 
-## Platform Channels
+# Platform Channels完全ガイド
 
-Platform Channelsは、Flutterとネイティブコード（Android/iOS）を連携するための仕組みです。
+Platform Channelsは、Flutterとネイティブコード（Android/iOS）を連携するための仕組みです。ここでは、Method Channel、Event Channel、BasicMessageChannelの使い分けから、実務での実装例まで詳しく解説します。
 
-### Method Channelの実装
+## 1. Platform Channelsの種類
+
+Flutterには3種類のPlatform Channelがあります。
+
+### Method Channel
+- **用途**: Flutterからネイティブへの一方向通信、または同期通信
+- **特徴**: メソッド呼び出しと結果の返却が可能
+- **使用例**: ネイティブ機能の呼び出し、設定の取得
+
+### Event Channel
+- **用途**: ネイティブからFlutterへのストリーム通信
+- **特徴**: 継続的なデータ送信が可能
+- **使用例**: センサー値の監視、位置情報の更新
+
+### BasicMessageChannel
+- **用途**: 双方向通信
+- **特徴**: メッセージの送受信が可能
+- **使用例**: 複雑なデータ交換
+
+## 2. Method Channelの実装
+
+### Flutter側の実装
 
 ```dart
-// Flutter側
 import 'package:flutter/services.dart';
 
 class NativeBridge {
   static const platform = MethodChannel('com.example/native');
 
+  // ネイティブメソッドを呼び出す
   Future<String> getNativeData() async {
     try {
       final String result = await platform.invokeMethod('getData');
       return result;
     } on PlatformException catch (e) {
+      print("Error: ${e.message}");
       return "Error: ${e.message}";
+    }
+  }
+
+  // 引数を渡すメソッド
+  Future<void> saveData(String key, String value) async {
+    try {
+      await platform.invokeMethod('saveData', {
+        'key': key,
+        'value': value,
+      });
+    } on PlatformException catch (e) {
+      print("Error: ${e.message}");
+    }
+  }
+
+  // 戻り値を受け取るメソッド
+  Future<Map<String, dynamic>> getDeviceInfo() async {
+    try {
+      final result = await platform.invokeMethod('getDeviceInfo');
+      return Map<String, dynamic>.from(result);
+    } on PlatformException catch (e) {
+      print("Error: ${e.message}");
+      return {};
+    }
+  }
+}
+```
+
+### Android側の実装（Kotlin）
+
+```kotlin
+// MainActivity.kt
+package com.example.myapp
+
+import android.os.Bundle
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+
+class MainActivity: FlutterActivity() {
+    private val CHANNEL = "com.example/native"
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getData" -> {
+                        val data = "Hello from Android"
+                        result.success(data)
+                    }
+                    "saveData" -> {
+                        val key = call.argument<String>("key")
+                        val value = call.argument<String>("value")
+                        // データを保存する処理
+                        result.success(null)
+                    }
+                    "getDeviceInfo" -> {
+                        val deviceInfo = mapOf(
+                            "model" to android.os.Build.MODEL,
+                            "version" to android.os.Build.VERSION.SDK_INT.toString(),
+                        )
+                        result.success(deviceInfo)
+                    }
+                    else -> {
+                        result.notImplemented()
+                    }
+                }
+            }
+    }
+}
+```
+
+### iOS側の実装（Swift）
+
+```swift
+// AppDelegate.swift
+import UIKit
+import Flutter
+
+@UIApplicationMain
+@objc class AppDelegate: FlutterAppDelegate {
+  override func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+  ) -> Bool {
+    let controller : FlutterViewController = window?.rootViewController as! FlutterViewController
+    let nativeChannel = FlutterMethodChannel(name: "com.example/native",
+                                              binaryMessenger: controller.binaryMessenger)
+    
+    nativeChannel.setMethodCallHandler({
+      (call: FlutterMethodCall, result: @escaping FlutterResult) -> Void in
+      switch call.method {
+      case "getData":
+        result("Hello from iOS")
+      case "saveData":
+        let args = call.arguments as! Dictionary<String, Any>
+        let key = args["key"] as! String
+        let value = args["value"] as! String
+        // データを保存する処理
+        result(nil)
+      case "getDeviceInfo":
+        let deviceInfo: [String: Any] = [
+          "model": UIDevice.current.model,
+          "version": UIDevice.current.systemVersion,
+        ]
+        result(deviceInfo)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    })
+    
+    GeneratedPluginRegistrant.register(with: self)
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+}
+```
+
+## 3. Event Channelの実装
+
+### Flutter側の実装
+
+```dart
+import 'package:flutter/services.dart';
+import 'dart:async';
+
+class SensorBridge {
+  static const eventChannel = EventChannel('com.example/sensor');
+
+  Stream<double> getSensorData() {
+    return eventChannel.receiveBroadcastStream().map((dynamic event) {
+      return event as double;
+    });
+  }
+}
+
+// 使用例
+class SensorPage extends StatefulWidget {
+  @override
+  _SensorPageState createState() => _SensorPageState();
+}
+
+class _SensorPageState extends State<SensorPage> {
+  StreamSubscription<double>? _subscription;
+  double _sensorValue = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    final bridge = SensorBridge();
+    _subscription = bridge.getSensorData().listen((value) {
+      setState(() {
+        _sensorValue = value;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Sensor Data')),
+      body: Center(
+        child: Text('Sensor Value: $_sensorValue'),
+      ),
+    );
+  }
+}
+```
+
+### Android側の実装（Kotlin）
+
+```kotlin
+// MainActivity.kt
+import io.flutter.plugin.common.EventChannel
+
+class MainActivity: FlutterActivity() {
+    private val SENSOR_CHANNEL = "com.example/sensor"
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, SENSOR_CHANNEL)
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                private var eventSink: EventChannel.EventSink? = null
+                private val sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+                private val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    eventSink = events
+                    val listener = object : SensorEventListener {
+                        override fun onSensorChanged(event: SensorEvent) {
+                            val value = event.values[0].toDouble()
+                            events?.success(value)
+                        }
+                        override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
+                    }
+                    sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    eventSink = null
+                }
+            })
+    }
+}
+```
+
+## 4. 実務でのネイティブ連携の実装例
+
+### 例1: カメラ機能の実装
+
+```dart
+// Flutter側
+class CameraBridge {
+  static const platform = MethodChannel('com.example/camera');
+
+  Future<String> takePicture() async {
+    try {
+      final String imagePath = await platform.invokeMethod('takePicture');
+      return imagePath;
+    } on PlatformException catch (e) {
+      throw Exception("Failed to take picture: ${e.message}");
     }
   }
 }
@@ -30,16 +282,185 @@ class NativeBridge {
 ```kotlin
 // Android側
 class MainActivity: FlutterActivity() {
+    private val CAMERA_CHANNEL = "com.example/camera"
+    private val REQUEST_IMAGE_CAPTURE = 1
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.example/native")
+        super.configureFlutterEngine(flutterEngine)
+        
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CAMERA_CHANNEL)
             .setMethodCallHandler { call, result ->
-                if (call.method == "getData") {
-                    result.success("Hello from Android")
+                if (call.method == "takePicture") {
+                    dispatchTakePictureIntent(result)
                 } else {
                     result.notImplemented()
                 }
             }
     }
+
+    private fun dispatchTakePictureIntent(result: MethodChannel.Result) {
+        val takePictureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+        if (takePictureIntent.resolveActivity(packageManager) != null) {
+            val photoFile = File.createTempFile("photo", ".jpg", getExternalFilesDir(Environment.DIRECTORY_PICTURES))
+            val photoURI = FileProvider.getUriForFile(this, "com.example.myapp.fileprovider", photoFile)
+            takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI)
+            startActivityForResult(takePictureIntent, REQUEST_IMAGE_CAPTURE)
+            result.success(photoFile.absolutePath)
+        } else {
+            result.error("CAMERA_ERROR", "Camera not available", null)
+        }
+    }
 }
 ```
+
+### 例2: 位置情報の取得
+
+```dart
+// Flutter側
+class LocationBridge {
+  static const platform = MethodChannel('com.example/location');
+  static const eventChannel = EventChannel('com.example/location_stream');
+
+  Future<Map<String, double>> getCurrentLocation() async {
+    try {
+      final result = await platform.invokeMethod('getCurrentLocation');
+      return Map<String, double>.from(result);
+    } on PlatformException catch (e) {
+      throw Exception("Failed to get location: ${e.message}");
+    }
+  }
+
+  Stream<Map<String, double>> getLocationUpdates() {
+    return eventChannel.receiveBroadcastStream().map((dynamic event) {
+      return Map<String, double>.from(event);
+    });
+  }
+}
+```
+
+### 例3: バイオメトリクス認証
+
+```dart
+// Flutter側
+class BiometricBridge {
+  static const platform = MethodChannel('com.example/biometric');
+
+  Future<bool> authenticate() async {
+    try {
+      final bool result = await platform.invokeMethod('authenticate');
+      return result;
+    } on PlatformException catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> isAvailable() async {
+    try {
+      final bool result = await platform.invokeMethod('isAvailable');
+      return result;
+    } on PlatformException catch (e) {
+      return false;
+    }
+  }
+}
+```
+
+## 5. エラーハンドリングとデバッグ方法
+
+### エラーハンドリングのベストプラクティス
+
+```dart
+class SafeNativeBridge {
+  static const platform = MethodChannel('com.example/native');
+
+  Future<T?> invokeMethodSafely<T>(
+    String method, {
+    dynamic arguments,
+    T Function(dynamic)? parser,
+  }) async {
+    try {
+      final result = await platform.invokeMethod(method, arguments);
+      if (parser != null) {
+        return parser(result);
+      }
+      return result as T?;
+    } on PlatformException catch (e) {
+      print("PlatformException: ${e.code} - ${e.message}");
+      print("Details: ${e.details}");
+      return null;
+    } on MissingPluginException catch (e) {
+      print("MissingPluginException: ${e.message}");
+      return null;
+    } catch (e) {
+      print("Unexpected error: $e");
+      return null;
+    }
+  }
+}
+```
+
+### デバッグ方法
+
+1. **ログの確認**
+   ```dart
+   // Flutter側
+   print("Calling native method: getData");
+   final result = await platform.invokeMethod('getData');
+   print("Result: $result");
+   ```
+
+2. **Android Logcatの確認**
+   ```kotlin
+   // Android側
+   Log.d("NativeBridge", "Method called: ${call.method}")
+   Log.d("NativeBridge", "Arguments: ${call.arguments}")
+   ```
+
+3. **iOS Consoleの確認**
+   ```swift
+   // iOS側
+   print("Method called: \(call.method)")
+   print("Arguments: \(call.arguments ?? "nil")")
+   ```
+
+## 6. よくある問題と解決策
+
+### 問題1: MethodChannelが見つからない
+
+**原因**: チャンネル名の不一致、またはネイティブ側の設定漏れ
+
+**解決策**:
+- Flutter側とネイティブ側のチャンネル名が完全に一致しているか確認
+- `configureFlutterEngine`が正しく実装されているか確認
+
+### 問題2: 非同期処理が完了しない
+
+**原因**: `result.success()`または`result.error()`が呼ばれていない
+
+**解決策**:
+```kotlin
+// 正しい実装
+MethodChannel(...).setMethodCallHandler { call, result ->
+    // 非同期処理
+    someAsyncOperation { data ->
+        result.success(data) // 必ず呼び出す
+    }
+}
+```
+
+### 問題3: 型の不一致
+
+**原因**: Flutter側とネイティブ側でデータ型が一致していない
+
+**解決策**:
+- データ型を明示的に指定
+- MapやListを使用する場合は、型を明示的に変換
+
+```dart
+// Flutter側
+final result = await platform.invokeMethod('getData');
+final data = Map<String, dynamic>.from(result); // 明示的に変換
+```
+
+これで、Platform Channelsを使ったネイティブ連携の実装方法を理解できるようになりました。
 

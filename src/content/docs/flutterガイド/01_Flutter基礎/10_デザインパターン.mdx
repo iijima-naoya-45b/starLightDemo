@@ -1,0 +1,325 @@
+---
+title: デザインパターン
+sidebar:
+    label: デザインパターン
+---
+
+# Flutterデザインパターン完全ガイド
+
+Flutterアプリ開発でよく使用されるデザインパターンを、実装例とともに詳しく解説します。
+
+## 1. Repository パターン
+
+### 目的
+データソース（API、ローカルDB）へのアクセスを抽象化し、ビジネスロジックから分離します。
+
+### 実装例
+
+```dart
+// 抽象クラス
+abstract class UserRepository {
+  Future<List<User>> getUsers();
+  Future<User> getUserById(String id);
+  Future<void> createUser(User user);
+}
+
+// API実装
+class ApiUserRepository implements UserRepository {
+  final ApiService _apiService;
+
+  ApiUserRepository(this._apiService);
+
+  @override
+  Future<List<User>> getUsers() async {
+    final response = await _apiService.get('/users');
+    return (response['data'] as List)
+        .map((json) => User.fromJson(json))
+        .toList();
+  }
+
+  @override
+  Future<User> getUserById(String id) async {
+    final response = await _apiService.get('/users/$id');
+    return User.fromJson(response['data']);
+  }
+
+  @override
+  Future<void> createUser(User user) async {
+    await _apiService.post('/users', data: user.toJson());
+  }
+}
+
+// ローカル実装
+class LocalUserRepository implements UserRepository {
+  final DatabaseService _databaseService;
+
+  LocalUserRepository(this._databaseService);
+
+  @override
+  Future<List<User>> getUsers() async {
+    return await _databaseService.getAllUsers();
+  }
+
+  // 他のメソッドも同様に実装
+}
+```
+
+## 2. UseCase パターン
+
+### 目的
+ビジネスロジックを1つのユースケースとしてカプセル化します。
+
+### 実装例
+
+```dart
+class GetUsersUseCase {
+  final UserRepository _repository;
+
+  GetUsersUseCase(this._repository);
+
+  Future<Either<Failure, List<User>>> execute() async {
+    try {
+      final users = await _repository.getUsers();
+      return Right(users);
+    } catch (e) {
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+}
+
+// 使用例
+class UserListViewModel extends ChangeNotifier {
+  final GetUsersUseCase _getUsersUseCase;
+  List<User> _users = [];
+  bool _isLoading = false;
+
+  UserListViewModel(this._getUsersUseCase);
+
+  List<User> get users => _users;
+  bool get isLoading => _isLoading;
+
+  Future<void> loadUsers() async {
+    _isLoading = true;
+    notifyListeners();
+
+    final result = await _getUsersUseCase.execute();
+    result.fold(
+      (failure) => _handleError(failure),
+      (users) {
+        _users = users;
+        _isLoading = false;
+        notifyListeners();
+      },
+    );
+  }
+
+  void _handleError(Failure failure) {
+    // エラー処理
+    _isLoading = false;
+    notifyListeners();
+  }
+}
+```
+
+## 3. MVVM パターン
+
+### 目的
+UI、ビジネスロジック、データを分離します。
+
+### 実装例
+
+```dart
+// Model
+class User {
+  final String id;
+  final String name;
+  final String email;
+
+  User({required this.id, required this.name, required this.email});
+
+  factory User.fromJson(Map<String, dynamic> json) {
+    return User(
+      id: json['id'],
+      name: json['name'],
+      email: json['email'],
+    );
+  }
+}
+
+// ViewModel
+class UserViewModel extends ChangeNotifier {
+  final UserRepository _repository;
+  List<User> _users = [];
+  bool _isLoading = false;
+  String? _error;
+
+  UserViewModel(this._repository);
+
+  List<User> get users => _users;
+  bool get isLoading => _isLoading;
+  String? get error => _error;
+
+  Future<void> loadUsers() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      _users = await _repository.getUsers();
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+}
+
+// View
+class UserListView extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (_) => UserViewModel(UserRepository()),
+      child: Consumer<UserViewModel>(
+        builder: (context, viewModel, child) {
+          if (viewModel.isLoading) {
+            return CircularProgressIndicator();
+          }
+
+          if (viewModel.error != null) {
+            return Text('Error: ${viewModel.error}');
+          }
+
+          return ListView.builder(
+            itemCount: viewModel.users.length,
+            itemBuilder: (context, index) {
+              final user = viewModel.users[index];
+              return ListTile(
+                title: Text(user.name),
+                subtitle: Text(user.email),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+```
+
+## 4. Singleton パターン
+
+### 目的
+アプリ全体で1つのインスタンスのみを共有します。
+
+### 実装例
+
+```dart
+class ApiService {
+  static ApiService? _instance;
+  late Dio _dio;
+
+  ApiService._internal() {
+    _dio = Dio(BaseOptions(
+      baseUrl: 'https://api.example.com',
+    ));
+  }
+
+  static ApiService get instance {
+    _instance ??= ApiService._internal();
+    return _instance!;
+  }
+
+  Dio get dio => _dio;
+}
+
+// 使用例
+final apiService = ApiService.instance;
+```
+
+## 5. Factory パターン
+
+### 目的
+オブジェクトの作成を抽象化します。
+
+### 実装例
+
+```dart
+abstract class RepositoryFactory {
+  UserRepository createUserRepository();
+  ProductRepository createProductRepository();
+}
+
+class ApiRepositoryFactory implements RepositoryFactory {
+  final ApiService _apiService;
+
+  ApiRepositoryFactory(this._apiService);
+
+  @override
+  UserRepository createUserRepository() {
+    return ApiUserRepository(_apiService);
+  }
+
+  @override
+  ProductRepository createProductRepository() {
+    return ApiProductRepository(_apiService);
+  }
+}
+
+class LocalRepositoryFactory implements RepositoryFactory {
+  final DatabaseService _databaseService;
+
+  LocalRepositoryFactory(this._databaseService);
+
+  @override
+  UserRepository createUserRepository() {
+    return LocalUserRepository(_databaseService);
+  }
+
+  @override
+  ProductRepository createProductRepository() {
+    return LocalProductRepository(_databaseService);
+  }
+}
+```
+
+## 6. Observer パターン
+
+### 目的
+状態の変化を複数のオブジェクトに通知します。
+
+### 実装例
+
+```dart
+// Providerが既にObserverパターンを実装
+class CounterProvider extends ChangeNotifier {
+  int _count = 0;
+
+  int get count => _count;
+
+  void increment() {
+    _count++;
+    notifyListeners(); // Observerに通知
+  }
+}
+```
+
+## 7. 実務でのパターン選択
+
+### 小規模プロジェクト
+- Repository パターン
+- Singleton パターン
+
+### 中規模プロジェクト
+- Repository パターン
+- MVVM パターン
+- UseCase パターン
+
+### 大規模プロジェクト
+- Repository パターン
+- MVVM パターン
+- UseCase パターン
+- Factory パターン
+
+これで、Flutterでのデザインパターンの実装方法を理解できるようになりました。

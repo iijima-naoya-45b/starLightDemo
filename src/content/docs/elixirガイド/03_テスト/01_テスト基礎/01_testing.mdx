@@ -1,7 +1,58 @@
 ---
-title: "テストの実装方法の詳細"
-label: "テストの実装方法の詳細"
+title: Elixirテスト完全ガイド
+sidebar:
+    label: テスト
 ---
+
+# Elixirテスト完全ガイド
+
+ElixirのテストフレームワークExUnitを使用したテスト実装を、実務で使える実装例とともに詳しく解説します。
+
+## 1. ExUnitとは
+
+### ExUnitの特徴
+
+ExUnitは、Elixirの標準テストフレームワークです。シンプルで高速なテスト実行を可能にします。
+
+```
+ExUnitの特徴
+   ├─ 並行実行（async: true）
+   ├─ セットアップとクリーンアップ
+   ├─ モックとスタブ
+   └─ データベーステスト
+```
+
+### なぜExUnitが必要か
+
+**問題のある構成（テストなし）:**
+
+```elixir
+# 問題: 手動での動作確認
+defmodule MyApp do
+  def add(a, b) do
+    a + b
+  end
+end
+
+# 手動でテスト
+MyApp.add(1, 2)  # => 3（期待通り）
+MyApp.add(2, 3)  # => 5（期待通り）
+# 問題: 回帰テストができない
+```
+
+**解決: ExUnitによる自動テスト**
+
+```elixir
+# 解決: 自動テスト
+defmodule MyAppTest do
+  use ExUnit.Case, async: true
+  
+  test "add/2 returns the sum of two numbers" do
+    assert MyApp.add(1, 2) == 3
+    assert MyApp.add(2, 3) == 5
+  end
+end
+```
 
 はい、承知いたしました。提供されたElixirのテスト実装方法について、具体的なサンプルケースを用いてさらに詳しく解説します。
 

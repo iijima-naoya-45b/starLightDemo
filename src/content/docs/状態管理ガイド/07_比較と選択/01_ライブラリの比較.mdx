@@ -1,47 +1,366 @@
 ---
-title: "ライブラリの比較"
-label: "ライブラリの比較"
+title: 状態管理ライブラリ完全比較
+sidebar:
+    label: ライブラリの比較
 ---
 
-## ライブラリの比較
+# 状態管理ライブラリ完全比較
 
-### 比較表
+状態管理ライブラリの詳細な比較と、実務で使える選定基準を詳しく解説します。
 
-| ライブラリ | 学習コスト | ボイラープレート | 規模 | デバッグ |
-|-----------|-----------|----------------|------|---------|
-| **Redux** | 高い | 多い | 大規模 | 優秀 |
-| **Zustand** | 非常に低い | 非常に少ない | 小〜中規模 | 容易 |
-| **Recoil** | 低い | 少ない | 小〜大規模 | 容易 |
-| **Jotai** | 非常に低い | 少ない | 小〜大規模 | 容易 |
-| **React Query** | 低い | 少ない | サーバー状態 | 優秀 |
+## 1. グローバル状態管理ライブラリの比較
 
-### 選択基準
+### 詳細比較表
 
-#### Reduxを選ぶべき場合
+| ライブラリ | 学習コスト | ボイラープレート | 規模 | デバッグ | パフォーマンス | バンドルサイズ | TypeScript |
+|-----------|-----------|----------------|------|---------|--------------|--------------|------------|
+| **Context API** | 低い | 少ない | 小規模 | 容易 | 中程度 | 0KB（標準） | 良好 |
+| **Redux** | 高い | 多い | 大規模 | 優秀 | 高い | 約12KB | 優秀 |
+| **Zustand** | 非常に低い | 非常に少ない | 小〜中規模 | 容易 | 高い | 約1KB | 優秀 |
+| **Recoil** | 低い | 少ない | 小〜大規模 | 容易 | 高い | 約14KB | 優秀 |
+| **Jotai** | 非常に低い | 少ない | 小〜大規模 | 容易 | 高い | 約3KB | 優秀 |
 
+### 機能比較
+
+#### 1. セットアップの容易さ
+
+**Context API:**
+```jsx
+// セットアップが簡単
+import { createContext, useContext, useState } from 'react';
+
+const ThemeContext = createContext();
+
+function ThemeProvider({ children }) {
+  const [theme, setTheme] = useState('light');
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+}
+```
+
+**Redux:**
+```jsx
+// セットアップが複雑
+import { configureStore } from '@reduxjs/toolkit';
+import { Provider } from 'react-redux';
+
+const store = configureStore({
+  reducer: {
+    // reducers
+  },
+});
+
+function App() {
+  return (
+    <Provider store={store}>
+      <YourApp />
+    </Provider>
+  );
+}
+```
+
+**Zustand:**
+```jsx
+// セットアップが非常に簡単
+import { create } from 'zustand';
+
+const useStore = create((set) => ({
+  theme: 'light',
+  setTheme: (theme) => set({ theme }),
+}));
+```
+
+#### 2. パフォーマンス
+
+**Context API:**
+```jsx
+// 問題: すべての子コンポーネントが再レンダリングされる
+const ThemeContext = createContext();
+
+function ThemeProvider({ children }) {
+  const [theme, setTheme] = useState('light');
+  const [user, setUser] = useState(null);
+  // themeが変更されると、userを使用しているコンポーネントも再レンダリングされる
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme, user, setUser }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+}
+```
+
+**Zustand:**
+```jsx
+// 解決: 細かい粒度での選択が可能
+const useStore = create((set) => ({
+  theme: 'light',
+  user: null,
+  setTheme: (theme) => set({ theme }),
+  setUser: (user) => set({ user }),
+}));
+
+// themeが変更されても、userを使用しているコンポーネントは再レンダリングされない
+function UserProfile() {
+  const user = useStore((state) => state.user);
+  return <div>{user?.name}</div>;
+}
+```
+
+#### 3. デバッグ機能
+
+**Redux:**
+```jsx
+// Redux DevToolsが優秀
+import { configureStore } from '@reduxjs/toolkit';
+
+export const store = configureStore({
+  reducer: {
+    // reducers
+  },
+  devTools: process.env.NODE_ENV !== 'production',
+});
+
+// タイムトラベルデバッグが可能
+```
+
+**Zustand:**
+```jsx
+// Zustand DevToolsも利用可能
+import { create } from 'zustand';
+import { devtools } from 'zustand/middleware';
+
+const useStore = create(
+  devtools(
+    (set) => ({
+      count: 0,
+      increment: () => set((state) => ({ count: state.count + 1 })),
+    }),
+    { name: 'CounterStore' }
+  )
+);
+```
+
+## 2. サーバー状態管理ライブラリの比較
+
+### 詳細比較表
+
+| ライブラリ | 学習コスト | 機能 | デバッグ | バンドルサイズ | コミュニティ | TypeScript |
+|-----------|-----------|------|---------|--------------|------------|------------|
+| **SWR** | 低い | 基本的 | 容易 | 約4KB | Vercel中心 | 良好 |
+| **TanStack Query** | 中程度 | 豊富 | 優秀 | 約13KB | 大規模 | 優秀 |
+
+### 機能比較
+
+#### 1. キャッシュキー
+
+**SWR:**
+```jsx
+// URL文字列をキーとして使用
+import useSWR from 'swr';
+
+const { data } = useSWR('/api/users/1', fetcher);
+```
+
+**TanStack Query:**
+```jsx
+// 配列をキーとして使用（柔軟）
+import { useQuery } from '@tanstack/react-query';
+
+const { data } = useQuery({
+  queryKey: ['user', userId, { status: 'active' }],
+  queryFn: () => fetchUser(userId, { status: 'active' }),
+});
+```
+
+#### 2. 依存クエリ
+
+**SWR:**
+```jsx
+// 条件付きフェッチング
+const { data: user } = useSWR(
+  userId ? `/api/users/${userId}` : null,
+  fetcher
+);
+
+const { data: posts } = useSWR(
+  user ? `/api/users/${userId}/posts` : null,
+  fetcher
+);
+```
+
+**TanStack Query:**
+```jsx
+// enabledオプションで条件付き実行
+const { data: user } = useQuery({
+  queryKey: ['user', userId],
+  queryFn: () => fetchUser(userId),
+  enabled: !!userId,
+});
+
+const { data: posts } = useQuery({
+  queryKey: ['posts', userId],
+  queryFn: () => fetchUserPosts(userId),
+  enabled: !!user,  // より明確
+});
+```
+
+## 3. 選択基準の詳細
+
+### Reduxを選ぶべき場合
+
+**適しているプロジェクト:**
 - 大規模なエンタープライズアプリケーション
 - タイムトラベルデバッグが必要
 - 厳格な状態管理が必要
 - 複雑な状態遷移がある
+- チーム間の一貫性が必要
 
-#### Zustandを選ぶべき場合
+**実装例:**
+```jsx
+// Redux Toolkitを使用
+import { configureStore, createSlice } from '@reduxjs/toolkit';
 
+const userSlice = createSlice({
+  name: 'user',
+  initialState: { user: null },
+  reducers: {
+    setUser: (state, action) => {
+      state.user = action.payload;
+    },
+  },
+});
+
+export const store = configureStore({
+  reducer: {
+    user: userSlice.reducer,
+  },
+});
+```
+
+### Zustandを選ぶべき場合
+
+**適しているプロジェクト:**
 - シンプルなグローバル状態
 - 学習コストを抑えたい
 - ボイラープレートを最小化したい
 - 小〜中規模のプロジェクト
+- 迅速な開発が必要
 
-#### Recoil/Jotaiを選ぶべき場合
+**実装例:**
+```jsx
+// Zustandを使用
+import { create } from 'zustand';
 
+const useStore = create((set) => ({
+  count: 0,
+  user: null,
+  increment: () => set((state) => ({ count: state.count + 1 })),
+  setUser: (user) => set({ user }),
+}));
+```
+
+### Recoil/Jotaiを選ぶべき場合
+
+**適しているプロジェクト:**
 - アトミックな状態管理が必要
 - Reactの思想に近いアプローチ
 - コンポーネントベースの開発
 - 細かい粒度での状態管理
+- パフォーマンスが重要
 
-#### React Queryを選ぶべき場合
+**実装例:**
+```jsx
+// Jotaiを使用
+import { atom, useAtom } from 'jotai';
 
+const countAtom = atom(0);
+const nameAtom = atom('John');
+
+function Counter() {
+  const [count] = useAtom(countAtom);
+  return <div>{count}</div>;
+}
+```
+
+### TanStack Queryを選ぶべき場合
+
+**適しているプロジェクト:**
 - サーバー状態の管理
 - キャッシングと再取得が必要
 - APIとの連携が多い
 - データの同期が必要
+- 複雑なデータフェッチング
+
+**実装例:**
+```jsx
+// TanStack Queryを使用
+import { useQuery } from '@tanstack/react-query';
+
+function UserList() {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['users'],
+    queryFn: fetchUsers,
+    staleTime: 5 * 60 * 1000,
+  });
+  
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+  
+  return <div>{data?.map(user => <div key={user.id}>{user.name}</div>)}</div>;
+}
+```
+
+## 4. 実践的な選択例
+
+### ケース1: スタートアップのMVP
+
+**要件:**
+- 小規模チーム（2-3人）
+- 迅速な開発が必要
+- 学習コストを抑えたい
+
+**選定:**
+- **グローバル状態**: Zustand
+- **サーバー状態**: SWR
+
+**理由:**
+- 学習コストが低い
+- セットアップが簡単
+- 開発速度が速い
+
+### ケース2: エンタープライズアプリケーション
+
+**要件:**
+- 大規模チーム（10人以上）
+- 厳格な状態管理が必要
+- タイムトラベルデバッグが必要
+
+**選定:**
+- **グローバル状態**: Redux Toolkit
+- **サーバー状態**: TanStack Query
+
+**理由:**
+- 厳格な状態管理
+- 優秀なデバッグツール
+- チーム間の一貫性
+
+### ケース3: パフォーマンス重視
+
+**要件:**
+- 高いパフォーマンス要件
+- 細かい粒度での再レンダリング制御
+
+**選定:**
+- **グローバル状態**: Jotai、Recoil
+- **サーバー状態**: TanStack Query
+
+**理由:**
+- アトミックな状態管理
+- 細かい粒度での最適化
+- パフォーマンスが高い
+
+これで、状態管理ライブラリの詳細な比較と選定基準を理解できるようになりました。
 

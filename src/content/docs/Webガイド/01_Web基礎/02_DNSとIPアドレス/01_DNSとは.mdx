@@ -1,0 +1,325 @@
+---
+title: DNSとは
+sidebar:
+    label: DNSとは
+---
+
+# DNS（Domain Name System）完全ガイド
+
+DNSは、ドメイン名をIPアドレスに変換するシステムです。Webアプリケーションが動作する上で不可欠な仕組みを詳しく解説します。
+
+## 1. DNSとは
+
+### DNSの役割
+
+DNS（Domain Name System）は、人間が覚えやすいドメイン名（例: `example.com`）を、コンピュータが理解できるIPアドレス（例: `93.184.216.34`）に変換するシステムです。
+
+```
+ユーザーがブラウザに入力: example.com
+         ↓
+    DNSが解決
+         ↓
+    IPアドレス: 93.184.216.34
+         ↓
+    ブラウザがIPアドレスに接続
+```
+
+### なぜDNSが必要か
+
+**IPアドレスの問題:**
+- 数字の羅列で覚えにくい（例: `93.184.216.34`）
+- IPアドレスが変更されると、すべてのユーザーが新しいIPアドレスを知る必要がある
+
+**DNSの解決:**
+- 覚えやすいドメイン名を使用できる（例: `example.com`）
+- IPアドレスが変更されても、DNSレコードを更新するだけで対応可能
+
+## 2. DNSの仕組み
+
+### DNS解決の流れ
+
+```
+1. ユーザーがブラウザに「example.com」を入力
+   ↓
+2. ブラウザがOSにDNSクエリを送信
+   ↓
+3. OSがリゾルバー（DNSサーバー）に問い合わせ
+   ↓
+4. リゾルバーがルートサーバーに問い合わせ
+   ↓
+5. ルートサーバーが「.com」のTLDサーバーを返す
+   ↓
+6. リゾルバーが「.com」のTLDサーバーに問い合わせ
+   ↓
+7. TLDサーバーが「example.com」の権威DNSサーバーを返す
+   ↓
+8. リゾルバーが権威DNSサーバーに問い合わせ
+   ↓
+9. 権威DNSサーバーがIPアドレスを返す
+   ↓
+10. リゾルバーがIPアドレスをブラウザに返す
+    ↓
+11. ブラウザがIPアドレスに接続
+```
+
+### DNS階層構造
+
+```
+                    (ルート)
+                      |
+        +-------------+-------------+
+        |             |             |
+      .com          .org          .jp
+        |             |             |
+    example.com   example.org   example.jp
+        |
+    www.example.com
+```
+
+## 3. DNSレコードの種類
+
+### Aレコード（IPv4アドレス）
+
+```dns
+example.com.    IN    A    93.184.216.34
+```
+
+- ドメイン名をIPv4アドレスにマッピング
+- 最も基本的なDNSレコード
+
+### AAAAレコード（IPv6アドレス）
+
+```dns
+example.com.    IN    AAAA    2606:2800:220:1:248:1893:25c8:1946
+```
+
+- ドメイン名をIPv6アドレスにマッピング
+
+### CNAMEレコード（別名）
+
+```dns
+www.example.com.    IN    CNAME    example.com.
+```
+
+- ドメイン名の別名を定義
+- 複数のドメイン名を同じIPアドレスにマッピング
+
+### MXレコード（メールサーバー）
+
+```dns
+example.com.    IN    MX    10    mail.example.com.
+```
+
+- メールサーバーのホスト名を指定
+- 優先度（10）が低いほど優先される
+
+### TXTレコード（テキスト情報）
+
+```dns
+example.com.    IN    TXT    "v=spf1 include:_spf.example.com ~all"
+```
+
+- 任意のテキスト情報を格納
+- SPF、DKIM、DMARCなどのメール認証に使用
+
+### NSレコード（ネームサーバー）
+
+```dns
+example.com.    IN    NS    ns1.example.com.
+example.com.    IN    NS    ns2.example.com.
+```
+
+- ドメインの権威DNSサーバーを指定
+
+## 4. DNS解決の実践
+
+### コマンドラインツールでの確認
+
+#### digコマンド
+
+```bash
+# Aレコードの確認
+dig example.com
+
+# 結果例:
+# ; <<>> DiG 9.16.1 <<>> example.com
+# ;; global options: +cmd
+# ;; Got answer:
+# ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 12345
+# ;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+# 
+# ;; QUESTION SECTION:
+# ;example.com.			IN	A
+# 
+# ;; ANSWER SECTION:
+# example.com.		86400	IN	A	93.184.216.34
+```
+
+#### nslookupコマンド
+
+```bash
+# IPアドレスの確認
+nslookup example.com
+
+# 結果例:
+# Server:		8.8.8.8
+# Address:	8.8.8.8#53
+# 
+# Non-authoritative answer:
+# Name:	example.com
+# Address: 93.184.216.34
+```
+
+#### hostコマンド
+
+```bash
+# ドメイン情報の確認
+host example.com
+
+# 結果例:
+# example.com has address 93.184.216.34
+# example.com has IPv6 address 2606:2800:220:1:248:1893:25c8:1946
+```
+
+### ブラウザでの確認
+
+1. **開発者ツールを開く**（F12）
+2. **Networkタブを選択**
+3. **ページをリロード**
+4. **最初のリクエストを確認**
+   - DNS Lookupの時間が表示される
+   - 通常、数ミリ秒から数百ミリ秒
+
+## 5. DNSキャッシュ
+
+### DNSキャッシュの階層
+
+```
+1. ブラウザキャッシュ
+   ↓（キャッシュなし）
+2. OSキャッシュ（hostsファイル、DNSキャッシュ）
+   ↓（キャッシュなし）
+3. リゾルバーキャッシュ（ISPのDNSサーバーなど）
+   ↓（キャッシュなし）
+4. 権威DNSサーバー
+```
+
+### TTL（Time To Live）
+
+```dns
+example.com.    86400    IN    A    93.184.216.34
+                ^^^^^^
+                TTL（秒）
+```
+
+- DNSレコードの有効期限
+- 86400秒 = 24時間
+- TTLが短いほど、変更が早く反映されるが、DNSクエリが増える
+
+### キャッシュの確認とクリア
+
+```bash
+# macOS/Linux: DNSキャッシュの確認
+sudo dscacheutil -q host -a name example.com
+
+# Windows: DNSキャッシュのクリア
+ipconfig /flushdns
+
+# ブラウザキャッシュのクリア
+# Chrome: chrome://net-internals/#dns でクリア
+```
+
+## 6. DNSのセキュリティ
+
+### DNS over HTTPS (DoH)
+
+```javascript
+// ブラウザがDoHを使用する場合
+// DNSクエリがHTTPSで暗号化される
+// 例: Cloudflare (1.1.1.1) や Google (8.8.8.8) が提供
+```
+
+**メリット:**
+- DNSクエリが暗号化される
+- プライバシーが保護される
+
+### DNS over TLS (DoT)
+
+- DNSクエリがTLSで暗号化される
+- ポート853を使用
+
+### DNSSEC
+
+- DNSレコードの改ざんを検出
+- デジタル署名を使用
+
+## 7. 実務でのDNS設定
+
+### サブドメインの設定
+
+```dns
+# メインドメイン
+example.com.    IN    A    93.184.216.34
+
+# サブドメイン
+www.example.com.    IN    CNAME    example.com.
+api.example.com.    IN    A        203.0.113.1
+blog.example.com.   IN    CNAME    example-blog.com.
+```
+
+### ロードバランシング
+
+```dns
+# 複数のAレコードでロードバランシング
+example.com.    IN    A    93.184.216.34
+example.com.    IN    A    203.0.113.1
+example.com.    IN    A    198.51.100.1
+```
+
+### フェイルオーバー
+
+```dns
+# プライマリサーバー
+example.com.    300    IN    A    93.184.216.34
+
+# セカンダリサーバー（TTLを短く設定）
+backup.example.com.    60    IN    A    203.0.113.1
+```
+
+## 8. よくある問題と解決策
+
+### 問題1: DNS解決が遅い
+
+**原因:**
+- リゾルバーサーバーが遠い
+- TTLが短すぎる
+- DNSサーバーの負荷が高い
+
+**解決策:**
+- 高速なDNSサーバーを使用（例: Cloudflare 1.1.1.1、Google 8.8.8.8）
+- TTLを適切に設定（通常は3600秒以上）
+- DNSキャッシュを活用
+
+### 問題2: DNSレコードの変更が反映されない
+
+**原因:**
+- DNSキャッシュが残っている
+- TTLが長すぎる
+
+**解決策:**
+- DNSキャッシュをクリア
+- TTLを短く設定してから変更（変更後、元に戻す）
+
+### 問題3: サブドメインが動作しない
+
+**原因:**
+- DNSレコードが正しく設定されていない
+- ワイルドカードレコードが必要
+
+**解決策:**
+```dns
+# ワイルドカードレコードの設定
+*.example.com.    IN    A    93.184.216.34
+```
+
+これで、DNSの仕組みと実務での使い方を理解できるようになりました。

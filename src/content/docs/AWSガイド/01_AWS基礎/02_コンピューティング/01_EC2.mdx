@@ -1,23 +1,166 @@
 ---
-title: "EC2"
-label: "EC2"
+title: EC2完全ガイド
+sidebar:
+    label: EC2
 ---
 
-## EC2 (Elastic Compute Cloud)
+# EC2 (Elastic Compute Cloud) 完全ガイド
 
-EC2は、AWSの仮想サーバーサービスです。
+EC2は、AWSの仮想サーバーサービスです。実務で使える実装例とベストプラクティスを詳しく解説します。
 
-### EC2インスタンスタイプ
+## 1. EC2とは
 
-#### インスタンスファミリー
+### EC2の役割
 
-- **t3/t4g**: バースト可能な汎用インスタンス
-- **m5/m6i**: 汎用インスタンス
-- **c5/c6i**: コンピューティング最適化
-- **r5/r6i**: メモリ最適化
-- **g4**: GPUインスタンス
+EC2は、クラウド上で仮想サーバーを起動・管理するサービスです。必要な時に必要な分だけサーバーを利用できます。
 
-### セキュリティグループ
+```
+ユーザー
+   ↓
+EC2インスタンス（仮想サーバー）
+   ├─ OS（Amazon Linux、Ubuntu、Windowsなど）
+   ├─ アプリケーション
+   └─ データ
+```
+
+### なぜEC2が必要か
+
+**問題のある構成（物理サーバー）:**
+
+```bash
+# 問題: 物理サーバーの運用
+# 1. サーバーの購入（数週間かかる）
+# 2. データセンターへの設置
+# 3. OSのインストールと設定
+# 4. ネットワークの設定
+# 5. 24時間の監視とメンテナンス
+
+# 問題点:
+# 1. 初期コストが高い
+# 2. スケーリングが困難（物理的な制約）
+# 3. 運用コストが高い
+# 4. 柔軟性が低い
+```
+
+**解決: EC2による仮想サーバー**
+
+```bash
+# 解決: EC2インスタンスの起動
+aws ec2 run-instances \
+  --image-id ami-0c55b159cbfafe1f0 \
+  --instance-type t3.micro \
+  --key-name my-key \
+  --security-group-ids sg-12345678 \
+  --subnet-id subnet-12345678
+
+# メリット:
+# 1. 初期コストが低い（従量課金）
+# 2. 簡単にスケーリング（数分で起動・停止）
+# 3. 運用コストが低い（AWSが管理）
+# 4. 高い柔軟性（必要な時に必要な分だけ）
+```
+
+## 2. EC2インスタンスタイプ
+
+### インスタンスファミリー
+
+#### 汎用インスタンス
+
+```
+t3/t4g: バースト可能な汎用インスタンス
+- 用途: Webサーバー、開発環境
+- 特徴: CPUクレジットでバースト可能
+- 例: t3.micro, t3.small, t3.medium
+
+m5/m6i: 汎用インスタンス
+- 用途: アプリケーションサーバー、データベース
+- 特徴: CPUとメモリのバランスが良い
+- 例: m5.large, m5.xlarge
+```
+
+#### コンピューティング最適化
+
+```
+c5/c6i: コンピューティング最適化
+- 用途: バッチ処理、ゲームサーバー
+- 特徴: 高いCPU性能
+- 例: c5.large, c5.xlarge
+```
+
+#### メモリ最適化
+
+```
+r5/r6i: メモリ最適化
+- 用途: インメモリデータベース、ビッグデータ処理
+- 特徴: 大量のメモリ
+- 例: r5.large, r5.xlarge
+```
+
+#### ストレージ最適化
+
+```
+i3/i4i: ストレージ最適化
+- 用途: NoSQLデータベース、データウェアハウス
+- 特徴: 高速なローカルストレージ
+- 例: i3.large, i3.xlarge
+```
+
+### インスタンスタイプの選択
+
+```bash
+# 用途別の選択例
+Webサーバー: t3.micro, t3.small
+アプリケーションサーバー: m5.large, m5.xlarge
+データベース: r5.large, r5.xlarge
+バッチ処理: c5.large, c5.xlarge
+```
+
+## 3. AMI（Amazon Machine Image）
+
+### AMIとは
+
+AMIは、EC2インスタンスを起動するためのテンプレートです。OS、アプリケーション、設定が含まれます。
+
+```bash
+# パブリックAMIの使用
+aws ec2 run-instances \
+  --image-id ami-0c55b159cbfafe1f0 \  # Amazon Linux 2023
+  --instance-type t3.micro
+
+# カスタムAMIの作成
+aws ec2 create-image \
+  --instance-id i-1234567890abcdef0 \
+  --name "my-custom-ami" \
+  --description "Custom AMI with application"
+```
+
+### カスタムAMIの作成
+
+```bash
+# 1. ベースインスタンスを起動
+aws ec2 run-instances \
+  --image-id ami-0c55b159cbfafe1f0 \
+  --instance-type t3.micro
+
+# 2. アプリケーションをインストール
+ssh -i my-key.pem ec2-user@<instance-ip>
+sudo yum install -y nginx
+sudo systemctl enable nginx
+
+# 3. AMIを作成
+aws ec2 create-image \
+  --instance-id i-1234567890abcdef0 \
+  --name "nginx-server-ami" \
+  --description "AMI with Nginx pre-installed"
+```
+
+## 4. セキュリティグループ
+
+### セキュリティグループとは
+
+セキュリティグループは、EC2インスタンスへのトラフィックを制御する仮想ファイアウォールです。
+
+### 基本的な設定
 
 ```json
 {
@@ -27,50 +170,231 @@ EC2は、AWSの仮想サーバーサービスです。
       "FromPort": 80,
       "ToPort": 80,
       "CidrIpv4": "0.0.0.0/0",
-      "Description": "HTTP access"
+      "Description": "HTTP access from internet"
     },
     {
       "IpProtocol": "tcp",
       "FromPort": 443,
       "ToPort": 443,
       "CidrIpv4": "0.0.0.0/0",
-      "Description": "HTTPS access"
+      "Description": "HTTPS access from internet"
     },
     {
       "IpProtocol": "tcp",
       "FromPort": 22,
       "ToPort": 22,
       "CidrIpv4": "10.0.0.0/16",
-      "Description": "SSH from VPC"
+      "Description": "SSH access from VPC"
+    },
+    {
+      "IpProtocol": "tcp",
+      "FromPort": 3306,
+      "ToPort": 3306,
+      "SourceSecurityGroupId": "sg-12345678",
+      "Description": "MySQL access from application servers"
     }
   ]
 }
 ```
 
-### ユーザーデータ
+### Terraformでの設定
+
+```hcl
+resource "aws_security_group" "web" {
+  name        = "web-sg"
+  description = "Security group for web servers"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTPS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description     = "SSH from VPC"
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    cidr_blocks     = [aws_vpc.main.cidr_block]
+  }
+
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "web-sg"
+  }
+}
+```
+
+## 5. ユーザーデータ
+
+### ユーザーデータとは
+
+ユーザーデータは、EC2インスタンス起動時に自動実行されるスクリプトです。
+
+### 基本的な使用例
 
 ```bash
 #!/bin/bash
+# ユーザーデータスクリプト
+
+# システムの更新
 yum update -y
-yum install -y httpd
-systemctl start httpd
-systemctl enable httpd
+
+# Nginxのインストール
+yum install -y nginx
+
+# Nginxの起動と有効化
+systemctl start nginx
+systemctl enable nginx
+
+# HTMLファイルの作成
 echo "<h1>Hello from EC2</h1>" > /var/www/html/index.html
+
+# カスタム設定の適用
+cat > /etc/nginx/conf.d/custom.conf <<EOF
+server {
+    listen 80;
+    server_name _;
+    root /var/www/html;
+    index index.html;
+}
+EOF
+
+# Nginxの再起動
+systemctl restart nginx
 ```
 
-### 実践例: オートスケーリング
+### CloudFormationでの設定
+
+```yaml
+Resources:
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0c55b159cbfafe1f0
+      InstanceType: t3.micro
+      SecurityGroupIds:
+        - !Ref WebSecurityGroup
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          yum update -y
+          yum install -y nginx
+          systemctl start nginx
+          systemctl enable nginx
+          echo "<h1>Hello from EC2</h1>" > /var/www/html/index.html
+```
+
+## 6. EBS（Elastic Block Store）
+
+### EBSとは
+
+EBSは、EC2インスタンスに接続する永続的なブロックストレージです。
+
+### EBSボリュームタイプ
+
+```
+gp3: 汎用SSD（推奨）
+- 用途: ほとんどのワークロード
+- 特徴: バランスの取れた性能とコスト
+- 例: 100GB, 500GB, 1TB
+
+gp2: 汎用SSD（旧タイプ）
+- 用途: 汎用ワークロード
+- 特徴: gp3より高コスト
+
+io1/io2: プロビジョンドIOPS SSD
+- 用途: 高I/Oワークロード（データベースなど）
+- 特徴: 高いIOPS性能
+- 例: 100GB, 1000 IOPS
+
+st1: スループット最適化HDD
+- 用途: ビッグデータ、データウェアハウス
+- 特徴: 高いスループット
+
+sc1: コールドHDD
+- 用途: アクセス頻度の低いデータ
+- 特徴: 低コスト
+```
+
+### EBSスナップショット
+
+```bash
+# スナップショットの作成
+aws ec2 create-snapshot \
+  --volume-id vol-1234567890abcdef0 \
+  --description "Backup before update"
+
+# スナップショットからボリュームを作成
+aws ec2 create-volume \
+  --snapshot-id snap-1234567890abcdef0 \
+  --availability-zone us-east-1a \
+  --volume-type gp3 \
+  --size 100
+```
+
+## 7. オートスケーリング
+
+### オートスケーリングとは
+
+オートスケーリングは、負荷に応じてEC2インスタンスを自動的に追加・削除する機能です。
+
+### Launch Template
+
+```yaml
+Resources:
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: web-server-template
+      LaunchTemplateData:
+        ImageId: ami-0c55b159cbfafe1f0
+        InstanceType: t3.micro
+        SecurityGroupIds:
+          - !Ref WebSecurityGroup
+        UserData:
+          Fn::Base64: |
+            #!/bin/bash
+            yum update -y
+            yum install -y nginx
+            systemctl start nginx
+            systemctl enable nginx
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+```
+
+### Auto Scaling Group
 
 ```yaml
 Resources:
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
+      AutoScalingGroupName: web-asg
       MinSize: 2
       MaxSize: 10
       DesiredCapacity: 2
       VPCZoneIdentifier:
-        - !Ref Subnet1
-        - !Ref Subnet2
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
       LaunchTemplate:
         LaunchTemplateId: !Ref LaunchTemplate
         Version: !GetAtt LaunchTemplate.LatestVersionNumber
@@ -78,8 +402,18 @@ Resources:
         - !Ref TargetGroup
       HealthCheckType: ELB
       HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: WebServer
+          PropagateAtLaunch: true
+```
 
-  ScalingPolicy:
+### スケーリングポリシー
+
+```yaml
+Resources:
+  # CPU使用率ベースのスケーリング
+  CPUScalingPolicy:
     Type: AWS::AutoScaling::ScalingPolicy
     Properties:
       AutoScalingGroupName: !Ref AutoScalingGroup
@@ -88,5 +422,153 @@ Resources:
         TargetValue: 70.0
         PredefinedMetricSpecification:
           PredefinedMetricType: ASGAverageCPUUtilization
+
+  # リクエスト数ベースのスケーリング
+  RequestCountScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 1000.0
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ALBRequestCountPerTarget
+          ResourceLabel: !Sub "${LoadBalancerFullName}/${TargetGroupFullName}"
 ```
+
+## 8. Elastic Load Balancer（ELB）
+
+### ELBとは
+
+ELBは、複数のEC2インスタンスにトラフィックを分散するロードバランサーです。
+
+### Application Load Balancer（ALB）
+
+```yaml
+Resources:
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: web-alb
+      Type: application
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Listeners:
+        - Protocol: HTTP
+          Port: 80
+          DefaultActions:
+            - Type: forward
+              TargetGroupArn: !Ref TargetGroup
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: web-targets
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+```
+
+## 9. 実務でのベストプラクティス
+
+### パターン1: 高可用性構成
+
+```yaml
+# マルチAZ構成
+AutoScalingGroup:
+  Properties:
+    VPCZoneIdentifier:
+      - !Ref PublicSubnet1  # us-east-1a
+      - !Ref PublicSubnet2  # us-east-1b
+      - !Ref PublicSubnet3  # us-east-1c
+    MinSize: 3  # 各AZに1つずつ
+    MaxSize: 9  # 各AZに最大3つ
+```
+
+### パターン2: コスト最適化
+
+```yaml
+# Spotインスタンスの使用
+LaunchTemplate:
+  Properties:
+    LaunchTemplateData:
+      InstanceMarketOptions:
+        MarketType: spot
+        SpotOptions:
+          MaxPrice: "0.05"
+          SpotInstanceType: persistent
+          InstanceInterruptionBehavior: stop
+```
+
+### パターン3: セキュリティ強化
+
+```yaml
+# IAMロールの使用（パスワードなし）
+LaunchTemplate:
+  Properties:
+    LaunchTemplateData:
+      IamInstanceProfile:
+        Arn: !GetAtt InstanceProfile.Arn
+      SecurityGroupIds:
+        - !Ref WebSecurityGroup
+```
+
+## 10. よくある問題と解決策
+
+### 問題1: インスタンスに接続できない
+
+**原因:**
+- セキュリティグループでポートが開いていない
+- キーペアが正しく設定されていない
+- パブリックIPが割り当てられていない
+
+**解決策:**
+```bash
+# セキュリティグループの確認
+aws ec2 describe-security-groups --group-ids sg-12345678
+
+# インスタンスの状態確認
+aws ec2 describe-instances --instance-ids i-1234567890abcdef0
+
+# パブリックIPの確認
+aws ec2 describe-instances --instance-ids i-1234567890abcdef0 \
+  --query 'Reservations[0].Instances[0].PublicIpAddress'
+```
+
+### 問題2: オートスケーリングが動作しない
+
+**原因:**
+- スケーリングポリシーが正しく設定されていない
+- CloudWatchアラームが発火していない
+- インスタンスがヘルスチェックに失敗している
+
+**解決策:**
+```bash
+# オートスケーリンググループの状態確認
+aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names web-asg
+
+# スケーリングアクティビティの確認
+aws autoscaling describe-scaling-activities --auto-scaling-group-name web-asg
+
+# CloudWatchメトリクスの確認
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/EC2 \
+  --metric-name CPUUtilization \
+  --dimensions Name=AutoScalingGroupName,Value=web-asg \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-01T23:59:59Z \
+  --period 300 \
+  --statistics Average
+```
+
+これで、EC2の基礎知識と実務での使い方を理解できるようになりました。
 

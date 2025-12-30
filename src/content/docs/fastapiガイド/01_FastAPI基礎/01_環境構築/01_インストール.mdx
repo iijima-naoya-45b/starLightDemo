@@ -1,32 +1,187 @@
 ---
-title: "FastAPIのインストール"
-label: "FastAPIのインストール"
+title: FastAPI環境構築完全ガイド
+sidebar:
+    label: FastAPIのインストール
 ---
 
-## 🚀 FastAPIのインストール手順
+# FastAPI環境構築完全ガイド
 
-FastAPIは、PythonのモダンなWebフレームワークで、高いパフォーマンスと開発効率が魅力です。ここでは、FastAPIと、開発に不可欠なWebサーバーであるUvicornのインストール方法を解説します。
+FastAPIの環境構築から、実務で使えるベストプラクティスまで詳しく解説します。
 
-### 1. FastAPIとUvicornのインストール
+## 1. FastAPIとは
 
-ターミナルまたはコマンドプロンプトを開き、以下のコマンドを順番に実行します。
+### FastAPIの特徴
+
+FastAPIは、PythonのモダンなWebフレームワークです。高いパフォーマンスと開発効率を両立しています。
+
+```
+FastAPIの特徴
+   ├─ 高速なパフォーマンス（Node.jsやGoに匹敵）
+   ├─ 自動APIドキュメント生成
+   ├─ 型安全性（Pydantic）
+   └─ 非同期処理のサポート
+```
+
+### なぜFastAPIが必要か
+
+**問題のある構成（FastAPIなし）:**
+
+```python
+# 問題: 低レベルのHTTP処理を手動で実装
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import json
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"Hello": "World"}).encode())
+
+# 問題点:
+# 1. ルーティングの実装が必要
+# 2. リクエスト/レスポンスの処理が複雑
+# 3. 型安全性がない
+# 4. APIドキュメントの生成が必要
+```
+
+**解決: FastAPIによる高速なAPI開発**
+
+```python
+# 解決: FastAPIがすべてを提供
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/")
+def read_root():
+    return {"Hello": "World"}
+
+# メリット:
+# 1. 自動ルーティング
+# 2. 自動APIドキュメント生成
+# 3. 型安全性
+# 4. 高速なパフォーマンス
+```
+
+## 2. Pythonのインストール
+
+### Pythonのバージョン要件
+
+FastAPIは、Python 3.8以上をサポートしています。最新の安定版を使用することを推奨します。
 
 ```bash
+# Pythonのバージョン確認
+python --version
+# または
+python3 --version
+
+# 推奨: Python 3.11以上
+```
+
+### pyenvを使用したPythonバージョン管理（推奨）
+
+```bash
+# pyenvのインストール（macOS）
+brew install pyenv
+
+# pyenvのインストール（Linux）
+curl https://pyenv.run | bash
+
+# Python 3.11のインストール
+pyenv install 3.11.5
+
+# プロジェクトディレクトリでPythonバージョンを設定
+pyenv local 3.11.5
+```
+
+## 3. 仮想環境の作成
+
+### 仮想環境とは
+
+仮想環境は、プロジェクトごとに独立したPython環境を作成する仕組みです。
+
+### 仮想環境の作成
+
+```bash
+# プロジェクトディレクトリの作成
+mkdir myproject
+cd myproject
+
+# 仮想環境の作成
+python -m venv venv
+```
+
+### 仮想環境の有効化
+
+```bash
+# macOS / Linux
+source venv/bin/activate
+
+# Windows (コマンドプロンプト)
+venv\Scripts\activate
+
+# Windows (PowerShell)
+venv\Scripts\Activate.ps1
+```
+
+### 仮想環境の無効化
+
+```bash
+deactivate
+```
+
+## 4. FastAPIとUvicornのインストール
+
+### 基本的なインストール
+
+```bash
+# FastAPIのインストール
 pip install fastapi
+
+# Uvicornのインストール（標準オプション付き）
 pip install "uvicorn[standard]"
 ```
 
-- **FastAPI本体をインストールします。** これにより、フレームワークの主要な機能が利用可能になります。
-- **Uvicornをインストールします。** Uvicornは、FastAPIアプリケーションを動かすためのASGI（Asynchronous Server Gateway Interface）サーバーです。`[standard]`オプションを付けることで、`httptools`や`watchfiles`といった便利な追加ライブラリも同時にインストールされ、ホットリロード（コード変更時の自動再起動）などの機能が使えるようになります。
+### requirements.txtの作成
 
-### 2. 環境の準備と実行
+```bash
+# requirements.txtの作成
+pip freeze > requirements.txt
 
-インストールが完了したら、簡単なPythonファイルを作成して動作を確認してみましょう。
+# 他の環境でのインストール
+pip install -r requirements.txt
+```
 
-#### `main.py`
+### 実務でのベストプラクティス
+
+```txt
+# requirements/base.txt
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# requirements/dev.txt
+-r base.txt
+pytest==7.4.3
+pytest-asyncio==0.21.1
+httpx==0.25.2
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1
+
+# requirements/prod.txt
+-r base.txt
+gunicorn==21.2.0
+```
+
+## 5. 基本的なアプリケーションの作成
+
+### 最小限のアプリケーション
 
 ```python
-from typing import Optional
+# main.py
 from fastapi import FastAPI
 
 app = FastAPI()
@@ -36,92 +191,131 @@ def read_root():
     return {"Hello": "World"}
 
 @app.get("/items/{item_id}")
-def read_item(item_id: int, q: Optional[str] = None):
+def read_item(item_id: int, q: str = None):
     return {"item_id": item_id, "q": q}
 ```
 
-このファイルを保存し、ターミナルで以下のコマンドを実行します。
+### サーバーの起動
 
 ```bash
+# 開発サーバーの起動
 uvicorn main:app --reload
+
+# カスタムホストとポート
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+# 本番環境での起動
+uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
-- **`main:app`**: `main`はファイル名（`main.py`）、`app`は`FastAPI()`インスタンスのオブジェクト名を指します。
-- **`--reload`**: このオプションを付けると、コードを変更するたびにサーバーが自動的に再起動します。開発中に非常に便利な機能です。
+## 6. APIドキュメントの確認
 
-これで、Webブラウザから`http://127.0.0.1:8000`にアクセスすると、`{"Hello": "World"}`というレスポンスが表示されます。
-
-### 3. 仮想環境の作成と利用
-
-Python開発では、プロジェクトごとに独立した環境を構築するために仮想環境を使用するのが一般的です。これにより、異なるプロジェクト間でパッケージのバージョンが衝突するのを防ぐことができます。
-
-#### 仮想環境の作成
-
-プロジェクトのルートディレクトリで、以下のコマンドを実行して仮想環境を作成します。
+### Swagger UI
 
 ```bash
-python -m venv venv
+# サーバー起動後、ブラウザでアクセス
+http://localhost:8000/docs
 ```
 
-これにより、`venv`という名前のディレクトリが作成され、その中にPythonの実行ファイルと`pip`が格納されます。
-
-#### 仮想環境の有効化
-
-次に、作成した仮想環境を有効化します。
-
-- **macOS / Linux:**
-
-  ```bash
-  source venv/bin/activate
-  ```
-
-- **Windows:**
-
-  ```bash
-  venv\Scripts\activate
-  ```
-
-有効化すると、ターミナルのプロンプトの先頭に`(venv)`と表示され、この環境がアクティブになっていることを示します。この状態で`pip install`コマンドを実行すると、パッケージはこの仮想環境内にのみインストールされます。
-
-#### 📌 何をしているのか？
-
-python -m venv … Python に標準搭載の venv モジュールを呼び出す
-
-venv（最後の部分） … 作成する仮想環境のフォルダ名
-
-これを実行すると、次のような専用フォルダ構造ができます：
-
-```vbnet
-プロジェクト/
- ├── venv/              ← 仮想環境フォルダ
- │    ├── bin/ (Scripts\ on Windows) ← python 実行ファイルや pip
- │    ├── lib/          ← インストールしたライブラリ
- │    └── pyvenv.cfg
- └── app.py             ← 自分のコード
-```
-
-#### 📌 仮想環境が必要な理由
-
-プロジェクトごとにライブラリを分けられます。
-→ グローバルにインストールすると、他プロジェクトとバージョンが衝突する
-
-再現性のある環境を作れる
-→ requirements.txt と一緒に管理すれば、同じ環境を誰でも再構築できます。
-
-システム Python を汚さない
-
-#### 依存関係の管理
-
-プロジェクトの依存関係を管理するために、インストールしたパッケージを`requirements.txt`ファイルに記録しておきましょう。
+### ReDoc
 
 ```bash
-pip freeze > requirements.txt
+# サーバー起動後、ブラウザでアクセス
+http://localhost:8000/redoc
 ```
 
-他の開発者がプロジェクトに参加する際や、本番環境にデプロイする際には、このファイルから必要なパッケージを一括でインストールできます。
+## 7. 実務でのベストプラクティス
+
+### パターン1: プロジェクト構造
+
+```
+myproject/
+├── app/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── api/
+│   │   ├── __init__.py
+│   │   └── v1/
+│   │       ├── __init__.py
+│   │       ├── endpoints/
+│   │       │   ├── __init__.py
+│   │       │   ├── users.py
+│   │       │   └── items.py
+│   │       └── api.py
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── config.py
+│   │   └── security.py
+│   ├── models/
+│   │   ├── __init__.py
+│   │   └── user.py
+│   ├── schemas/
+│   │   ├── __init__.py
+│   │   └── user.py
+│   └── services/
+│       ├── __init__.py
+│       └── user_service.py
+├── tests/
+│   ├── __init__.py
+│   └── test_api.py
+├── requirements.txt
+├── .env
+└── .gitignore
+```
+
+### パターン2: 環境変数の管理
 
 ```bash
+# .envファイルの作成
+pip install python-dotenv
+```
+
+```python
+# app/core/config.py
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    app_name: str = "My FastAPI App"
+    debug: bool = False
+    database_url: str
+    
+    class Config:
+        env_file = ".env"
+
+settings = Settings()
+```
+
+## 8. よくある問題と解決策
+
+### 問題1: モジュールが見つからない
+
+**原因:**
+- 仮想環境が有効化されていない
+- パッケージがインストールされていない
+
+**解決策:**
+```bash
+# 仮想環境の確認
+which python  # macOS/Linux
+where python  # Windows
+
+# パッケージの再インストール
 pip install -r requirements.txt
 ```
 
-このトピックを追加することで、初心者がより良い開発プラクティスを身につけ、プロジェクトを長期的に管理しやすくなります。
+### 問題2: ポートが既に使用されている
+
+**原因:**
+- 他のアプリケーションが同じポートを使用している
+
+**解決策:**
+```bash
+# 別のポートを使用
+uvicorn main:app --port 8001
+
+# ポートの使用状況を確認
+lsof -i :8000  # macOS/Linux
+netstat -ano | findstr :8000  # Windows
+```
+
+これで、FastAPIの環境構築の基礎知識と実務での使い方を理解できるようになりました。

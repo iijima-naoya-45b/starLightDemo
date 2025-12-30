@@ -1,0 +1,317 @@
+---
+title: FastAPI依存性注入完全ガイド
+sidebar:
+    label: 依存性注入
+---
+
+# FastAPI依存性注入完全ガイド
+
+FastAPIの依存性注入（Dependency Injection）機能を、実務で使える実装例とともに詳しく解説します。
+
+## 1. 依存性注入とは
+
+### 依存性注入の役割
+
+依存性注入は、関数やクラスが必要とする依存関係を外部から注入する仕組みです。これにより、コードの再利用性とテスト容易性が向上します。
+
+```
+依存性注入の利点
+   ├─ コードの再利用性向上
+   ├─ テストの容易性
+   ├─ 疎結合の実現
+   └─ 保守性の向上
+```
+
+### なぜ依存性注入が必要か
+
+**問題のある構成（依存性注入なし）:**
+
+```python
+# 問題: 依存関係がハードコードされている
+from sqlalchemy.orm import Session
+from app.database import SessionLocal
+
+@app.get("/users/{user_id}")
+def get_user(user_id: int):
+    db = SessionLocal()  # 問題: 直接インスタンス化
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        return user
+    finally:
+        db.close()
+```
+
+**解決: 依存性注入による柔軟な設計**
+
+```python
+# 解決: 依存性注入を使用
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.get("/users/{user_id}")
+def get_user(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    return user
+```
+
+## 2. 基本的な依存性注入
+
+### 関数ベースの依存性
+
+```python
+from fastapi import Depends, FastAPI
+
+app = FastAPI()
+
+def get_query_param(q: str = None):
+    return q
+
+@app.get("/items/")
+def read_items(query: str = Depends(get_query_param)):
+    return {"query": query}
+```
+
+### クラスベースの依存性
+
+```python
+from fastapi import Depends, FastAPI
+from typing import Optional
+
+app = FastAPI()
+
+class QueryParams:
+    def __init__(self, q: Optional[str] = None, skip: int = 0, limit: int = 100):
+        self.q = q
+        self.skip = skip
+        self.limit = limit
+
+@app.get("/items/")
+def read_items(params: QueryParams = Depends()):
+    return {"q": params.q, "skip": params.skip, "limit": params.limit}
+```
+
+## 3. データベースセッションの依存性注入
+
+### 基本的な実装
+
+```python
+# app/database.py
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+DATABASE_URL = "sqlite:///./test.db"
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+```
+
+### エンドポイントでの使用
+
+```python
+# app/main.py
+from fastapi import Depends, FastAPI
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app import models, schemas
+
+app = FastAPI()
+
+@app.get("/users/{user_id}")
+def get_user(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+```
+
+## 4. 認証の依存性注入
+
+### 基本的な認証依存性
+
+```python
+# app/core/security.py
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+SECRET_KEY = "your-secret-key"
+ALGORITHM = "HS256"
+
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials"
+            )
+        return username
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials"
+        )
+```
+
+### エンドポイントでの使用
+
+```python
+# app/main.py
+from fastapi import Depends, FastAPI
+from app.core.security import get_current_user
+
+app = FastAPI()
+
+@app.get("/users/me")
+def read_users_me(current_user: str = Depends(get_current_user)):
+    return {"username": current_user}
+```
+
+## 5. ネストした依存性注入
+
+### 複数の依存性の組み合わせ
+
+```python
+from fastapi import Depends, FastAPI
+from sqlalchemy.orm import Session
+
+app = FastAPI()
+
+def get_db():
+    # データベースセッションの取得
+    pass
+
+def get_current_user(db: Session = Depends(get_db)):
+    # 現在のユーザーの取得
+    pass
+
+def get_user_permissions(user: str = Depends(get_current_user)):
+    # ユーザーの権限の取得
+    pass
+
+@app.get("/admin")
+def admin_endpoint(permissions: dict = Depends(get_user_permissions)):
+    # 権限に基づいた処理
+    return {"message": "Admin access granted"}
+```
+
+## 6. 実務でのベストプラクティス
+
+### パターン1: サービスの依存性注入
+
+```python
+# app/services/user_service.py
+from sqlalchemy.orm import Session
+from app import models, schemas
+
+class UserService:
+    def __init__(self, db: Session):
+        self.db = db
+    
+    def get_user(self, user_id: int):
+        return self.db.query(models.User).filter(models.User.id == user_id).first()
+    
+    def create_user(self, user_data: schemas.UserCreate):
+        db_user = models.User(**user_data.dict())
+        self.db.add(db_user)
+        self.db.commit()
+        self.db.refresh(db_user)
+        return db_user
+
+def get_user_service(db: Session = Depends(get_db)):
+    return UserService(db)
+
+# app/main.py
+@app.get("/users/{user_id}")
+def get_user(user_id: int, service: UserService = Depends(get_user_service)):
+    user = service.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+```
+
+### パターン2: 設定の依存性注入
+
+```python
+# app/core/config.py
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    app_name: str = "My FastAPI App"
+    debug: bool = False
+    database_url: str
+    
+    class Config:
+        env_file = ".env"
+
+def get_settings():
+    return Settings()
+
+# app/main.py
+from app.core.config import get_settings
+
+@app.get("/info")
+def get_info(settings: Settings = Depends(get_settings)):
+    return {"app_name": settings.app_name, "debug": settings.debug}
+```
+
+## 7. よくある問題と解決策
+
+### 問題1: 依存性が解決されない
+
+**原因:**
+- 依存性関数が正しく定義されていない
+- 型ヒントが間違っている
+
+**解決策:**
+```python
+# 正しい依存性の定義
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# エンドポイントでの使用
+@app.get("/users/")
+def get_users(db: Session = Depends(get_db)):
+    # 処理
+    pass
+```
+
+### 問題2: 循環依存
+
+**原因:**
+- 依存性が相互に依存している
+
+**解決策:**
+```python
+# 循環依存を避ける
+# 依存性の階層を明確にする
+def get_db():
+    # データベースセッション
+    pass
+
+def get_service(db: Session = Depends(get_db)):
+    # サービス（データベースに依存）
+    pass
+
+def get_user(service: Service = Depends(get_service)):
+    # ユーザー（サービスに依存）
+    pass
+```
+
+これで、FastAPIの依存性注入の基礎知識と実務での使い方を理解できるようになりました。

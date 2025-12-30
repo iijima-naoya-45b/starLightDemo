@@ -217,3 +217,714 @@ EXPLAIN SELECT * FROM users WHERE email = 'john@example.com';
 
 適切なインデックス設計により、クエリのパフォーマンスを大幅に向上できます。
 
+## 4. インデックス戦略
+
+### インデックス戦略の重要性
+
+インデックス戦略は、パフォーマンスとコストのバランスを取るための重要な設計要素です。
+
+### 戦略1: カーディナリティに基づく戦略
+
+#### カーディナリティとは
+
+カーディナリティは、カラム内の一意な値の数です。
+
+**カーディナリティの種類:**
+- **高カーディナリティ**: 一意な値が多い（例: email、user_id）
+- **中カーディナリティ**: 一意な値が中程度（例: status、category_id）
+- **低カーディナリティ**: 一意な値が少ない（例: gender、is_active）
+
+**実装例:**
+
+```sql
+-- 高カーディナリティ: インデックスが効果的
+CREATE INDEX idx_email ON users(email);  -- 各ユーザーが異なるemail
+
+-- 中カーディナリティ: 複合インデックスが効果的
+CREATE INDEX idx_status_created ON orders(status, created_at);
+-- status: 'pending', 'processing', 'completed', 'cancelled' (4種類)
+-- created_at: 日時（高カーディナリティ）
+
+-- 低カーディナリティ: 単独インデックスは効果が薄い
+-- CREATE INDEX idx_gender ON users(gender);  -- 'male', 'female' (2種類のみ)
+-- 複合インデックスで使用する
+CREATE INDEX idx_gender_created ON users(gender, created_at);
+```
+
+### 戦略2: 複合インデックスの順序戦略
+
+#### 複合インデックスの最適な順序
+
+複合インデックスの順序は、クエリのパフォーマンスに大きく影響します。
+
+**原則:**
+1. **等価条件（=）のカラムを先に**
+2. **範囲条件（&lt;, &gt;, BETWEEN）のカラムを後に**
+3. **カーディナリティの高いカラムを先に**
+
+**実装例:**
+
+```sql
+-- 良い例: 等価条件を先に、範囲条件を後に
+CREATE INDEX idx_user_status_created ON orders(user_id, status, created_at);
+
+-- このクエリは効率的
+SELECT * FROM orders 
+WHERE user_id = 123 
+  AND status = 'completed' 
+  AND created_at BETWEEN '2024-01-01' AND '2024-12-31';
+
+-- 悪い例: 順序が不適切
+CREATE INDEX idx_created_status_user ON orders(created_at, status, user_id);
+
+-- このクエリは非効率（インデックスが部分的にしか使えない）
+SELECT * FROM orders 
+WHERE user_id = 123 
+  AND status = 'completed' 
+  AND created_at BETWEEN '2024-01-01' AND '2024-12-31';
+```
+
+### 戦略3: 部分インデックス（Partial Index）
+
+#### 部分インデックスとは
+
+条件を満たす行のみにインデックスを作成する方法です。
+
+**実装例:**
+
+```sql
+-- PostgreSQL: アクティブなユーザーのみにインデックス
+CREATE INDEX idx_active_users_email ON users(email) 
+WHERE status = 'active';
+
+-- このクエリは高速
+SELECT * FROM users WHERE email = 'john@example.com' AND status = 'active';
+
+-- MySQL: 関数インデックス（MySQL 8.0以降）
+CREATE INDEX idx_active_users_email ON users((CASE WHEN status = 'active' THEN email END));
+
+-- メリット:
+-- 1. インデックスサイズが小さい
+-- 2. 更新コストが低い
+-- 3. クエリが高速
+```
+
+### 戦略4: カバリングインデックス（Covering Index）
+
+#### カバリングインデックスとは
+
+クエリに必要なすべてのカラムを含むインデックスです。
+
+**実装例:**
+
+```sql
+-- カバリングインデックス
+CREATE INDEX idx_user_covering ON users(id, name, email, status);
+
+-- このクエリはインデックスのみで実行可能（テーブルアクセス不要）
+SELECT id, name, email, status FROM users WHERE id = 123;
+
+-- メリット:
+-- 1. テーブルアクセスが不要
+-- 2. クエリが非常に高速
+-- 3. I/Oが削減される
+
+-- デメリット:
+-- 1. インデックスサイズが大きくなる
+-- 2. 更新コストが高くなる
+```
+
+### 戦略5: インデックスの監視とメンテナンス
+
+#### インデックスの使用状況の確認
+
+**実装例:**
+
+```sql
+-- MySQL: インデックスの使用状況を確認
+SELECT 
+    TABLE_NAME,
+    INDEX_NAME,
+    SEQ_IN_INDEX,
+    COLUMN_NAME,
+    CARDINALITY
+FROM INFORMATION_SCHEMA.STATISTICS
+WHERE TABLE_SCHEMA = 'my_database'
+  AND TABLE_NAME = 'users'
+ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX;
+
+-- PostgreSQL: インデックスの使用状況を確認
+SELECT 
+    schemaname,
+    tablename,
+    indexname,
+    idx_scan as index_scans,
+    idx_tup_read as tuples_read,
+    idx_tup_fetch as tuples_fetched
+FROM pg_stat_user_indexes
+WHERE schemaname = 'public'
+ORDER BY idx_scan DESC;
+
+-- 使用されていないインデックスの特定
+SELECT 
+    schemaname,
+    tablename,
+    indexname,
+    idx_scan
+FROM pg_stat_user_indexes
+WHERE idx_scan = 0
+  AND schemaname = 'public';
+```
+
+#### インデックスの再構築
+
+**実装例:**
+
+```sql
+-- MySQL: インデックスの再構築
+ALTER TABLE users DROP INDEX idx_email;
+ALTER TABLE users ADD INDEX idx_email (email);
+
+-- または
+ANALYZE TABLE users;
+
+-- PostgreSQL: インデックスの再構築
+REINDEX INDEX idx_email;
+REINDEX TABLE users;
+
+-- または
+VACUUM ANALYZE users;
+```
+
+## 5. その他の重要なデータベース設計知識
+
+### 知識1: パーティショニング
+
+#### パーティショニングとは
+
+大きなテーブルを小さなパーティションに分割する方法です。
+
+**パーティショニングの種類:**
+- **範囲パーティショニング**: 日付や数値の範囲で分割
+- **リストパーティショニング**: 特定の値のリストで分割
+- **ハッシュパーティショニング**: ハッシュ値で分割
+
+**実装例:**
+
+```sql
+-- MySQL: 範囲パーティショニング（日付で分割）
+CREATE TABLE orders (
+    id INT PRIMARY KEY,
+    user_id INT NOT NULL,
+    total DECIMAL(10,2) NOT NULL,
+    created_at DATE NOT NULL
+) PARTITION BY RANGE (YEAR(created_at)) (
+    PARTITION p2022 VALUES LESS THAN (2023),
+    PARTITION p2023 VALUES LESS THAN (2024),
+    PARTITION p2024 VALUES LESS THAN (2025),
+    PARTITION p_future VALUES LESS THAN MAXVALUE
+);
+
+-- メリット:
+-- 1. クエリが高速（必要なパーティションのみスキャン）
+-- 2. メンテナンスが容易（古いパーティションを削除）
+-- 3. バックアップが容易
+
+-- PostgreSQL: 範囲パーティショニング
+CREATE TABLE orders (
+    id INT PRIMARY KEY,
+    user_id INT NOT NULL,
+    total DECIMAL(10,2) NOT NULL,
+    created_at DATE NOT NULL
+) PARTITION BY RANGE (created_at);
+
+CREATE TABLE orders_2022 PARTITION OF orders
+    FOR VALUES FROM ('2022-01-01') TO ('2023-01-01');
+CREATE TABLE orders_2023 PARTITION OF orders
+    FOR VALUES FROM ('2023-01-01') TO ('2024-01-01');
+CREATE TABLE orders_2024 PARTITION OF orders
+    FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
+```
+
+### 知識2: ビュー（View）
+
+#### ビューとは
+
+仮想的なテーブルで、クエリの結果を保存します。
+
+**実装例:**
+
+```sql
+-- ビューの作成
+CREATE VIEW active_users AS
+SELECT id, name, email, created_at
+FROM users
+WHERE status = 'active'
+  AND deleted_at IS NULL;
+
+-- ビューの使用
+SELECT * FROM active_users WHERE email = 'john@example.com';
+
+-- メリット:
+-- 1. 複雑なクエリを簡素化
+-- 2. セキュリティ（特定のカラムのみ公開）
+-- 3. 一貫性（共通のロジックを共有）
+
+-- マテリアライズドビュー（PostgreSQL）
+CREATE MATERIALIZED VIEW user_statistics AS
+SELECT 
+    DATE(created_at) as date,
+    COUNT(*) as user_count,
+    COUNT(CASE WHEN status = 'active' THEN 1 END) as active_count
+FROM users
+GROUP BY DATE(created_at);
+
+-- マテリアライズドビューの更新
+REFRESH MATERIALIZED VIEW user_statistics;
+```
+
+### 知識3: ストアドプロシージャとトリガー
+
+#### ストアドプロシージャとは
+
+データベース内に保存されたSQLコードです。
+
+**実装例:**
+
+```sql
+-- MySQL: ストアドプロシージャ
+DELIMITER //
+CREATE PROCEDURE GetUserOrders(IN user_id INT)
+BEGIN
+    SELECT o.*, u.name, u.email
+    FROM orders o
+    JOIN users u ON o.user_id = u.id
+    WHERE o.user_id = user_id
+    ORDER BY o.created_at DESC;
+END //
+DELIMITER ;
+
+-- ストアドプロシージャの呼び出し
+CALL GetUserOrders(123);
+
+-- PostgreSQL: ストアドプロシージャ
+CREATE OR REPLACE FUNCTION get_user_orders(p_user_id INT)
+RETURNS TABLE (
+    order_id INT,
+    total DECIMAL,
+    created_at TIMESTAMP,
+    user_name VARCHAR,
+    user_email VARCHAR
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT o.id, o.total, o.created_at, u.name, u.email
+    FROM orders o
+    JOIN users u ON o.user_id = u.id
+    WHERE o.user_id = p_user_id
+    ORDER BY o.created_at DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ストアドプロシージャの呼び出し
+SELECT * FROM get_user_orders(123);
+```
+
+#### トリガーとは
+
+特定のイベントが発生した際に自動的に実行されるコードです。
+
+**実装例:**
+
+```sql
+-- MySQL: トリガー（更新日時の自動更新）
+DELIMITER //
+CREATE TRIGGER update_users_updated_at
+BEFORE UPDATE ON users
+FOR EACH ROW
+BEGIN
+    SET NEW.updated_at = CURRENT_TIMESTAMP;
+END //
+DELIMITER ;
+
+-- PostgreSQL: トリガー
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_users_updated_at
+    BEFORE UPDATE ON users
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+```
+
+### 知識4: データ型の選択
+
+#### 適切なデータ型の選択
+
+データ型の選択は、パフォーマンスとストレージ使用量に影響します。
+
+**実装例:**
+
+```sql
+-- 良い例: 適切なデータ型
+CREATE TABLE users (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,  -- INTで十分
+    email VARCHAR(255) NOT NULL,  -- 適切な長さ
+    status ENUM('active', 'inactive', 'suspended') NOT NULL,  -- ENUMで制約
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- TIMESTAMPで十分
+    balance DECIMAL(10,2) NOT NULL DEFAULT 0.00  -- 金額はDECIMAL
+);
+
+-- 悪い例: 不適切なデータ型
+CREATE TABLE users (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,  -- INTで十分なのにBIGINT
+    email TEXT NOT NULL,  -- VARCHARで十分なのにTEXT
+    status VARCHAR(50) NOT NULL,  -- ENUMで制約すべき
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,  -- TIMESTAMPで十分
+    balance FLOAT NOT NULL DEFAULT 0.00  -- 金額はDECIMAL（精度の問題）
+);
+
+-- データ型の選択基準:
+-- 1. 必要な範囲をカバーする最小の型
+-- 2. 精度が必要な場合はDECIMAL
+-- 3. 固定長の場合はCHAR、可変長の場合はVARCHAR
+-- 4. 日時はTIMESTAMP（タイムゾーン対応）またはDATETIME
+```
+
+### 知識5: 外部キー制約と参照整合性
+
+#### 外部キー制約とは
+
+テーブル間の参照整合性を保証する制約です。
+
+**実装例:**
+
+```sql
+-- 外部キー制約の設定
+CREATE TABLE orders (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT NOT NULL,
+    total DECIMAL(10,2) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE RESTRICT  -- ユーザー削除時は注文を削除しない
+        ON UPDATE CASCADE  -- ユーザーID更新時は注文も更新
+);
+
+-- 外部キー制約のオプション:
+-- ON DELETE RESTRICT: 削除を禁止（デフォルト）
+-- ON DELETE CASCADE: 親レコード削除時に子レコードも削除
+-- ON DELETE SET NULL: 親レコード削除時に子レコードの外部キーをNULLに
+-- ON DELETE NO ACTION: 何もしない（RESTRICTと類似）
+
+-- ON UPDATE CASCADE: 親レコード更新時に子レコードも更新
+-- ON UPDATE RESTRICT: 更新を禁止
+-- ON UPDATE SET NULL: 親レコード更新時に子レコードの外部キーをNULLに
+```
+
+### 知識6: トランザクション分離レベル
+
+#### トランザクション分離レベルとは
+
+トランザクション間のデータの見え方を制御する設定です。
+
+**分離レベルの種類:**
+- **READ UNCOMMITTED**: コミット前のデータも読める（ダーティリード）
+- **READ COMMITTED**: コミット済みのデータのみ読める（デフォルト）
+- **REPEATABLE READ**: 同じトランザクション内で同じデータを読める
+- **SERIALIZABLE**: 完全に分離（最も厳格）
+
+**実装例:**
+
+```sql
+-- トランザクション分離レベルの設定
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+BEGIN;
+SELECT * FROM users WHERE id = 123;
+-- 他のトランザクションの変更がコミットされると見える
+COMMIT;
+
+-- REPEATABLE READ（MySQLのデフォルト）
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+
+BEGIN;
+SELECT * FROM users WHERE id = 123;
+-- 同じトランザクション内では同じデータが見える
+COMMIT;
+
+-- SERIALIZABLE（最も厳格）
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+BEGIN;
+SELECT * FROM users WHERE id = 123;
+-- 他のトランザクションは待機
+COMMIT;
+```
+
+### 知識7: クエリパフォーマンスの分析
+
+#### EXPLAINの活用
+
+**実装例:**
+
+```sql
+-- MySQL: EXPLAIN
+EXPLAIN SELECT * FROM users 
+WHERE email = 'john@example.com' 
+  AND status = 'active';
+
+-- 重要な項目:
+-- type: ALL（全件スキャン）は避ける、ref/rangeが理想的
+-- key: 使用されているインデックス
+-- rows: スキャンされる行数（少ないほど良い）
+-- Extra: Using index（カバリングインデックス）が理想的
+
+-- PostgreSQL: EXPLAIN ANALYZE
+EXPLAIN ANALYZE SELECT * FROM users 
+WHERE email = 'john@example.com' 
+  AND status = 'active';
+
+-- 実際の実行時間も表示される
+```
+
+### 知識8: データベース接続プール
+
+#### 接続プールとは
+
+データベース接続を再利用する仕組みです。
+
+**実装例:**
+
+```python
+# Python (SQLAlchemy): 接続プールの設定
+from sqlalchemy import create_engine
+
+engine = create_engine(
+    'postgresql://user:password@localhost/dbname',
+    pool_size=10,  # 接続プールのサイズ
+    max_overflow=20,  # 追加の接続数
+    pool_pre_ping=True,  # 接続の有効性を確認
+    pool_recycle=3600  # 接続の再利用時間（秒）
+)
+```
+
+### 知識9: データベースの正規化と非正規化
+
+#### 正規化とは
+
+データの重複を排除し、整合性を保つ設計手法です。
+
+**正規化のレベル:**
+- **第1正規形（1NF）**: 繰り返しグループを排除
+- **第2正規形（2NF）**: 部分関数従属を排除
+- **第3正規形（3NF）**: 推移的関数従属を排除
+- **ボイス・コッド正規形（BCNF）**: より厳格な正規化
+
+**非正規化とは**
+
+パフォーマンス向上のために、意図的に正規化を緩める設計手法です。
+
+**実装例:**
+
+```sql
+-- 正規化された設計
+CREATE TABLE users (
+    id INT PRIMARY KEY,
+    name VARCHAR(255),
+    email VARCHAR(255)
+);
+
+CREATE TABLE orders (
+    id INT PRIMARY KEY,
+    user_id INT,
+    total DECIMAL(10,2),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- 非正規化された設計（パフォーマンス重視）
+CREATE TABLE orders (
+    id INT PRIMARY KEY,
+    user_id INT,
+    user_name VARCHAR(255),  -- 非正規化: ユーザー名を重複保存
+    user_email VARCHAR(255),  -- 非正規化: メールアドレスを重複保存
+    total DECIMAL(10,2)
+);
+
+-- メリット:
+-- 1. JOINが不要で高速
+-- 2. クエリが簡素化
+
+-- デメリット:
+-- 1. データの重複
+-- 2. 更新時の不整合リスク
+-- 3. ストレージ使用量の増加
+```
+
+### 知識10: データベースのバックアップとリカバリ
+
+#### バックアップ戦略
+
+**実装例:**
+
+```sql
+-- MySQL: バックアップ
+mysqldump -u root -p my_database > backup.sql
+
+-- 増分バックアップ（バイナリログを使用）
+mysqlbinlog --start-datetime="2024-01-01 00:00:00" \
+  --stop-datetime="2024-01-02 00:00:00" \
+  mysql-bin.000001 > incremental_backup.sql
+
+-- PostgreSQL: バックアップ
+pg_dump -U postgres my_database > backup.sql
+
+-- ポイントインタイムリカバリ（PITR）
+-- 1. ベースバックアップ
+pg_basebackup -D /backup/base -Ft -z -P
+
+-- 2. アーカイブログの設定
+archive_mode = on
+archive_command = 'cp %p /backup/archive/%f'
+```
+
+## 6. 実務でのベストプラクティス
+
+### パターン1: インデックス戦略の決定フロー
+
+```mermaid
+flowchart TD
+    A[クエリの分析] --> B{WHERE句のカラムは？}
+    B --> C[等価条件のカラム]
+    B --> D[範囲条件のカラム]
+    C --> E[カーディナリティを確認]
+    D --> E
+    E --> F{カーディナリティは？}
+    F -->|高| G[単独インデックス]
+    F -->|中| H[複合インデックスの検討]
+    F -->|低| I[複合インデックスの後方に配置]
+    G --> J[EXPLAINで確認]
+    H --> J
+    I --> J
+    J --> K{パフォーマンスは良好？}
+    K -->|はい| L[完了]
+    K -->|いいえ| M[インデックスを調整]
+    M --> J
+```
+
+### パターン2: インデックスの定期レビュー
+
+```markdown
+## インデックスの定期レビュー
+
+### レビューの頻度
+- **月次**: 使用されていないインデックスの確認
+- **四半期**: パフォーマンスの評価
+- **年次**: 全体の見直し
+
+### レビューの項目
+1. **使用されていないインデックス**: 削除を検討
+2. **重複しているインデックス**: 統合を検討
+3. **パフォーマンス**: EXPLAINで確認
+4. **ストレージ使用量**: インデックスサイズの確認
+5. **更新コスト**: INSERT/UPDATE/DELETEのパフォーマンス
+```
+
+### パターン3: クエリパフォーマンスの監視
+
+```markdown
+## クエリパフォーマンスの監視
+
+### 監視項目
+1. **実行時間**: 遅いクエリの特定
+2. **スキャン行数**: インデックスの効果を確認
+3. **ロック待ち**: デッドロックの確認
+4. **リソース使用量**: CPU、メモリ、I/O
+
+### 実装例
+```sql
+-- MySQL: 遅いクエリのログ
+SET GLOBAL slow_query_log = 'ON';
+SET GLOBAL long_query_time = 1;  -- 1秒以上
+
+-- PostgreSQL: クエリ統計
+SELECT 
+    query,
+    calls,
+    total_time,
+    mean_time,
+    max_time
+FROM pg_stat_statements
+ORDER BY total_time DESC
+LIMIT 10;
+```
+```
+
+## 7. よくある問題と解決策
+
+### 問題1: インデックスが使用されない
+
+**原因:**
+- クエリの条件がインデックスと一致しない
+- 関数を使用している
+- 型の不一致
+
+**解決策:**
+```sql
+-- 問題のあるクエリ
+SELECT * FROM users WHERE UPPER(email) = 'JOHN@EXAMPLE.COM';
+-- 解決: 関数インデックスを使用
+CREATE INDEX idx_email_upper ON users((UPPER(email)));
+
+-- 問題のあるクエリ
+SELECT * FROM users WHERE email = 123;  -- 型の不一致
+-- 解決: 型を一致させる
+SELECT * FROM users WHERE email = '123';
+```
+
+### 問題2: インデックスが多すぎる
+
+**原因:**
+- 過度なインデックス作成
+- 使用されていないインデックス
+
+**解決策:**
+```sql
+-- 使用されていないインデックスの確認
+SELECT 
+    schemaname,
+    tablename,
+    indexname,
+    idx_scan
+FROM pg_stat_user_indexes
+WHERE idx_scan = 0;
+
+-- 使用されていないインデックスの削除
+DROP INDEX idx_unused_index;
+```
+
+### 問題3: 複合インデックスの順序が不適切
+
+**原因:**
+- 等価条件と範囲条件の順序が不適切
+- カーディナリティを考慮していない
+
+**解決策:**
+```sql
+-- 良い例: 等価条件を先に、範囲条件を後に
+CREATE INDEX idx_user_status_created ON orders(user_id, status, created_at);
+
+-- クエリ
+SELECT * FROM orders 
+WHERE user_id = 123 
+  AND status = 'completed' 
+  AND created_at BETWEEN '2024-01-01' AND '2024-12-31';
+```
+
+これで、インデックス戦略とその他の重要なデータベース設計知識を理解できるようになりました。
+

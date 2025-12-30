@@ -1,0 +1,318 @@
+---
+title: HTTPとは
+sidebar:
+    label: HTTPとは
+---
+
+# HTTP（HyperText Transfer Protocol）完全ガイド
+
+HTTPは、WebブラウザとWebサーバー間でデータをやり取りするためのプロトコルです。Webアプリケーション開発の基礎となる知識を詳しく解説します。
+
+## 1. HTTPとは
+
+### HTTPの役割
+
+HTTP（HyperText Transfer Protocol）は、WebブラウザとWebサーバー間でHTML、画像、JSONなどのリソースを転送するためのプロトコルです。
+
+```
+クライアント（ブラウザ）
+        ↓ HTTPリクエスト
+    サーバー
+        ↓ HTTPレスポンス
+    クライアント（ブラウザ）
+```
+
+### HTTPの特徴
+
+- **ステートレス**: 各リクエストは独立しており、前のリクエストの状態を保持しない
+- **リクエスト/レスポンスモデル**: クライアントがリクエストを送信し、サーバーがレスポンスを返す
+- **テキストベース**: 人間が読める形式で通信
+
+## 2. HTTPリクエスト
+
+### リクエストの構造
+
+```
+GET /index.html HTTP/1.1
+Host: example.com
+User-Agent: Mozilla/5.0...
+Accept: text/html,application/xhtml+xml
+Accept-Language: ja,en-US;q=0.9
+Connection: keep-alive
+```
+
+### HTTPメソッド
+
+#### GET
+
+```http
+GET /api/users HTTP/1.1
+Host: api.example.com
+```
+
+- リソースの取得
+- パラメータはURLに含める
+- キャッシュ可能
+
+#### POST
+
+```http
+POST /api/users HTTP/1.1
+Host: api.example.com
+Content-Type: application/json
+
+{
+  "name": "John Doe",
+  "email": "john@example.com"
+}
+```
+
+- リソースの作成
+- データはリクエストボディに含める
+- キャッシュ不可
+
+#### PUT
+
+```http
+PUT /api/users/1 HTTP/1.1
+Host: api.example.com
+Content-Type: application/json
+
+{
+  "name": "Jane Doe",
+  "email": "jane@example.com"
+}
+```
+
+- リソースの更新（完全置換）
+
+#### PATCH
+
+```http
+PATCH /api/users/1 HTTP/1.1
+Host: api.example.com
+Content-Type: application/json
+
+{
+  "email": "newemail@example.com"
+}
+```
+
+- リソースの部分更新
+
+#### DELETE
+
+```http
+DELETE /api/users/1 HTTP/1.1
+Host: api.example.com
+```
+
+- リソースの削除
+
+### リクエストヘッダー
+
+```http
+GET /index.html HTTP/1.1
+Host: example.com                    # ホスト名
+User-Agent: Mozilla/5.0...          # クライアント情報
+Accept: text/html,application/json   # 受け入れ可能なコンテンツタイプ
+Accept-Language: ja,en-US;q=0.9     # 言語設定
+Accept-Encoding: gzip, deflate       # 圧縮形式
+Connection: keep-alive               # 接続の維持
+Cookie: session_id=abc123           # クッキー
+Authorization: Bearer token123      # 認証情報
+```
+
+## 3. HTTPレスポンス
+
+### レスポンスの構造
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+Content-Length: 1234
+Date: Mon, 01 Jan 2024 12:00:00 GMT
+Server: nginx/1.18.0
+
+<!DOCTYPE html>
+<html>
+...
+</html>
+```
+
+### HTTPステータスコード
+
+#### 2xx（成功）
+
+```
+200 OK: リクエスト成功
+201 Created: リソース作成成功
+204 No Content: リクエスト成功（コンテンツなし）
+```
+
+#### 3xx（リダイレクト）
+
+```
+301 Moved Permanently: 恒久的なリダイレクト
+302 Found: 一時的なリダイレクト
+304 Not Modified: キャッシュが有効
+```
+
+#### 4xx（クライアントエラー）
+
+```
+400 Bad Request: 不正なリクエスト
+401 Unauthorized: 認証が必要
+403 Forbidden: アクセス拒否
+404 Not Found: リソースが見つからない
+```
+
+#### 5xx（サーバーエラー）
+
+```
+500 Internal Server Error: サーバー内部エラー
+502 Bad Gateway: ゲートウェイエラー
+503 Service Unavailable: サービス利用不可
+504 Gateway Timeout: ゲートウェイタイムアウト
+```
+
+### レスポンスヘッダー
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8  # コンテンツタイプ
+Content-Length: 1234                    # コンテンツサイズ
+Date: Mon, 01 Jan 2024 12:00:00 GMT     # レスポンス日時
+Server: nginx/1.18.0                     # サーバー情報
+Cache-Control: max-age=3600              # キャッシュ制御
+Set-Cookie: session_id=abc123           # クッキーの設定
+Location: https://example.com/new        # リダイレクト先
+```
+
+## 4. HTTP/1.1の特徴
+
+### 持続的接続（Keep-Alive）
+
+```http
+Connection: keep-alive
+```
+
+- 1つのTCP接続で複数のリクエスト/レスポンスを処理
+- 接続の確立コストを削減
+
+### パイプライン
+
+- 複数のリクエストを順次送信（レスポンスを待たない）
+- 実装が複雑で、あまり使われていない
+
+### チャンク転送
+
+```http
+Transfer-Encoding: chunked
+```
+
+- 大きなファイルを小さなチャンクに分割して転送
+- ストリーミング配信に使用
+
+## 5. HTTP/2の特徴
+
+### マルチプレクシング
+
+- 1つのTCP接続で複数のリクエスト/レスポンスを並列処理
+- HTTP/1.1のパイプラインの問題を解決
+
+### サーバープッシュ
+
+- サーバーがクライアントにリソースを事前に送信
+- ページ読み込みの高速化
+
+### ヘッダー圧縮
+
+- HPACKアルゴリズムでヘッダーを圧縮
+- 通信量の削減
+
+### バイナリプロトコル
+
+- テキストベースからバイナリベースに変更
+- パースの高速化
+
+## 6. HTTP/3の特徴
+
+### QUICプロトコル
+
+- UDPベースのトランスポートプロトコル
+- TCPの3ウェイハンドシェイクを省略
+- 接続の高速化
+
+### マルチストリーム
+
+- 複数のストリームを独立して処理
+- 1つのストリームがブロックされても、他のストリームは影響を受けない
+
+## 7. 実務でのHTTP活用
+
+### curlコマンドでのHTTPリクエスト
+
+```bash
+# GETリクエスト
+curl https://example.com
+
+# POSTリクエスト
+curl -X POST https://api.example.com/users \
+  -H "Content-Type: application/json" \
+  -d '{"name": "John Doe", "email": "john@example.com"}'
+
+# ヘッダーの確認
+curl -I https://example.com
+
+# 詳細な情報の表示
+curl -v https://example.com
+```
+
+### ブラウザの開発者ツール
+
+1. **Networkタブを開く**（F12）
+2. **リクエストを選択**
+3. **Headersタブで確認**
+   - Request Headers: 送信されたヘッダー
+   - Response Headers: 受信したヘッダー
+   - Status Code: HTTPステータスコード
+
+## 8. よくある問題と解決策
+
+### 問題1: 404エラー
+
+**原因:**
+- URLが間違っている
+- リソースが存在しない
+
+**解決策:**
+- URLを確認
+- サーバーのログを確認
+- ルーティング設定を確認
+
+### 問題2: CORSエラー
+
+**原因:**
+- クロスオリジンリクエストがブロックされている
+
+**解決策:**
+```http
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE
+Access-Control-Allow-Headers: Content-Type, Authorization
+```
+
+### 問題3: リクエストが遅い
+
+**原因:**
+- ネットワークの問題
+- サーバーの負荷
+- リクエストサイズが大きい
+
+**解決策:**
+- HTTP/2の使用
+- リクエストの最適化
+- キャッシュの活用
+
+これで、HTTPの仕組みと実務での使い方を理解できるようになりました。

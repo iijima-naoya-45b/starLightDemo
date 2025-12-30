@@ -1,0 +1,186 @@
+---
+title: データベース管理
+sidebar:
+    label: データベース管理
+---
+
+# データベース管理完全ガイド
+
+データベースのバックアップ、レプリケーション、パフォーマンス最適化など、実務で必要なデータベース管理の知識を詳しく解説します。
+
+## 1. データベースのバックアップ
+
+### バックアップの重要性
+
+データベースのバックアップは、データ損失を防ぐための重要な対策です。
+
+### PostgreSQLのバックアップ
+
+```bash
+# pg_dumpを使用したバックアップ
+pg_dump -h localhost -U postgres -d mydb > backup.sql
+
+# 圧縮バックアップ
+pg_dump -h localhost -U postgres -d mydb | gzip > backup.sql.gz
+
+# カスタム形式でのバックアップ
+pg_dump -h localhost -U postgres -F c -d mydb -f backup.dump
+```
+
+### MySQLのバックアップ
+
+```bash
+# mysqldumpを使用したバックアップ
+mysqldump -u root -p mydb > backup.sql
+
+# 圧縮バックアップ
+mysqldump -u root -p mydb | gzip > backup.sql.gz
+
+# すべてのデータベースのバックアップ
+mysqldump -u root -p --all-databases > all_backup.sql
+```
+
+### 自動バックアップの設定
+
+```bash
+#!/bin/bash
+# backup.sh
+DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="/backups"
+DB_NAME="mydb"
+
+# PostgreSQLのバックアップ
+pg_dump -h localhost -U postgres -d $DB_NAME | gzip > $BACKUP_DIR/backup_$DATE.sql.gz
+
+# 古いバックアップの削除（30日以上）
+find $BACKUP_DIR -name "backup_*.sql.gz" -mtime +30 -delete
+```
+
+```bash
+# crontabで定期実行
+# 毎日午前2時にバックアップ
+0 2 * * * /path/to/backup.sh
+```
+
+## 2. データベースのレプリケーション
+
+### レプリケーションとは
+
+レプリケーションは、データベースのコピーを複数のサーバーに保持し、可用性とパフォーマンスを向上させます。
+
+### PostgreSQLのレプリケーション
+
+```sql
+-- マスターサーバーの設定（postgresql.conf）
+wal_level = replica
+max_wal_senders = 3
+max_replication_slots = 3
+
+-- レプリケーションスロットの作成
+SELECT pg_create_physical_replication_slot('replica_slot');
+
+-- スレーブサーバーの設定（recovery.conf）
+primary_conninfo = 'host=master.example.com port=5432 user=replicator'
+primary_slot_name = 'replica_slot'
+```
+
+### MySQLのレプリケーション
+
+```sql
+-- マスターサーバーの設定（my.cnf）
+[mysqld]
+server-id = 1
+log-bin = mysql-bin
+binlog-format = ROW
+
+-- レプリケーションユーザーの作成
+CREATE USER 'replicator'@'%' IDENTIFIED BY 'password';
+GRANT REPLICATION SLAVE ON *.* TO 'replicator'@'%';
+
+-- スレーブサーバーの設定
+CHANGE MASTER TO
+  MASTER_HOST='master.example.com',
+  MASTER_USER='replicator',
+  MASTER_PASSWORD='password',
+  MASTER_LOG_FILE='mysql-bin.000001',
+  MASTER_LOG_POS=154;
+
+START SLAVE;
+```
+
+## 3. パフォーマンス最適化
+
+### インデックスの最適化
+
+```sql
+-- インデックスの作成
+CREATE INDEX idx_user_email ON users(email);
+
+-- 複合インデックス
+CREATE INDEX idx_user_name_email ON users(name, email);
+
+-- インデックスの使用状況を確認
+EXPLAIN ANALYZE SELECT * FROM users WHERE email = 'user@example.com';
+```
+
+### クエリの最適化
+
+```sql
+-- 不要なSELECT *を避ける
+SELECT id, name, email FROM users WHERE id = 1;
+
+-- JOINの最適化
+SELECT u.name, o.total
+FROM users u
+INNER JOIN orders o ON u.id = o.user_id
+WHERE u.id = 1;
+
+-- LIMITの使用
+SELECT * FROM users ORDER BY created_at DESC LIMIT 10;
+```
+
+## 4. よくある問題と解決策
+
+### 問題1: データベースが遅い
+
+**原因:**
+- インデックスが不足している
+- クエリが最適化されていない
+- リソースが不足している
+
+**解決策:**
+```sql
+-- スロークエリログの確認
+SHOW VARIABLES LIKE 'slow_query_log';
+
+-- インデックスの確認
+SHOW INDEX FROM users;
+
+-- クエリの実行計画を確認
+EXPLAIN ANALYZE SELECT * FROM users WHERE email = 'user@example.com';
+```
+
+### 問題2: ディスク容量が不足
+
+**原因:**
+- ログファイルが大きくなっている
+- バックアップファイルが蓄積している
+
+**解決策:**
+```bash
+# ログファイルのローテーション
+# logrotateの設定
+/var/log/postgresql/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    notifempty
+    missingok
+}
+
+# 古いバックアップの削除
+find /backups -name "*.sql.gz" -mtime +30 -delete
+```
+
+これで、データベース管理の基礎知識と実務での使い方を理解できるようになりました。

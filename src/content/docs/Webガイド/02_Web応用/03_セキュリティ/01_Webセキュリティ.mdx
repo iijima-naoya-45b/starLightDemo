@@ -1,0 +1,234 @@
+---
+title: Webセキュリティ
+sidebar:
+    label: Webセキュリティ
+---
+
+# Webセキュリティ完全ガイド
+
+Webアプリケーションのセキュリティ対策について、実務で使える実装例とともに詳しく解説します。
+
+## 1. セキュリティヘッダー
+
+### Content-Security-Policy (CSP)
+
+```http
+Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'
+```
+
+- XSS攻撃を防ぐ
+- リソースの読み込み元を制限
+
+### X-Frame-Options
+
+```http
+X-Frame-Options: DENY
+```
+
+- クリックジャッキングを防ぐ
+
+### X-Content-Type-Options
+
+```http
+X-Content-Type-Options: nosniff
+```
+
+- MIMEタイプスニッフィングを防ぐ
+
+## 2. CORS（Cross-Origin Resource Sharing）
+
+### CORSとは
+
+異なるオリジン間でのリソース共有を制御する仕組みです。
+
+```
+オリジン = スキーム + ホスト + ポート
+例: https://example.com:443
+```
+
+### CORSの設定
+
+```http
+Access-Control-Allow-Origin: https://example.com
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE
+Access-Control-Allow-Headers: Content-Type, Authorization
+Access-Control-Allow-Credentials: true
+```
+
+### プリフライトリクエスト
+
+```
+OPTIONS /api/users HTTP/1.1
+Origin: https://example.com
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: Content-Type
+```
+
+## 3. 外部リンクのセキュリティ対策
+
+### target="_blank"のセキュリティリスク
+
+`target="_blank"`を使用して外部リンクを開く際、セキュリティリスクが存在します。
+
+**問題のあるコード:**
+
+```html
+<!-- 問題: window.openerが利用可能 -->
+<a href="https://example.com" target="_blank">外部リンク</a>
+```
+
+**リスク:**
+- 新しいタブから元のページにアクセス可能（`window.opener`）
+- フィッシング攻撃の可能性
+- パフォーマンスの問題
+
+### rel="noopener noreferrer"の使用
+
+**解決策:**
+
+```html
+<!-- 解決: rel="noopener noreferrer"を追加 -->
+<a href="https://example.com" target="_blank" rel="noopener noreferrer">
+  外部リンク
+</a>
+```
+
+**各属性の役割:**
+
+- **`rel="noopener"`**: `window.opener`へのアクセスを防ぐ
+- **`rel="noreferrer"`**: Refererヘッダーを送信しない
+- **`rel="noopener noreferrer"`**: 両方の対策を実施（推奨）
+
+### 実装例
+
+#### 基本的な外部リンク
+
+```html
+<!-- 外部リンクの基本形 -->
+<a 
+  href="https://example.com" 
+  target="_blank" 
+  rel="noopener noreferrer"
+>
+  外部リンク
+</a>
+```
+
+#### Reactでの実装
+
+```typescript
+// Reactコンポーネント
+interface ExternalLinkProps {
+  href: string;
+  children: React.ReactNode;
+}
+
+function ExternalLink({ href, children }: ExternalLinkProps) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {children}
+    </a>
+  );
+}
+
+// 使用例
+<ExternalLink href="https://example.com">
+  外部リンク
+</ExternalLink>
+```
+
+#### Next.jsでの実装
+
+```typescript
+import Link from 'next/link';
+
+// Next.jsのLinkコンポーネントを使用する場合
+<Link
+  href="https://example.com"
+  target="_blank"
+  rel="noopener noreferrer"
+>
+  外部リンク
+</Link>
+```
+
+### セキュリティヘッダーとの組み合わせ
+
+```http
+# Content-Security-Policyで外部リンクを制御
+Content-Security-Policy: default-src 'self'; 
+  base-uri 'self'; 
+  form-action 'self';
+```
+
+### よくある問題と解決策
+
+#### 問題1: rel属性を忘れる
+
+**原因:**
+- `target="_blank"`を使用しているが、`rel`属性を設定していない
+
+**解決策:**
+```html
+<!-- 常にrel="noopener noreferrer"を追加 -->
+<a href="https://example.com" target="_blank" rel="noopener noreferrer">
+  外部リンク
+</a>
+```
+
+#### 問題2: 内部リンクにも適用してしまう
+
+**原因:**
+- すべてのリンクに`target="_blank"`を適用している
+
+**解決策:**
+```html
+<!-- 内部リンクにはtarget="_blank"を付けない -->
+<a href="/about">内部リンク</a>
+
+<!-- 外部リンクのみtarget="_blank"を使用 -->
+<a href="https://example.com" target="_blank" rel="noopener noreferrer">
+  外部リンク
+</a>
+```
+
+## 4. その他のセキュリティ対策
+
+### Referrer Policy
+
+```http
+Referrer-Policy: strict-origin-when-cross-origin
+```
+
+**設定値:**
+- `no-referrer`: Refererヘッダーを送信しない
+- `same-origin`: 同一オリジンのみ送信
+- `strict-origin-when-cross-origin`: クロスオリジン時はオリジンのみ送信（推奨）
+
+### Permissions Policy
+
+```http
+Permissions-Policy: geolocation=(), microphone=(), camera=()
+```
+
+**設定例:**
+- `geolocation=()`: 位置情報へのアクセスを禁止
+- `microphone=()`: マイクへのアクセスを禁止
+- `camera=()`: カメラへのアクセスを禁止
+
+### Strict-Transport-Security (HSTS)
+
+```http
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+```
+
+**設定値:**
+- `max-age`: HSTSの有効期限（秒）
+- `includeSubDomains`: サブドメインにも適用
+- `preload`: HSTSプリロードリストに含める
+
+これで、Webセキュリティの基礎知識と外部リンクのセキュリティ対策を理解できるようになりました。

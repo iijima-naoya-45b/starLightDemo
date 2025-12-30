@@ -1,16 +1,93 @@
 ---
-title: "CloudWatch詳細"
-label: "CloudWatch詳細"
+title: CloudWatch完全ガイド
+sidebar:
+    label: CloudWatch詳細
 ---
 
-## CloudWatch詳細
+# CloudWatch完全ガイド
 
-CloudWatchは、AWSリソースの監視とログ管理サービスです。
+CloudWatchは、AWSリソースの監視とログ管理サービスです。実務で使える監視設定とアラートを詳しく解説します。
 
-### CloudWatchメトリクス
+## 1. CloudWatchとは
+
+### CloudWatchの役割
+
+CloudWatchは、AWSリソースのメトリクス収集、ログ管理、アラートを提供する監視サービスです。
+
+```
+AWSリソース（EC2、Lambda、RDSなど）
+   ↓（メトリクス・ログを送信）
+CloudWatch
+   ├─ メトリクス（CPU、メモリ、リクエスト数など）
+   ├─ ログ（アプリケーションログ、システムログ）
+   └─ アラーム（閾値超過時の通知）
+```
+
+### なぜCloudWatchが必要か
+
+**問題のある構成（CloudWatchなし）:**
+
+```bash
+# 問題: 手動での監視
+# 1. サーバーにSSH接続
+# 2. ログを確認
+# 3. リソース使用状況を確認
+# 4. 問題を手動で検知
+
+# 問題点:
+# 1. リアルタイム監視が困難
+# 2. 自動アラートがない
+# 3. 履歴データの保存が困難
+# 4. 複数リソースの監視が困難
+```
+
+**解決: CloudWatchによる自動監視**
+
+```yaml
+# 解決: CloudWatchによる自動監視
+Resources:
+  CPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: HighCPUUtilization
+      MetricName: CPUUtilization
+      Threshold: 80
+      AlarmActions:
+        - !Ref SNSTopic
+
+# メリット:
+# 1. リアルタイム監視（自動的にメトリクスを収集）
+# 2. 自動アラート（閾値超過時に自動通知）
+# 3. 履歴データの保存（15か月間保持）
+# 4. 複数リソースの監視（統合ダッシュボード）
+```
+
+## 2. CloudWatchメトリクス
+
+### 標準メトリクス
+
+```
+EC2:
+- CPUUtilization
+- NetworkIn/NetworkOut
+- DiskReadOps/DiskWriteOps
+
+RDS:
+- CPUUtilization
+- DatabaseConnections
+- ReadLatency/WriteLatency
+
+Lambda:
+- Invocations
+- Duration
+- Errors
+- Throttles
+```
+
+### カスタムメトリクス
 
 ```javascript
-// カスタムメトリクスの送信
+// Node.jsでのカスタムメトリクス送信
 const AWS = require('aws-sdk');
 const cloudwatch = new AWS.CloudWatch();
 
@@ -26,74 +103,261 @@ cloudwatch.putMetricData({
         {
           Name: 'Environment',
           Value: 'Production'
+        },
+        {
+          Name: 'API',
+          Value: 'users'
+        }
+      ]
+    },
+    {
+      MetricName: 'ResponseTime',
+      Value: 250,
+      Unit: 'Milliseconds',
+      Timestamp: new Date(),
+      Dimensions: [
+        {
+          Name: 'Environment',
+          Value: 'Production'
         }
       ]
     }
   ]
 }, (err, data) => {
   if (err) console.error(err);
-  else console.log('Metric sent:', data);
+  else console.log('Metrics sent:', data);
 });
 ```
 
-### CloudWatch Logs
+### Pythonでの実装
+
+```python
+import boto3
+from datetime import datetime
+
+cloudwatch = boto3.client('cloudwatch')
+
+cloudwatch.put_metric_data(
+    Namespace='MyApplication',
+    MetricData=[
+        {
+            'MetricName': 'RequestCount',
+            'Value': 100,
+            'Unit': 'Count',
+            'Timestamp': datetime.utcnow(),
+            'Dimensions': [
+                {
+                    'Name': 'Environment',
+                    'Value': 'Production'
+                }
+            ]
+        }
+    ]
+)
+```
+
+## 3. CloudWatch Logs
+
+### ロググループとログストリーム
+
+```yaml
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/my-function
+      RetentionInDays: 30
+
+  LogStream:
+    Type: AWS::Logs::LogStream
+    Properties:
+      LogGroupName: !Ref LogGroup
+      LogStreamName: stream1
+```
+
+### アプリケーションからのログ送信
 
 ```javascript
-// ログストリームの作成
+// Node.jsでのログ送信
+const AWS = require('aws-sdk');
 const logs = new AWS.CloudWatchLogs();
 
+// ロググループの作成
 logs.createLogGroup({
-  logGroupName: '/aws/lambda/my-function'
+  logGroupName: '/myapp/application'
 }, (err, data) => {
-  if (err) console.error(err);
+  if (err && err.code !== 'ResourceAlreadyExistsException') {
+    console.error(err);
+  }
+});
+
+// ログストリームの作成
+logs.createLogStream({
+  logGroupName: '/myapp/application',
+  logStreamName: 'stream1'
+}, (err, data) => {
+  if (err && err.code !== 'ResourceAlreadyExistsException') {
+    console.error(err);
+  }
 });
 
 // ログイベントの送信
 logs.putLogEvents({
-  logGroupName: '/aws/lambda/my-function',
+  logGroupName: '/myapp/application',
   logStreamName: 'stream1',
   logEvents: [
     {
       message: 'Application started',
       timestamp: Date.now()
+    },
+    {
+      message: 'User logged in: user123',
+      timestamp: Date.now()
     }
   ]
 }, (err, data) => {
   if (err) console.error(err);
+  else console.log('Logs sent:', data);
 });
 ```
 
-### CloudWatch Alarms
+### Lambda関数のログ
+
+```python
+import logging
+import json
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+def lambda_handler(event, context):
+    logger.info('Event received: %s', json.dumps(event))
+    
+    try:
+        # 処理
+        result = process_event(event)
+        logger.info('Processing successful: %s', result)
+        return {
+            'statusCode': 200,
+            'body': json.dumps(result)
+        }
+    except Exception as e:
+        logger.error('Error occurred: %s', str(e), exc_info=True)
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
+```
+
+## 4. CloudWatchアラーム
+
+### 基本的なアラーム
 
 ```yaml
-HighCPUAlarm:
-  Type: AWS::CloudWatch::Alarm
-  Properties:
-    AlarmName: HighCPUUtilization
-    ComparisonOperator: GreaterThanThreshold
-    EvaluationPeriods: 2
-    MetricName: CPUUtilization
-    Namespace: AWS/EC2
-    Period: 300
-    Statistic: Average
-    Threshold: 80
-    AlarmActions:
-      - !Ref SNSTopic
-    Dimensions:
-      - Name: InstanceId
-        Value: !Ref EC2Instance
+Resources:
+  HighCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: HighCPUUtilization
+      AlarmDescription: Alert when CPU utilization exceeds 80%
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref EC2Instance
+      AlarmActions:
+        - !Ref SNSTopic
+      OKActions:
+        - !Ref SNSTopic
+      TreatMissingData: notBreaching
+
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: AlertsTopic
+      Subscription:
+        - Protocol: email
+          Endpoint: admin@example.com
 ```
 
-### CloudWatch Insights
+### 複合アラーム
+
+```yaml
+Resources:
+  CPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: HighCPU
+      MetricName: CPUUtilization
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+
+  MemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: HighMemory
+      MetricName: MemoryUtilization
+      Threshold: 90
+      ComparisonOperator: GreaterThanThreshold
+
+  CompositeAlarm:
+    Type: AWS::CloudWatch::CompositeAlarm
+    Properties:
+      AlarmName: CriticalSystemAlarm
+      AlarmRule: !Sub 'ALARM(${CPUAlarm}) OR ALARM(${MemoryAlarm})'
+      AlarmActions:
+        - !Ref SNSTopic
+```
+
+### メトリクス数式アラーム
+
+```yaml
+Resources:
+  CustomMetricAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: HighErrorRate
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: MyApplication
+              MetricName: Errors
+            Stat: Sum
+            Period: 60
+        - Id: m2
+          MetricStat:
+            Metric:
+              Namespace: MyApplication
+              MetricName: Requests
+            Stat: Sum
+            Period: 60
+        - Id: e1
+          Expression: 'm1 / m2 * 100'
+          Label: ErrorRate
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 2
+```
+
+## 5. CloudWatch Logs Insights
+
+### 基本的なクエリ
 
 ```sql
--- CloudWatch Logs Insightsクエリ
+-- エラーログの検索
 fields @timestamp, @message
 | filter @message like /ERROR/
-| stats count() by bin(5m)
+| sort @timestamp desc
+| limit 20
 ```
 
-### 実践例: アプリケーションログの分析
+### 高度なクエリ
 
 ```sql
 -- エラーログの分析
@@ -104,4 +368,171 @@ fields @timestamp, @message, @logStream
 | sort count desc
 | limit 10
 ```
+
+### パフォーマンス分析
+
+```sql
+-- レスポンスタイムの分析
+fields @timestamp, @message
+| parse @message "ResponseTime: * ms" as responseTime
+| stats avg(responseTime), max(responseTime), min(responseTime) by bin(5m)
+```
+
+### ユーザーアクティビティ分析
+
+```sql
+-- ユーザーアクティビティの分析
+fields @timestamp, @message
+| parse @message "User * logged in" as userId
+| stats count() by userId
+| sort count desc
+| limit 10
+```
+
+## 6. CloudWatchダッシュボード
+
+### ダッシュボードの作成
+
+```yaml
+Resources:
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: MyDashboard
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["AWS/EC2", "CPUUtilization", "InstanceId", "${EC2Instance}"],
+                  [".", "NetworkIn", ".", "."],
+                  [".", "NetworkOut", ".", "."]
+                ],
+                "period": 300,
+                "stat": "Average",
+                "region": "${AWS::Region}",
+                "title": "EC2 Metrics"
+              }
+            },
+            {
+              "type": "log",
+              "properties": {
+                "query": "SOURCE '/aws/lambda/my-function' | fields @timestamp, @message\n| filter @message like /ERROR/\n| sort @timestamp desc\n| limit 20",
+                "region": "${AWS::Region}",
+                "title": "Error Logs"
+              }
+            }
+          ]
+        }
+```
+
+## 7. 実務でのベストプラクティス
+
+### パターン1: アプリケーションメトリクス
+
+```javascript
+// カスタムメトリクスの送信
+const metrics = {
+  requestCount: 0,
+  errorCount: 0,
+  responseTime: []
+};
+
+// リクエスト処理後
+metrics.requestCount++;
+metrics.responseTime.push(responseTime);
+
+// エラー発生時
+metrics.errorCount++;
+
+// 定期的にメトリクスを送信（例: 1分ごと）
+setInterval(() => {
+  cloudwatch.putMetricData({
+    Namespace: 'MyApplication',
+    MetricData: [
+      {
+        MetricName: 'RequestCount',
+        Value: metrics.requestCount,
+        Unit: 'Count'
+      },
+      {
+        MetricName: 'ErrorCount',
+        Value: metrics.errorCount,
+        Unit: 'Count'
+      },
+      {
+        MetricName: 'ResponseTime',
+        Value: calculateAverage(metrics.responseTime),
+        Unit: 'Milliseconds'
+      }
+    ]
+  });
+  
+  // リセット
+  metrics.requestCount = 0;
+  metrics.errorCount = 0;
+  metrics.responseTime = [];
+}, 60000);
+```
+
+### パターン2: 構造化ログ
+
+```javascript
+// 構造化ログの送信
+const logData = {
+  timestamp: new Date().toISOString(),
+  level: 'INFO',
+  message: 'User logged in',
+  userId: 'user123',
+  ipAddress: '192.168.1.1',
+  requestId: 'req-123'
+};
+
+console.log(JSON.stringify(logData));
+```
+
+## 8. よくある問題と解決策
+
+### 問題1: メトリクスが表示されない
+
+**原因:**
+- メトリクスの送信が失敗している
+- 名前空間が間違っている
+
+**解決策:**
+```bash
+# メトリクスの確認
+aws cloudwatch list-metrics \
+  --namespace MyApplication
+
+# メトリクス統計の取得
+aws cloudwatch get-metric-statistics \
+  --namespace MyApplication \
+  --metric-name RequestCount \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-01T23:59:59Z \
+  --period 3600 \
+  --statistics Average
+```
+
+### 問題2: アラームが発火しない
+
+**原因:**
+- 閾値が適切でない
+- 評価期間が長すぎる
+
+**解決策:**
+```bash
+# アラームの状態を確認
+aws cloudwatch describe-alarms --alarm-names HighCPUUtilization
+
+# アラーム履歴の確認
+aws cloudwatch describe-alarm-history \
+  --alarm-name HighCPUUtilization \
+  --start-date 2024-01-01T00:00:00Z
+```
+
+これで、CloudWatchの基礎知識と実務での監視設定を理解できるようになりました。
 

@@ -1,0 +1,363 @@
+---
+title: 実践的なテストシナリオ
+sidebar:
+    label: 実践的なテストシナリオ
+---
+
+# Playwright実践的なテストシナリオ
+
+実務でよく使われるテストシナリオを、実装例とともに詳しく解説します。
+
+## 1. Eコマースサイトのテストシナリオ
+
+### シナリオ1: 商品検索と購入フロー
+
+```javascript
+import { test, expect } from '@playwright/test';
+
+test('商品検索から購入までのフロー', async ({ page }) => {
+  // 1. サイトにアクセス
+  await page.goto('https://example.com');
+  
+  // 2. 商品を検索
+  await page.getByPlaceholder('Search products').fill('laptop');
+  await page.getByRole('button', { name: 'Search' }).click();
+  
+  // 3. 検索結果の確認
+  await expect(page.getByText('Search results')).toBeVisible();
+  const firstProduct = page.getByTestId('product-card').first();
+  await expect(firstProduct).toBeVisible();
+  
+  // 4. 商品詳細ページに移動
+  await firstProduct.getByRole('link').click();
+  
+  // 5. カートに追加
+  await page.getByRole('button', { name: 'Add to cart' }).click();
+  
+  // 6. カートページに移動
+  await page.getByRole('link', { name: 'Cart' }).click();
+  
+  // 7. チェックアウト
+  await page.getByRole('button', { name: 'Checkout' }).click();
+  
+  // 8. 配送情報を入力
+  await page.getByLabel('Name').fill('John Doe');
+  await page.getByLabel('Email').fill('john@example.com');
+  await page.getByLabel('Address').fill('123 Main St');
+  
+  // 9. 注文を確定
+  await page.getByRole('button', { name: 'Place order' }).click();
+  
+  // 10. 注文確認ページの確認
+  await expect(page.getByText('Order confirmed')).toBeVisible();
+});
+```
+
+### シナリオ2: ログインとウィッシュリスト
+
+```javascript
+test('ログインしてウィッシュリストに追加', async ({ page }) => {
+  // ログイン
+  await page.goto('https://example.com/login');
+  await page.getByLabel('Email').fill('user@example.com');
+  await page.getByLabel('Password').fill('password123');
+  await page.getByRole('button', { name: 'Log in' }).click();
+  
+  // 商品ページに移動
+  await page.goto('https://example.com/products/1');
+  
+  // ウィッシュリストに追加
+  await page.getByRole('button', { name: 'Add to wishlist' }).click();
+  
+  // ウィッシュリストページに移動
+  await page.getByRole('link', { name: 'Wishlist' }).click();
+  
+  // 商品が追加されていることを確認
+  await expect(page.getByTestId('wishlist-item')).toContainText('Product Name');
+});
+```
+
+## 2. フォーム送信のテストシナリオ
+
+### シナリオ1: お問い合わせフォーム
+
+```javascript
+test('お問い合わせフォームの送信', async ({ page }) => {
+  await page.goto('https://example.com/contact');
+  
+  // フォームに入力
+  await page.getByLabel('Name').fill('John Doe');
+  await page.getByLabel('Email').fill('john@example.com');
+  await page.getByLabel('Subject').selectOption('General Inquiry');
+  await page.getByLabel('Message').fill('This is a test message.');
+  
+  // バリデーションエラーの確認（空の状態）
+  await page.getByRole('button', { name: 'Submit' }).click();
+  await expect(page.getByText('Name is required')).toBeVisible();
+  
+  // 正しい情報を入力して送信
+  await page.getByLabel('Name').fill('John Doe');
+  await page.getByLabel('Email').fill('john@example.com');
+  await page.getByLabel('Message').fill('This is a test message.');
+  await page.getByRole('button', { name: 'Submit' }).click();
+  
+  // 成功メッセージの確認
+  await expect(page.getByText('Thank you for your message')).toBeVisible();
+});
+```
+
+### シナリオ2: ファイルアップロード付きフォーム
+
+```javascript
+test('ファイルアップロード付きフォーム', async ({ page }) => {
+  await page.goto('https://example.com/upload');
+  
+  // フォームに入力
+  await page.getByLabel('Title').fill('My Document');
+  await page.getByLabel('Description').fill('This is a test document');
+  
+  // ファイルをアップロード
+  await page.getByLabel('Upload file').setInputFiles('path/to/file.pdf');
+  
+  // アップロードされたファイル名の確認
+  await expect(page.getByText('file.pdf')).toBeVisible();
+  
+  // 送信
+  await page.getByRole('button', { name: 'Submit' }).click();
+  
+  // 成功メッセージの確認
+  await expect(page.getByText('File uploaded successfully')).toBeVisible();
+});
+```
+
+## 3. 認証とセッション管理のテスト
+
+### シナリオ1: ログインとログアウト
+
+```javascript
+test('ログインとログアウトのフロー', async ({ page }) => {
+  // ログインページに移動
+  await page.goto('https://example.com/login');
+  
+  // ログイン
+  await page.getByLabel('Email').fill('user@example.com');
+  await page.getByLabel('Password').fill('password123');
+  await page.getByRole('button', { name: 'Log in' }).click();
+  
+  // ログイン成功の確認
+  await expect(page).toHaveURL(/dashboard/);
+  await expect(page.getByText('Welcome')).toBeVisible();
+  
+  // ログアウト
+  await page.getByRole('button', { name: 'User menu' }).click();
+  await page.getByRole('button', { name: 'Log out' }).click();
+  
+  // ログアウト成功の確認
+  await expect(page).toHaveURL(/login/);
+  await expect(page.getByText('You have been logged out')).toBeVisible();
+});
+```
+
+### シナリオ2: セッションタイムアウト
+
+```javascript
+test('セッションタイムアウトのテスト', async ({ page }) => {
+  // ログイン
+  await page.goto('https://example.com/login');
+  await page.getByLabel('Email').fill('user@example.com');
+  await page.getByLabel('Password').fill('password123');
+  await page.getByRole('button', { name: 'Log in' }).click();
+  
+  // セッションタイムアウトをシミュレート（実際には時間を待つか、APIでセッションを無効化）
+  await page.evaluate(() => {
+    // セッションを無効化する処理
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+  
+  // ページをリロード
+  await page.reload();
+  
+  // ログインページにリダイレクトされることを確認
+  await expect(page).toHaveURL(/login/);
+  await expect(page.getByText('Your session has expired')).toBeVisible();
+});
+```
+
+## 4. 動的コンテンツのテスト
+
+### シナリオ1: 無限スクロール
+
+```javascript
+test('無限スクロールのテスト', async ({ page }) => {
+  await page.goto('https://example.com/products');
+  
+  // 初期表示のアイテム数を確認
+  const initialCount = await page.getByTestId('product-item').count();
+  expect(initialCount).toBeGreaterThan(0);
+  
+  // ページの最下部までスクロール
+  await page.evaluate(() => {
+    window.scrollTo(0, document.body.scrollHeight);
+  });
+  
+  // 新しいアイテムが読み込まれるまで待機
+  await page.waitForFunction(
+    (initialCount) => {
+      return document.querySelectorAll('[data-testid="product-item"]').length > initialCount;
+    },
+    initialCount
+  );
+  
+  // アイテム数が増えていることを確認
+  const newCount = await page.getByTestId('product-item').count();
+  expect(newCount).toBeGreaterThan(initialCount);
+});
+```
+
+### シナリオ2: リアルタイム更新
+
+```javascript
+test('リアルタイム更新のテスト', async ({ page }) => {
+  await page.goto('https://example.com/notifications');
+  
+  // 初期の通知数を確認
+  const initialCount = await page.getByTestId('notification').count();
+  
+  // 新しい通知が追加されるまで待機
+  await page.waitForFunction(
+    (initialCount) => {
+      return document.querySelectorAll('[data-testid="notification"]').length > initialCount;
+    },
+    initialCount,
+    { timeout: 10000 }
+  );
+  
+  // 新しい通知が表示されていることを確認
+  const newCount = await page.getByTestId('notification').count();
+  expect(newCount).toBeGreaterThan(initialCount);
+});
+```
+
+## 5. エラーハンドリングのテスト
+
+### シナリオ1: ネットワークエラー
+
+```javascript
+test('ネットワークエラーのハンドリング', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // ネットワークリクエストを失敗させる
+  await page.route('**/api/data', route => {
+    route.abort('failed');
+  });
+  
+  // エラーが発生する操作を実行
+  await page.getByRole('button', { name: 'Load data' }).click();
+  
+  // エラーメッセージが表示されることを確認
+  await expect(page.getByText('Failed to load data')).toBeVisible();
+  
+  // リトライボタンが表示されることを確認
+  await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible();
+});
+```
+
+### シナリオ2: バリデーションエラー
+
+```javascript
+test('フォームバリデーションエラーのテスト', async ({ page }) => {
+  await page.goto('https://example.com/signup');
+  
+  // 空の状態で送信
+  await page.getByRole('button', { name: 'Sign up' }).click();
+  
+  // 各フィールドのエラーメッセージを確認
+  await expect(page.getByText('Email is required')).toBeVisible();
+  await expect(page.getByText('Password is required')).toBeVisible();
+  
+  // 無効なメールアドレスを入力
+  await page.getByLabel('Email').fill('invalid-email');
+  await page.getByRole('button', { name: 'Sign up' }).click();
+  
+  // メールアドレスの形式エラーを確認
+  await expect(page.getByText('Please enter a valid email address')).toBeVisible();
+  
+  // 正しい情報を入力
+  await page.getByLabel('Email').fill('valid@example.com');
+  await page.getByLabel('Password').fill('password123');
+  await page.getByRole('button', { name: 'Sign up' }).click();
+  
+  // 成功メッセージを確認
+  await expect(page.getByText('Account created successfully')).toBeVisible();
+});
+```
+
+## 6. パフォーマンステスト
+
+### シナリオ1: ページロード時間の測定
+
+```javascript
+test('ページロード時間の測定', async ({ page }) => {
+  const startTime = Date.now();
+  
+  await page.goto('https://example.com');
+  
+  // ページが完全に読み込まれるまで待機
+  await page.waitForLoadState('networkidle');
+  
+  const loadTime = Date.now() - startTime;
+  
+  // ロード時間が3秒以内であることを確認
+  expect(loadTime).toBeLessThan(3000);
+  
+  console.log(`Page load time: ${loadTime}ms`);
+});
+```
+
+### シナリオ2: APIレスポンス時間の測定
+
+```javascript
+test('APIレスポンス時間の測定', async ({ page }) => {
+  const responseTimes = [];
+  
+  // リクエストのレスポンス時間を記録
+  page.on('response', response => {
+    if (response.url().includes('/api/')) {
+      responseTimes.push(response.request().timing().responseEnd);
+    }
+  });
+  
+  await page.goto('https://example.com');
+  await page.waitForLoadState('networkidle');
+  
+  // 平均レスポンス時間を計算
+  const averageTime = responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length;
+  
+  // 平均レスポンス時間が500ms以内であることを確認
+  expect(averageTime).toBeLessThan(500);
+});
+```
+
+## 7. クロスブラウザテスト
+
+### シナリオ1: 複数ブラウザでの動作確認
+
+```javascript
+// playwright.config.jsで複数ブラウザを設定
+// 各ブラウザで同じテストが実行される
+
+test('クロスブラウザテスト', async ({ page, browserName }) => {
+  await page.goto('https://example.com');
+  
+  // ブラウザ固有の処理
+  if (browserName === 'webkit') {
+    // Safari固有の処理
+  }
+  
+  // 共通のテスト
+  await expect(page.getByText('Welcome')).toBeVisible();
+});
+```
+
+これで、Playwrightでの実践的なテストシナリオの実装方法を理解できるようになりました。

@@ -4,9 +4,9 @@ sidebar:
     label: API通信
 ---
 
-# API通信の概要
+# Flutter API通信完全ガイド
 
-FlutterでのAPI通信は、`http`パッケージを使用して簡単に行うことができます。ここでは、GETリクエストとPOSTリクエストの基本的な使い方を紹介します。
+FlutterでのAPI通信は、`http`パッケージや`Dio`パッケージを使用して実装できます。ここでは、基本的な通信から実務で使えるパターンまで詳しく解説します。
 
 ## GETリクエスト
 
@@ -59,36 +59,419 @@ Future<void> postData() async {
 
 ## その他の通信手法
 
-- **`PUTリクエスト`**: サーバー上のデータを更新します。
-- **`DELETEリクエスト`**: サーバー上のデータを削除します。
-
-これらの方法を使って、FlutterアプリケーションからAPIと通信し、データの更新や削除を行うことができます。
-
-# 実践的なアドバイス
-
-API通信を行う際のベストプラクティスや、よくある問題の解決策を以下に示します。
-
-## ベストプラクティス
-
-- **エラーハンドリング**: API通信中にエラーが発生した場合、適切なエラーメッセージを表示し、ユーザーに再試行を促します。
-- **非同期処理の活用**: API通信は非同期で行い、UIスレッドをブロックしないようにします。
-- **データのキャッシュ**: ネットワーク通信を最小限に抑えるために、データをキャッシュし、オフラインでも利用可能にします。
-
-## よくある問題の解決策
-
-- **タイムアウトの設定**: APIリクエストがタイムアウトする場合、`http`パッケージの`timeout`メソッドを使用して、タイムアウト時間を設定します。
+### PUTリクエスト
 
 ```dart
-final response = await http.get(Uri.parse('https://api.example.com/data')).timeout(Duration(seconds: 10));
+Future<void> updateData(String id, Map<String, dynamic> data) async {
+  final response = await http.put(
+    Uri.parse('https://api.example.com/data/$id'),
+    headers: <String, String>{
+      'Content-Type': 'application/json; charset=UTF-8',
+    },
+    body: jsonEncode(data),
+  );
+  if (response.statusCode == 200) {
+    print('Data updated successfully');
+  }
+}
 ```
 
-- **認証の実装**: APIが認証を必要とする場合、適切な認証ヘッダーをリクエストに追加します。
+### DELETEリクエスト
 
 ```dart
-final response = await http.get(
-  Uri.parse('https://api.example.com/data'),
-  headers: <String, String>{
-    'Authorization': 'Bearer YOUR_ACCESS_TOKEN',
-  },
-);
+Future<void> deleteData(String id) async {
+  final response = await http.delete(
+    Uri.parse('https://api.example.com/data/$id'),
+  );
+  if (response.statusCode == 200) {
+    print('Data deleted successfully');
+  }
+}
 ```
+
+## 2. Dioパッケージを使用した実装
+
+`Dio`は、`http`パッケージよりも高機能で、インターセプター、リトライ、キャンセルなどの機能を提供します。
+
+### pubspec.yamlへの追加
+
+```yaml
+dependencies:
+  dio: ^5.0.0
+```
+
+### Dioの基本的な使用
+
+```dart
+import 'package:dio/dio.dart';
+
+class ApiService {
+  final Dio _dio = Dio(
+    BaseOptions(
+      baseUrl: 'https://api.example.com',
+      connectTimeout: Duration(seconds: 5),
+      receiveTimeout: Duration(seconds: 3),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    ),
+  );
+
+  Future<Map<String, dynamic>> getData() async {
+    try {
+      final response = await _dio.get('/data');
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> postData(Map<String, dynamic> data) async {
+    try {
+      final response = await _dio.post('/data', data: data);
+      return response.data;
+    } on DioException catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  String _handleError(DioException error) {
+    switch (error.type) {
+      case DioExceptionType.connectionTimeout:
+        return '接続タイムアウト';
+      case DioExceptionType.sendTimeout:
+        return '送信タイムアウト';
+      case DioExceptionType.receiveTimeout:
+        return '受信タイムアウト';
+      case DioExceptionType.badResponse:
+        return 'サーバーエラー: ${error.response?.statusCode}';
+      case DioExceptionType.cancel:
+        return 'リクエストがキャンセルされました';
+      default:
+        return 'ネットワークエラー';
+    }
+  }
+}
+```
+
+## 3. 認証トークンの管理
+
+### SharedPreferencesを使用したトークン保存
+
+```dart
+import 'package:shared_preferences/shared_preferences.dart';
+
+class TokenManager {
+  static const String _tokenKey = 'access_token';
+  static const String _refreshTokenKey = 'refresh_token';
+
+  // トークンを保存
+  Future<void> saveToken(String token) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_tokenKey, token);
+  }
+
+  // トークンを取得
+  Future<String?> getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_tokenKey);
+  }
+
+  // トークンを削除
+  Future<void> deleteToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_tokenKey);
+    await prefs.remove(_refreshTokenKey);
+  }
+}
+```
+
+### Dioインターセプターでトークンを自動追加
+
+```dart
+class AuthInterceptor extends Interceptor {
+  final TokenManager _tokenManager = TokenManager();
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
+    final token = await _tokenManager.getToken();
+    if (token != null) {
+      options.headers['Authorization'] = 'Bearer $token';
+    }
+    handler.next(options);
+  }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) async {
+    if (err.response?.statusCode == 401) {
+      // トークンが無効な場合、リフレッシュトークンで更新
+      final refreshed = await _refreshToken();
+      if (refreshed) {
+        // リトライ
+        final opts = err.requestOptions;
+        final token = await _tokenManager.getToken();
+        opts.headers['Authorization'] = 'Bearer $token';
+        final response = await Dio().fetch(opts);
+        return handler.resolve(response);
+      }
+    }
+    handler.next(err);
+  }
+
+  Future<bool> _refreshToken() async {
+    // リフレッシュトークンの実装
+    return false;
+  }
+}
+
+// 使用例
+class ApiService {
+  final Dio _dio = Dio(BaseOptions(
+    baseUrl: 'https://api.example.com',
+  ));
+
+  ApiService() {
+    _dio.interceptors.add(AuthInterceptor());
+  }
+}
+```
+
+## 4. エラーハンドリングとリトライロジック
+
+### カスタムエラークラス
+
+```dart
+class ApiException implements Exception {
+  final String message;
+  final int? statusCode;
+
+  ApiException(this.message, [this.statusCode]);
+
+  @override
+  String toString() => message;
+}
+
+class NetworkException extends ApiException {
+  NetworkException() : super('ネットワークエラーが発生しました');
+}
+
+class UnauthorizedException extends ApiException {
+  UnauthorizedException() : super('認証に失敗しました', 401);
+}
+
+class NotFoundException extends ApiException {
+  NotFoundException() : super('リソースが見つかりませんでした', 404);
+}
+```
+
+### リトライロジックの実装
+
+```dart
+import 'package:dio/dio.dart';
+
+class RetryInterceptor extends Interceptor {
+  final int maxRetries;
+  final Duration retryDelay;
+
+  RetryInterceptor({
+    this.maxRetries = 3,
+    this.retryDelay = const Duration(seconds: 1),
+  });
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) async {
+    if (_shouldRetry(err) && err.requestOptions.extra['retryCount'] == null) {
+      err.requestOptions.extra['retryCount'] = 0;
+    }
+
+    final retryCount = err.requestOptions.extra['retryCount'] as int? ?? 0;
+
+    if (retryCount < maxRetries && _shouldRetry(err)) {
+      err.requestOptions.extra['retryCount'] = retryCount + 1;
+      await Future.delayed(retryDelay * (retryCount + 1));
+      
+      try {
+        final response = await Dio().fetch(err.requestOptions);
+        return handler.resolve(response);
+      } catch (e) {
+        handler.next(err);
+      }
+    } else {
+      handler.next(err);
+    }
+  }
+
+  bool _shouldRetry(DioException error) {
+    return error.type == DioExceptionType.connectionTimeout ||
+           error.type == DioExceptionType.receiveTimeout ||
+           error.type == DioExceptionType.sendTimeout ||
+           (error.response?.statusCode ?? 0) >= 500;
+  }
+}
+```
+
+## 5. オフライン対応とキャッシュ戦略
+
+### キャッシュ付きAPIサービスの実装
+
+```dart
+import 'package:dio/dio.dart';
+import 'package:dio_cache_interceptor/dio_cache_interceptor.dart';
+import 'package:dio_cache_interceptor_hive_store/dio_cache_interceptor_hive_store.dart';
+
+class CachedApiService {
+  late Dio _dio;
+  late CacheOptions _cacheOptions;
+
+  CachedApiService() {
+    _cacheOptions = CacheOptions(
+      store: HiveCacheStore(),
+      policy: CachePolicy.request,
+      hitCacheOnErrorExcept: [401, 403],
+      maxStale: Duration(days: 7),
+    );
+
+    _dio = Dio(BaseOptions(
+      baseUrl: 'https://api.example.com',
+    ));
+
+    _dio.interceptors.add(DioCacheInterceptor(options: _cacheOptions));
+  }
+
+  Future<Response> getCachedData(String endpoint) async {
+    return await _dio.get(
+      endpoint,
+      options: _cacheOptions.toOptions(),
+    );
+  }
+}
+```
+
+### オフライン検出と対応
+
+```dart
+import 'package:connectivity_plus/connectivity_plus.dart';
+
+class NetworkAwareApiService {
+  final Dio _dio = Dio();
+  final Connectivity _connectivity = Connectivity();
+
+  Future<Response> getData(String endpoint) async {
+    final connectivityResult = await _connectivity.checkConnectivity();
+    
+    if (connectivityResult == ConnectivityResult.none) {
+      throw NetworkException();
+    }
+
+    try {
+      return await _dio.get(endpoint);
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionTimeout) {
+        throw NetworkException();
+      }
+      rethrow;
+    }
+  }
+}
+```
+
+## 6. 実務でのAPI通信の実装パターン
+
+### Repository パターン
+
+```dart
+abstract class UserRepository {
+  Future<List<User>> getUsers();
+  Future<User> getUserById(String id);
+  Future<User> createUser(User user);
+  Future<void> updateUser(User user);
+  Future<void> deleteUser(String id);
+}
+
+class ApiUserRepository implements UserRepository {
+  final ApiService _apiService;
+
+  ApiUserRepository(this._apiService);
+
+  @override
+  Future<List<User>> getUsers() async {
+    try {
+      final response = await _apiService.getData('/users');
+      return (response['data'] as List)
+          .map((json) => User.fromJson(json))
+          .toList();
+    } catch (e) {
+      throw Exception('Failed to fetch users: $e');
+    }
+  }
+
+  @override
+  Future<User> getUserById(String id) async {
+    try {
+      final response = await _apiService.getData('/users/$id');
+      return User.fromJson(response['data']);
+    } catch (e) {
+      throw Exception('Failed to fetch user: $e');
+    }
+  }
+
+  // 他のメソッドも同様に実装
+}
+```
+
+## 7. よくある問題と解決策
+
+### 問題1: CORSエラー
+
+**解決策**: 開発環境では、プロキシサーバーを使用するか、バックエンドでCORS設定を調整します。
+
+### 問題2: 証明書エラー（開発環境）
+
+**解決策**: 開発環境でのみ、証明書検証をスキップします（本番環境では使用しない）。
+
+```dart
+class DevApiService {
+  late Dio _dio;
+
+  DevApiService() {
+    _dio = Dio(BaseOptions(
+      baseUrl: 'https://api.example.com',
+    ));
+
+    // 開発環境のみ
+    if (kDebugMode) {
+      (_dio.httpClientAdapter as DefaultHttpClientAdapter).onHttpClientCreate =
+          (HttpClient client) {
+        client.badCertificateCallback =
+            (X509Certificate cert, String host, int port) => true;
+        return client;
+      };
+    }
+  }
+}
+```
+
+### 問題3: リクエストのキャンセル
+
+**解決策**: `CancelToken`を使用してリクエストをキャンセルできます。
+
+```dart
+class ApiService {
+  final Dio _dio = Dio();
+  CancelToken? _cancelToken;
+
+  Future<Response> getData(String endpoint) async {
+    _cancelToken = CancelToken();
+    return await _dio.get(
+      endpoint,
+      cancelToken: _cancelToken,
+    );
+  }
+
+  void cancelRequest() {
+    _cancelToken?.cancel('Request cancelled');
+  }
+}
+```
+
+これで、FlutterでのAPI通信の実装方法を理解できるようになりました。

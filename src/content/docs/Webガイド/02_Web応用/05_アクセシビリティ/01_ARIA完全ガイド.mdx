@@ -1,0 +1,598 @@
+---
+title: ARIA完全ガイド
+sidebar:
+    label: ARIA
+---
+
+# ARIA完全ガイド
+
+HTML・CSSでのARIA（Accessible Rich Internet Applications）の使用方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. ARIAとは
+
+### ARIAの役割
+
+ARIAは、Webアプリケーションのアクセシビリティを向上させるための属性セットです。
+
+```
+ARIAの目的
+   ├─ スクリーンリーダー対応
+   ├─ キーボード操作の支援
+   ├─ セマンティックな情報の提供
+   └─ 動的コンテンツの説明
+```
+
+### なぜARIAが必要か
+
+**問題のある構成（ARIAなし）:**
+
+```html
+<!-- 問題: スクリーンリーダーが理解できない -->
+<div onclick="handleClick()">クリック</div>
+<div class="button">ボタン</div>
+```
+
+**解決: ARIAによる明確な情報提供**
+
+```html
+<!-- 解決: ARIA属性で役割と状態を明確に -->
+<div 
+  role="button" 
+  tabindex="0" 
+  onclick="handleClick()"
+  aria-label="クリック"
+>
+  クリック
+</div>
+<button aria-label="ボタン">ボタン</button>
+```
+
+## 2. ARIA属性の基本
+
+### role属性
+
+要素の役割を明確にします。
+
+```html
+<!-- 基本的なrole属性 -->
+<div role="button">ボタン</div>
+<div role="link">リンク</div>
+<div role="heading">見出し</div>
+<div role="article">記事</div>
+<div role="navigation">ナビゲーション</div>
+```
+
+### aria-label属性
+
+要素にラベルを提供します。
+
+```html
+<!-- aria-labelの使用例 -->
+<button aria-label="閉じる">×</button>
+<button aria-label="メニューを開く">☰</button>
+<a href="/search" aria-label="検索ページへ移動">🔍</a>
+```
+
+### aria-labelledby属性
+
+他の要素をラベルとして参照します。
+
+```html
+<!-- aria-labelledbyの使用例 -->
+<div id="username-label">ユーザー名</div>
+<input 
+  type="text" 
+  id="username" 
+  aria-labelledby="username-label"
+/>
+```
+
+### aria-describedby属性
+
+要素の説明を提供します。
+
+```html
+<!-- aria-describedbyの使用例 -->
+<input 
+  type="password" 
+  id="password" 
+  aria-describedby="password-help"
+/>
+<div id="password-help">
+  パスワードは8文字以上で、英数字を含む必要があります
+</div>
+```
+
+## 3. 状態とプロパティ
+
+### aria-expanded属性
+
+要素の展開/折りたたみ状態を示します。
+
+```html
+<!-- aria-expandedの使用例 -->
+<button 
+  aria-expanded="false" 
+  aria-controls="menu"
+  onclick="toggleMenu()"
+>
+  メニュー
+</button>
+<ul id="menu" aria-hidden="true">
+  <li>項目1</li>
+  <li>項目2</li>
+</ul>
+
+<script>
+function toggleMenu() {
+  const menu = document.getElementById('menu');
+  const button = document.querySelector('button');
+  const isExpanded = menu.getAttribute('aria-hidden') === 'false';
+  
+  menu.setAttribute('aria-hidden', !isExpanded);
+  button.setAttribute('aria-expanded', isExpanded);
+}
+</script>
+```
+
+### aria-hidden属性
+
+要素をスクリーンリーダーから隠します。
+
+```html
+<!-- aria-hiddenの使用例 -->
+<div aria-hidden="true">
+  <!-- 装飾的な要素（スクリーンリーダーには不要） -->
+  <span class="icon">★</span>
+</div>
+```
+
+### aria-disabled属性
+
+要素が無効であることを示します。
+
+```html
+<!-- aria-disabledの使用例 -->
+<button aria-disabled="true" disabled>
+  送信
+</button>
+```
+
+### aria-required属性
+
+必須入力であることを示します。
+
+```html
+<!-- aria-requiredの使用例 -->
+<input 
+  type="email" 
+  id="email" 
+  aria-required="true"
+  required
+/>
+<label for="email">メールアドレス <span aria-label="必須">*</span></label>
+```
+
+### aria-invalid属性
+
+入力値が無効であることを示します。
+
+```html
+<!-- aria-invalidの使用例 -->
+<input 
+  type="email" 
+  id="email" 
+  aria-invalid="true"
+  aria-describedby="email-error"
+/>
+<div id="email-error" role="alert">
+  メールアドレスの形式が正しくありません
+</div>
+```
+
+## 4. 実践的な使用方法
+
+### パターン1: モーダルダイアログ
+
+```html
+<!-- モーダルダイアログの実装 -->
+<button 
+  aria-label="ダイアログを開く"
+  onclick="openDialog()"
+>
+  ダイアログを開く
+</button>
+
+<div 
+  id="dialog" 
+  role="dialog" 
+  aria-modal="true"
+  aria-labelledby="dialog-title"
+  aria-hidden="true"
+>
+  <div role="document">
+    <h2 id="dialog-title">確認</h2>
+    <p>この操作を実行しますか？</p>
+    <button onclick="closeDialog()">キャンセル</button>
+    <button onclick="confirm()">OK</button>
+  </div>
+</div>
+
+<script>
+function openDialog() {
+  const dialog = document.getElementById('dialog');
+  dialog.setAttribute('aria-hidden', 'false');
+  // フォーカスをダイアログに移動
+  dialog.querySelector('button').focus();
+}
+
+function closeDialog() {
+  const dialog = document.getElementById('dialog');
+  dialog.setAttribute('aria-hidden', 'true');
+}
+</script>
+```
+
+### パターン2: タブコンポーネント
+
+```html
+<!-- タブコンポーネントの実装 -->
+<div role="tablist" aria-label="タブ">
+  <button
+    role="tab"
+    aria-selected="true"
+    aria-controls="tab-panel-1"
+    id="tab-1"
+    onclick="switchTab(1)"
+  >
+    タブ1
+  </button>
+  <button
+    role="tab"
+    aria-selected="false"
+    aria-controls="tab-panel-2"
+    id="tab-2"
+    onclick="switchTab(2)"
+  >
+    タブ2
+  </button>
+</div>
+
+<div
+  id="tab-panel-1"
+  role="tabpanel"
+  aria-labelledby="tab-1"
+  aria-hidden="false"
+>
+  タブ1のコンテンツ
+</div>
+
+<div
+  id="tab-panel-2"
+  role="tabpanel"
+  aria-labelledby="tab-2"
+  aria-hidden="true"
+>
+  タブ2のコンテンツ
+</div>
+
+<script>
+function switchTab(tabNumber) {
+  // すべてのタブを非選択状態にする
+  document.querySelectorAll('[role="tab"]').forEach(tab => {
+    tab.setAttribute('aria-selected', 'false');
+  });
+  
+  // すべてのタブパネルを非表示にする
+  document.querySelectorAll('[role="tabpanel"]').forEach(panel => {
+    panel.setAttribute('aria-hidden', 'true');
+  });
+  
+  // 選択されたタブをアクティブにする
+  const selectedTab = document.getElementById(`tab-${tabNumber}`);
+  selectedTab.setAttribute('aria-selected', 'true');
+  
+  // 対応するタブパネルを表示する
+  const selectedPanel = document.getElementById(`tab-panel-${tabNumber}`);
+  selectedPanel.setAttribute('aria-hidden', 'false');
+}
+</script>
+```
+
+### パターン3: アコーディオン
+
+```html
+<!-- アコーディオンの実装 -->
+<div>
+  <button
+    aria-expanded="false"
+    aria-controls="accordion-content-1"
+    id="accordion-button-1"
+    onclick="toggleAccordion(1)"
+  >
+    セクション1
+  </button>
+  <div
+    id="accordion-content-1"
+    role="region"
+    aria-labelledby="accordion-button-1"
+    aria-hidden="true"
+  >
+    セクション1のコンテンツ
+  </div>
+</div>
+
+<script>
+function toggleAccordion(id) {
+  const button = document.getElementById(`accordion-button-${id}`);
+  const content = document.getElementById(`accordion-content-${id}`);
+  const isExpanded = button.getAttribute('aria-expanded') === 'true';
+  
+  button.setAttribute('aria-expanded', !isExpanded);
+  content.setAttribute('aria-hidden', isExpanded);
+}
+</script>
+```
+
+### パターン4: フォームのバリデーション
+
+```html
+<!-- フォームのバリデーション -->
+<form onsubmit="validateForm(event)">
+  <div>
+    <label for="username">ユーザー名</label>
+    <input
+      type="text"
+      id="username"
+      aria-required="true"
+      aria-invalid="false"
+      aria-describedby="username-error"
+      onblur="validateUsername()"
+    />
+    <div id="username-error" role="alert" aria-live="polite"></div>
+  </div>
+  
+  <div>
+    <label for="email">メールアドレス</label>
+    <input
+      type="email"
+      id="email"
+      aria-required="true"
+      aria-invalid="false"
+      aria-describedby="email-error"
+      onblur="validateEmail()"
+    />
+    <div id="email-error" role="alert" aria-live="polite"></div>
+  </div>
+  
+  <button type="submit">送信</button>
+</form>
+
+<script>
+function validateUsername() {
+  const input = document.getElementById('username');
+  const error = document.getElementById('username-error');
+  const value = input.value.trim();
+  
+  if (value.length < 3) {
+    input.setAttribute('aria-invalid', 'true');
+    error.textContent = 'ユーザー名は3文字以上である必要があります';
+  } else {
+    input.setAttribute('aria-invalid', 'false');
+    error.textContent = '';
+  }
+}
+
+function validateEmail() {
+  const input = document.getElementById('email');
+  const error = document.getElementById('email-error');
+  const value = input.value.trim();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  
+  if (!emailRegex.test(value)) {
+    input.setAttribute('aria-invalid', 'true');
+    error.textContent = 'メールアドレスの形式が正しくありません';
+  } else {
+    input.setAttribute('aria-invalid', 'false');
+    error.textContent = '';
+  }
+}
+</script>
+```
+
+## 5. CSSでのARIA対応
+
+### aria-hiddenとCSSの組み合わせ
+
+```css
+/* aria-hidden="true"の要素を非表示にする */
+[aria-hidden="true"] {
+  display: none;
+}
+
+/* スクリーンリーダー専用のクラス */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* 使用例 */
+<button>
+  <span class="sr-only">閉じる</span>
+  <span aria-hidden="true">×</span>
+</button>
+```
+
+### フォーカス表示の改善
+
+```css
+/* フォーカス表示の改善 */
+button:focus,
+a:focus,
+input:focus {
+  outline: 2px solid #0066cc;
+  outline-offset: 2px;
+}
+
+/* キーボード操作時のみフォーカス表示 */
+.js-focus-visible button:focus:not(.focus-visible),
+.js-focus-visible a:focus:not(.focus-visible) {
+  outline: none;
+}
+
+.js-focus-visible button.focus-visible,
+.js-focus-visible a.focus-visible {
+  outline: 2px solid #0066cc;
+  outline-offset: 2px;
+}
+```
+
+### 状態に応じたスタイリング
+
+```css
+/* aria-expandedに応じたスタイリング */
+[aria-expanded="true"]::after {
+  content: "▼";
+}
+
+[aria-expanded="false"]::after {
+  content: "▶";
+}
+
+/* aria-invalidに応じたスタイリング */
+[aria-invalid="true"] {
+  border-color: #dc3545;
+}
+
+[aria-invalid="true"]:focus {
+  box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+}
+```
+
+## 6. 実務でのベストプラクティス
+
+### パターン1: セマンティックHTMLの優先
+
+```html
+<!-- 悪い例: divでボタンを作成 -->
+<div onclick="handleClick()">クリック</div>
+
+<!-- 良い例: button要素を使用 -->
+<button onclick="handleClick()">クリック</button>
+
+<!-- やむを得ない場合: ARIA属性を追加 -->
+<div role="button" tabindex="0" onclick="handleClick()">クリック</div>
+```
+
+### パターン2: キーボード操作の対応
+
+```html
+<!-- キーボード操作の対応 -->
+<div
+  role="button"
+  tabindex="0"
+  onclick="handleClick()"
+  onkeydown="handleKeyDown(event)"
+>
+  クリック
+</div>
+
+<script>
+function handleKeyDown(event) {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    handleClick();
+  }
+}
+</script>
+```
+
+### パターン3: ライブリージョン
+
+```html
+<!-- ライブリージョンの使用 -->
+<div 
+  role="status" 
+  aria-live="polite" 
+  aria-atomic="true"
+  id="status-message"
+>
+  <!-- 動的に更新されるメッセージ -->
+</div>
+
+<script>
+function showMessage(message) {
+  const status = document.getElementById('status-message');
+  status.textContent = message;
+  // スクリーンリーダーが自動的に読み上げる
+}
+</script>
+```
+
+## 7. よくある問題と解決策
+
+### 問題1: 冗長なARIA属性
+
+**原因:**
+- セマンティックHTMLにARIA属性を追加している
+
+**解決策:**
+```html
+<!-- 悪い例: button要素にrole="button"を追加 -->
+<button role="button">クリック</button>
+
+<!-- 良い例: セマンティックHTMLを使用 -->
+<button>クリック</button>
+```
+
+### 問題2: aria-labelとテキストコンテンツの重複
+
+**原因:**
+- aria-labelとテキストコンテンツが重複している
+
+**解決策:**
+```html
+<!-- 悪い例: aria-labelとテキストが重複 -->
+<button aria-label="送信">送信</button>
+
+<!-- 良い例: テキストコンテンツを使用 -->
+<button>送信</button>
+
+<!-- または、アイコンのみの場合 -->
+<button aria-label="送信">✓</button>
+```
+
+### 問題3: 動的な状態の更新漏れ
+
+**原因:**
+- 状態が変更された際にARIA属性を更新していない
+
+**解決策:**
+```html
+<!-- 状態の更新を確実に実施 -->
+<button
+  aria-expanded="false"
+  onclick="toggleMenu()"
+>
+  メニュー
+</button>
+
+<script>
+function toggleMenu() {
+  const button = document.querySelector('button');
+  const isExpanded = button.getAttribute('aria-expanded') === 'true';
+  button.setAttribute('aria-expanded', !isExpanded);
+  // 状態を確実に更新
+}
+</script>
+```
+
+これで、HTML・CSSでのARIAの基本的な使用方法から実践的な使用方法まで理解できるようになりました。
+

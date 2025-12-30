@@ -1,0 +1,152 @@
+---
+title: 国際化（i18n）
+sidebar:
+    label: 国際化（i18n）
+---
+
+# Flutter国際化（i18n）完全ガイド
+
+Flutterアプリを多言語対応させる方法を詳しく解説します。
+
+## 1. flutter_localizationsの設定
+
+### pubspec.yamlへの追加
+
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.18.0
+```
+
+### MaterialAppの設定
+
+```dart
+import 'package:flutter_localizations/flutter_localizations.dart';
+
+MaterialApp(
+  localizationsDelegates: [
+    GlobalMaterialLocalizations.delegate,
+    GlobalWidgetsLocalizations.delegate,
+    GlobalCupertinoLocalizations.delegate,
+  ],
+  supportedLocales: [
+    Locale('ja', 'JP'),
+    Locale('en', 'US'),
+  ],
+  home: MyHomePage(),
+)
+```
+
+## 2. リソースファイルの作成
+
+### ARBファイルの作成
+
+```json
+// lib/l10n/app_ja.arb
+{
+  "@@locale": "ja",
+  "hello": "こんにちは",
+  "@hello": {
+    "description": "挨拶メッセージ"
+  },
+  "welcome": "ようこそ、{name}さん",
+  "@welcome": {
+    "description": "ウェルカムメッセージ",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  }
+}
+```
+
+```json
+// lib/l10n/app_en.arb
+{
+  "@@locale": "en",
+  "hello": "Hello",
+  "@hello": {
+    "description": "Greeting message"
+  },
+  "welcome": "Welcome, {name}",
+  "@welcome": {
+    "description": "Welcome message",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  }
+}
+```
+
+### pubspec.yamlの設定
+
+```yaml
+flutter:
+  generate: true
+
+l10n:
+  arb-dir: lib/l10n
+  template-arb-file: app_en.arb
+  output-localization-file: app_localizations.dart
+```
+
+### コード生成
+
+```bash
+flutter gen-l10n
+```
+
+## 3. 使用例
+
+```dart
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+
+class MyHomePage extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+
+    return Scaffold(
+      appBar: AppBar(title: Text(l10n.hello)),
+      body: Center(
+        child: Text(l10n.welcome('Flutter')),
+      ),
+    );
+  }
+}
+```
+
+## 4. 言語の切り替え
+
+```dart
+class LanguageService {
+  static Future<void> setLanguage(Locale locale) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('language', locale.languageCode);
+  }
+
+  static Future<Locale?> getLanguage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final languageCode = prefs.getString('language');
+    if (languageCode != null) {
+      return Locale(languageCode);
+    }
+    return null;
+  }
+}
+
+// MaterialAppで使用
+MaterialApp(
+  locale: _currentLocale,
+  localizationsDelegates: [...],
+  supportedLocales: [...],
+)
+```
+
+これで、Flutterでの国際化（i18n）の実装方法を理解できるようになりました。

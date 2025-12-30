@@ -1,71 +1,335 @@
 ---
-title: "S3"
-label: "S3"
+title: S3完全ガイド
+sidebar:
+    label: S3
 ---
 
-## S3 (Simple Storage Service)
+# S3 (Simple Storage Service) 完全ガイド
 
-S3は、オブジェクトストレージサービスです。
+S3は、オブジェクトストレージサービスです。実務で使える実装例とベストプラクティスを詳しく解説します。
 
-### S3の基本概念
+## 1. S3とは
 
-- **バケット**: オブジェクトを格納するコンテナ
-- **オブジェクト**: ファイルとメタデータ
-- **キー**: オブジェクトの一意の識別子
-- **リージョン**: バケットの物理的な場所
+### S3の役割
 
-### S3ストレージクラス
+S3は、任意の量のデータを保存・取得できるオブジェクトストレージサービスです。
+
+```
+アプリケーション
+   ↓（オブジェクトをアップロード）
+S3バケット
+   ├─ オブジェクト1
+   ├─ オブジェクト2
+   └─ オブジェクト3
+```
+
+### なぜS3が必要か
+
+**問題のある構成（ローカルストレージ）:**
+
+```bash
+# 問題: ローカルストレージの使用
+# 1. ディスク容量の制限
+# 2. バックアップの手動管理
+# 3. スケーリングが困難
+# 4. 可用性が低い（単一障害点）
+
+# 問題点:
+# 1. 容量の制限
+# 2. バックアップの複雑さ
+# 3. スケーリングの困難さ
+# 4. 可用性の問題
+```
+
+**解決: S3によるオブジェクトストレージ**
+
+```bash
+# 解決: S3へのアップロード
+aws s3 cp file.txt s3://my-bucket/file.txt
+
+# メリット:
+# 1. 無制限の容量（実質的に）
+# 2. 自動バックアップ（99.999999999%の耐久性）
+# 3. 自動スケーリング
+# 4. 高い可用性（99.99%）
+```
+
+## 2. S3の基本概念
+
+### バケット
+
+バケットは、オブジェクトを格納するコンテナです。リージョン内で一意の名前が必要です。
+
+```bash
+# バケットの作成
+aws s3 mb s3://my-bucket --region us-east-1
+
+# バケットの一覧表示
+aws s3 ls
+
+# バケットの削除
+aws s3 rb s3://my-bucket
+```
+
+### オブジェクト
+
+オブジェクトは、ファイルとメタデータの組み合わせです。
+
+```bash
+# オブジェクトのアップロード
+aws s3 cp file.txt s3://my-bucket/file.txt
+
+# オブジェクトのダウンロード
+aws s3 cp s3://my-bucket/file.txt file.txt
+
+# オブジェクトの一覧表示
+aws s3 ls s3://my-bucket/
+
+# オブジェクトの削除
+aws s3 rm s3://my-bucket/file.txt
+```
+
+### キー
+
+キーは、オブジェクトの一意の識別子です。パス形式で指定できます。
+
+```
+s3://my-bucket/
+  ├─ images/
+  │   ├─ photo1.jpg
+  │   └─ photo2.jpg
+  ├─ documents/
+  │   └─ report.pdf
+  └─ data/
+      └─ dataset.csv
+```
+
+## 3. S3ストレージクラス
+
+### ストレージクラスの種類
+
+#### Standard
+
+```
+用途: 頻繁にアクセスするデータ
+特徴: 即座にアクセス可能、高い耐久性
+コスト: 最も高い
+例: アクティブなWebサイトのコンテンツ
+```
+
+#### Standard-IA（Infrequent Access）
+
+```
+用途: アクセス頻度が低いデータ
+特徴: 即座にアクセス可能、Standardより安価
+コスト: Standardの約50%
+例: バックアップ、ログファイル
+```
+
+#### Intelligent-Tiering
+
+```
+用途: アクセスパターンが不明なデータ
+特徴: 自動的に最適なストレージクラスに移動
+コスト: モニタリング料金が追加
+例: 新しいデータ、アクセスパターンが不明なデータ
+```
+
+#### Glacier Instant Retrieval
+
+```
+用途: アーカイブデータ（即座にアクセスが必要）
+特徴: 数ミリ秒でアクセス可能
+コスト: Standard-IAより安価
+例: 医療記録、財務記録
+```
+
+#### Glacier Flexible Retrieval
+
+```
+用途: アーカイブデータ（数分〜数時間でアクセス可能）
+特徴: 3つの取得オプション（Expedited、Standard、Bulk）
+コスト: Standardより大幅に安価
+例: バックアップ、長期アーカイブ
+```
+
+#### Glacier Deep Archive
+
+```
+用途: 長期アーカイブデータ（12時間でアクセス可能）
+特徴: 最も安価なストレージクラス
+コスト: Standardの約1/5
+例: コンプライアンス要件のあるデータ、長期アーカイブ
+```
+
+### ストレージクラスの選択
 
 ```javascript
-// S3ストレージクラスの選択
-const storageClasses = {
-  STANDARD: '即座にアクセス可能、頻繁にアクセス',
-  STANDARD_IA: '即座にアクセス可能、アクセス頻度が低い',
-  GLACIER: 'アーカイブ、数時間でアクセス可能',
-  DEEP_ARCHIVE: '長期アーカイブ、12時間でアクセス可能'
+// 用途別の選択例
+const storageClassSelection = {
+  'アクティブなWebコンテンツ': 'STANDARD',
+  'バックアップ（30日以上）': 'STANDARD_IA',
+  'アクセスパターン不明': 'INTELLIGENT_TIERING',
+  'アーカイブ（即座にアクセス）': 'GLACIER_INSTANT_RETRIEVAL',
+  'アーカイブ（数時間でOK）': 'GLACIER_FLEXIBLE_RETRIEVAL',
+  '長期アーカイブ（12時間でOK）': 'DEEP_ARCHIVE'
 };
+```
 
-// ライフサイクルポリシー
-const lifecyclePolicy = {
-  Rules: [
+## 4. ライフサイクルポリシー
+
+### ライフサイクルポリシーとは
+
+ライフサイクルポリシーは、オブジェクトを自動的に別のストレージクラスに移動したり、削除したりするルールです。
+
+### 基本的な設定
+
+```json
+{
+  "Rules": [
     {
-      Id: 'TransitionToIA',
-      Status: 'Enabled',
-      Transitions: [
+      "Id": "TransitionToIA",
+      "Status": "Enabled",
+      "Transitions": [
         {
-          Days: 30,
-          StorageClass: 'STANDARD_IA'
+          "Days": 30,
+          "StorageClass": "STANDARD_IA"
         }
       ]
     },
     {
-      Id: 'TransitionToGlacier',
-      Status: 'Enabled',
-      Transitions: [
+      "Id": "TransitionToGlacier",
+      "Status": "Enabled",
+      "Transitions": [
         {
-          Days: 90,
-          StorageClass: 'GLACIER'
+          "Days": 90,
+          "StorageClass": "GLACIER"
         }
       ]
+    },
+    {
+      "Id": "DeleteOldVersions",
+      "Status": "Enabled",
+      "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 90
+      }
+    },
+    {
+      "Id": "DeleteIncompleteMultipartUpload",
+      "Status": "Enabled",
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 7
+      }
     }
   ]
-};
+}
 ```
 
-### S3のセキュリティ
+### Terraformでの設定
+
+```hcl
+resource "aws_s3_bucket_lifecycle_configuration" "example" {
+  bucket = aws_s3_bucket.example.id
+
+  rule {
+    id     = "TransitionToIA"
+    status = "Enabled"
+
+    transition {
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }
+  }
+
+  rule {
+    id     = "TransitionToGlacier"
+    status = "Enabled"
+
+    transition {
+      days          = 90
+      storage_class = "GLACIER"
+    }
+  }
+
+  rule {
+    id     = "DeleteOldVersions"
+    status = "Enabled"
+
+    noncurrent_version_expiration {
+      noncurrent_days = 90
+    }
+  }
+}
+```
+
+## 5. バージョニング
+
+### バージョニングとは
+
+バージョニングは、オブジェクトの複数のバージョンを保持する機能です。
+
+### バージョニングの有効化
+
+```bash
+# バージョニングの有効化
+aws s3api put-bucket-versioning \
+  --bucket my-bucket \
+  --versioning-configuration Status=Enabled
+
+# バージョンの一覧表示
+aws s3api list-object-versions \
+  --bucket my-bucket \
+  --prefix file.txt
+
+# 特定のバージョンを取得
+aws s3api get-object \
+  --bucket my-bucket \
+  --key file.txt \
+  --version-id <version-id> \
+  file.txt
+```
+
+### MFA Delete
+
+```bash
+# MFA Deleteの有効化（バージョンの削除にMFAが必要）
+aws s3api put-bucket-versioning \
+  --bucket my-bucket \
+  --versioning-configuration \
+    Status=Enabled,MFADelete=Enabled \
+  --mfa "arn:aws:iam::123456789012:mfa/root-account-mfa-device 123456"
+```
+
+## 6. S3のセキュリティ
+
+### バケットポリシー
 
 ```json
 {
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "PublicReadGetObject",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::my-bucket/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:Referer": "https://example.com/*"
+        }
+      }
+    },
+    {
+      "Sid": "AllowIAMUserAccess",
       "Effect": "Allow",
       "Principal": {
         "AWS": "arn:aws:iam::123456789012:user/username"
       },
       "Action": [
         "s3:GetObject",
-        "s3:PutObject"
+        "s3:PutObject",
+        "s3:DeleteObject"
       ],
       "Resource": "arn:aws:s3:::my-bucket/*"
     }
@@ -73,18 +337,219 @@ const lifecyclePolicy = {
 }
 ```
 
-### 実践例: 静的Webサイトホスティング
+### 暗号化
 
 ```json
 {
-  "WebsiteConfiguration": {
-    "IndexDocument": {
-      "Suffix": "index.html"
+  "Rules": [
+    {
+      "ApplyServerSideEncryptionByDefault": {
+        "SSEAlgorithm": "AES256"
+      }
     },
-    "ErrorDocument": {
-      "Key": "error.html"
+    {
+      "ApplyServerSideEncryptionByDefault": {
+        "SSEAlgorithm": "aws:kms",
+        "KMSMasterKeyID": "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+      }
     }
-  }
+  ]
 }
 ```
+
+### CORS設定
+
+```json
+{
+  "CORSRules": [
+    {
+      "AllowedOrigins": ["https://example.com"],
+      "AllowedMethods": ["GET", "PUT", "POST", "DELETE"],
+      "AllowedHeaders": ["*"],
+      "ExposeHeaders": ["ETag"],
+      "MaxAgeSeconds": 3000
+    }
+  ]
+}
+```
+
+## 7. 静的Webサイトホスティング
+
+### 基本的な設定
+
+```bash
+# 静的Webサイトホスティングの有効化
+aws s3 website s3://my-bucket \
+  --index-document index.html \
+  --error-document error.html
+
+# バケットポリシーの設定（公開読み取り）
+aws s3api put-bucket-policy --bucket my-bucket --policy '{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadGetObject",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::my-bucket/*"
+    }
+  ]
+}'
+```
+
+### CloudFrontとの統合
+
+```yaml
+Resources:
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: my-bucket.s3.amazonaws.com
+            Id: S3-my-bucket
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${OAI}'
+        DefaultCacheBehavior:
+          TargetOriginId: S3-my-bucket
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          ForwardedValues:
+            QueryString: false
+          MinTTL: 0
+          DefaultTTL: 86400
+          MaxTTL: 31536000
+```
+
+## 8. 実務でのベストプラクティス
+
+### パターン1: コスト最適化
+
+```json
+{
+  "Rules": [
+    {
+      "Id": "CostOptimization",
+      "Status": "Enabled",
+      "Transitions": [
+        {
+          "Days": 0,
+          "StorageClass": "INTELLIGENT_TIERING"
+        }
+      ],
+      "Filter": {
+        "Prefix": "data/"
+      }
+    }
+  ]
+}
+```
+
+### パターン2: バックアップ戦略
+
+```json
+{
+  "Rules": [
+    {
+      "Id": "BackupStrategy",
+      "Status": "Enabled",
+      "Transitions": [
+        {
+          "Days": 1,
+          "StorageClass": "STANDARD_IA"
+        },
+        {
+          "Days": 30,
+          "StorageClass": "GLACIER"
+        },
+        {
+          "Days": 365,
+          "StorageClass": "DEEP_ARCHIVE"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### パターン3: ログファイルの管理
+
+```json
+{
+  "Rules": [
+    {
+      "Id": "LogManagement",
+      "Status": "Enabled",
+      "Transitions": [
+        {
+          "Days": 7,
+          "StorageClass": "STANDARD_IA"
+        },
+        {
+          "Days": 30,
+          "StorageClass": "GLACIER"
+        }
+      ],
+      "Expiration": {
+        "Days": 90
+      },
+      "Filter": {
+        "Prefix": "logs/"
+      }
+    }
+  ]
+}
+```
+
+## 9. よくある問題と解決策
+
+### 問題1: コストが高い
+
+**原因:**
+- 適切なストレージクラスを使用していない
+- ライフサイクルポリシーが設定されていない
+- 未使用のオブジェクトが残っている
+
+**解決策:**
+```bash
+# ストレージクラスの確認
+aws s3api list-objects-v2 \
+  --bucket my-bucket \
+  --query 'Contents[].{Key:Key,StorageClass:StorageClass}'
+
+# ライフサイクルポリシーの確認
+aws s3api get-bucket-lifecycle-configuration --bucket my-bucket
+
+# 未使用のオブジェクトの検索
+aws s3api list-objects-v2 \
+  --bucket my-bucket \
+  --query 'Contents[?LastModified<`2024-01-01`]'
+```
+
+### 問題2: アクセスが拒否される
+
+**原因:**
+- バケットポリシーが正しく設定されていない
+- IAMポリシーに権限がない
+- 暗号化キーへのアクセス権限がない
+
+**解決策:**
+```bash
+# バケットポリシーの確認
+aws s3api get-bucket-policy --bucket my-bucket
+
+# IAMポリシーの確認
+aws iam get-user-policy --user-name username --policy-name S3Access
+
+# 暗号化設定の確認
+aws s3api get-bucket-encryption --bucket my-bucket
+```
+
+これで、S3の基礎知識と実務での使い方を理解できるようになりました。
 

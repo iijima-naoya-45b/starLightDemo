@@ -1,38 +1,359 @@
 ---
-title: "キャッシング"
-label: "キャッシング"
+title: Djangoキャッシング完全ガイド
+sidebar:
+    label: キャッシング
 ---
 
-## キャッシング
+# Djangoキャッシング完全ガイド
 
-Djangoでは、Redisを使用したキャッシングを実装できます。
+Djangoのキャッシング機能を、実務で使える実装例とともに詳しく解説します。
 
-### Redisキャッシングの設定
+## 1. キャッシングとは
 
-#### 設定
+### キャッシングの役割
+
+キャッシングは、頻繁にアクセスされるデータを一時的に保存し、データベースへのアクセスを減らすことで、パフォーマンスを向上させます。
+
+```
+リクエスト
+   ↓
+キャッシュを確認
+   ├─ キャッシュヒット → キャッシュから返す（高速）
+   └─ キャッシュミス → データベースから取得 → キャッシュに保存
+```
+
+### なぜキャッシングが必要か
+
+**問題のある構成（キャッシングなし）:**
+
+```python
+# 問題: 毎回データベースにアクセス
+def post_list(request):
+    posts = Post.objects.all()  # 毎回DBクエリ
+    return render(request, 'posts/list.html', {'posts': posts})
+```
+
+**解決: キャッシングによる高速化**
+
+```python
+# 解決: キャッシュから取得
+from django.core.cache import cache
+
+def post_list(request):
+    cache_key = 'post_list'
+    posts = cache.get(cache_key)
+    
+    if posts is None:
+        posts = Post.objects.all()
+        cache.set(cache_key, posts, 300)  # 5分間キャッシュ
+    
+    return render(request, 'posts/list.html', {'posts': posts})
+```
+
+## 2. キャッシュバックエンド
+
+### メモリキャッシュ（開発環境）
 
 ```python
 # settings.py
 CACHES = {
-    "default": {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        }
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
     }
 }
 ```
 
-#### キャッシュの使用
+### ファイルキャッシュ
+
+```python
+# settings.py
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': '/var/tmp/django_cache',
+    }
+}
+```
+
+### データベースキャッシュ
+
+```python
+# settings.py
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'cache_table',
+    }
+}
+
+# キャッシュテーブルの作成
+python manage.py createcachetable
+```
+
+### Redisキャッシュ（本番環境推奨）
+
+```bash
+# django-redisのインストール
+pip install django-redis
+```
+
+```python
+# settings.py
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'PARSER_CLASS': 'redis.connection.HiredisParser',
+            'CONNECTION_POOL_KWARGS': {
+                'max_connections': 50,
+            }
+        },
+        'KEY_PREFIX': 'myproject',
+        'TIMEOUT': 300,
+    }
+}
+
+# セッションストアとしても使用
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+SESSION_CACHE_ALIAS = 'default'
+```
+
+## 3. 低レベルキャッシュAPI
+
+### 基本的な使用
 
 ```python
 from django.core.cache import cache
 
 # キャッシュに保存
-cache.set("key", "value", timeout=300)
+cache.set('key', 'value', timeout=300)  # 5分間
 
 # キャッシュから取得
-value = cache.get("key")
+value = cache.get('key')
+
+# デフォルト値を指定
+value = cache.get('key', 'default_value')
+
+# キャッシュの削除
+cache.delete('key')
+
+# すべてのキャッシュをクリア
+cache.clear()
 ```
+
+### 複数の値を一度に操作
+
+```python
+# 複数の値を一度に取得
+values = cache.get_many(['key1', 'key2', 'key3'])
+
+# 複数の値を一度に保存
+cache.set_many({'key1': 'value1', 'key2': 'value2'}, timeout=300)
+
+# 複数の値を一度に削除
+cache.delete_many(['key1', 'key2'])
+```
+
+### キャッシュの存在確認
+
+```python
+# キーが存在するか確認
+if cache.has_key('key'):
+    value = cache.get('key')
+```
+
+## 4. ビューレベルのキャッシング
+
+### cache_pageデコレータ
+
+```python
+# views.py
+from django.views.decorators.cache import cache_page
+from django.utils.decorators import method_decorator
+
+# 関数ベースビュー
+@cache_page(60 * 15)  # 15分間キャッシュ
+def post_list(request):
+    posts = Post.objects.all()
+    return render(request, 'posts/list.html', {'posts': posts})
+
+# クラスベースビュー
+@method_decorator(cache_page(60 * 15), name='dispatch')
+class PostListView(ListView):
+    model = Post
+```
+
+### vary_on_headers
+
+```python
+# views.py
+from django.views.decorators.vary import vary_on_headers
+
+@vary_on_headers('User-Agent', 'Accept-Language')
+@cache_page(60 * 15)
+def post_list(request):
+    # ユーザーエージェントと言語ごとにキャッシュ
+    posts = Post.objects.all()
+    return render(request, 'posts/list.html', {'posts': posts})
+```
+
+## 5. テンプレートレベルのキャッシング
+
+### cacheタグ
+
+```html
+<!-- テンプレート -->
+{% load cache %}
+
+{% cache 300 sidebar request.user.id %}
+    <div class="sidebar">
+        <!-- ユーザーごとにキャッシュ -->
+    </div>
+{% endcache %}
+```
+
+### キャッシュキーの指定
+
+```html
+{% cache 300 post_detail post.id post.updated_at %}
+    <article>
+        <h1>{{ post.title }}</h1>
+        <p>{{ post.content }}</p>
+    </article>
+{% endcache %}
+```
+
+## 6. モデルレベルのキャッシング
+
+### カスタムマネージャーでのキャッシング
+
+```python
+# models.py
+from django.core.cache import cache
+from django.db import models
+
+class PostManager(models.Manager):
+    def get_cached(self, pk):
+        cache_key = f'post_{pk}'
+        post = cache.get(cache_key)
+        
+        if post is None:
+            post = self.get(pk=pk)
+            cache.set(cache_key, post, 300)
+        
+        return post
+
+class Post(models.Model):
+    title = models.CharField(max_length=200)
+    content = models.TextField()
+    
+    objects = PostManager()
+    
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # 保存時にキャッシュを無効化
+        cache.delete(f'post_{self.pk}')
+```
+
+## 7. 実務でのベストプラクティス
+
+### パターン1: キャッシュキーの命名規則
+
+```python
+# キャッシュキーの命名規則
+def get_cache_key(self, *args, **kwargs):
+    """一貫性のあるキャッシュキーを生成"""
+    return f'{self.__class__.__name__}:{args}:{kwargs}'
+
+# 使用例
+cache_key = f'post_list:page_{page_number}:user_{user_id}'
+```
+
+### パターン2: キャッシュの無効化
+
+```python
+# signals.py
+from django.db.models.signals import post_save, post_delete
+from django.dispatch import receiver
+from django.core.cache import cache
+
+@receiver(post_save, sender=Post)
+def invalidate_post_cache(sender, instance, **kwargs):
+    """投稿が保存されたらキャッシュを無効化"""
+    cache.delete(f'post_{instance.pk}')
+    cache.delete('post_list')
+
+@receiver(post_delete, sender=Post)
+def invalidate_post_cache_on_delete(sender, instance, **kwargs):
+    """投稿が削除されたらキャッシュを無効化"""
+    cache.delete(f'post_{instance.pk}')
+    cache.delete('post_list')
+```
+
+### パターン3: キャッシュの階層化
+
+```python
+# settings.py
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',
+    },
+    'session': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/2',
+    },
+    'api': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/3',
+    },
+}
+
+# 使用例
+from django.core.cache import caches
+
+session_cache = caches['session']
+api_cache = caches['api']
+```
+
+## 8. よくある問題と解決策
+
+### 問題1: キャッシュが更新されない
+
+**原因:**
+- キャッシュキーが一致していない
+- キャッシュの無効化が実行されていない
+
+**解決策:**
+```python
+# キャッシュキーの一貫性を保つ
+def get_post_cache_key(pk):
+    return f'post_{pk}'
+
+# 保存時にキャッシュを無効化
+def save(self, *args, **kwargs):
+    super().save(*args, **kwargs)
+    cache.delete(get_post_cache_key(self.pk))
+```
+
+### 問題2: メモリ不足
+
+**原因:**
+- キャッシュの有効期限が長すぎる
+- 大量のデータをキャッシュしている
+
+**解決策:**
+```python
+# 適切なタイムアウトを設定
+cache.set('key', 'value', timeout=300)  # 5分間
+
+# 大きなデータは分割してキャッシュ
+for i, chunk in enumerate(chunks):
+    cache.set(f'data_chunk_{i}', chunk, timeout=300)
+```
+
+これで、Djangoのキャッシングの基礎知識と実務での使い方を理解できるようになりました。
 

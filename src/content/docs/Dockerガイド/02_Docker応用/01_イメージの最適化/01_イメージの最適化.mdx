@@ -1,0 +1,308 @@
+---
+title: Dockerイメージ最適化完全ガイド
+sidebar:
+    label: イメージの最適化
+---
+
+# Dockerイメージ最適化完全ガイド
+
+Dockerイメージのサイズとビルド時間を最適化する方法を、実務で使える実装例とともに詳しく解説します。
+
+## 1. イメージ最適化とは
+
+### 最適化の重要性
+
+イメージのサイズとビルド時間を最適化することで、デプロイ時間の短縮とリソースの効率的な利用が可能になります。
+
+```
+最適化の領域
+   ├─ イメージサイズの削減
+   ├─ ビルド時間の短縮
+   ├─ レイヤーキャッシュの活用
+   └─ セキュリティの向上
+```
+
+## 2. マルチステージビルド
+
+### 基本的なマルチステージビルド
+
+```dockerfile
+# ビルドステージ
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+# 本番ステージ
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY --from=builder /app/dist ./dist
+EXPOSE 3000
+CMD ["node", "dist/index.js"]
+```
+
+### 複数ステージの活用
+
+```dockerfile
+# 依存関係のインストールステージ
+FROM node:18-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+
+# ビルドステージ
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+
+# 本番ステージ
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY --from=builder /app/dist ./dist
+EXPOSE 3000
+CMD ["node", "dist/index.js"]
+```
+
+## 3. レイヤーキャッシュの最適化
+
+### 問題のあるDockerfile
+
+```dockerfile
+# 問題: コードを変更するたびにすべてのレイヤーが再ビルドされる
+FROM node:18-alpine
+WORKDIR /app
+COPY . .  # 問題: コードを最初にコピー
+RUN npm install  # 問題: package.jsonが変更されていなくても再実行される
+RUN npm run build
+```
+
+### 最適化されたDockerfile
+
+```dockerfile
+# 解決: 変更頻度の低いファイルを先にコピー
+FROM node:18-alpine
+WORKDIR /app
+
+# 1. package.jsonを先にコピー（変更頻度が低い）
+COPY package.json package-lock.json ./
+
+# 2. 依存関係をインストール（キャッシュされやすい）
+RUN npm ci
+
+# 3. ソースコードをコピー（変更頻度が高い）
+COPY . .
+
+# 4. ビルドを実行
+RUN npm run build
+```
+
+## 4. イメージサイズの削減
+
+### 軽量なベースイメージの使用
+
+```dockerfile
+# 通常版（約300MB）
+FROM node:18
+
+# Alpine版（約5MB）
+FROM node:18-alpine
+
+# イメージサイズが約95%削減
+```
+
+### 不要なファイルの削除
+
+```dockerfile
+# 最適化されたDockerfile
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+# 本番ステージ
+FROM node:18-alpine
+WORKDIR /app
+
+# 本番に必要なファイルのみコピー
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package.json ./
+RUN npm ci --only=production && npm cache clean --force
+
+# 不要なファイルを削除
+RUN rm -rf /tmp/* /var/cache/apk/*
+
+EXPOSE 3000
+CMD ["node", "dist/index.js"]
+```
+
+### .dockerignoreの活用
+
+```dockerignore
+# .dockerignore
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+.env.local
+.DS_Store
+*.log
+coverage
+.vscode
+.idea
+dist
+.next
+```
+
+## 5. ビルド引数の使用
+
+### ARGの活用
+
+```dockerfile
+# Dockerfile
+ARG NODE_ENV=production
+ARG BUILD_DATE
+ARG VCS_REF
+
+FROM node:18-alpine
+WORKDIR /app
+
+ENV NODE_ENV=${NODE_ENV}
+
+COPY package*.json ./
+RUN npm ci --only=${NODE_ENV}
+
+COPY . .
+RUN npm run build
+
+LABEL build-date=${BUILD_DATE}
+LABEL vcs-ref=${VCS_REF}
+```
+
+```bash
+# ビルド時の引数指定
+docker build \
+  --build-arg NODE_ENV=production \
+  --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+  --build-arg VCS_REF=$(git rev-parse --short HEAD) \
+  -t my-app:latest .
+```
+
+## 6. セキュリティの最適化
+
+### 非rootユーザーでの実行
+
+```dockerfile
+FROM node:18-alpine
+
+# 非rootユーザーを作成
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nextjs -u 1001
+
+WORKDIR /app
+
+# ファイルの所有権を変更
+COPY --chown=nextjs:nodejs . .
+
+# 非rootユーザーに切り替え
+USER nextjs
+
+CMD ["node", "index.js"]
+```
+
+### 最小権限の原則
+
+```dockerfile
+FROM node:18-alpine
+
+# 必要なパッケージのみインストール
+RUN apk add --no-cache \
+    curl \
+    && rm -rf /var/cache/apk/*
+
+# 不要なパッケージを削除
+RUN apk del curl
+```
+
+## 7. 実務でのベストプラクティス
+
+### パターン1: ビルド時間の短縮
+
+```dockerfile
+# 並列インストールの活用
+FROM node:18-alpine
+WORKDIR /app
+
+COPY package*.json ./
+# npm ciは並列インストールで高速化
+RUN npm ci --prefer-offline --no-audit
+```
+
+### パターン2: イメージの分析
+
+```bash
+# イメージのサイズを確認
+docker images my-app:latest
+
+# イメージのレイヤーを分析
+docker history my-app:latest
+
+# diveツールで詳細分析
+dive my-app:latest
+```
+
+### パターン3: ビルドキャッシュの活用
+
+```bash
+# ビルドキャッシュを使用
+docker build --cache-from my-app:latest -t my-app:latest .
+
+# BuildKitを使用（高速化）
+DOCKER_BUILDKIT=1 docker build -t my-app:latest .
+```
+
+## 8. よくある問題と解決策
+
+### 問題1: イメージサイズが大きい
+
+**原因:**
+- 不要なファイルが含まれている
+- 開発依存関係が含まれている
+
+**解決策:**
+```dockerfile
+# マルチステージビルドを使用
+FROM node:18-alpine AS builder
+# ビルド処理
+
+FROM node:18-alpine
+# 本番に必要なファイルのみコピー
+COPY --from=builder /app/dist ./dist
+RUN npm ci --only=production
+```
+
+### 問題2: ビルドが遅い
+
+**原因:**
+- レイヤーキャッシュが効いていない
+- 不要な処理が実行されている
+
+**解決策:**
+```dockerfile
+# 変更頻度の低いファイルを先にコピー
+COPY package*.json ./
+RUN npm ci
+COPY . .
+```
+
+これで、Dockerイメージの最適化の基礎知識と実務での使い方を理解できるようになりました。

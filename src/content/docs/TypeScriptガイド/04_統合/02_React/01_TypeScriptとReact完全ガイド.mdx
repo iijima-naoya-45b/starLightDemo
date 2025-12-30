@@ -1,0 +1,607 @@
+---
+title: TypeScriptとReact完全ガイド
+sidebar:
+    label: TypeScriptとReact
+---
+
+# TypeScriptとReact完全ガイド
+
+TypeScriptをReactで使用する方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. TypeScriptとReactとは
+
+### TypeScriptとReactの組み合わせ
+
+TypeScriptとReactを組み合わせることで、型安全なReactアプリケーションを開発できます。
+
+```
+TypeScript + Reactのメリット
+   ├─ 型安全性の向上
+   ├─ 開発体験の向上
+   ├─ バグの早期発見
+   └─ コードの可読性向上
+```
+
+### なぜTypeScriptとReactを組み合わせるのか
+
+**問題のある構成（JavaScriptのみ）:**
+
+```javascript
+// 問題: 実行時までエラーが発見されない
+function UserCard({ user }) {
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <p>{user.email}</p>
+      <button onClick={user.handleClick}>Click</button>
+    </div>
+  );
+}
+
+// 実行時にエラーが発生
+<UserCard user={null} /> // TypeError: Cannot read property 'name' of null
+<UserCard user={{ name: "Alice" }} /> // TypeError: Cannot read property 'email' of undefined
+```
+
+**解決: TypeScriptによる型安全性**
+
+```typescript
+// 解決: コンパイル時にエラーを発見
+interface User {
+  name: string;
+  email: string;
+  handleClick: () => void;
+}
+
+interface UserCardProps {
+  user: User;
+}
+
+function UserCard({ user }: UserCardProps) {
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <p>{user.email}</p>
+      <button onClick={user.handleClick}>Click</button>
+    </div>
+  );
+}
+
+// コンパイル時にエラーが検出される
+<UserCard user={null} /> // エラー: userはnullではない必要がある
+<UserCard user={{ name: "Alice" }} /> // エラー: emailとhandleClickが不足
+```
+
+## 2. 環境構築
+
+### Create React Appを使用したセットアップ
+
+```bash
+# TypeScriptテンプレートを使用してプロジェクトを作成
+npx create-react-app my-ts-react-app --template typescript
+
+# プロジェクトディレクトリに移動
+cd my-ts-react-app
+
+# 開発サーバーを起動
+npm start
+```
+
+### Viteを使用したセットアップ
+
+```bash
+# ViteでTypeScript + Reactプロジェクトを作成
+npm create vite@latest my-ts-react-app -- --template react-ts
+
+# 依存関係をインストール
+cd my-ts-react-app
+npm install
+
+# 開発サーバーを起動
+npm run dev
+```
+
+### 必要なパッケージ
+
+```json
+{
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.0.0"
+  }
+}
+```
+
+## 3. 基本的な使用方法
+
+### 関数コンポーネント
+
+```typescript
+// 基本的な関数コンポーネント
+interface GreetingProps {
+  name: string;
+  age?: number; // オプショナルプロパティ
+}
+
+function Greeting({ name, age }: GreetingProps) {
+  return (
+    <div>
+      <h1>Hello, {name}!</h1>
+      {age && <p>You are {age} years old.</p>}
+    </div>
+  );
+}
+
+// 使用例
+<Greeting name="Alice" age={25} />
+<Greeting name="Bob" />
+```
+
+### 状態管理（useState）
+
+```typescript
+import { useState } from 'react';
+
+interface CounterProps {
+  initialCount?: number;
+}
+
+function Counter({ initialCount = 0 }: CounterProps) {
+  // useStateの型推論
+  const [count, setCount] = useState<number>(initialCount);
+
+  const increment = () => {
+    setCount(count + 1);
+  };
+
+  const decrement = () => {
+    setCount(count - 1);
+  };
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={increment}>+</button>
+      <button onClick={decrement}>-</button>
+    </div>
+  );
+}
+```
+
+### 副作用（useEffect）
+
+```typescript
+import { useState, useEffect } from 'react';
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+function UserProfile({ userId }: { userId: number }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    // 非同期処理の型安全性
+    const fetchUser = async (): Promise<void> => {
+      try {
+        const response = await fetch(`/api/users/${userId}`);
+        const data: User = await response.json();
+        setUser(data);
+      } catch (error) {
+        console.error('Error fetching user:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUser();
+  }, [userId]);
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
+  if (!user) {
+    return <div>User not found</div>;
+  }
+
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <p>{user.email}</p>
+    </div>
+  );
+}
+```
+
+## 4. 高度な使用方法
+
+### カスタムフック
+
+```typescript
+import { useState, useEffect } from 'react';
+
+interface UseFetchResult<T> {
+  data: T | null;
+  loading: boolean;
+  error: Error | null;
+}
+
+function useFetch<T>(url: string): UseFetchResult<T> {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    const fetchData = async (): Promise<void> => {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const result: T = await response.json();
+        setData(result);
+      } catch (err) {
+        setError(err instanceof Error ? err : new Error('Unknown error'));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [url]);
+
+  return { data, loading, error };
+}
+
+// 使用例
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+function UserList() {
+  const { data: users, loading, error } = useFetch<User[]>('/api/users');
+
+  if (loading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+  if (!users) return <div>No users found</div>;
+
+  return (
+    <ul>
+      {users.map(user => (
+        <li key={user.id}>{user.name}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+### コンテキスト（Context）
+
+```typescript
+import { createContext, useContext, useState, ReactNode } from 'react';
+
+interface Theme {
+  mode: 'light' | 'dark';
+  toggleTheme: () => void;
+}
+
+const ThemeContext = createContext<Theme | undefined>(undefined);
+
+interface ThemeProviderProps {
+  children: ReactNode;
+}
+
+function ThemeProvider({ children }: ThemeProviderProps) {
+  const [mode, setMode] = useState<'light' | 'dark'>('light');
+
+  const toggleTheme = () => {
+    setMode(prev => prev === 'light' ? 'dark' : 'light');
+  };
+
+  return (
+    <ThemeContext.Provider value={{ mode, toggleTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+}
+
+function useTheme(): Theme {
+  const context = useContext(ThemeContext);
+  if (context === undefined) {
+    throw new Error('useTheme must be used within a ThemeProvider');
+  }
+  return context;
+}
+
+// 使用例
+function App() {
+  return (
+    <ThemeProvider>
+      <ThemedComponent />
+    </ThemeProvider>
+  );
+}
+
+function ThemedComponent() {
+  const { mode, toggleTheme } = useTheme();
+
+  return (
+    <div>
+      <p>Current theme: {mode}</p>
+      <button onClick={toggleTheme}>Toggle Theme</button>
+    </div>
+  );
+}
+```
+
+### イベントハンドラーの型
+
+```typescript
+import { ChangeEvent, FormEvent, MouseEvent } from 'react';
+
+function Form() {
+  const [name, setName] = useState<string>('');
+  const [email, setEmail] = useState<string>('');
+
+  // 入力イベントの型
+  const handleNameChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setName(e.target.value);
+  };
+
+  const handleEmailChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setEmail(e.target.value);
+  };
+
+  // フォーム送信イベントの型
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    console.log({ name, email });
+  };
+
+  // クリックイベントの型
+  const handleButtonClick = (e: MouseEvent<HTMLButtonElement>) => {
+    console.log('Button clicked');
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input
+        type="text"
+        value={name}
+        onChange={handleNameChange}
+        placeholder="Name"
+      />
+      <input
+        type="email"
+        value={email}
+        onChange={handleEmailChange}
+        placeholder="Email"
+      />
+      <button type="submit" onClick={handleButtonClick}>
+        Submit
+      </button>
+    </form>
+  );
+}
+```
+
+## 5. 実務でのベストプラクティス
+
+### パターン1: 型定義の分離
+
+```typescript
+// types/user.ts
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+  createdAt: Date;
+}
+
+export interface UserCardProps {
+  user: User;
+  onEdit?: (user: User) => void;
+  onDelete?: (userId: number) => void;
+}
+
+// components/UserCard.tsx
+import { UserCardProps } from '../types/user';
+
+function UserCard({ user, onEdit, onDelete }: UserCardProps) {
+  return (
+    <div>
+      <h2>{user.name}</h2>
+      <p>{user.email}</p>
+      {onEdit && <button onClick={() => onEdit(user)}>Edit</button>}
+      {onDelete && <button onClick={() => onDelete(user.id)}>Delete</button>}
+    </div>
+  );
+}
+```
+
+### パターン2: ジェネリックコンポーネント
+
+```typescript
+interface ListProps<T> {
+  items: T[];
+  renderItem: (item: T) => React.ReactNode;
+  keyExtractor: (item: T) => string | number;
+}
+
+function List<T>({ items, renderItem, keyExtractor }: ListProps<T>) {
+  return (
+    <ul>
+      {items.map(item => (
+        <li key={keyExtractor(item)}>{renderItem(item)}</li>
+      ))}
+    </ul>
+  );
+}
+
+// 使用例
+interface Product {
+  id: number;
+  name: string;
+  price: number;
+}
+
+function ProductList({ products }: { products: Product[] }) {
+  return (
+    <List
+      items={products}
+      renderItem={product => (
+        <div>
+          <h3>{product.name}</h3>
+          <p>${product.price}</p>
+        </div>
+      )}
+      keyExtractor={product => product.id}
+    />
+  );
+}
+```
+
+### パターン3: 高階コンポーネント（HOC）
+
+```typescript
+import { ComponentType } from 'react';
+
+interface WithLoadingProps {
+  loading: boolean;
+}
+
+function withLoading<P extends object>(
+  Component: ComponentType<P>
+): ComponentType<P & WithLoadingProps> {
+  return function WithLoadingComponent(props: P & WithLoadingProps) {
+    const { loading, ...rest } = props;
+
+    if (loading) {
+      return <div>Loading...</div>;
+    }
+
+    return <Component {...(rest as P)} />;
+  };
+}
+
+// 使用例
+interface UserProfileProps {
+  user: User;
+}
+
+function UserProfile({ user }: UserProfileProps) {
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <p>{user.email}</p>
+    </div>
+  );
+}
+
+const UserProfileWithLoading = withLoading(UserProfile);
+
+// 使用
+<UserProfileWithLoading user={user} loading={isLoading} />
+```
+
+## 6. よくある問題と解決策
+
+### 問題1: 型エラーが発生する
+
+**原因:**
+- プロパティの型が一致しない
+- オプショナルプロパティの扱いが不適切
+
+**解決策:**
+```typescript
+// 問題のあるコード
+interface Props {
+  name: string;
+  age?: number;
+}
+
+function Component({ name, age }: Props) {
+  return <div>{name} is {age} years old</div>; // エラー: ageはundefinedの可能性がある
+}
+
+// 解決策
+function Component({ name, age }: Props) {
+  return (
+    <div>
+      {name} {age !== undefined && `is ${age} years old`}
+    </div>
+  );
+}
+```
+
+### 問題2: イベントハンドラーの型が不明確
+
+**原因:**
+- イベントの型を指定していない
+- 適切な型をインポートしていない
+
+**解決策:**
+```typescript
+import { ChangeEvent, FormEvent, MouseEvent } from 'react';
+
+// 正しい型指定
+const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+  console.log(e.target.value);
+};
+
+const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+  e.preventDefault();
+};
+
+const handleClick = (e: MouseEvent<HTMLButtonElement>) => {
+  console.log('Clicked');
+};
+```
+
+### 問題3: 非同期処理の型が不明確
+
+**原因:**
+- Promiseの型を指定していない
+- エラーハンドリングの型が不明確
+
+**解決策:**
+```typescript
+// 正しい型指定
+const fetchUser = async (id: number): Promise<User> => {
+  const response = await fetch(`/api/users/${id}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch user');
+  }
+  const user: User = await response.json();
+  return user;
+};
+
+// 使用例
+useEffect(() => {
+  const loadUser = async () => {
+    try {
+      const user = await fetchUser(userId);
+      setUser(user);
+    } catch (error) {
+      if (error instanceof Error) {
+        setError(error.message);
+      }
+    }
+  };
+  loadUser();
+}, [userId]);
+```
+
+これで、TypeScriptとReactの基本的な使用方法から高度な使用方法まで理解できるようになりました。
+

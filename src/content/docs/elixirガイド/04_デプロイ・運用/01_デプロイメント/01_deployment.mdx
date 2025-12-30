@@ -1,7 +1,52 @@
 ---
-title: "デプロイメントの詳細"
-label: "デプロイメントの詳細"
+title: Elixirデプロイメント完全ガイド
+sidebar:
+    label: デプロイメント
 ---
+
+# Elixirデプロイメント完全ガイド
+
+Elixirアプリケーションのデプロイメントを、実務で使える実装例とともに詳しく解説します。
+
+## 1. デプロイメントとは
+
+### デプロイメントの基本
+
+Elixirアプリケーションは、`mix release`コマンドで生成される自己完結型リリースを使用してデプロイします。
+
+```
+デプロイメントの流れ
+   ├─ リリースのビルド
+   ├─ コンテナ化（Docker）
+   ├─ デプロイ（Kubernetes/Render）
+   └─ 監視とログ
+```
+
+## 2. リリースの作成
+
+### 基本的なリリース
+
+```bash
+# リリースのビルド
+MIX_ENV=prod mix release
+
+# リリースの起動
+_build/prod/rel/my_app/bin/my_app start
+```
+
+### リリース設定
+
+```elixir
+# config/runtime.exs
+import Config
+
+config :my_app, MyAppWeb.Endpoint,
+  http: [port: System.get_env("PORT", "4000") |> String.to_integer()],
+  url: [host: System.get_env("HOST", "localhost")]
+
+config :my_app, MyApp.Repo,
+  url: System.get_env("DATABASE_URL")
+```
 
 ## `Elixir`デプロイメントの基本思想
 

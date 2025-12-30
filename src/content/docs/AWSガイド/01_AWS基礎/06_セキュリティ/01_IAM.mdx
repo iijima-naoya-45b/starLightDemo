@@ -1,13 +1,43 @@
 ---
-title: "IAM"
-label: "IAM"
+title: IAM完全ガイド
+sidebar:
+    label: IAM
 ---
 
-## IAM (Identity and Access Management)
+# IAM (Identity and Access Management) 完全ガイド
 
-IAMは、AWSリソースへのアクセスを管理するサービスです。
+IAMは、AWSリソースへのアクセスを管理するサービスです。実務で使える権限管理とベストプラクティスを詳しく解説します。
 
-### IAMポリシー
+## 1. IAMとは
+
+### IAMの役割
+
+IAMは、AWSリソースへのアクセスを制御するサービスです。ユーザー、グループ、ロール、ポリシーを管理します。
+
+```
+ユーザー/ロール
+   ↓（IAMポリシー）
+AWSリソースへのアクセス制御
+```
+
+### なぜIAMが必要か
+
+**問題のある構成（ルートアカウントの使用）:**
+
+```bash
+# 問題: ルートアカウントで直接操作
+# 1. すべての権限を持つ
+# 2. 監査が困難
+# 3. 権限の細かい制御ができない
+# 4. セキュリティリスクが高い
+
+# 問題点:
+# 1. 過剰な権限
+# 2. 監査の困難さ
+# 3. セキュリティリスク
+```
+
+**解決: IAMによる細かい権限管理**
 
 ```json
 {
@@ -30,35 +60,507 @@ IAMは、AWSリソースへのアクセスを管理するサービスです。
 }
 ```
 
-### IAMロール
+## 2. IAMの基本概念
 
-```yaml
-EC2Role:
-  Type: AWS::IAM::Role
-  Properties:
-    AssumeRolePolicyDocument:
-      Version: '2012-10-17'
-      Statement:
-        - Effect: Allow
-          Principal:
-            Service: ec2.amazonaws.com
-          Action: sts:AssumeRole
-    Policies:
-      - PolicyName: S3Access
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Action:
-                - s3:GetObject
-                - s3:PutObject
-              Resource: 'arn:aws:s3:::my-bucket/*'
+### ユーザー
+
+```bash
+# ユーザーの作成
+aws iam create-user --user-name developer
+
+# ユーザーの一覧表示
+aws iam list-users
+
+# ユーザーの削除
+aws iam delete-user --user-name developer
 ```
 
-### ベストプラクティス
+### グループ
 
-1. **最小権限の原則**: 必要な権限のみを付与
-2. **MFAの有効化**: 重要な操作には多要素認証
-3. **ロールベースアクセス**: ユーザーではなくロールを使用
-4. **定期的な監査**: 未使用の権限を削除
+```bash
+# グループの作成
+aws iam create-group --group-name developers
+
+# ユーザーをグループに追加
+aws iam add-user-to-group --user-name developer --group-name developers
+
+# グループにポリシーをアタッチ
+aws iam attach-group-policy \
+  --group-name developers \
+  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+```
+
+### ロール
+
+```yaml
+Resources:
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: EC2S3AccessRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: 'arn:aws:s3:::my-bucket/*'
+      Tags:
+        - Key: Name
+          Value: EC2S3AccessRole
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2Role
+```
+
+### ポリシー
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowS3Access",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/*"
+    },
+    {
+      "Sid": "DenyS3Delete",
+      "Effect": "Deny",
+      "Action": [
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/production/*"
+    }
+  ]
+}
+```
+
+## 3. IAMポリシーの詳細
+
+### 基本的なポリシー構造
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",  // Allow または Deny
+      "Action": [          // 許可するアクション
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": [        // 対象リソース
+        "arn:aws:s3:::my-bucket/*"
+      ],
+      "Condition": {       // 条件（オプション）
+        "IpAddress": {
+          "aws:SourceIp": "203.0.113.0/24"
+        }
+      }
+    }
+  ]
+}
+```
+
+### 条件キー
+
+```json
+{
+  "Condition": {
+    "IpAddress": {
+      "aws:SourceIp": "203.0.113.0/24"
+    },
+    "StringEquals": {
+      "aws:RequestedRegion": "us-east-1"
+    },
+    "DateGreaterThan": {
+      "aws:CurrentTime": "2024-01-01T00:00:00Z"
+    },
+    "StringLike": {
+      "s3:prefix": "uploads/*"
+    }
+  }
+}
+```
+
+### ワイルドカードの使用
+
+```json
+{
+  "Resource": [
+    "arn:aws:s3:::my-bucket/*",           // すべてのオブジェクト
+    "arn:aws:s3:::my-bucket/images/*",    // images/配下のすべて
+    "arn:aws:s3:::my-bucket/*.jpg"        // .jpgで終わるすべてのファイル
+  ]
+}
+```
+
+## 4. IAMロールの実践例
+
+### EC2インスタンス用ロール
+
+```yaml
+Resources:
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: EC2ApplicationRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: 'arn:aws:s3:::my-bucket/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: 'arn:aws:s3:::my-bucket'
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2Role
+```
+
+### Lambda関数用ロール
+
+```yaml
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LambdaExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                Resource: 'arn:aws:dynamodb:*:*:table/my-table'
+```
+
+### クロスアカウントアクセス
+
+```yaml
+Resources:
+  CrossAccountRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CrossAccountAccessRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: 'arn:aws:iam::123456789012:root'  # 別のAWSアカウント
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: 'unique-external-id'
+      Policies:
+        - PolicyName: S3ReadOnlyAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - 'arn:aws:s3:::my-bucket'
+                  - 'arn:aws:s3:::my-bucket/*'
+```
+
+## 5. IAMポリシーのベストプラクティス
+
+### 最小権限の原則
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"  // 必要なアクションのみ
+      ],
+      "Resource": [
+        "arn:aws:s3:::my-bucket/specific-folder/*"  // 特定のリソースのみ
+      ]
+    }
+  ]
+}
+```
+
+### 条件の活用
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/*",
+      "Condition": {
+        "StringEquals": {
+          "s3:x-amz-server-side-encryption": "AES256"
+        },
+        "IpAddress": {
+          "aws:SourceIp": "203.0.113.0/24"
+        },
+        "DateGreaterThan": {
+          "aws:CurrentTime": "2024-01-01T00:00:00Z"
+        }
+      }
+    }
+  ]
+}
+```
+
+### 明示的なDeny
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:*"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/*"
+    },
+    {
+      "Effect": "Deny",
+      "Action": [
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/production/*"
+    }
+  ]
+}
+```
+
+## 6. MFA（多要素認証）
+
+### MFAの設定
+
+```bash
+# MFAデバイスの作成
+aws iam create-virtual-mfa-device \
+  --virtual-mfa-device-name my-mfa-device \
+  --outfile QRCode.png \
+  --bootstrap-method QRCodePNG
+
+# ユーザーにMFAを有効化
+aws iam enable-mfa-device \
+  --user-name developer \
+  --serial-number arn:aws:iam::123456789012:mfa/my-mfa-device \
+  --authentication-code-1 123456 \
+  --authentication-code-2 654321
+```
+
+### MFA必須のポリシー
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Deny",
+      "Action": "*",
+      "Resource": "*",
+      "Condition": {
+        "BoolIfExists": {
+          "aws:MultiFactorAuthPresent": "false"
+        }
+      }
+    }
+  ]
+}
+```
+
+## 7. IAMポリシーのシミュレーション
+
+### ポリシーのテスト
+
+```bash
+# ポリシーのシミュレーション
+aws iam simulate-principal-policy \
+  --policy-source-arn arn:aws:iam::123456789012:user/developer \
+  --action-names s3:GetObject \
+  --resource-arns arn:aws:s3:::my-bucket/file.txt
+```
+
+## 8. 実務でのベストプラクティス
+
+### パターン1: 環境別の権限管理
+
+```yaml
+# 開発環境用ロール
+Resources:
+  DevRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: DevRole
+      Policies:
+        - PolicyName: DevAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: "*"
+                Resource: "*"
+                Condition:
+                  StringLike:
+                    "aws:ResourceTag/Environment": "dev"
+
+# 本番環境用ロール
+Resources:
+  ProdRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ProdRole
+      Policies:
+        - PolicyName: ProdAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    "aws:ResourceTag/Environment": "prod"
+```
+
+### パターン2: 時間制限付きアクセス
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "DateGreaterThan": {
+          "aws:CurrentTime": "09:00Z"
+        },
+        "DateLessThan": {
+          "aws:CurrentTime": "18:00Z"
+        }
+      }
+    }
+  ]
+}
+```
+
+## 9. よくある問題と解決策
+
+### 問題1: アクセスが拒否される
+
+**原因:**
+- ポリシーに権限がない
+- リソースのARNが間違っている
+- 条件が満たされていない
+
+**解決策:**
+```bash
+# ユーザーのポリシーを確認
+aws iam list-attached-user-policies --user-name developer
+
+# ポリシーの内容を確認
+aws iam get-policy --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+aws iam get-policy-version \
+  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess \
+  --version-id v1
+
+# ポリシーのシミュレーション
+aws iam simulate-principal-policy \
+  --policy-source-arn arn:aws:iam::123456789012:user/developer \
+  --action-names s3:GetObject \
+  --resource-arns arn:aws:s3:::my-bucket/file.txt
+```
+
+### 問題2: 過剰な権限
+
+**原因:**
+- ワイルドカードの多用
+- 最小権限の原則に従っていない
+
+**解決策:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"  // 必要なアクションのみ
+      ],
+      "Resource": [
+        "arn:aws:s3:::my-bucket/specific-folder/*"  // 特定のリソースのみ
+      ]
+    }
+  ]
+}
+```
+
+これで、IAMの基礎知識と実務での権限管理を理解できるようになりました。
 

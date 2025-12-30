@@ -1,35 +1,182 @@
 ---
-title: "Zustand基礎"
-label: "Zustand基礎"
+title: Zustand完全ガイド
+sidebar:
+    label: Zustand基礎
 ---
 
-## Zustand基礎
+# Zustand完全ガイド
 
-Zustandは、シンプルでミニマリストな状態管理ライブラリです。
+Zustandを使用した状態管理を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
 
-### インストール
+## 1. Zustandとは
 
-```bash
-npm install zustand
+### Zustandの特徴
+
+Zustandは、シンプルでミニマリストな状態管理ライブラリです。Reduxの代替として、より少ないボイラープレートで状態管理を実現します。
+
+```
+Zustandの特徴
+   ├─ シンプルなAPI
+   ├─ 少ないボイラープレート
+   ├─ 高いパフォーマンス
+   └─ TypeScriptサポート
 ```
 
-### Storeの作成
+### なぜZustandが必要か
+
+**問題のある構成（Redux）:**
 
 ```jsx
+// 問題: ボイラープレートが多い
+import { configureStore, createSlice } from '@reduxjs/toolkit';
+import { Provider } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
+
+// Storeの作成
+const counterSlice = createSlice({
+  name: 'counter',
+  initialState: { value: 0 },
+  reducers: {
+    increment: (state) => { state.value += 1; },
+  },
+});
+
+export const store = configureStore({
+  reducer: { counter: counterSlice.reducer },
+});
+
+// Providerの設定
+function App() {
+  return (
+    <Provider store={store}>
+      <YourApp />
+    </Provider>
+  );
+}
+
+// 使用
+function Counter() {
+  const count = useSelector((state) => state.counter.value);
+  const dispatch = useDispatch();
+  return <button onClick={() => dispatch(counterSlice.actions.increment())}>+</button>;
+}
+```
+
+**解決: Zustandによる簡潔な実装**
+
+```jsx
+// 解決: Zustandによる簡潔な実装
 import { create } from 'zustand';
 
 const useStore = create((set) => ({
   count: 0,
   increment: () => set((state) => ({ count: state.count + 1 })),
-  decrement: () => set((state) => ({ count: state.count - 1 })),
 }));
+
+// 使用
+function Counter() {
+  const count = useStore((state) => state.count);
+  const increment = useStore((state) => state.increment);
+  return <button onClick={increment}>+</button>;
+}
 ```
 
-### コンポーネントでの使用
+## 2. インストール
+
+### 基本的なインストール
+
+```bash
+npm install zustand
+```
+
+### TypeScriptでの使用
+
+```bash
+npm install zustand
+# TypeScriptは標準でサポートされている
+```
+
+## 3. Storeの作成
+
+### 基本的なStore
 
 ```jsx
+// store/counterStore.js
+import { create } from 'zustand';
+
+const useCounterStore = create((set) => ({
+  count: 0,
+  increment: () => set((state) => ({ count: state.count + 1 })),
+  decrement: () => set((state) => ({ count: state.count - 1 })),
+  reset: () => set({ count: 0 }),
+}));
+
+export default useCounterStore;
+```
+
+### TypeScriptでのStore
+
+```typescript
+// store/counterStore.ts
+import { create } from 'zustand';
+
+interface CounterState {
+  count: number;
+  increment: () => void;
+  decrement: () => void;
+  reset: () => void;
+}
+
+const useCounterStore = create<CounterState>((set) => ({
+  count: 0,
+  increment: () => set((state) => ({ count: state.count + 1 })),
+  decrement: () => set((state) => ({ count: state.count - 1 })),
+  reset: () => set({ count: 0 }),
+}));
+
+export default useCounterStore;
+```
+
+### 複雑なStore
+
+```jsx
+// store/userStore.js
+import { create } from 'zustand';
+
+const useUserStore = create((set) => ({
+  user: null,
+  loading: false,
+  error: null,
+  setUser: (user) => set({ user }),
+  setLoading: (loading) => set({ loading }),
+  setError: (error) => set({ error }),
+  fetchUser: async (userId) => {
+    set({ loading: true, error: null });
+    try {
+      const response = await fetch(`/api/users/${userId}`);
+      const user = await response.json();
+      set({ user, loading: false });
+    } catch (error) {
+      set({ error: error.message, loading: false });
+    }
+  },
+}));
+
+export default useUserStore;
+```
+
+## 4. コンポーネントでの使用
+
+### 基本的な使用
+
+```jsx
+// components/Counter.jsx
+import useCounterStore from '../store/counterStore';
+
 function Counter() {
-  const { count, increment, decrement } = useStore();
+  const count = useCounterStore((state) => state.count);
+  const increment = useCounterStore((state) => state.increment);
+  const decrement = useCounterStore((state) => state.decrement);
 
   return (
     <div>
@@ -41,13 +188,88 @@ function Counter() {
 }
 ```
 
-### ミドルウェア
+### 細かい粒度での選択
 
 ```jsx
+// パフォーマンス最適化: 必要な部分だけを選択
+function Counter() {
+  // countが変更されたときだけ再レンダリング
+  const count = useCounterStore((state) => state.count);
+  return <div>{count}</div>;
+}
+
+function IncrementButton() {
+  // incrementが変更されたときだけ再レンダリング（実際には変更されない）
+  const increment = useCounterStore((state) => state.increment);
+  return <button onClick={increment}>+</button>;
+}
+```
+
+### 複数の値を選択
+
+```jsx
+// 複数の値を一度に選択
+function UserProfile() {
+  const { user, loading, error } = useUserStore((state) => ({
+    user: state.user,
+    loading: state.loading,
+    error: state.error,
+  }));
+
+  if (loading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error}</div>;
+  return <div>{user?.name}</div>;
+}
+```
+
+## 5. ミドルウェア
+
+### DevTools
+
+```jsx
+// store/counterStore.js
+import { create } from 'zustand';
+import { devtools } from 'zustand/middleware';
+
+const useCounterStore = create(
+  devtools(
+    (set) => ({
+      count: 0,
+      increment: () => set((state) => ({ count: state.count + 1 })),
+    }),
+    { name: 'CounterStore' }
+  )
+);
+```
+
+### Persist（永続化）
+
+```jsx
+// store/userStore.js
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+
+const useUserStore = create(
+  persist(
+    (set) => ({
+      user: null,
+      setUser: (user) => set({ user }),
+    }),
+    {
+      name: 'user-storage', // localStorageのキー名
+    }
+  )
+);
+```
+
+### ミドルウェアの組み合わせ
+
+```jsx
+// store/counterStore.js
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 
-const useStore = create(
+const useCounterStore = create(
   devtools(
     persist(
       (set) => ({
@@ -55,8 +277,148 @@ const useStore = create(
         increment: () => set((state) => ({ count: state.count + 1 })),
       }),
       { name: 'counter-storage' }
-    )
+    ),
+    { name: 'CounterStore' }
   )
 );
 ```
+
+## 6. 実務でのベストプラクティス
+
+### パターン1: Storeの分割
+
+```jsx
+// store/userStore.js
+import { create } from 'zustand';
+
+const useUserStore = create((set) => ({
+  user: null,
+  setUser: (user) => set({ user }),
+}));
+
+// store/themeStore.js
+import { create } from 'zustand';
+
+const useThemeStore = create((set) => ({
+  theme: 'light',
+  setTheme: (theme) => set({ theme }),
+}));
+
+// 使用
+function App() {
+  const user = useUserStore((state) => state.user);
+  const theme = useThemeStore((state) => state.theme);
+  return <div className={theme}>{user?.name}</div>;
+}
+```
+
+### パターン2: カスタムフックの作成
+
+```jsx
+// hooks/useUser.js
+import useUserStore from '../store/userStore';
+
+export function useUser() {
+  const user = useUserStore((state) => state.user);
+  const setUser = useUserStore((state) => state.setUser);
+  const fetchUser = useUserStore((state) => state.fetchUser);
+  
+  return { user, setUser, fetchUser };
+}
+
+// 使用
+function UserProfile() {
+  const { user, fetchUser } = useUser();
+  useEffect(() => {
+    fetchUser(userId);
+  }, [userId]);
+  return <div>{user?.name}</div>;
+}
+```
+
+### パターン3: 非同期処理
+
+```jsx
+// store/userStore.js
+import { create } from 'zustand';
+
+const useUserStore = create((set, get) => ({
+  user: null,
+  loading: false,
+  error: null,
+  fetchUser: async (userId) => {
+    set({ loading: true, error: null });
+    try {
+      const response = await fetch(`/api/users/${userId}`);
+      const user = await response.json();
+      set({ user, loading: false });
+    } catch (error) {
+      set({ error: error.message, loading: false });
+    }
+  },
+  updateUser: async (userId, data) => {
+    set({ loading: true });
+    try {
+      const response = await fetch(`/api/users/${userId}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+      const user = await response.json();
+      set({ user, loading: false });
+    } catch (error) {
+      set({ error: error.message, loading: false });
+    }
+  },
+}));
+```
+
+## 7. よくある問題と解決策
+
+### 問題1: 不要な再レンダリング
+
+**原因:**
+- オブジェクト全体を選択している
+- 浅い比較が機能していない
+
+**解決策:**
+```jsx
+// 問題: オブジェクト全体を選択
+const { user, loading } = useUserStore((state) => ({
+  user: state.user,
+  loading: state.loading,
+}));
+
+// 解決: 個別に選択
+const user = useUserStore((state) => state.user);
+const loading = useUserStore((state) => state.loading);
+
+// または、shallowを使用
+import { shallow } from 'zustand/shallow';
+
+const { user, loading } = useUserStore(
+  (state) => ({ user: state.user, loading: state.loading }),
+  shallow
+);
+```
+
+### 問題2: 型安全性の問題
+
+**原因:**
+- TypeScriptの型定義が不十分
+
+**解決策:**
+```typescript
+// 適切な型定義
+interface UserState {
+  user: User | null;
+  setUser: (user: User) => void;
+}
+
+const useUserStore = create<UserState>((set) => ({
+  user: null,
+  setUser: (user) => set({ user }),
+}));
+```
+
+これで、Zustandの基礎知識と実務での使い方を理解できるようになりました。
 

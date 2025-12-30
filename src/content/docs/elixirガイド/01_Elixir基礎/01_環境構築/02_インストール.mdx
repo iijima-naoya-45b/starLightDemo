@@ -1,62 +1,295 @@
 ---
-title: "Elixir のインストール"
-label: "Elixir のインストール"
+title: Elixir環境構築完全ガイド
+sidebar:
+    label: Elixirのインストール
 ---
 
+# Elixir環境構築完全ガイド
 
-# Elixir のインストール
+Elixirの環境構築から、実務で使えるベストプラクティスまで詳しく解説します。
 
-Elixir をインストールするには、まず Elixir が依存している Erlang/OTP をインストールする必要があります。Elixir は Erlang VM（仮想マシン）上で動作するため、Erlang が必須となります。
+## 1. Elixirとは
 
-## 必要なツール
+### Elixirの特徴
 
-- **Erlang/OTP:** Elixir が動作するための基盤となる仮想マシンです。
-- **Elixir:** プログラミング言語本体です。
+Elixirは、Erlang VM（BEAM）上で動作する関数型プログラミング言語です。並行処理とフォールトトレランスに優れています。
 
-## インストール手順（macOS の場合）
+### 必要なツール
 
-macOS の場合、パッケージマネージャーの Homebrew を使うのが最も簡単で推奨される方法です。
+- **Erlang/OTP:** Elixirが動作するための基盤となる仮想マシン
+- **Elixir:** プログラミング言語本体
+- **Mix:** プロジェクト管理ツール（Elixirに含まれる）
 
-### Homebrew のインストール
+## 2. macOSでのインストール
 
-まだ Homebrew をインストールしていない場合は、以下のコマンドをターミナルで実行してインストールしてください。
+### Homebrewを使用したインストール
 
 ```bash
+# Homebrewのインストール（未インストールの場合）
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
 
-### Erlang と Elixir のインストール
-
-Homebrew を使って Erlang と Elixir を一度にインストールできます。
-
-```bash
+# ErlangとElixirのインストール
 brew install elixir
-```
 
-このコマンドは、Elixir が依存している Erlang も自動的にインストールしてくれます。
-
-## インストール手順（その他の OS の場合）
-
-### Windows
-
-- **Chocolatey を利用:** Chocolatey をインストール後、`choco install erlang elixir` でインストールできます。
-- **公式インストーラーを利用:** Elixir 公式サイトからインストーラーをダウンロードしてインストールします。
-
-### Linux (Ubuntu/Debian)
-
-公式リポジトリからインストールできます。
-
-```bash
-sudo apt-get update
-sudo apt-get install erlang elixir
-```
-
-## インストールの確認
-
-インストールが完了したら、以下のコマンドをターミナルで実行して、バージョン情報が表示されるか確認しましょう。
-
-```bash
+# バージョンの確認
 elixir --version
 ```
 
-バージョン情報が正しく表示されれば、インストールは完了です。これで Elixir を使った開発を始める準備ができました。
+### asdfを使用したインストール（推奨）
+
+```bash
+# asdfのインストール
+brew install asdf
+
+# asdfをシェルに追加
+echo -e "\n. $(brew --prefix asdf)/libexec/asdf.sh" >> ~/.zshrc
+source ~/.zshrc
+
+# Erlangプラグインの追加
+asdf plugin add erlang
+
+# Elixirプラグインの追加
+asdf plugin add elixir
+
+# Erlangのインストール
+asdf install erlang 26.2.1
+
+# Elixirのインストール
+asdf install elixir 1.16.0
+
+# グローバルバージョンの設定
+asdf global erlang 26.2.1
+asdf global elixir 1.16.0
+
+# バージョンの確認
+elixir --version
+```
+
+## 3. Windowsでのインストール
+
+### Chocolateyを使用したインストール
+
+```bash
+# Chocolateyのインストール（未インストールの場合）
+# PowerShellを管理者として実行
+Set-ExecutionPolicy Bypass -Scope Process -Force
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+# ErlangとElixirのインストール
+choco install erlang elixir
+
+# バージョンの確認
+elixir --version
+```
+
+### 公式インストーラーを使用したインストール
+
+1. https://elixir-lang.org/install.html からインストーラーをダウンロード
+2. インストーラーを実行
+3. 環境変数PATHに追加
+
+## 4. Linux (Ubuntu/Debian)でのインストール
+
+### 公式リポジトリからインストール
+
+```bash
+# リポジトリの追加
+sudo apt-get update
+sudo apt-get install -y software-properties-common
+
+# Erlang Solutionsのリポジトリを追加
+wget https://packages.erlang-solutions.com/erlang-solutions_2.0_all.deb
+sudo dpkg -i erlang-solutions_2.0_all.deb
+sudo apt-get update
+
+# ErlangとElixirのインストール
+sudo apt-get install -y erlang elixir
+
+# バージョンの確認
+elixir --version
+```
+
+### asdfを使用したインストール（推奨）
+
+```bash
+# 必要な依存関係のインストール
+sudo apt-get update
+sudo apt-get install -y \
+  build-essential \
+  autoconf \
+  m4 \
+  libncurses5-dev \
+  libwxgtk3.2-dev \
+  libgl1-mesa-dev \
+  libglu1-mesa-dev \
+  libpng-dev \
+  libssh-dev \
+  unixodbc-dev \
+  xsltproc \
+  fop \
+  libxml2-utils \
+  libncurses-dev \
+  openjdk-11-jdk
+
+# asdfのインストール
+git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.0
+echo '. "$HOME/.asdf/asdf.sh"' >> ~/.bashrc
+echo '. "$HOME/.asdf/completions/asdf.bash"' >> ~/.bashrc
+source ~/.bashrc
+
+# Erlangプラグインの追加
+asdf plugin add erlang
+
+# Elixirプラグインの追加
+asdf plugin add elixir
+
+# Erlangのインストール
+asdf install erlang 26.2.1
+
+# Elixirのインストール
+asdf install elixir 1.16.0
+
+# グローバルバージョンの設定
+asdf global erlang 26.2.1
+asdf global elixir 1.16.0
+
+# バージョンの確認
+elixir --version
+```
+
+## 5. インストールの確認
+
+### 基本的な確認
+
+```bash
+# Elixirのバージョン確認
+elixir --version
+
+# Mixのバージョン確認
+mix --version
+
+# IEx（対話型シェル）の起動
+iex
+```
+
+### IExでの動作確認
+
+```elixir
+# IExで実行
+iex(1)> 1 + 1
+2
+
+iex(2)> "Hello, " <> "Elixir!"
+"Hello, Elixir!"
+
+iex(3)> [1, 2, 3] |> Enum.map(&(&1 * 2))
+[2, 4, 6]
+```
+
+## 6. プロジェクトの作成
+
+### 新しいプロジェクトの作成
+
+```bash
+# プロジェクトの作成
+mix new my_app
+
+# プロジェクトディレクトリに移動
+cd my_app
+
+# 依存関係のインストール
+mix deps.get
+
+# テストの実行
+mix test
+```
+
+### Phoenixプロジェクトの作成
+
+```bash
+# Phoenixのインストール
+mix archive.install hex phx_new
+
+# Phoenixプロジェクトの作成
+mix phx.new my_web_app
+
+# プロジェクトディレクトリに移動
+cd my_web_app
+
+# 依存関係のインストール
+mix deps.get
+
+# データベースの作成
+mix ecto.create
+
+# サーバーの起動
+mix phx.server
+```
+
+## 7. 実務でのベストプラクティス
+
+### パターン1: バージョン管理ツールの使用
+
+```bash
+# asdfを使用したバージョン管理
+# .tool-versionsファイルを作成
+echo "erlang 26.2.1" > .tool-versions
+echo "elixir 1.16.0" >> .tool-versions
+
+# プロジェクトごとにバージョンを設定
+asdf install
+```
+
+### パターン2: 環境変数の設定
+
+```bash
+# .envファイルの作成
+cat > .env << EOF
+DATABASE_URL=postgresql://user:password@localhost/myapp
+SECRET_KEY_BASE=your_secret_key_base
+EOF
+
+# 環境変数の読み込み
+source .env
+```
+
+## 8. よくある問題と解決策
+
+### 問題1: バージョンが表示されない
+
+**原因:**
+- PATHが正しく設定されていない
+- インストールが完了していない
+
+**解決策:**
+```bash
+# PATHの確認
+echo $PATH
+
+# Elixirのパスを確認
+which elixir
+
+# PATHに追加（必要に応じて）
+export PATH="$PATH:/path/to/elixir/bin"
+```
+
+### 問題2: 依存関係のインストールエラー
+
+**原因:**
+- ネットワークの問題
+- キャッシュの問題
+
+**解決策:**
+```bash
+# キャッシュのクリア
+mix deps.clean --all
+
+# 依存関係の再インストール
+mix deps.get
+
+# Hexの更新
+mix local.hex --force
+```
+
+これで、Elixirの環境構築の基礎知識と実務での使い方を理解できるようになりました。

@@ -1,53 +1,185 @@
 ---
-title: "Docker 環境構築"
-label: "Docker 環境構築"
+title: Docker環境構築完全ガイド
+sidebar:
+    label: Docker環境構築
 ---
 
-# Docker 環境構築
+# Docker環境構築完全ガイド
 
-Docker の基本的な環境構築について説明します。Docker を利用することで、開発環境を簡単に再現・共有できます。
+Dockerの環境構築から、実務で使えるベストプラクティスまで詳しく解説します。
 
-## 1. Docker Desktop のインストール
+## 1. Docker Desktopのインストール
 
-Docker を利用するためには、まず Docker Desktop をインストールする必要があります。お使いの OS に応じて、以下の公式ページからダウンロードしてください。
+### Windows
 
-- **Windows:** Docker Desktop for Windows
-- **macOS:** Docker Desktop for Mac
-- **Linux:** Docker Desktop for Linux
+```bash
+# Docker Desktop for Windowsのインストール
+# 1. https://www.docker.com/products/docker-desktop からダウンロード
+# 2. インストーラーを実行
+# 3. WSL 2の有効化が必要な場合がある
 
-## 2. Dockerfile の作成
+# インストール確認
+docker --version
+docker-compose --version
+```
 
-Dockerfile は、Docker イメージを構築するための手順を記述したテキストファイルです。プロジェクトのルートディレクトリに Dockerfile という名前でファイルを作成します。
+### macOS
 
-### 例: Node.js 環境
+```bash
+# Docker Desktop for Macのインストール
+# 1. https://www.docker.com/products/docker-desktop からダウンロード
+# 2. .dmgファイルを開いてインストール
+# 3. アプリケーションからDocker Desktopを起動
+
+# インストール確認
+docker --version
+docker-compose --version
+```
+
+### Linux
+
+```bash
+# Ubuntu/Debianでのインストール
+sudo apt-get update
+sudo apt-get install -y \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release
+
+# Dockerの公式GPGキーを追加
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+
+# リポジトリを追加
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Docker Engineのインストール
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+# Docker Composeのインストール
+sudo apt-get install -y docker-compose-plugin
+
+# インストール確認
+docker --version
+docker compose version
+```
+
+## 2. Dockerの基本コマンド
+
+### イメージの操作
+
+```bash
+# イメージの一覧表示
+docker images
+
+# イメージの検索
+docker search nginx
+
+# イメージのプル
+docker pull nginx:latest
+
+# イメージのビルド
+docker build -t my-app:latest .
+
+# イメージの削除
+docker rmi my-app:latest
+
+# 未使用のイメージを一括削除
+docker image prune -a
+```
+
+### コンテナの操作
+
+```bash
+# コンテナの起動
+docker run -d -p 3000:3000 --name my-app my-app:latest
+
+# コンテナの一覧表示
+docker ps  # 実行中
+docker ps -a  # すべて
+
+# コンテナの停止
+docker stop my-app
+
+# コンテナの再起動
+docker restart my-app
+
+# コンテナの削除
+docker rm my-app
+
+# 実行中のコンテナを一括停止
+docker stop $(docker ps -q)
+
+# 停止中のコンテナを一括削除
+docker rm $(docker ps -aq)
+```
+
+### コンテナ内でのコマンド実行
+
+```bash
+# コンテナ内でシェルを実行
+docker exec -it my-app sh
+
+# コンテナ内でコマンドを実行
+docker exec my-app npm test
+
+# コンテナのログを確認
+docker logs my-app
+docker logs -f my-app  # リアルタイム
+```
+
+## 3. Dockerfileの作成
+
+### 基本的なDockerfile
 
 ```dockerfile
-# ベースイメージの指定
+# ベースイメージ
 FROM node:18-alpine
 
 # 作業ディレクトリの設定
 WORKDIR /app
 
-# アプリケーションの依存関係をコピー
-COPY package.json ./
-
 # 依存関係のインストール
-RUN npm install
+COPY package*.json ./
+RUN npm ci --only=production
 
-# アプリケーションのソースコードをコピー
+# アプリケーションコードのコピー
 COPY . .
 
-# アプリケーションの実行コマンド
+# ポートの公開
+EXPOSE 3000
+
+# アプリケーションの起動
 CMD ["npm", "start"]
 ```
 
-## 3. Docker Compose の利用
+### .dockerignoreの作成
 
-複数のコンテナを連携させてアプリケーションを構築する場合、Docker Compose を利用するのが一般的です。`docker-compose.yml` ファイルをプロジェクトのルートディレクトリに作成します。
+```dockerignore
+# .dockerignore
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+.env.local
+.DS_Store
+*.log
+coverage
+.vscode
+.idea
+```
 
-### 例: Node.js と MongoDB の連携
+## 4. Docker Composeの設定
+
+### 基本的なdocker-compose.yml
 
 ```yaml
+# docker-compose.yml
 version: '3.8'
 
 services:
@@ -55,36 +187,150 @@ services:
     build: .
     ports:
       - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://postgres:password@db:5432/mydb
     volumes:
       - .:/app
+      - /app/node_modules
     depends_on:
       - db
-
+    restart: unless-stopped
+  
   db:
-    image: mongo:latest
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mydb
     volumes:
-      - db-data:/data/db
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
 
 volumes:
-  db-data:
+  postgres_data:
 ```
 
-## 4. コンテナのビルドと実行
-
-`docker-compose.yml` があるディレクトリで以下のコマンドを実行すると、コンテナがビルドされて起動します。
+### Docker Composeのコマンド
 
 ```bash
-docker-compose up -d --build
-```
+# サービスの起動
+docker-compose up -d
 
-- **up:** コンテナを起動します。
-- **-d:** バックグラウンドで実行します。
-- **--build:** イメージを再ビルドします。
-
-コンテナを停止する場合は、以下のコマンドを実行します。
-
-```bash
+# サービスの停止
 docker-compose down
+
+# サービスの再ビルド
+docker-compose up -d --build
+
+# ログの確認
+docker-compose logs -f
+
+# 特定のサービスのログ
+docker-compose logs -f app
+
+# サービスの状態確認
+docker-compose ps
+
+# サービスの再起動
+docker-compose restart
+
+# サービスのスケール
+docker-compose up -d --scale app=3
 ```
 
-この内容を参考に、ご自身のプロジェクトに合わせて Dockerfile や Docker Compose ファイルをカスタマイズしてください。
+## 5. 実務でのベストプラクティス
+
+### パターン1: 環境別のdocker-compose.yml
+
+```yaml
+# docker-compose.dev.yml
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - .:/app
+    environment:
+      - NODE_ENV=development
+
+# docker-compose.prod.yml
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    environment:
+      - NODE_ENV=production
+    restart: always
+```
+
+```bash
+# 環境別の起動
+docker-compose -f docker-compose.dev.yml up -d
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+### パターン2: ネットワークの設定
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    networks:
+      - app-network
+  
+  db:
+    image: postgres:14-alpine
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+```
+
+## 6. よくある問題と解決策
+
+### 問題1: ポートが既に使用されている
+
+**原因:**
+- 他のアプリケーションが同じポートを使用している
+
+**解決策:**
+```bash
+# ポートの使用状況を確認
+lsof -i :3000  # macOS/Linux
+netstat -ano | findstr :3000  # Windows
+
+# 別のポートを使用
+docker run -p 3001:3000 my-app:latest
+```
+
+### 問題2: ボリュームのマウントが動作しない
+
+**原因:**
+- パスが正しく設定されていない
+- 権限の問題
+
+**解決策:**
+```bash
+# 絶対パスを使用
+docker run -v /absolute/path:/app my-app:latest
+
+# ボリュームの確認
+docker volume ls
+docker volume inspect volume_name
+```
+
+これで、Dockerの環境構築の基礎知識と実務での使い方を理解できるようになりました。

@@ -1,0 +1,489 @@
+---
+title: API Gateway完全ガイド
+sidebar:
+    label: API Gateway
+---
+
+# API Gateway完全ガイド
+
+API Gatewayは、RESTful APIやWebSocket APIを構築・管理するサービスです。実務で使える実装例とベストプラクティスを詳しく解説します。
+
+## 1. API Gatewayとは
+
+### API Gatewayの役割
+
+API Gatewayは、APIのエントリーポイントとして機能し、リクエストのルーティング、認証、レート制限、キャッシングなどを提供します。
+
+```
+クライアント
+   ↓（HTTPリクエスト）
+API Gateway
+   ├─ 認証・認可
+   ├─ レート制限
+   ├─ キャッシング
+   └─ ルーティング
+       ↓
+Lambda関数、EC2、その他のバックエンド
+```
+
+### なぜAPI Gatewayが必要か
+
+**問題のある構成（API Gatewayなし）:**
+
+```bash
+# 問題: 直接バックエンドにアクセス
+# 1. 認証・認可の実装が必要
+# 2. レート制限の実装が必要
+# 3. キャッシングの実装が必要
+# 4. モニタリングの実装が必要
+
+# 問題点:
+# 1. 開発コストが高い
+# 2. 一貫性の欠如
+# 3. 運用負荷が高い
+```
+
+**解決: API Gatewayによる統合**
+
+```yaml
+# 解決: API Gatewayの使用
+Resources:
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: MyAPI
+      Description: My REST API
+
+# メリット:
+# 1. 認証・認可の統合
+# 2. レート制限の統合
+# 3. キャッシングの統合
+# 4. モニタリングの統合
+```
+
+## 2. REST API
+
+### 基本的なREST API
+
+```yaml
+Resources:
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: MyAPI
+      Description: My REST API
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  # リソース
+  UsersResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      PathPart: users
+      ParentId: !GetAtt RestApi.RootResourceId
+
+  # GET /users
+  GetUsersMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref UsersResource
+      HttpMethod: GET
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetUsersFunction.Arn}/invocations'
+
+  # POST /users
+  PostUsersMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref UsersResource
+      HttpMethod: POST
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreateUserFunction.Arn}/invocations'
+
+  # デプロイメント
+  Deployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref RestApi
+      StageName: prod
+      StageDescription: Production stage
+```
+
+### Lambda統合
+
+```yaml
+Resources:
+  GetUsersFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: GetUsers
+      Runtime: python3.11
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {
+                  'statusCode': 200,
+                  'body': '{"users": []}'
+              }
+
+  GetUsersMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref UsersResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetUsersFunction.Arn}/invocations'
+
+  # Lambda関数にAPI Gatewayの実行権限を付与
+  GetUsersPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetUsersFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/GET/users'
+```
+
+## 3. 認証・認可
+
+### API Key
+
+```yaml
+Resources:
+  ApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: MyAPIKey
+      Description: API Key for MyAPI
+      Enabled: true
+
+  UsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: MyUsagePlan
+      ApiStages:
+        - ApiId: !Ref RestApi
+          Stage: prod
+      Throttle:
+        BurstLimit: 100
+        RateLimit: 50
+      Quota:
+        Limit: 10000
+        Period: MONTH
+
+  UsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref ApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref UsagePlan
+```
+
+### Cognito認証
+
+```yaml
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: MyUserPool
+      AutoVerifiedAttributes:
+        - email
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: MyUserPoolClient
+      GenerateSecret: false
+
+  GetUsersMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref UsersResource
+      HttpMethod: GET
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref CognitoAuthorizer
+
+  CognitoAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      Name: CognitoAuthorizer
+      Type: COGNITO_USER_POOLS
+      RestApiId: !Ref RestApi
+      ProviderARNs:
+        - !GetAtt UserPool.Arn
+```
+
+### IAM認証
+
+```yaml
+Resources:
+  GetUsersMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref UsersResource
+      HttpMethod: GET
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetUsersFunction.Arn}/invocations'
+```
+
+## 4. レート制限とクォータ
+
+### レート制限の設定
+
+```yaml
+Resources:
+  UsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: MyUsagePlan
+      ApiStages:
+        - ApiId: !Ref RestApi
+          Stage: prod
+          Throttle:
+            /users/GET:
+              BurstLimit: 100
+              RateLimit: 50
+      Throttle:
+        BurstLimit: 200
+        RateLimit: 100
+      Quota:
+        Limit: 10000
+        Period: MONTH
+```
+
+## 5. キャッシング
+
+### API Gatewayキャッシング
+
+```yaml
+Resources:
+  GetUsersMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref UsersResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Cache-Control: true
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetUsersFunction.Arn}/invocations'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Cache-Control: "'max-age=300'"
+
+  Deployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref RestApi
+      StageName: prod
+      CacheClusterEnabled: true
+      CacheClusterSize: 0.5
+```
+
+## 6. CORS設定
+
+### CORSの設定
+
+```yaml
+Resources:
+  OptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref UsersResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'https://example.com'"
+            ResponseTemplates:
+              application/json: ''
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+```
+
+## 7. WebSocket API
+
+### WebSocket APIの設定
+
+```yaml
+Resources:
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: MyWebSocketAPI
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: '$request.body.action'
+
+  # $connect ルート
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $connect
+      Target: !Sub 'integrations/${ConnectIntegration}'
+
+  ConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ConnectFunction.Arn}/invocations'
+
+  # $disconnect ルート
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $disconnect
+      Target: !Sub 'integrations/${DisconnectIntegration}'
+
+  # カスタムルート
+  SendMessageRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: sendmessage
+      Target: !Sub 'integrations/${SendMessageIntegration}'
+
+  # デプロイメント
+  WebSocketDeployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    Properties:
+      ApiId: !Ref WebSocketApi
+
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref WebSocketApi
+      StageName: prod
+      DeploymentId: !Ref WebSocketDeployment
+```
+
+## 8. 実務でのベストプラクティス
+
+### パターン1: マイクロサービス統合
+
+```yaml
+Resources:
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: MicroservicesAPI
+
+  # ユーザーサービス
+  UsersResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      PathPart: users
+
+  # 注文サービス
+  OrdersResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      PathPart: orders
+```
+
+### パターン2: バージョニング
+
+```yaml
+Resources:
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: MyAPI
+
+  # v1リソース
+  V1Resource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      PathPart: v1
+
+  # v2リソース
+  V2Resource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      PathPart: v2
+```
+
+## 9. よくある問題と解決策
+
+### 問題1: CORSエラー
+
+**原因:**
+- CORS設定が正しくない
+- プリフライトリクエストが処理されていない
+
+**解決策:**
+```yaml
+# OPTIONSメソッドの追加
+Resources:
+  OptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref UsersResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+```
+
+### 問題2: タイムアウトエラー
+
+**原因:**
+- Lambda関数の実行時間が長い
+- 統合タイムアウトが短い
+
+**解決策:**
+```yaml
+Resources:
+  GetUsersMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      Integration:
+        TimeoutInMillis: 29000  # 最大29秒
+```
+
+これで、API Gatewayの基礎知識と実務での使い方を理解できるようになりました。

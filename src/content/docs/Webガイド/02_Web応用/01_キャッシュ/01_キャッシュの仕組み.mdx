@@ -1,0 +1,154 @@
+---
+title: キャッシュの仕組み
+sidebar:
+    label: キャッシュの仕組み
+---
+
+# Webキャッシュ完全ガイド
+
+キャッシュは、Webアプリケーションのパフォーマンスを向上させる重要な仕組みです。各種キャッシュの仕組みと実務での使い方を詳しく解説します。
+
+## 1. キャッシュとは
+
+### キャッシュの役割
+
+キャッシュは、一度取得したリソースを保存し、次回のアクセス時に再利用することで、ネットワーク通信を削減し、ページの読み込み速度を向上させます。
+
+```
+初回アクセス: ブラウザ → サーバー（リソースを取得）
+2回目以降: ブラウザ（キャッシュから取得、高速）
+```
+
+## 2. ブラウザキャッシュ
+
+### Cache-Controlヘッダー
+
+```http
+Cache-Control: max-age=3600
+```
+
+**主なディレクティブ:**
+- `max-age=3600`: 3600秒（1時間）キャッシュ
+- `no-cache`: キャッシュを使用する前に検証が必要
+- `no-store`: キャッシュしない
+- `private`: ブラウザのみキャッシュ（プロキシではキャッシュしない）
+- `public`: すべてのキャッシュで保存可能
+
+### Expiresヘッダー
+
+```http
+Expires: Mon, 01 Jan 2024 12:00:00 GMT
+```
+
+- キャッシュの有効期限を絶対時刻で指定
+- `Cache-Control`の`max-age`が優先される
+
+### ETag
+
+```http
+ETag: "abc123"
+```
+
+- リソースのバージョンを表す識別子
+- リソースが変更されたかどうかを判定
+
+### Last-Modified
+
+```http
+Last-Modified: Mon, 01 Jan 2024 12:00:00 GMT
+```
+
+- リソースの最終更新日時
+- 条件付きリクエストで使用
+
+## 3. HTTPキャッシュの動作
+
+### キャッシュの検証
+
+```
+1. ブラウザがキャッシュを確認
+   ↓
+2. キャッシュが有効か確認（max-age、Expires）
+   ↓
+3. 有効な場合: キャッシュから取得
+   無効な場合: サーバーに検証リクエストを送信
+   ↓
+4. If-None-Match（ETag）またはIf-Modified-Since（Last-Modified）を送信
+   ↓
+5. サーバーが304 Not Modifiedを返す場合: キャッシュを使用
+   サーバーが200 OKを返す場合: 新しいリソースを使用
+```
+
+## 4. 実務でのキャッシュ戦略
+
+### 静的リソースのキャッシュ
+
+```http
+# HTML: 短いキャッシュ
+Cache-Control: no-cache
+
+# CSS/JavaScript: 長いキャッシュ（ファイル名にハッシュを含める）
+Cache-Control: max-age=31536000, immutable
+
+# 画像: 中程度のキャッシュ
+Cache-Control: max-age=86400
+```
+
+### 動的コンテンツのキャッシュ
+
+```http
+# APIレスポンス: 短いキャッシュ
+Cache-Control: max-age=60, must-revalidate
+
+# ユーザー固有のコンテンツ: キャッシュしない
+Cache-Control: private, no-cache
+```
+
+## 5. Service Workerとキャッシュ
+
+### Service Workerでのキャッシュ
+
+```javascript
+// Service Workerでのキャッシュ戦略
+self.addEventListener('fetch', event => {
+  event.respondWith(
+    caches.match(event.request).then(response => {
+      // キャッシュがある場合は返す
+      if (response) {
+        return response;
+      }
+      // キャッシュがない場合はネットワークから取得
+      return fetch(event.request).then(response => {
+        // キャッシュに保存
+        const responseToCache = response.clone();
+        caches.open('v1').then(cache => {
+          cache.put(event.request, responseToCache);
+        });
+        return response;
+      });
+    })
+  );
+});
+```
+
+## 6. CDNキャッシュ
+
+### CDNとは
+
+CDN（Content Delivery Network）は、地理的に分散したサーバーでコンテンツをキャッシュし、ユーザーに近いサーバーから配信する仕組みです。
+
+```
+ユーザー（東京）
+    ↓
+CDNエッジサーバー（東京）← キャッシュから配信（高速）
+    ↓（キャッシュなしの場合）
+オリジンサーバー（米国）← 元のサーバーから取得
+```
+
+### CDNのメリット
+
+- **高速化**: ユーザーに近いサーバーから配信
+- **負荷分散**: オリジンサーバーの負荷を軽減
+- **可用性**: 複数のサーバーで冗長化
+
+これで、Webキャッシュの仕組みと実務での使い方を理解できるようになりました。

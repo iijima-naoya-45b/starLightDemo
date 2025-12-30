@@ -1,0 +1,244 @@
+---
+title: スクリーンショットと動画
+sidebar:
+    label: スクリーンショットと動画
+---
+
+# Playwrightスクリーンショットと動画完全ガイド
+
+Playwrightでスクリーンショットと動画を取得する方法を、実務での使い方とともに詳しく解説します。
+
+## 1. スクリーンショットの取得
+
+### 基本的なスクリーンショット
+
+```javascript
+import { test, expect } from '@playwright/test';
+
+test('基本的なスクリーンショット', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // ページ全体のスクリーンショット
+  await page.screenshot({ path: 'screenshot.png' });
+  
+  // フルページのスクリーンショット（スクロール可能な部分も含む）
+  await page.screenshot({ path: 'full-page.png', fullPage: true });
+});
+```
+
+### 要素のスクリーンショット
+
+```javascript
+test('要素のスクリーンショット', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // 特定の要素のスクリーンショット
+  const element = page.getByRole('button', { name: 'Submit' });
+  await element.screenshot({ path: 'button.png' });
+  
+  // 複数の要素のスクリーンショット
+  const cards = page.getByTestId('product-card');
+  const count = await cards.count();
+  for (let i = 0; i < count; i++) {
+    await cards.nth(i).screenshot({ path: `card-${i}.png` });
+  }
+});
+```
+
+### スクリーンショットの設定
+
+```javascript
+test('スクリーンショットの設定', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  await page.screenshot({
+    path: 'screenshot.png',
+    fullPage: true, // フルページ
+    clip: { x: 0, y: 0, width: 800, height: 600 }, // 特定の領域
+    animations: 'disabled', // アニメーションを無効化
+    caret: 'hide', // キャレットを非表示
+    scale: 'css', // CSSスケールを使用
+  });
+});
+```
+
+### 自動スクリーンショット（設定ファイル）
+
+```javascript
+// playwright.config.js
+module.exports = defineConfig({
+  use: {
+    // 失敗時のみスクリーンショットを取得
+    screenshot: 'only-on-failure',
+    
+    // または、常に取得
+    // screenshot: 'on',
+    
+    // または、取得しない
+    // screenshot: 'off',
+  },
+});
+```
+
+### スクリーンショットの比較（Visual Regression Testing）
+
+```javascript
+test('ビジュアルリグレッションテスト', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // スクリーンショットを取得して比較
+  await expect(page).toHaveScreenshot('homepage.png');
+  
+  // 要素のスクリーンショットを比較
+  await expect(page.getByTestId('header')).toHaveScreenshot('header.png');
+  
+  // 許容誤差を設定
+  await expect(page).toHaveScreenshot('homepage.png', {
+    threshold: 0.2, // 20%の違いまで許容
+    maxDiffPixels: 100, // 最大100ピクセルの違いまで許容
+  });
+});
+```
+
+## 2. 動画の取得
+
+### 基本的な動画取得
+
+```javascript
+test('基本的な動画取得', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // 動画は自動的に記録される（設定ファイルで有効化した場合）
+  await page.getByRole('button', { name: 'Click me' }).click();
+  // 動画は test-results/ ディレクトリに保存される
+});
+```
+
+### 動画の設定（設定ファイル）
+
+```javascript
+// playwright.config.js
+module.exports = defineConfig({
+  use: {
+    // 失敗時のみ動画を保存
+    video: 'retain-on-failure',
+    
+    // または、常に保存
+    // video: 'on',
+    
+    // または、保存しない
+    // video: 'off',
+    
+    // 動画のサイズを指定
+    videoSize: { width: 1280, height: 720 },
+  },
+});
+```
+
+### 動画の手動記録
+
+```javascript
+test('手動で動画を記録', async ({ page, context }) => {
+  // 動画の記録を開始
+  await page.video().path(); // 動画ファイルのパスを取得
+  
+  await page.goto('https://example.com');
+  await page.getByRole('button', { name: 'Click me' }).click();
+  
+  // 動画は自動的に保存される
+});
+```
+
+## 3. 実務での活用例
+
+### パターン1: デバッグ用のスクリーンショット
+
+```javascript
+test('デバッグ用スクリーンショット', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  try {
+    await page.getByRole('button', { name: 'Submit' }).click();
+  } catch (error) {
+    // エラー発生時にスクリーンショットを取得
+    await page.screenshot({ 
+      path: `error-${Date.now()}.png`,
+      fullPage: true 
+    });
+    throw error;
+  }
+});
+```
+
+### パターン2: テストの各ステップでスクリーンショット
+
+```javascript
+test('各ステップでスクリーンショット', async ({ page }) => {
+  await page.goto('https://example.com');
+  await page.screenshot({ path: 'step1-initial.png' });
+  
+  await page.getByLabel('Username').fill('testuser');
+  await page.screenshot({ path: 'step2-filled-username.png' });
+  
+  await page.getByLabel('Password').fill('password123');
+  await page.screenshot({ path: 'step3-filled-password.png' });
+  
+  await page.getByRole('button', { name: 'Log in' }).click();
+  await page.screenshot({ path: 'step4-after-login.png' });
+});
+```
+
+### パターン3: CI/CDでの動画とスクリーンショット
+
+```javascript
+// playwright.config.js
+module.exports = defineConfig({
+  use: {
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+    trace: 'on-first-retry',
+  },
+  
+  reporter: [
+    ['html', { 
+      outputFolder: 'playwright-report',
+      open: 'never' 
+    }],
+  ],
+});
+```
+
+## 4. よくある問題と解決策
+
+### 問題1: スクリーンショットが取得されない
+
+**解決策**: パスの確認と権限の確認
+
+```javascript
+test('スクリーンショットのパス確認', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // 絶対パスを使用
+  await page.screenshot({ 
+    path: path.join(__dirname, 'screenshots', 'test.png') 
+  });
+});
+```
+
+### 問題2: 動画ファイルが大きすぎる
+
+**解決策**: 動画の圧縮設定
+
+```javascript
+// playwright.config.js
+module.exports = defineConfig({
+  use: {
+    video: {
+      mode: 'retain-on-failure',
+      size: { width: 1280, height: 720 }, // 解像度を下げる
+    },
+  },
+});
+```
+
+これで、Playwrightでのスクリーンショットと動画の取得方法を理解できるようになりました。
