@@ -1,0 +1,424 @@
+---
+title: "インフラの非機能要件"
+label: "インフラの非機能要件"
+---
+
+## インフラの非機能要件
+
+インフラの非機能要件は、システム全体の安定性、可用性、セキュリティに直接影響する重要な要件です。
+
+### インフラで着目すべき非機能要件
+
+#### 1. 可用性要件
+
+**稼働率:**
+- **目標稼働率**: 99.9%（年間約8.76時間のダウンタイム）
+- **目標稼働率**: 99.99%（年間約52.56分のダウンタイム）
+- **目標稼働率**: 99.999%（年間約5.26分のダウンタイム）
+
+**実装例:**
+
+```yaml
+# Kubernetesでの可用性設定
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server
+spec:
+  replicas: 3  # 複数のレプリカで可用性を確保
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # ダウンタイムなしで更新
+  template:
+    spec:
+      containers:
+      - name: api-server
+        image: api-server:latest
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+```
+
+**冗長化:**
+- **マルチAZ構成**: 複数のアベイラビリティゾーンに配置
+- **マルチリージョン構成**: 複数のリージョンに配置
+- **データベースレプリケーション**: マスター・スレーブ構成
+
+**実装例:**
+
+```yaml
+# TerraformでのマルチAZ構成
+resource "aws_db_instance" "main" {
+  identifier = "main-db"
+  engine     = "postgres"
+  instance_class = "db.t3.medium"
+  
+  # マルチAZ構成
+  multi_az = true
+  
+  # 自動バックアップ
+  backup_retention_period = 7
+  backup_window = "03:00-04:00"
+  
+  # 自動マイナーバージョンアップグレード
+  auto_minor_version_upgrade = true
+}
+```
+
+#### 2. スケーラビリティ要件
+
+**自動スケーリング:**
+- **水平スケーリング**: サーバー台数を増減
+- **垂直スケーリング**: サーバースペックを変更
+- **スケーリングポリシー**: CPU使用率、メモリ使用率、リクエスト数
+
+**実装例:**
+
+```yaml
+# Kubernetesでの自動スケーリング
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-server-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-server
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+```
+
+**ロードバランシング:**
+- **ALB（Application Load Balancer）**: アプリケーションレベルのロードバランシング
+- **NLB（Network Load Balancer）**: ネットワークレベルのロードバランシング
+- **セッションアフィニティ**: セッションの維持
+
+**実装例:**
+
+```yaml
+# TerraformでのALB設定
+resource "aws_lb" "main" {
+  name               = "main-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = aws_subnet.public[*].id
+  
+  enable_deletion_protection = false
+  enable_http2               = true
+  enable_cross_zone_load_balancing = true
+}
+
+resource "aws_lb_target_group" "api" {
+  name     = "api-target-group"
+  port     = 8080
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.main.id
+  
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    timeout             = 5
+    interval            = 30
+    path                = "/health"
+    matcher             = "200"
+  }
+  
+  stickiness {
+    enabled = true
+    type    = "lb_cookie"
+    cookie_duration = 86400
+  }
+}
+```
+
+#### 3. セキュリティ要件
+
+**ネットワークセキュリティ:**
+- **VPC**: プライベートネットワークの構築
+- **セキュリティグループ**: ファイアウォールルール
+- **WAF（Web Application Firewall）**: アプリケーションレベルの保護
+
+**実装例:**
+
+```yaml
+# Terraformでのセキュリティグループ設定
+resource "aws_security_group" "api" {
+  name        = "api-sg"
+  description = "Security group for API servers"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "HTTP from ALB"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# WAF設定
+resource "aws_wafv2_web_acl" "main" {
+  name        = "main-waf"
+  scope       = "REGIONAL"
+  description = "WAF for API"
+
+  default_action {
+    allow {}
+  }
+
+  rule {
+    name     = "AWSManagedRulesCommonRuleSet"
+    priority = 1
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesCommonRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "CommonRuleSetMetric"
+      sampled_requests_enabled   = true
+    }
+  }
+}
+```
+
+**データ暗号化:**
+- **転送中の暗号化**: TLS/SSL
+- **保存時の暗号化**: データベースの暗号化
+- **キー管理**: AWS KMS、HashiCorp Vault
+
+**実装例:**
+
+```yaml
+# Terraformでのデータベース暗号化
+resource "aws_db_instance" "main" {
+  identifier = "main-db"
+  engine     = "postgres"
+  
+  # 保存時の暗号化
+  storage_encrypted = true
+  kms_key_id       = aws_kms_key.db.id
+  
+  # SSL接続を強制
+  parameter {
+    name  = "rds.force_ssl"
+    value = "1"
+  }
+}
+```
+
+#### 4. 監視・ログ要件
+
+**監視:**
+- **メトリクス収集**: CloudWatch、Prometheus
+- **アラート**: SNS、PagerDuty
+- **ダッシュボード**: Grafana、CloudWatch Dashboard
+
+**実装例:**
+
+```yaml
+# CloudWatchアラーム設定
+resource "aws_cloudwatch_metric_alarm" "cpu_high" {
+  alarm_name          = "api-cpu-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/ECS"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 80
+  alarm_description   = "This metric monitors ecs cpu utilization"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  
+  dimensions = {
+    ServiceName = aws_ecs_service.api.name
+    ClusterName = aws_ecs_cluster.main.name
+  }
+}
+```
+
+**ログ:**
+- **ログの集約**: CloudWatch Logs、ELK Stack
+- **ログの保持期間**: 30日〜1年
+- **ログの分析**: CloudWatch Insights、Kibana
+
+**実装例:**
+
+```yaml
+# CloudWatch Logs設定
+resource "aws_cloudwatch_log_group" "api" {
+  name              = "/ecs/api"
+  retention_in_days = 30
+}
+
+resource "aws_ecs_task_definition" "api" {
+  family = "api"
+  
+  container_definitions = jsonencode([{
+    name  = "api"
+    image = "api:latest"
+    
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.api.name
+        "awslogs-region"        = "ap-northeast-1"
+        "awslogs-stream-prefix" = "ecs"
+      }
+    }
+  }])
+}
+```
+
+#### 5. バックアップ・災害対策要件
+
+**バックアップ:**
+- **自動バックアップ**: 日次、週次
+- **バックアップの保持期間**: 30日〜1年
+- **バックアップの検証**: 定期的なリストアテスト
+
+**実装例:**
+
+```yaml
+# Terraformでのバックアップ設定
+resource "aws_db_instance" "main" {
+  identifier = "main-db"
+  
+  # 自動バックアップ
+  backup_retention_period = 7
+  backup_window          = "03:00-04:00"
+  
+  # スナップショット
+  snapshot_identifier = null
+  copy_tags_to_snapshot = true
+}
+
+# 手動スナップショット
+resource "aws_db_snapshot" "manual" {
+  db_instance_identifier = aws_db_instance.main.id
+  db_snapshot_identifier = "manual-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
+}
+```
+
+**災害対策:**
+- **マルチリージョン構成**: 複数のリージョンに配置
+- **DR（Disaster Recovery）計画**: RTO、RPOの定義
+- **定期的なDRテスト**: 年1回以上
+
+#### 6. コスト最適化要件
+
+**リソースの最適化:**
+- **リザーブドインスタンス**: 長期利用の割引
+- **スポットインスタンス**: 一時的なワークロード
+- **リソースのライフサイクル管理**: 不要なリソースの削除
+
+**実装例:**
+
+```yaml
+# Terraformでのリザーブドインスタンス
+resource "aws_ec2_capacity_reservation" "main" {
+  instance_type     = "t3.medium"
+  instance_platform = "Linux/UNIX"
+  availability_zone = "ap-northeast-1a"
+  instance_count    = 1
+  end_date_type     = "unlimited"
+  instance_match_criteria = "open"
+}
+```
+
+### インフラの非機能要件チェックリスト
+
+#### 可用性
+- [ ] 稼働率が99.9%以上
+- [ ] マルチAZ構成が実装されている
+- [ ] データベースレプリケーションが実装されている
+- [ ] ヘルスチェックが実装されている
+
+#### スケーラビリティ
+- [ ] 自動スケーリングが実装されている
+- [ ] ロードバランシングが実装されている
+- [ ] 水平スケーリングが可能
+- [ ] スケーリングポリシーが適切に設定されている
+
+#### セキュリティ
+- [ ] VPCが適切に設定されている
+- [ ] セキュリティグループが適切に設定されている
+- [ ] WAFが実装されている
+- [ ] データ暗号化が実装されている
+- [ ] キー管理が適切に設定されている
+
+#### 監視・ログ
+- [ ] メトリクスが収集されている
+- [ ] アラートが設定されている
+- [ ] ダッシュボードが作成されている
+- [ ] ログが集約されている
+- [ ] ログの保持期間が適切に設定されている
+
+#### バックアップ・災害対策
+- [ ] 自動バックアップが実装されている
+- [ ] バックアップの保持期間が適切に設定されている
+- [ ] DR計画が策定されている
+- [ ] 定期的なDRテストが実施されている
+
+#### コスト最適化
+- [ ] リソースの使用状況が監視されている
+- [ ] 不要なリソースが削除されている
+- [ ] リザーブドインスタンスが検討されている
+- [ ] コストアラートが設定されている
+
+### まとめ
+
+インフラの非機能要件：
+
+- **可用性**: 稼働率、冗長化、マルチAZ構成
+- **スケーラビリティ**: 自動スケーリング、ロードバランシング
+- **セキュリティ**: ネットワークセキュリティ、データ暗号化
+- **監視・ログ**: メトリクス収集、アラート、ログ集約
+- **バックアップ・災害対策**: 自動バックアップ、DR計画
+- **コスト最適化**: リソースの最適化、コスト監視
+
+適切な非機能要件を定義・実装することで、安定したインフラを構築できます。
+

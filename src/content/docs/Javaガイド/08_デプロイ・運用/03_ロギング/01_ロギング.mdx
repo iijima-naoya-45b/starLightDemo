@@ -1,0 +1,586 @@
+---
+title: "ロギング"
+label: "ロギング"
+---
+
+## Spring Bootでのロギング
+
+Spring Bootでは、**SLF4J（Simple Logging Facade for Java）**と**Logback**を使用したロギング機能が標準で提供されています。この章では、ロギングの設定方法と実践的な使い方について詳しく解説します。
+
+### ロギングの基本概念
+
+#### SLF4JとLogbackの関係
+
+**SLF4J（Simple Logging Facade for Java）とは:**
+
+SLF4Jは、**ロギングのファサード（抽象化レイヤー）**です。具体的には：
+
+- **APIを提供するだけ**: SLF4J自体はログを出力する実装を持っていません
+- **実装に依存しない**: コードを変更せずに、異なるロギング実装を切り替え可能
+- **統一されたインターフェース**: どのロギング実装を使っても、同じAPIでログを出力できる
+
+**Logbackとは:**
+
+Logbackは、**SLF4Jの実装（実際にログを出力するライブラリ）**です。具体的には：
+
+- **SLF4Jのネイティブ実装**: LogbackはSLF4Jの作者によって開発された、SLF4Jの公式実装
+- **Spring Bootのデフォルト**: Spring Bootでは、デフォルトでLogbackが使用される
+- **高性能**: Log4jの後継として設計され、パフォーマンスが高い
+- **柔軟な設定**: XML設定ファイル（`logback-spring.xml`）で詳細な設定が可能
+
+**なぜSLF4J + Logbackの組み合わせなのか:**
+
+```
+┌─────────────────────────────────────────┐
+│  あなたのコード（アプリケーション）      │
+│  log.info("メッセージ");                 │
+└──────────────┬──────────────────────────┘
+               │ SLF4J APIを呼び出す
+               ↓
+┌─────────────────────────────────────────┐
+│  SLF4J（ファサード/抽象化レイヤー）      │
+│  - 統一されたAPIを提供                   │
+│  - 実装に依存しない                      │
+└──────────────┬──────────────────────────┘
+               │ 実装を呼び出す
+               ↓
+┌─────────────────────────────────────────┐
+│  Logback（実装）                         │
+│  - 実際にログを出力                      │
+│  - ファイルに書き込む                    │
+│  - コンソールに出力                      │
+└─────────────────────────────────────────┘
+```
+
+**メリット:**
+
+1. **実装の切り替えが容易**: コードを変更せずに、LogbackからLog4j2などに切り替え可能
+2. **パフォーマンスが高い**: LogbackはLog4jの後継として設計され、パフォーマンスが最適化されている
+3. **設定が柔軟**: XML設定ファイルで、ログの出力先、フォーマット、ローテーションなどを詳細に設定可能
+4. **Spring Bootとの統合**: Spring Bootがデフォルトでサポートしており、追加設定が不要
+
+**他のロギング実装との比較:**
+
+| 実装 | 説明 | 特徴 |
+|------|------|------|
+| **Logback** | SLF4Jのネイティブ実装 | Spring Bootのデフォルト、高性能、設定が柔軟 |
+| **Log4j2** | Apache Log4jの後継 | 非常に高性能、非同期ロギングに優れる |
+| **java.util.logging** | Java標準のロギング | JDKに含まれているが、機能が限定的 |
+| **Log4j** | 古いロギング実装 | 現在は非推奨（セキュリティ問題あり） |
+
+**実装例:**
+
+```java
+// あなたのコードでは、SLF4JのAPIを使用
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@Service
+public class UserService {
+    // SLF4JのLoggerを取得
+    private static final Logger log = LoggerFactory.getLogger(UserService.class);
+    
+    public void createUser(User user) {
+        // SLF4JのAPIを使用（実装はLogback）
+        log.info("Creating user: {}", user.getName());
+    }
+}
+```
+
+**実際の動作:**
+
+1. `log.info()`を呼び出すと、SLF4JのAPIが呼ばれる
+2. SLF4Jが、クラスパス上にあるLogbackの実装を見つける
+3. Logbackが実際にログを出力（コンソール、ファイルなど）
+4. `logback-spring.xml`の設定に従って、ログのフォーマットや出力先が決定される
+
+### 基本的なロギング
+
+#### Lombokを使用したロギング
+
+```java
+@Service
+@Slf4j  // ロガーを自動生成（logという変数が使用可能）
+public class UserService {
+    
+    public User createUser(UserCreateRequest request) {
+        log.info("Creating user: {}", request.getName());
+        
+        try {
+            User user = new User();
+            user.setName(request.getName());
+            user.setEmail(request.getEmail());
+            
+            User savedUser = userRepository.save(user);
+            
+            log.debug("User created successfully: id={}, name={}", 
+                savedUser.getId(), savedUser.getName());
+            
+            return savedUser;
+        } catch (Exception e) {
+            log.error("Failed to create user: name={}", request.getName(), e);
+            throw e;
+        }
+    }
+}
+```
+
+#### 手動でロガーを取得
+
+```java
+@Service
+public class UserService {
+    
+    // SLF4JのLoggerを使用
+    private static final Logger log = LoggerFactory.getLogger(UserService.class);
+    
+    public User findById(Long id) {
+        log.info("Finding user by id: {}", id);
+        
+        User user = userRepository.findById(id)
+            .orElseThrow(() -> {
+                log.warn("User not found: id={}", id);
+                return new UserNotFoundException("User not found: " + id);
+            });
+        
+        log.debug("User found: id={}, name={}", user.getId(), user.getName());
+        return user;
+    }
+}
+```
+
+### ログレベル
+
+ログレベルは、重要度に応じて以下の順序で定義されています：
+
+1. **TRACE**: 最も詳細な情報（デバッグ用）
+2. **DEBUG**: デバッグ情報
+3. **INFO**: 一般的な情報（デフォルト）
+4. **WARN**: 警告情報
+5. **ERROR**: エラー情報
+
+**使用例:**
+
+```java
+@Service
+@Slf4j
+public class OrderService {
+    
+    public void processOrder(Order order) {
+        // TRACE: 非常に詳細な情報
+        log.trace("Processing order: id={}, items={}", order.getId(), order.getItems());
+        
+        // DEBUG: デバッグ情報
+        log.debug("Order processing started: id={}", order.getId());
+        
+        // INFO: 一般的な情報
+        log.info("Order processed successfully: id={}, total={}", 
+            order.getId(), order.getTotal());
+        
+        // WARN: 警告
+        if (order.getTotal() > 100000) {
+            log.warn("Large order detected: id={}, total={}", 
+                order.getId(), order.getTotal());
+        }
+        
+        // ERROR: エラー
+        try {
+            paymentService.processPayment(order);
+        } catch (PaymentException e) {
+            log.error("Payment processing failed: orderId={}", order.getId(), e);
+            throw e;
+        }
+    }
+}
+```
+
+### application.propertiesでのロギング設定
+
+#### 基本的な設定
+
+```properties
+# ルートロガーのレベル
+logging.level.root=INFO
+
+# パッケージ別のログレベル
+logging.level.com.example.myapp=DEBUG
+logging.level.org.springframework.web=INFO
+logging.level.org.hibernate.SQL=DEBUG
+logging.level.org.hibernate.type.descriptor.sql.BasicBinder=TRACE
+
+# ログファイルの出力先
+logging.file.name=logs/application.log
+
+# または、ログディレクトリを指定（ファイル名は自動生成）
+logging.file.path=logs
+
+# ログファイルの最大サイズ（デフォルト: 10MB）
+logging.file.max-size=10MB
+
+# 保持するログファイル数（デフォルト: 7）
+logging.file.max-history=30
+
+# ログの出力形式
+logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss} - %msg%n
+logging.pattern.file=%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n
+```
+
+#### 詳細な設定例
+
+```properties
+# ログレベル設定
+logging.level.root=WARN
+logging.level.com.example.myapp=DEBUG
+logging.level.org.springframework=INFO
+logging.level.org.hibernate=WARN
+
+# SQLクエリのログ出力
+logging.level.org.hibernate.SQL=DEBUG
+logging.level.org.hibernate.type.descriptor.sql.BasicBinder=TRACE
+
+# ファイル出力設定
+logging.file.name=logs/myapp.log
+logging.file.max-size=50MB
+logging.file.max-history=30
+logging.file.total-size-cap=1GB
+
+# コンソール出力設定
+logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n
+
+# ファイル出力設定
+logging.pattern.file=%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n
+
+# ログの色付け（コンソールのみ）
+spring.output.ansi.enabled=always
+```
+
+### logback-spring.xmlでの詳細設定
+
+`application.properties`では設定できない詳細な設定は、`logback-spring.xml`を使用します。
+
+#### logback-spring.xmlの作成
+
+`src/main/resources/logback-spring.xml`を作成：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    
+    <!-- プロパティの定義 -->
+    <property name="LOG_PATH" value="logs"/>
+    <property name="LOG_FILE" value="myapp"/>
+    
+    <!-- コンソールアペンダー -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+    
+    <!-- ファイルアペンダー（日次ローテーション） -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/${LOG_FILE}.log</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/${LOG_FILE}-%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+    
+    <!-- エラーログ専用アペンダー -->
+    <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/${LOG_FILE}-error.log</file>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level>
+        </filter>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/${LOG_FILE}-error-%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>90</maxHistory>
+        </rollingPolicy>
+    </appender>
+    
+    <!-- 非同期アペンダー（パフォーマンス向上） -->
+    <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <appender-ref ref="FILE"/>
+    </appender>
+    
+    <!-- ルートロガー -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+        <appender-ref ref="ERROR_FILE"/>
+    </root>
+    
+    <!-- パッケージ別のログレベル -->
+    <logger name="com.example.myapp" level="DEBUG"/>
+    <logger name="org.springframework.web" level="INFO"/>
+    <logger name="org.hibernate.SQL" level="DEBUG"/>
+    <logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="TRACE"/>
+    
+    <!-- プロファイル別の設定 -->
+    <springProfile name="dev">
+        <root level="DEBUG">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+    
+    <springProfile name="prod">
+        <root level="WARN">
+            <appender-ref ref="ASYNC_FILE"/>
+            <appender-ref ref="ERROR_FILE"/>
+        </root>
+    </springProfile>
+    
+</configuration>
+```
+
+### ログパターンのカスタマイズ
+
+#### よく使うパターン
+
+```xml
+<!-- シンプルなパターン -->
+<pattern>%d{yyyy-MM-dd HH:mm:ss} - %msg%n</pattern>
+
+<!-- 詳細なパターン（推奨） -->
+<pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n</pattern>
+
+<!-- 色付け付きパターン（コンソール用） -->
+<pattern>%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr([%thread]){blue} %clr(%-5level){highlight} %clr(%logger{50}){cyan} - %msg%n</pattern>
+```
+
+**パターンの説明:**
+- `%d`: 日時
+- `%thread`: スレッド名
+- `%-5level`: ログレベル（左揃え、5文字）
+- `%logger{50}`: ロガー名（最大50文字）
+- `%msg`: ログメッセージ
+- `%n`: 改行
+
+### 構造化ログ（JSON形式）
+
+本番環境では、ログ管理ツール（ELK、Splunkなど）で解析しやすいJSON形式でログを出力することが推奨されます。
+
+#### logstash-logback-encoderの追加
+
+`pom.xml`に追加：
+
+```xml
+<dependency>
+    <groupId>net.logstash.logback</groupId>
+    <artifactId>logstash-logback-encoder</artifactId>
+    <version>7.4</version>
+</dependency>
+```
+
+#### JSON形式のログ設定
+
+```xml
+<appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>${LOG_PATH}/${LOG_FILE}.json</file>
+    <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+        <providers>
+            <timestamp>
+                <timeZone>UTC</timeZone>
+            </timestamp>
+            <version/>
+            <logLevel/>
+            <message/>
+            <loggerName/>
+            <threadName/>
+            <mdc/>
+            <stackTrace/>
+        </providers>
+    </encoder>
+    <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+        <fileNamePattern>${LOG_PATH}/${LOG_FILE}-%d{yyyy-MM-dd}.json</fileNamePattern>
+        <maxHistory>30</maxHistory>
+    </rollingPolicy>
+</appender>
+```
+
+### MDC（Mapped Diagnostic Context）の使用
+
+MDCを使用して、リクエストごとの情報をログに含めることができます。
+
+#### MDCの設定
+
+```java
+@Component
+@Slf4j
+public class LoggingFilter implements Filter {
+    
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response, 
+                        FilterChain chain) throws IOException, ServletException {
+        try {
+            // リクエストIDを生成
+            String requestId = UUID.randomUUID().toString();
+            MDC.put("requestId", requestId);
+            MDC.put("ip", request.getRemoteAddr());
+            
+            log.info("Request started: {}", ((HttpServletRequest) request).getRequestURI());
+            
+            chain.doFilter(request, response);
+        } finally {
+            MDC.clear();
+        }
+    }
+}
+```
+
+#### MDCの使用
+
+```java
+@Service
+@Slf4j
+public class UserService {
+    
+    public User createUser(UserCreateRequest request) {
+        // MDCにユーザーIDを設定
+        MDC.put("userId", request.getEmail());
+        
+        log.info("Creating user: {}", request.getName());
+        
+        // 処理...
+        
+        // MDCをクリア（必要に応じて）
+        MDC.remove("userId");
+        
+        return user;
+    }
+}
+```
+
+#### logback-spring.xmlでMDCを出力
+
+```xml
+<pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{requestId}] %-5level %logger{50} - %msg%n</pattern>
+```
+
+### パフォーマンス最適化
+
+#### 非同期ロギング
+
+大量のログを出力する場合、非同期アペンダーを使用してパフォーマンスを向上させます。
+
+```xml
+<appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
+    <queueSize>512</queueSize>
+    <discardingThreshold>0</discardingThreshold>
+    <neverBlock>true</neverBlock>
+    <appender-ref ref="FILE"/>
+</appender>
+```
+
+#### 条件付きログ出力
+
+パフォーマンスを考慮して、ログレベルをチェックしてからログを出力します。
+
+```java
+@Service
+@Slf4j
+public class UserService {
+    
+    public void processUsers(List<User> users) {
+        // 悪い例: 常に文字列を構築
+        log.debug("Processing " + users.size() + " users");
+        
+        // 良い例: ログレベルをチェックしてから構築
+        if (log.isDebugEnabled()) {
+            log.debug("Processing {} users", users.size());
+        }
+        
+        // さらに良い例: ラムダ式を使用（Java 8以降）
+        log.debug("Processing users", () -> "Count: " + users.size());
+    }
+}
+```
+
+### 環境別のログ設定
+
+#### プロファイル別の設定
+
+```xml
+<!-- 開発環境 -->
+<springProfile name="dev">
+    <root level="DEBUG">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</springProfile>
+
+<!-- 本番環境 -->
+<springProfile name="prod">
+    <root level="WARN">
+        <appender-ref ref="ASYNC_FILE"/>
+        <appender-ref ref="ERROR_FILE"/>
+    </root>
+</springProfile>
+```
+
+### ログのベストプラクティス
+
+1. **適切なログレベルの使用**
+   - TRACE/DEBUG: 開発時のみ
+   - INFO: 重要な処理の開始・終了
+   - WARN: 予期しない状況
+   - ERROR: エラー発生時
+
+2. **機密情報の保護**
+   ```java
+   // 悪い例
+   log.info("User password: {}", user.getPassword());
+   
+   // 良い例
+   log.info("User created: id={}, email={}", user.getId(), maskEmail(user.getEmail()));
+   ```
+
+3. **構造化されたログメッセージ**
+   ```java
+   // 悪い例
+   log.info("User " + userId + " created order " + orderId);
+   
+   // 良い例
+   log.info("Order created: userId={}, orderId={}", userId, orderId);
+   ```
+
+4. **例外の適切な記録**
+   ```java
+   try {
+       // 処理
+   } catch (Exception e) {
+       log.error("Failed to process order: orderId={}", orderId, e);
+       // 例外を再スロー
+       throw e;
+   }
+   ```
+
+5. **パフォーマンスを考慮したログ出力**
+   - 高頻度で呼ばれるメソッドでは、ログレベルをチェック
+   - 非同期アペンダーを使用
+
+### まとめ
+
+Spring Bootでのロギングのポイント：
+
+- **SLF4J + Logback**: 標準のロギング実装
+- **ログレベル**: TRACE、DEBUG、INFO、WARN、ERROR
+- **設定方法**: `application.properties`または`logback-spring.xml`
+- **MDC**: リクエストごとの情報をログに含める
+- **非同期ロギング**: パフォーマンス向上
+- **環境別設定**: プロファイルを使用して環境ごとに設定
+
+適切なロギング設定により、アプリケーションの動作を監視し、問題を迅速に特定できます。
+
+

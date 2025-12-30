@@ -1,0 +1,266 @@
+---
+title: "Branded TypesとNominal Typing"
+label: "Branded TypesとNominal Typing"
+---
+
+## Branded TypesとNominal Typing
+
+TypeScriptは構造的型システム（Structural Typing）を採用していますが、時には名目的型システム（Nominal Typing）のような動作が必要な場合があります。**Branded Types**を使用することで、型安全性を向上させることができます。
+
+### なぜBranded Typesが必要なのか
+
+#### 構造的型システムの課題
+
+**問題のあるコード:**
+
+```typescript
+type UserId = string;
+type OrderId = string;
+
+function getUser(id: UserId) {
+  // ユーザーを取得
+}
+
+function getOrder(id: OrderId) {
+  // 注文を取得
+}
+
+// 問題: UserIdとOrderIdは同じstring型のため、互換性がある
+const userId: UserId = "user-123";
+const orderId: OrderId = "order-456";
+
+getUser(orderId); // コンパイルエラーにならない（問題！）
+getOrder(userId); // コンパイルエラーにならない（問題！）
+```
+
+**Branded Typesの解決:**
+
+```typescript
+type UserId = string & { __brand: 'UserId' };
+type OrderId = string & { __brand: 'OrderId' };
+
+function getUser(id: UserId) {
+  // ユーザーを取得
+}
+
+function getOrder(id: OrderId) {
+  // 注文を取得
+}
+
+const userId = "user-123" as UserId;
+const orderId = "order-456" as OrderId;
+
+getUser(orderId); // コンパイルエラー（正しい！）
+getOrder(userId); // コンパイルエラー（正しい！）
+```
+
+**メリット:**
+1. **型安全性**: 異なる型の値を誤って使用することを防ぐ
+2. **意図の明確化**: 型名から値の意味が明確になる
+3. **リファクタリング**: 型の変更が容易になる
+
+### Branded Typesの実装
+
+#### 基本的なBranded Type
+
+```typescript
+// Branded Typeの定義
+type Brand<T, B> = T & { __brand: B };
+
+type UserId = Brand<string, 'UserId'>;
+type OrderId = Brand<string, 'OrderId'>;
+type Email = Brand<string, 'Email'>;
+
+// 値の作成
+function createUserId(id: string): UserId {
+  return id as UserId;
+}
+
+function createEmail(email: string): Email {
+  if (!email.includes('@')) {
+    throw new Error('Invalid email');
+  }
+  return email as Email;
+}
+
+// 使用例
+const userId = createUserId("user-123");
+const email = createEmail("user@example.com");
+```
+
+#### より厳密なBranded Type
+
+```typescript
+// より厳密な実装
+declare const __brand: unique symbol;
+type Branded<T, B> = T & { [__brand]: B };
+
+type UserId = Branded<string, 'UserId'>;
+type OrderId = Branded<string, 'OrderId'>;
+
+// 値の作成（型アサーションが必要）
+function toUserId(id: string): UserId {
+  return id as UserId;
+}
+
+function toOrderId(id: string): OrderId {
+  return id as OrderId;
+}
+```
+
+### 実践的な例: 金額と通貨
+
+```typescript
+type Currency = 'JPY' | 'USD' | 'EUR';
+
+type Money<C extends Currency> = {
+  amount: number;
+  currency: C;
+} & { __brand: 'Money' };
+
+type JPY = Money<'JPY'>;
+type USD = Money<'USD'>;
+type EUR = Money<'EUR'>;
+
+function createJPY(amount: number): JPY {
+  return { amount, currency: 'JPY' } as JPY;
+}
+
+function createUSD(amount: number): USD {
+  return { amount, currency: 'USD' } as USD;
+}
+
+// 異なる通貨の加算を防ぐ
+function addMoney<C extends Currency>(
+  a: Money<C>,
+  b: Money<C>
+): Money<C> {
+  if (a.currency !== b.currency) {
+    throw new Error('Cannot add different currencies');
+  }
+  return { amount: a.amount + b.amount, currency: a.currency } as Money<C>;
+}
+
+const jpy1 = createJPY(1000);
+const jpy2 = createJPY(2000);
+const usd1 = createUSD(10);
+
+addMoney(jpy1, jpy2); // OK
+addMoney(jpy1, usd1); // コンパイルエラー
+```
+
+### 実践的な例: バリデーション付き型
+
+```typescript
+type NonEmptyString = string & { __brand: 'NonEmptyString' };
+
+function toNonEmptyString(str: string): NonEmptyString {
+  if (str.length === 0) {
+    throw new Error('String cannot be empty');
+  }
+  return str as NonEmptyString;
+}
+
+type PositiveNumber = number & { __brand: 'PositiveNumber' };
+
+function toPositiveNumber(n: number): PositiveNumber {
+  if (n <= 0) {
+    throw new Error('Number must be positive');
+  }
+  return n as PositiveNumber;
+}
+
+// 使用例
+function calculateArea(width: PositiveNumber, height: PositiveNumber): number {
+  return width * height;
+}
+
+const width = toPositiveNumber(10);
+const height = toPositiveNumber(5);
+calculateArea(width, height); // OK
+
+calculateArea(-10, 5); // コンパイルエラー
+```
+
+### 実践的な例: ID型の統一
+
+```typescript
+// すべてのID型を統一
+type ID<T extends string> = string & { __brand: T };
+
+type UserId = ID<'UserId'>;
+type OrderId = ID<'OrderId'>;
+type ProductId = ID<'ProductId'>;
+
+// ID作成関数
+function createId<T extends string>(value: string, brand: T): ID<T> {
+  return value as ID<T>;
+}
+
+// ジェネリックなID処理
+function findById<T extends string>(id: ID<T>, entities: Map<string, any>): any {
+  return entities.get(id);
+}
+
+const userId = createId("user-123", "UserId");
+const orderId = createId("order-456", "OrderId");
+
+const users = new Map<string, any>([["user-123", { name: "John" }]]);
+const orders = new Map<string, any>([["order-456", { total: 1000 }]]);
+
+findById(userId, users); // OK
+findById(orderId, orders); // OK
+findById(userId, orders); // 型安全性は保たれるが、実行時エラーの可能性
+```
+
+### 型パフォーマンスの最適化
+
+#### 大きな型の扱い
+
+```typescript
+// 問題: 大きな型の計算が遅い
+type LargeType = {
+  field1: string;
+  field2: number;
+  // ... 100個のフィールド
+};
+
+// 解決: 型の分割と再利用
+type BaseType = {
+  field1: string;
+  field2: number;
+};
+
+type ExtendedType = BaseType & {
+  field3: boolean;
+  // ... 追加フィールド
+};
+```
+
+#### 条件型の最適化
+
+```typescript
+// 問題: 複雑な条件型が遅い
+type ComplexCondition<T> = T extends string
+  ? T extends `${infer U}`
+    ? U extends `${infer V}`
+      ? V
+      : never
+    : never
+  : never;
+
+// 解決: シンプルな条件型に分割
+type ExtractFirstChar<T extends string> = T extends `${infer F}${string}` ? F : never;
+```
+
+### まとめ
+
+Branded TypesとNominal Typingのポイント：
+
+- **型安全性**: 異なる型の値を誤って使用することを防ぐ
+- **意図の明確化**: 型名から値の意味が明確になる
+- **バリデーション**: 値の作成時にバリデーションを実行
+- **パフォーマンス**: 型の計算を最適化
+
+Branded Typesは、TypeScriptの構造的型システムの制限を補完する強力なテクニックです。適切に使用することで、より安全で保守性の高いコードを書くことができます。
+

@@ -1,0 +1,87 @@
+---
+title: "デプロイメント"
+label: "デプロイメント"
+---
+
+## Laravelデプロイメント
+
+### 本番環境の設定
+
+```bash
+# 環境変数の設定
+# .envファイルを編集
+APP_ENV=production
+APP_DEBUG=false
+APP_URL=https://example.com
+
+# アプリケーションキーの生成
+php artisan key:generate
+
+# キャッシュの最適化
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+```
+
+### サーバー設定
+
+```nginx
+# Nginx設定例
+server {
+    listen 80;
+    server_name example.com;
+    root /var/www/my-app/public;
+
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-Content-Type-Options "nosniff";
+
+    index index.php;
+
+    charset utf-8;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location = /robots.txt  { access_log off; log_not_found off; }
+
+    error_page 404 /index.php;
+
+    location ~ \.php$ {
+        fastcgi_pass unix:/var/run/php/php8.1-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+}
+```
+
+### デプロイスクリプト
+
+```bash
+#!/bin/bash
+# deploy.sh
+
+# コードの取得
+git pull origin main
+
+# 依存関係のインストール
+composer install --no-dev --optimize-autoloader
+
+# マイグレーション
+php artisan migrate --force
+
+# キャッシュのクリアと再生成
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+
+# 権限の設定
+chmod -R 755 storage bootstrap/cache
+chown -R www-data:www-data storage bootstrap/cache
+```
+

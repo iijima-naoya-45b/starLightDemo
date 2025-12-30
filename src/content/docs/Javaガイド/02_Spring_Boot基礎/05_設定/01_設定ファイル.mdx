@@ -1,0 +1,510 @@
+---
+title: "設定ファイル"
+label: "設定ファイル"
+---
+
+## Spring Bootの設定ファイル
+
+Spring Bootでは、`application.properties`または`application.yml`を使用してアプリケーションの設定を行います。この章では、設定ファイルの使い方と実践的な設定例について詳しく解説します。
+
+### 設定ファイルの種類
+
+Spring Bootでは、以下の順序で設定ファイルが読み込まれます（後のものが優先）：
+
+1. `application.properties` / `application.yml`
+2. `application-{profile}.properties` / `application-{profile}.yml`
+3. 環境変数
+4. コマンドライン引数
+
+### application.properties vs application.yml
+
+#### application.properties
+
+**特徴:**
+- シンプルで読みやすい
+- キー=値の形式
+- ネストした設定はドット（.）で表現
+
+**例:**
+
+```properties
+# サーバー設定
+server.port=8080
+server.servlet.context-path=/api
+
+# データベース設定
+spring.datasource.url=jdbc:postgresql://localhost:5432/mydb
+spring.datasource.username=myuser
+spring.datasource.password=mypassword
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+# JPA設定
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+
+# ロギング設定
+logging.level.com.example.myapp=DEBUG
+logging.level.root=INFO
+```
+
+#### application.yml
+
+**特徴:**
+- 階層構造が視覚的に分かりやすい
+- YAML形式（インデントで階層を表現）
+- コメントが書きやすい
+
+**例:**
+
+```yaml
+# サーバー設定
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+# データベース設定
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/mydb
+    username: myuser
+    password: mypassword
+    driver-class-name: org.postgresql.Driver
+  
+  # JPA設定
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+# ロギング設定
+logging:
+  level:
+    com.example.myapp: DEBUG
+    root: INFO
+```
+
+**どちらを使うべきか:**
+- **application.properties**: シンプルな設定、既存プロジェクトとの互換性
+- **application.yml**: 複雑な設定、視覚的な階層構造が重要
+
+### 基本的な設定項目
+
+#### サーバー設定
+
+```properties
+# ポート番号
+server.port=8080
+
+# コンテキストパス
+server.servlet.context-path=/api
+
+# セッション設定
+server.servlet.session.timeout=30m
+server.servlet.session.cookie.name=MYAPP_SESSION
+
+# エラーページの設定
+server.error.whitelabel.enabled=false
+server.error.include-message=always
+server.error.include-stacktrace=on_param
+```
+
+#### データベース設定
+
+```properties
+# PostgreSQL
+spring.datasource.url=jdbc:postgresql://localhost:5432/mydb
+spring.datasource.username=myuser
+spring.datasource.password=mypassword
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+# コネクションプール設定（HikariCP）
+spring.datasource.hikari.maximum-pool-size=10
+spring.datasource.hikari.minimum-idle=5
+spring.datasource.hikari.connection-timeout=30000
+spring.datasource.hikari.idle-timeout=600000
+spring.datasource.hikari.max-lifetime=1800000
+
+# JPA設定
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+spring.jpa.properties.hibernate.jdbc.lob.non_contextual_creation=true
+```
+
+#### ロギング設定
+
+```properties
+# ログレベル
+logging.level.root=INFO
+logging.level.com.example.myapp=DEBUG
+logging.level.org.springframework.web=INFO
+logging.level.org.hibernate.SQL=DEBUG
+
+# ログファイル
+logging.file.name=logs/application.log
+logging.file.max-size=10MB
+logging.file.max-history=30
+
+# ログパターン
+logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss} - %msg%n
+logging.pattern.file=%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n
+```
+
+### プロファイル別の設定
+
+#### プロファイルの指定
+
+**コマンドラインから:**
+
+```bash
+# 開発環境
+java -jar myapp.jar --spring.profiles.active=dev
+
+# 本番環境
+java -jar myapp.jar --spring.profiles.active=prod
+```
+
+**環境変数から:**
+
+```bash
+export SPRING_PROFILES_ACTIVE=prod
+```
+
+**application.propertiesから:**
+
+```properties
+spring.profiles.active=dev
+```
+
+#### プロファイル別の設定ファイル
+
+**application-dev.properties（開発環境）:**
+
+```properties
+# 開発環境用設定
+server.port=8080
+
+spring.datasource.url=jdbc:h2:mem:testdb
+spring.datasource.driver-class-name=org.h2.Driver
+spring.jpa.hibernate.ddl-auto=create-drop
+spring.jpa.show-sql=true
+
+logging.level.com.example.myapp=DEBUG
+```
+
+**application-prod.properties（本番環境）:**
+
+```properties
+# 本番環境用設定
+server.port=8080
+
+spring.datasource.url=jdbc:postgresql://prod-db:5432/mydb
+spring.datasource.username=${DB_USERNAME}
+spring.datasource.password=${DB_PASSWORD}
+
+spring.jpa.hibernate.ddl-auto=validate
+spring.jpa.show-sql=false
+
+logging.level.com.example.myapp=INFO
+logging.level.root=WARN
+```
+
+**application.ymlでのプロファイル設定:**
+
+```yaml
+spring:
+  profiles:
+    active: dev
+
+---
+# 開発環境
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+
+logging:
+  level:
+    com.example.myapp: DEBUG
+
+---
+# 本番環境
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:postgresql://prod-db:5432/mydb
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+logging:
+  level:
+    com.example.myapp: INFO
+    root: WARN
+```
+
+### 環境変数とプレースホルダー
+
+#### 環境変数の使用
+
+機密情報（パスワード、APIキーなど）は環境変数から読み込むことが推奨されます。
+
+```properties
+# 環境変数から読み込み
+spring.datasource.username=${DB_USERNAME}
+spring.datasource.password=${DB_PASSWORD}
+
+# デフォルト値を指定
+server.port=${PORT:8080}
+
+# ネストした環境変数
+app.api.base-url=${API_BASE_URL:https://api.example.com}
+```
+
+#### プレースホルダーの使用
+
+```properties
+# 他のプロパティを参照
+app.name=My Application
+app.description=${app.name} - Version ${app.version:1.0.0}
+```
+
+### カスタムプロパティの定義と使用
+
+#### カスタムプロパティの定義
+
+```properties
+# カスタム設定
+app.name=My Application
+app.version=1.0.0
+app.api.base-url=https://api.example.com
+app.api.timeout=5000
+
+# リスト形式
+app.allowed.ips=192.168.1.1,192.168.1.2,192.168.1.3
+
+# マップ形式
+app.features.enabled=true
+app.features.max-users=100
+```
+
+#### @ConfigurationPropertiesを使用
+
+**設定クラスの作成:**
+
+```java
+@Configuration
+@ConfigurationProperties(prefix = "app")
+@Data
+public class AppProperties {
+    
+    private String name;
+    private String version;
+    private Api api = new Api();
+    private List<String> allowedIps = new ArrayList<>();
+    private Features features = new Features();
+    
+    @Data
+    public static class Api {
+        private String baseUrl;
+        private int timeout;
+    }
+    
+    @Data
+    public static class Features {
+        private boolean enabled;
+        private int maxUsers;
+    }
+}
+```
+
+**使用例:**
+
+```java
+@Service
+public class ApiService {
+    
+    private final AppProperties appProperties;
+    
+    public ApiService(AppProperties appProperties) {
+        this.appProperties = appProperties;
+    }
+    
+    public void callExternalApi() {
+        String baseUrl = appProperties.getApi().getBaseUrl();
+        int timeout = appProperties.getApi().getTimeout();
+        
+        // API呼び出し...
+    }
+}
+```
+
+#### @Valueを使用
+
+```java
+@Service
+public class UserService {
+    
+    @Value("${app.name}")
+    private String appName;
+    
+    @Value("${app.api.base-url}")
+    private String apiBaseUrl;
+    
+    @Value("${app.api.timeout:5000}")  // デフォルト値5000
+    private int apiTimeout;
+    
+    @Value("${app.allowed.ips}")
+    private List<String> allowedIps;
+}
+```
+
+### 外部設定ファイルの読み込み
+
+#### 外部設定ファイルの指定
+
+```bash
+# コマンドラインから
+java -jar myapp.jar --spring.config.location=classpath:/application.properties,file:/path/to/config/application.properties
+
+# または
+java -jar myapp.jar --spring.config.additional-location=file:/path/to/config/
+```
+
+#### 設定ファイルの優先順位
+
+1. コマンドライン引数
+2. `SPRING_APPLICATION_JSON`環境変数
+3. `java:comp/env`のJNDI属性
+4. Javaシステムプロパティ（`System.getProperties()`）
+5. OS環境変数
+6. `application-{profile}.properties`（プロファイル別）
+7. `application.properties`（デフォルト）
+
+### 設定の検証
+
+#### @Validatedと@Validを使用
+
+```java
+@Configuration
+@ConfigurationProperties(prefix = "app")
+@Validated
+public class AppProperties {
+    
+    @NotBlank
+    private String name;
+    
+    @Min(1)
+    @Max(10000)
+    private int maxUsers;
+    
+    @Valid
+    private Api api = new Api();
+    
+    @Data
+    public static class Api {
+        @NotBlank
+        @URL
+        private String baseUrl;
+        
+        @Min(1000)
+        @Max(60000)
+        private int timeout;
+    }
+}
+```
+
+### よくある設定例
+
+#### 完全なapplication.properties例
+
+```properties
+# ============================================
+# サーバー設定
+# ============================================
+server.port=8080
+server.servlet.context-path=/api
+server.servlet.session.timeout=30m
+server.error.whitelabel.enabled=false
+
+# ============================================
+# データベース設定
+# ============================================
+spring.datasource.url=jdbc:postgresql://localhost:5432/mydb
+spring.datasource.username=${DB_USERNAME:myuser}
+spring.datasource.password=${DB_PASSWORD:mypassword}
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+# HikariCP設定
+spring.datasource.hikari.maximum-pool-size=10
+spring.datasource.hikari.minimum-idle=5
+spring.datasource.hikari.connection-timeout=30000
+
+# ============================================
+# JPA設定
+# ============================================
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+
+# ============================================
+# ロギング設定
+# ============================================
+logging.level.root=INFO
+logging.level.com.example.myapp=DEBUG
+logging.file.name=logs/application.log
+logging.file.max-size=10MB
+logging.file.max-history=30
+
+# ============================================
+# カスタム設定
+# ============================================
+app.name=My Application
+app.version=1.0.0
+app.api.base-url=https://api.example.com
+app.api.timeout=5000
+```
+
+### まとめ
+
+Spring Bootの設定ファイルのポイント：
+
+- **application.properties / application.yml**: 設定ファイルの形式
+- **プロファイル**: 環境別の設定を分離
+- **環境変数**: 機密情報の管理
+- **@ConfigurationProperties**: 型安全な設定の読み込み
+- **@Value**: 個別のプロパティの読み込み
+- **設定の優先順位**: 複数の設定ソースの優先順位を理解
+
+適切な設定ファイルの管理により、環境ごとに異なる設定を柔軟に管理できます。
+
+

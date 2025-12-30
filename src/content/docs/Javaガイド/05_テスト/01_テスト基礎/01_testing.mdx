@@ -1,0 +1,386 @@
+---
+title: "テスト"
+label: "テスト"
+---
+
+## Spring Bootでのテスト
+
+Spring Bootアプリケーションのテストは、JUnit 5とSpring Testフレームワークを使用して実装します。この章では、様々な種類のテストの書き方について詳しく解説します。
+
+### テストの種類
+
+#### 1. ユニットテスト
+
+単一のクラスやメソッドをテストします。依存関係はモックで置き換えます。
+
+```java
+@ExtendWith(MockitoExtension.class)
+class UserServiceTest {
+    
+    @Mock
+    private UserRepository userRepository;
+    
+    @InjectMocks
+    private UserService userService;
+    
+    @Test
+    void testFindById() {
+        // Given
+        Long userId = 1L;
+        User user = new User();
+        user.setId(userId);
+        user.setName("Test User");
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        
+        // When
+        UserDTO result = userService.findById(userId);
+        
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getId()).isEqualTo(userId);
+        assertThat(result.getName()).isEqualTo("Test User");
+        verify(userRepository).findById(userId);
+    }
+    
+    @Test
+    void testFindByIdNotFound() {
+        // Given
+        Long userId = 999L;
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+        
+        // When & Then
+        assertThatThrownBy(() -> userService.findById(userId))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .hasMessageContaining("User");
+    }
+}
+```
+
+#### 2. 統合テスト
+
+複数のコンポーネントを組み合わせてテストします。
+
+```java
+@SpringBootTest
+@Transactional
+class UserServiceIntegrationTest {
+    
+    @Autowired
+    private UserService userService;
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    @Test
+    void testCreateUser() {
+        // Given
+        UserCreateRequest request = new UserCreateRequest();
+        request.setName("Test User");
+        request.setEmail("test@example.com");
+        request.setPassword("password123");
+        
+        // When
+        UserDTO result = userService.create(request);
+        
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getId()).isNotNull();
+        assertThat(result.getName()).isEqualTo("Test User");
+        assertThat(result.getEmail()).isEqualTo("test@example.com");
+        
+        // データベースに保存されていることを確認
+        Optional<User> savedUser = userRepository.findById(result.getId());
+        assertThat(savedUser).isPresent();
+        assertThat(savedUser.get().getName()).isEqualTo("Test User");
+    }
+}
+```
+
+#### 3. Web層のテスト
+
+コントローラーのエンドポイントをテストします。
+
+```java
+@WebMvcTest(UserController.class)
+class UserControllerTest {
+    
+    @Autowired
+    private MockMvc mockMvc;
+    
+    @MockBean
+    private UserService userService;
+    
+    @Autowired
+    private ObjectMapper objectMapper;
+    
+    @Test
+    void testGetUser() throws Exception {
+        // Given
+        Long userId = 1L;
+        UserDTO userDTO = new UserDTO();
+        userDTO.setId(userId);
+        userDTO.setName("Test User");
+        userDTO.setEmail("test@example.com");
+        
+        when(userService.findById(userId)).thenReturn(userDTO);
+        
+        // When & Then
+        mockMvc.perform(get("/api/users/{id}", userId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(userId))
+            .andExpect(jsonPath("$.name").value("Test User"))
+            .andExpect(jsonPath("$.email").value("test@example.com"));
+    }
+    
+    @Test
+    void testCreateUser() throws Exception {
+        // Given
+        UserCreateRequest request = new UserCreateRequest();
+        request.setName("New User");
+        request.setEmail("new@example.com");
+        request.setPassword("password123");
+        
+        UserDTO createdUser = new UserDTO();
+        createdUser.setId(1L);
+        createdUser.setName("New User");
+        createdUser.setEmail("new@example.com");
+        
+        when(userService.create(any(UserCreateRequest.class))).thenReturn(createdUser);
+        
+        // When & Then
+        mockMvc.perform(post("/api/users")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.id").value(1L))
+            .andExpect(jsonPath("$.name").value("New User"));
+    }
+    
+    @Test
+    void testCreateUserValidationError() throws Exception {
+        // Given
+        UserCreateRequest request = new UserCreateRequest();
+        // 必須フィールドを設定しない
+        
+        // When & Then
+        mockMvc.perform(post("/api/users")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isBadRequest());
+    }
+}
+```
+
+#### 4. リポジトリ層のテスト
+
+データベースアクセスをテストします。
+
+```java
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+class UserRepositoryTest {
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    @Autowired
+    private TestEntityManager entityManager;
+    
+    @Test
+    void testFindByEmail() {
+        // Given
+        User user = new User();
+        user.setName("Test User");
+        user.setEmail("test@example.com");
+        user.setPassword("password");
+        entityManager.persistAndFlush(user);
+        
+        // When
+        Optional<User> found = userRepository.findByEmail("test@example.com");
+        
+        // Then
+        assertThat(found).isPresent();
+        assertThat(found.get().getEmail()).isEqualTo("test@example.com");
+    }
+    
+    @Test
+    void testExistsByEmail() {
+        // Given
+        User user = new User();
+        user.setName("Test User");
+        user.setEmail("test@example.com");
+        user.setPassword("password");
+        entityManager.persistAndFlush(user);
+        
+        // When
+        boolean exists = userRepository.existsByEmail("test@example.com");
+        
+        // Then
+        assertThat(exists).isTrue();
+    }
+}
+```
+
+### テストデータの準備
+
+#### @Sqlアノテーションを使用
+
+```java
+@SpringBootTest
+@Sql(scripts = "/test-data.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+@Sql(scripts = "/cleanup.sql", executionPhase = Sql.ExecutionPhase.AFTER_TEST_METHOD)
+class UserServiceTest {
+    // テストメソッド
+}
+```
+
+#### @TestConfigurationを使用
+
+```java
+@SpringBootTest
+class UserServiceTest {
+    
+    @TestConfiguration
+    static class TestConfig {
+        @Bean
+        @Primary
+        public EmailService mockEmailService() {
+            return mock(EmailService.class);
+        }
+    }
+    
+    @Autowired
+    private UserService userService;
+    
+    // テストメソッド
+}
+```
+
+### モックの使用
+
+#### Mockitoを使用したモック
+
+```java
+@ExtendWith(MockitoExtension.class)
+class UserServiceTest {
+    
+    @Mock
+    private UserRepository userRepository;
+    
+    @Mock
+    private EmailService emailService;
+    
+    @InjectMocks
+    private UserService userService;
+    
+    @Test
+    void testCreateUser() {
+        // Given
+        UserCreateRequest request = new UserCreateRequest();
+        request.setName("Test User");
+        request.setEmail("test@example.com");
+        request.setPassword("password123");
+        
+        User savedUser = new User();
+        savedUser.setId(1L);
+        savedUser.setName("Test User");
+        savedUser.setEmail("test@example.com");
+        
+        when(userRepository.existsByEmail("test@example.com")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenReturn(savedUser);
+        doNothing().when(emailService).sendWelcomeEmail(anyString());
+        
+        // When
+        UserDTO result = userService.create(request);
+        
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getId()).isEqualTo(1L);
+        verify(userRepository).existsByEmail("test@example.com");
+        verify(userRepository).save(any(User.class));
+        verify(emailService).sendWelcomeEmail("test@example.com");
+    }
+}
+```
+
+### アサーション
+
+#### AssertJを使用（推奨）
+
+```java
+import static org.assertj.core.api.Assertions.*;
+
+@Test
+void testAssertions() {
+    String name = "Test User";
+    
+    // 基本的なアサーション
+    assertThat(name).isEqualTo("Test User");
+    assertThat(name).isNotBlank();
+    assertThat(name).contains("Test");
+    
+    // コレクションのアサーション
+    List<String> names = Arrays.asList("Alice", "Bob", "Charlie");
+    assertThat(names).hasSize(3);
+    assertThat(names).contains("Alice", "Bob");
+    assertThat(names).doesNotContain("David");
+    
+    // 例外のアサーション
+    assertThatThrownBy(() -> {
+        throw new IllegalArgumentException("Invalid argument");
+    }).isInstanceOf(IllegalArgumentException.class)
+      .hasMessageContaining("Invalid");
+}
+```
+
+### テストプロファイルの使用
+
+テスト専用の設定を使用します。
+
+```java
+@SpringBootTest
+@ActiveProfiles("test")
+class UserServiceTest {
+    // テストメソッド
+}
+```
+
+**application-test.properties:**
+
+```properties
+spring.datasource.url=jdbc:h2:mem:testdb
+spring.datasource.driver-class-name=org.h2.Driver
+spring.jpa.hibernate.ddl-auto=create-drop
+spring.jpa.show-sql=true
+```
+
+### パフォーマンステスト
+
+```java
+@Test
+void testPerformance() {
+    long startTime = System.currentTimeMillis();
+    
+    // テスト対象の処理
+    userService.processLargeDataSet();
+    
+    long duration = System.currentTimeMillis() - startTime;
+    assertThat(duration).isLessThan(1000);  // 1秒以内に完了すること
+}
+```
+
+### まとめ
+
+Spring Bootでのテストは、以下の方法で実装できます：
+
+- **ユニットテスト**: 単一のクラスやメソッドをテスト
+- **統合テスト**: 複数のコンポーネントを組み合わせてテスト
+- **Web層テスト**: コントローラーのエンドポイントをテスト
+- **リポジトリ層テスト**: データベースアクセスをテスト
+- **モックの使用**: 依存関係をモックで置き換え
+- **テストデータの準備**: @Sqlや@TestConfigurationを使用
+
+適切なテストを書くことで、コードの品質と信頼性を向上させることができます。
+
+

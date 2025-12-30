@@ -1,0 +1,473 @@
+---
+title: "Chrome DevToolsの使い方"
+label: "Chrome DevToolsの使い方"
+---
+
+## Chrome DevToolsの使い方
+
+Chrome DevToolsは、Chrome拡張機能の開発・デバッグに不可欠なツールです。
+
+### DevToolsの開き方
+
+#### 1. 基本的な開き方
+
+- **キーボードショートカット**: `F12` または `Cmd+Option+I` (Mac) / `Ctrl+Shift+I` (Windows)
+- **右クリックメニュー**: ページ上で右クリック → 「検証」
+- **メニューから**: Chromeメニュー → 「その他のツール」 → 「デベロッパーツール」
+
+#### 2. 拡張機能のDevTools
+
+**Background Script (Service Worker)のDevTools:**
+1. `chrome://extensions/` を開く
+2. 拡張機能の「サービスワーカー」リンクをクリック
+
+**PopupのDevTools:**
+1. Popupを開いた状態で右クリック
+2. 「検証」を選択
+
+**Content ScriptのDevTools:**
+1. Content Scriptが注入されたページでDevToolsを開く
+2. ConsoleタブでContent Scriptのログを確認
+
+### Consoleタブ
+
+Consoleタブは、JavaScriptのコードを実行したり、ログを確認したりするためのタブです。
+
+#### 1. 基本的な使い方
+
+**ログの出力:**
+
+```javascript
+// console.log: 通常のログ
+console.log('Hello, World!');
+
+// console.error: エラーログ
+console.error('エラーが発生しました');
+
+// console.warn: 警告ログ
+console.warn('警告メッセージ');
+
+// console.info: 情報ログ
+console.info('情報メッセージ');
+
+// console.debug: デバッグログ
+console.debug('デバッグ情報');
+```
+
+**ログレベルの確認:**
+
+Consoleタブの上部で、ログレベルをフィルタリングできます：
+- **All**: すべてのログ
+- **Errors**: エラーのみ
+- **Warnings**: 警告のみ
+- **Info**: 情報のみ
+- **Verbose**: 詳細ログ
+
+#### 2. オブジェクトの確認
+
+**console.table: テーブル形式で表示**
+
+```javascript
+const users = [
+  { name: 'John', age: 30, city: 'Tokyo' },
+  { name: 'Jane', age: 25, city: 'Osaka' },
+  { name: 'Bob', age: 35, city: 'Kyoto' }
+];
+
+console.table(users);
+```
+
+**console.dir: オブジェクトの詳細を表示**
+
+```javascript
+const obj = {
+  name: 'John',
+  age: 30,
+  address: {
+    city: 'Tokyo',
+    country: 'Japan'
+  }
+};
+
+console.dir(obj);
+```
+
+**console.group: ログをグループ化**
+
+```javascript
+console.group('ユーザー情報');
+console.log('名前: John');
+console.log('年齢: 30');
+console.groupEnd();
+```
+
+#### 3. パフォーマンスの測定
+
+**console.time / console.timeEnd: 実行時間の測定**
+
+```javascript
+console.time('処理時間');
+
+// 何らかの処理
+for (let i = 0; i < 1000000; i++) {
+  // 処理
+}
+
+console.timeEnd('処理時間');
+```
+
+**console.count: 実行回数のカウント**
+
+```javascript
+function processData() {
+  console.count('処理回数');
+  // 処理
+}
+
+processData(); // 処理回数: 1
+processData(); // 処理回数: 2
+processData(); // 処理回数: 3
+```
+
+#### 4. スタックトレースの確認
+
+**console.trace: スタックトレースを表示**
+
+```javascript
+function functionA() {
+  functionB();
+}
+
+function functionB() {
+  functionC();
+}
+
+function functionC() {
+  console.trace('スタックトレース');
+}
+
+functionA();
+```
+
+### Networkタブ
+
+Networkタブは、HTTPリクエストとレスポンスを監視するためのタブです。
+
+#### 1. 基本的な使い方
+
+**Networkタブの開き方:**
+1. DevToolsを開く
+2. 「Network」タブをクリック
+3. ページをリロード（`Cmd+R` / `Ctrl+R`）
+
+**リクエストの確認:**
+- **Name**: リクエストのURL
+- **Status**: HTTPステータスコード
+- **Type**: リソースの種類（document, script, stylesheetなど）
+- **Size**: レスポンスサイズ
+- **Time**: リクエストにかかった時間
+
+#### 2. リクエストの詳細確認
+
+**リクエストをクリックすると、以下の情報を確認できます:**
+
+**Headers:**
+- **Request Headers**: 送信されたHTTPヘッダー
+- **Response Headers**: 受信したHTTPヘッダー
+- **Query String Parameters**: URLパラメータ
+- **Form Data**: フォームデータ
+
+**Preview:**
+- レスポンスのプレビュー（JSON、HTML、画像など）
+
+**Response:**
+- レスポンスの生データ
+
+**Timing:**
+- **Queued**: キューに入った時間
+- **Started**: 開始時間
+- **DNS Lookup**: DNS解決時間
+- **Initial connection**: 接続確立時間
+- **SSL**: SSL/TLSハンドシェイク時間
+- **Request sent**: リクエスト送信時間
+- **Waiting (TTFB)**: サーバーからの応答待ち時間
+- **Content Download**: コンテンツのダウンロード時間
+
+#### 3. フィルタリング
+
+**フィルターバーでリクエストをフィルタリング:**
+
+- **All**: すべてのリクエスト
+- **XHR**: XMLHttpRequestのみ
+- **JS**: JavaScriptファイルのみ
+- **CSS**: CSSファイルのみ
+- **Img**: 画像ファイルのみ
+- **Media**: メディアファイルのみ
+- **Font**: フォントファイルのみ
+- **Doc**: ドキュメントのみ
+- **WS**: WebSocketのみ
+- **Manifest**: マニフェストファイルのみ
+
+**検索バーでURLを検索:**
+
+Networkタブの上部の検索バーで、URLやレスポンス内容を検索できます。
+
+#### 4. ネットワーク条件のシミュレート
+
+**Throttling:**
+- **Online**: 通常のネットワーク
+- **Slow 3G**: 低速3G
+- **Fast 3G**: 高速3G
+- **Offline**: オフライン
+
+**Disable cache:**
+- キャッシュを無効化して、常にサーバーから取得
+
+#### 5. 実践例: APIリクエストのデバッグ
+
+```javascript
+// Content ScriptでAPIリクエストを送信
+fetch('https://api.example.com/users')
+  .then(response => response.json())
+  .then(data => {
+    console.log('ユーザーデータ:', data);
+  })
+  .catch(error => {
+    console.error('エラー:', error);
+  });
+```
+
+**Networkタブで確認:**
+1. Networkタブを開く
+2. リクエストを送信
+3. `api.example.com/users` のリクエストを確認
+4. ステータスコード、レスポンス、タイミングを確認
+
+### Sourcesタブ
+
+Sourcesタブは、JavaScriptファイルを確認・デバッグするためのタブです。
+
+#### 1. ファイルの確認
+
+**ファイルツリー:**
+- 左側にページで読み込まれているファイルが表示される
+- JavaScript、CSS、HTMLファイルを確認できる
+
+**ファイルの検索:**
+- `Cmd+P` (Mac) / `Ctrl+P` (Windows) でファイルを検索
+
+#### 2. ブレークポイントの設定
+
+**ブレークポイントの設定方法:**
+1. ファイルを開く
+2. 行番号をクリック
+3. ブレークポイントが設定される（青い丸が表示）
+
+**ブレークポイントの種類:**
+- **通常のブレークポイント**: コードの実行を一時停止
+- **条件付きブレークポイント**: 条件が満たされたときのみ停止
+- **ログポイント**: ログを出力して続行
+
+**条件付きブレークポイントの設定:**
+1. 行番号を右クリック
+2. 「Add conditional breakpoint」を選択
+3. 条件を入力（例: `count > 10`）
+
+#### 3. デバッグの実行
+
+**デバッグコントロール:**
+- **Resume (F8)**: 実行を再開
+- **Step over (F10)**: 次の行へ進む
+- **Step into (F11)**: 関数の中に入る
+- **Step out (Shift+F11)**: 関数から出る
+
+**変数の確認:**
+- 右側の「Scope」パネルで変数を確認
+- 「Watch」パネルで式を監視
+
+#### 4. 実践例: Content Scriptのデバッグ
+
+```javascript
+// content.js
+function processData(data) {
+  console.log('データ処理開始:', data);
+  
+  const result = data.map(item => {
+    return item.value * 2; // ブレークポイントをここに設定
+  });
+  
+  console.log('処理結果:', result);
+  return result;
+}
+
+const data = [{ value: 1 }, { value: 2 }, { value: 3 }];
+processData(data);
+```
+
+**デバッグ手順:**
+1. Sourcesタブでcontent.jsを開く
+2. `item.value * 2` の行にブレークポイントを設定
+3. ページをリロード
+4. ブレークポイントで停止
+5. 変数の値を確認
+6. Step overで次の行へ進む
+
+### Applicationタブ
+
+Applicationタブは、ストレージやキャッシュを確認するためのタブです。
+
+#### 1. Local Storage
+
+**Local Storageの確認:**
+1. Applicationタブを開く
+2. 「Storage」 → 「Local Storage」を選択
+3. ドメインを選択
+4. キーと値を確認・編集
+
+**拡張機能のLocal Storage:**
+- `chrome-extension://[拡張機能ID]` を選択
+- 拡張機能のLocal Storageを確認
+
+#### 2. Session Storage
+
+**Session Storageの確認:**
+- 「Storage」 → 「Session Storage」を選択
+- セッション中のみ有効なストレージを確認
+
+#### 3. IndexedDB
+
+**IndexedDBの確認:**
+- 「Storage」 → 「IndexedDB」を選択
+- データベースとオブジェクトストアを確認
+
+#### 4. Cookies
+
+**Cookiesの確認:**
+- 「Storage」 → 「Cookies」を選択
+- Cookieの名前、値、ドメイン、有効期限を確認
+
+#### 5. Cache Storage
+
+**Cache Storageの確認:**
+- 「Storage」 → 「Cache Storage」を選択
+- Service Workerのキャッシュを確認
+
+### Performanceタブ
+
+Performanceタブは、ページのパフォーマンスを分析するためのタブです。
+
+#### 1. パフォーマンスの記録
+
+**記録の開始:**
+1. Performanceタブを開く
+2. 「Record」ボタンをクリック
+3. ページを操作
+4. 「Stop」ボタンをクリック
+
+**記録結果の確認:**
+- **FPS**: フレームレート
+- **CPU**: CPU使用率
+- **Network**: ネットワークリクエスト
+- **Main**: メインスレッドの処理
+
+#### 2. パフォーマンスの問題の特定
+
+**ボトルネックの特定:**
+- 長い処理時間の関数を特定
+- メモリリークの検出
+- レンダリングの最適化
+
+### Memoryタブ
+
+Memoryタブは、メモリの使用状況を確認するためのタブです。
+
+#### 1. ヒープスナップショット
+
+**スナップショットの取得:**
+1. Memoryタブを開く
+2. 「Heap snapshot」を選択
+3. 「Take snapshot」をクリック
+
+**スナップショットの比較:**
+- 複数のスナップショットを取得
+- 比較してメモリリークを検出
+
+#### 2. メモリリークの検出
+
+**メモリリークの確認:**
+- スナップショットを比較
+- 増加しているオブジェクトを特定
+- 参照を確認して原因を特定
+
+### 実践例: 拡張機能のデバッグ
+
+#### 例1: Content Scriptのデバッグ
+
+```javascript
+// content.js
+console.log('Content Scriptが実行されました');
+
+// ブレークポイントを設定
+function processPage() {
+  const elements = document.querySelectorAll('.item');
+  console.log('要素数:', elements.length);
+  
+  elements.forEach((element, index) => {
+    console.log(`要素 ${index}:`, element.textContent);
+  });
+}
+
+processPage();
+```
+
+**デバッグ手順:**
+1. ページでDevToolsを開く
+2. Consoleタブでログを確認
+3. Sourcesタブでcontent.jsを開く
+4. ブレークポイントを設定
+5. ページをリロード
+6. 変数を確認
+
+#### 例2: APIリクエストのデバッグ
+
+```javascript
+// background.js
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'FETCH_DATA') {
+    fetch(message.url)
+      .then(response => {
+        console.log('ステータス:', response.status);
+        return response.json();
+      })
+      .then(data => {
+        console.log('データ:', data);
+        sendResponse({ success: true, data: data });
+      })
+      .catch(error => {
+        console.error('エラー:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true;
+  }
+});
+```
+
+**デバッグ手順:**
+1. `chrome://extensions/` で「サービスワーカー」をクリック
+2. Consoleタブでログを確認
+3. Networkタブでリクエストを確認
+4. エラーがあれば、エラーメッセージを確認
+
+### まとめ
+
+Chrome DevToolsの使い方：
+
+1. **Consoleタブ**: ログの確認、コードの実行
+2. **Networkタブ**: HTTPリクエストの監視
+3. **Sourcesタブ**: ファイルの確認、ブレークポイントの設定
+4. **Applicationタブ**: ストレージの確認
+5. **Performanceタブ**: パフォーマンスの分析
+6. **Memoryタブ**: メモリの使用状況の確認
+
+これらのツールを活用することで、効率的にChrome拡張機能をデバッグできます。
+

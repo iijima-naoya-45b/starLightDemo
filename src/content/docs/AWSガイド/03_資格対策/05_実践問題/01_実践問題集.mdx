@@ -1,0 +1,183 @@
+---
+title: "実践問題集"
+label: "実践問題集"
+---
+
+## 実践問題集
+
+### 問題1: 高可用性Webアプリケーション
+
+**要件:**
+- 3層アーキテクチャ（Web、App、DB）
+- 99.99%の可用性
+- 自動スケーリング
+- マルチAZ配置
+- コスト最適化
+
+**解答:**
+
+```yaml
+Resources:
+  # Application Load Balancer
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: application
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+
+  # Auto Scaling Group
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: 2
+      MaxSize: 10
+      DesiredCapacity: 2
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+
+  # RDS Multi-AZ
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: mysql
+      MultiAZ: true
+      DBInstanceClass: db.t3.medium
+      AllocatedStorage: 100
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: '03:00-04:00'
+
+  # CloudFront
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - Id: ALBOrigin
+            DomainName: !GetAtt ALB.DNSName
+        DefaultCacheBehavior:
+          TargetOriginId: ALBOrigin
+          ViewerProtocolPolicy: redirect-to-https
+```
+
+### 問題2: サーバーレスAPI
+
+**要件:**
+- RESTful API
+- 認証が必要
+- データベースはDynamoDB
+- ログとモニタリング
+
+**解答:**
+
+```yaml
+Resources:
+  # API Gateway
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: MyAPI
+
+  # Lambda関数
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: MyAPIFunction
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref DynamoDBTable
+
+  # DynamoDB
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: MyTable
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+  # CloudWatch Logs
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/MyAPIFunction
+      RetentionInDays: 7
+```
+
+### 問題3: コスト最適化
+
+**要件:**
+- 開発環境のコスト削減
+- バッチ処理の最適化
+- ストレージコストの削減
+
+**解答:**
+
+```yaml
+Resources:
+  # Spot Instances for Development
+  SpotFleet:
+    Type: AWS::EC2::SpotFleetRequestConfig
+    Properties:
+      SpotFleetRequestConfig:
+        IamFleetRole: !GetAtt SpotFleetRole.Arn
+        SpotPrice: '0.05'
+        TargetCapacity: 5
+        LaunchSpecifications:
+          - ImageId: ami-12345678
+            InstanceType: t3.medium
+
+  # Scheduled Scaling
+  ScheduledAction:
+    Type: AWS::AutoScaling::ScheduledAction
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      ScheduledActionName: ScaleDownAtNight
+      Recurrence: '0 22 * * *'
+      MinSize: 0
+      MaxSize: 0
+      DesiredCapacity: 0
+
+  # S3 Lifecycle Policy
+  LifecyclePolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToIA
+            Status: Enabled
+            Transitions:
+              - Days: 30
+                StorageClass: STANDARD_IA
+              - Days: 90
+                StorageClass: GLACIER
+```
+
+### まとめ
+
+実践問題を解く際のポイント：
+
+- **要件の理解**: 要件を正確に把握
+- **サービス選択**: 適切なAWSサービスの選択
+- **コスト意識**: コストとパフォーマンスのバランス
+- **セキュリティ**: セキュアな設計の実装
+- **可用性**: 高可用性アーキテクチャの設計
+
+実践問題を繰り返し解くことで、試験対策が効果的になります。
+

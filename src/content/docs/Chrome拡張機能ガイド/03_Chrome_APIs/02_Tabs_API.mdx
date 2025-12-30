@@ -1,0 +1,161 @@
+---
+title: "Tabs API"
+label: "Tabs API"
+---
+
+## Tabs API
+
+Tabs APIは、ブラウザタブを操作するためのAPIです。
+
+### タブの取得と操作
+
+```javascript
+// 現在のタブを取得
+chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  const currentTab = tabs[0];
+  console.log('Current tab:', currentTab.url);
+});
+
+// すべてのタブを取得
+chrome.tabs.query({}, (tabs) => {
+  console.log(`Total tabs: ${tabs.length}`);
+});
+
+// 特定のURLのタブを検索
+chrome.tabs.query({ url: 'https://example.com/*' }, (tabs) => {
+  console.log('Found tabs:', tabs);
+});
+```
+
+### タブの作成と更新
+
+```javascript
+// 新しいタブを開く
+chrome.tabs.create({ url: 'https://example.com' }, (tab) => {
+  console.log('Tab created:', tab.id);
+});
+
+// タブを更新
+chrome.tabs.update(tabId, { url: 'https://newurl.com' }, (tab) => {
+  console.log('Tab updated');
+});
+
+// タブをリロード
+chrome.tabs.reload(tabId, { bypassCache: true }, () => {
+  console.log('Tab reloaded');
+});
+```
+
+### タブの監視
+
+```javascript
+// タブの作成を監視
+chrome.tabs.onCreated.addListener((tab) => {
+  console.log('Tab created:', tab.url);
+});
+
+// タブの更新を監視
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete') {
+    console.log('Tab loaded:', tab.url);
+  }
+  
+  if (changeInfo.url) {
+    console.log('URL changed:', changeInfo.url);
+  }
+});
+
+// タブの削除を監視
+chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+  console.log('Tab removed:', tabId);
+});
+```
+
+### タブのグループ化
+
+```javascript
+// タブをグループ化
+chrome.tabs.group({ tabIds: [1, 2, 3] }, (groupId) => {
+  console.log('Group created:', groupId);
+});
+
+// グループの情報を取得
+chrome.tabGroups.query({}, (groups) => {
+  console.log('Groups:', groups);
+});
+```
+
+### 実践例: タブマネージャー
+
+```javascript
+// background.js
+class TabManager {
+  constructor() {
+    this.tabs = new Map();
+    this.setupListeners();
+  }
+
+  setupListeners() {
+    chrome.tabs.onCreated.addListener((tab) => {
+      this.tabs.set(tab.id, tab);
+    });
+
+    chrome.tabs.onRemoved.addListener((tabId) => {
+      this.tabs.delete(tabId);
+    });
+
+    chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+      this.tabs.set(tabId, tab);
+    });
+  }
+
+  async getAllTabs() {
+    return new Promise((resolve) => {
+      chrome.tabs.query({}, (tabs) => {
+        resolve(tabs);
+      });
+    });
+  }
+
+  async closeDuplicateTabs() {
+    const tabs = await this.getAllTabs();
+    const urlMap = new Map();
+
+    tabs.forEach(tab => {
+      if (!urlMap.has(tab.url)) {
+        urlMap.set(tab.url, []);
+      }
+      urlMap.get(tab.url).push(tab.id);
+    });
+
+    // 重複タブを閉じる
+    urlMap.forEach((tabIds, url) => {
+      if (tabIds.length > 1) {
+        // 最初のタブ以外を閉じる
+        tabIds.slice(1).forEach(tabId => {
+          chrome.tabs.remove(tabId);
+        });
+      }
+    });
+  }
+
+  async suspendInactiveTabs() {
+    const tabs = await this.getAllTabs();
+    const activeTab = tabs.find(tab => tab.active);
+    
+    if (!activeTab) return;
+
+    const inactiveTabs = tabs.filter(tab => 
+      tab.id !== activeTab.id && 
+      tab.discarded === false
+    );
+
+    inactiveTabs.forEach(tab => {
+      chrome.tabs.discard(tab.id);
+    });
+  }
+}
+
+const tabManager = new TabManager();
+```
+

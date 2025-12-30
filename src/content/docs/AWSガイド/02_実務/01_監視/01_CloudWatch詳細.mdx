@@ -1,0 +1,107 @@
+---
+title: "CloudWatch詳細"
+label: "CloudWatch詳細"
+---
+
+## CloudWatch詳細
+
+CloudWatchは、AWSリソースの監視とログ管理サービスです。
+
+### CloudWatchメトリクス
+
+```javascript
+// カスタムメトリクスの送信
+const AWS = require('aws-sdk');
+const cloudwatch = new AWS.CloudWatch();
+
+cloudwatch.putMetricData({
+  Namespace: 'MyApplication',
+  MetricData: [
+    {
+      MetricName: 'RequestCount',
+      Value: 100,
+      Unit: 'Count',
+      Timestamp: new Date(),
+      Dimensions: [
+        {
+          Name: 'Environment',
+          Value: 'Production'
+        }
+      ]
+    }
+  ]
+}, (err, data) => {
+  if (err) console.error(err);
+  else console.log('Metric sent:', data);
+});
+```
+
+### CloudWatch Logs
+
+```javascript
+// ログストリームの作成
+const logs = new AWS.CloudWatchLogs();
+
+logs.createLogGroup({
+  logGroupName: '/aws/lambda/my-function'
+}, (err, data) => {
+  if (err) console.error(err);
+});
+
+// ログイベントの送信
+logs.putLogEvents({
+  logGroupName: '/aws/lambda/my-function',
+  logStreamName: 'stream1',
+  logEvents: [
+    {
+      message: 'Application started',
+      timestamp: Date.now()
+    }
+  ]
+}, (err, data) => {
+  if (err) console.error(err);
+});
+```
+
+### CloudWatch Alarms
+
+```yaml
+HighCPUAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: HighCPUUtilization
+    ComparisonOperator: GreaterThanThreshold
+    EvaluationPeriods: 2
+    MetricName: CPUUtilization
+    Namespace: AWS/EC2
+    Period: 300
+    Statistic: Average
+    Threshold: 80
+    AlarmActions:
+      - !Ref SNSTopic
+    Dimensions:
+      - Name: InstanceId
+        Value: !Ref EC2Instance
+```
+
+### CloudWatch Insights
+
+```sql
+-- CloudWatch Logs Insightsクエリ
+fields @timestamp, @message
+| filter @message like /ERROR/
+| stats count() by bin(5m)
+```
+
+### 実践例: アプリケーションログの分析
+
+```sql
+-- エラーログの分析
+fields @timestamp, @message, @logStream
+| filter @message like /ERROR/
+| parse @message "ERROR: *" as errorMessage
+| stats count() by errorMessage
+| sort count desc
+| limit 10
+```
+

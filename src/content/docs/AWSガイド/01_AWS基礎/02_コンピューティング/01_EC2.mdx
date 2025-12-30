@@ -1,0 +1,92 @@
+---
+title: "EC2"
+label: "EC2"
+---
+
+## EC2 (Elastic Compute Cloud)
+
+EC2は、AWSの仮想サーバーサービスです。
+
+### EC2インスタンスタイプ
+
+#### インスタンスファミリー
+
+- **t3/t4g**: バースト可能な汎用インスタンス
+- **m5/m6i**: 汎用インスタンス
+- **c5/c6i**: コンピューティング最適化
+- **r5/r6i**: メモリ最適化
+- **g4**: GPUインスタンス
+
+### セキュリティグループ
+
+```json
+{
+  "SecurityGroupRules": [
+    {
+      "IpProtocol": "tcp",
+      "FromPort": 80,
+      "ToPort": 80,
+      "CidrIpv4": "0.0.0.0/0",
+      "Description": "HTTP access"
+    },
+    {
+      "IpProtocol": "tcp",
+      "FromPort": 443,
+      "ToPort": 443,
+      "CidrIpv4": "0.0.0.0/0",
+      "Description": "HTTPS access"
+    },
+    {
+      "IpProtocol": "tcp",
+      "FromPort": 22,
+      "ToPort": 22,
+      "CidrIpv4": "10.0.0.0/16",
+      "Description": "SSH from VPC"
+    }
+  ]
+}
+```
+
+### ユーザーデータ
+
+```bash
+#!/bin/bash
+yum update -y
+yum install -y httpd
+systemctl start httpd
+systemctl enable httpd
+echo "<h1>Hello from EC2</h1>" > /var/www/html/index.html
+```
+
+### 実践例: オートスケーリング
+
+```yaml
+Resources:
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: 2
+      MaxSize: 10
+      DesiredCapacity: 2
+      VPCZoneIdentifier:
+        - !Ref Subnet1
+        - !Ref Subnet2
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+
+  ScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70.0
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+```
+

@@ -1,0 +1,199 @@
+---
+title: "Express詳細"
+label: "Express詳細"
+---
+
+## Express詳細
+
+### ミドルウェアの詳細
+
+#### 1. 認証ミドルウェア
+
+```javascript
+const jwt = require('jsonwebtoken');
+
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ error: 'Invalid token' });
+    }
+    req.user = user;
+    next();
+  });
+};
+
+app.get('/protected', authenticateToken, (req, res) => {
+  res.json({ message: 'Protected route', user: req.user });
+});
+```
+
+#### 2. バリデーションミドルウェア
+
+```javascript
+const validateUser = (req, res, next) => {
+  const { name, email, password } = req.body;
+  const errors = [];
+
+  if (!name || name.length < 3) {
+    errors.push('Name must be at least 3 characters');
+  }
+  if (!email || !email.includes('@')) {
+    errors.push('Valid email is required');
+  }
+  if (!password || password.length < 8) {
+    errors.push('Password must be at least 8 characters');
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({ errors });
+  }
+
+  next();
+};
+
+app.post('/users', validateUser, (req, res) => {
+  // バリデーション済みのデータでユーザーを作成
+});
+```
+
+#### 3. ロギングミドルウェア
+
+```javascript
+const morgan = require('morgan');
+
+// ログフォーマット
+app.use(morgan('combined')); // Apache形式
+app.use(morgan('dev')); // 開発用の簡潔な形式
+
+// カスタムログ
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`${req.method} ${req.path} - ${res.statusCode} - ${duration}ms`);
+  });
+  next();
+});
+```
+
+### テンプレートエンジン
+
+```javascript
+// EJSの設定
+app.set('view engine', 'ejs');
+app.set('views', './views');
+
+app.get('/', (req, res) => {
+  res.render('index', { title: 'Home', users: [] });
+});
+
+// Handlebarsの設定
+const exphbs = require('express-handlebars');
+app.engine('handlebars', exphbs());
+app.set('view engine', 'handlebars');
+```
+
+### ファイルアップロード
+
+```javascript
+const multer = require('multer');
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + '-' + file.originalname);
+  }
+});
+
+const upload = multer({ storage });
+
+app.post('/upload', upload.single('file'), (req, res) => {
+  res.json({ file: req.file });
+});
+
+// 複数ファイル
+app.post('/upload-multiple', upload.array('files', 10), (req, res) => {
+  res.json({ files: req.files });
+});
+```
+
+### セッション管理
+
+```javascript
+const session = require('express-session');
+
+app.use(session({
+  secret: 'your-secret-key',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: true, maxAge: 24 * 60 * 60 * 1000 } // 24時間
+}));
+
+app.post('/login', (req, res) => {
+  // 認証処理
+  req.session.userId = user.id;
+  res.json({ message: 'Logged in' });
+});
+
+app.get('/profile', (req, res) => {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  res.json({ userId: req.session.userId });
+});
+```
+
+### 実践例: 完全なAPIサーバー
+
+```javascript
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+
+const app = express();
+
+// セキュリティミドルウェア
+app.use(helmet());
+app.use(cors());
+
+// レート制限
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15分
+  max: 100 // 最大100リクエスト
+});
+app.use('/api/', limiter);
+
+// ボディパーサー
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// ルーティング
+app.use('/api/users', require('./routes/users'));
+app.use('/api/posts', require('./routes/posts'));
+
+// エラーハンドリング
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(err.status || 500).json({
+    error: {
+      message: err.message || 'Internal Server Error',
+      ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    }
+  });
+});
+
+app.listen(3000, () => {
+  console.log('Server running on port 3000');
+});
+```
+

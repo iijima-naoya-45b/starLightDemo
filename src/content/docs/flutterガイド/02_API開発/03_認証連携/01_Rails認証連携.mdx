@@ -1,0 +1,425 @@
+---
+title: "Rails認証連携"
+label: "Rails認証連携"
+---
+
+## Rails認証連携
+
+FlutterアプリとRails APIを連携して認証を実装する方法を解説します。
+
+### なぜ認証連携が必要なのか
+
+#### 認証なしのAPIアクセスの課題
+
+**問題のある実装:**
+
+```dart
+// 問題点:
+// - 認証情報を毎回送信する必要がある
+// - セキュアでない認証方法
+// - セッション管理が困難
+```
+
+**認証連携の解決:**
+
+```dart
+// メリット:
+// - トークンベースの認証
+// - セキュアな認証
+// - セッション管理が容易
+```
+
+**メリット:**
+1. **セキュリティ**: トークンベースの認証
+2. **スケーラビリティ**: ステートレスな認証
+3. **モバイル対応**: モバイルアプリに適した認証方式
+
+### Rails側の実装
+
+#### Devise Token Authの設定
+
+```ruby
+# Gemfile
+gem 'devise_token_auth'
+
+# インストール
+rails g devise_token_auth:install User auth
+rails db:migrate
+```
+
+#### コントローラーの設定
+
+```ruby
+# app/controllers/api/v1/auth_controller.rb
+module Api
+  module V1
+    class AuthController < DeviseTokenAuth::ApplicationController
+      before_action :authenticate_user!, except: [:sign_in, :sign_up]
+
+      def sign_in
+        @user = User.find_by(email: params[:email])
+        
+        if @user&.valid_password?(params[:password])
+          @user.create_new_auth_token
+          render json: {
+            data: @user.as_json(only: [:id, :email, :name]),
+            tokens: @user.tokens
+          }
+        else
+          render json: { error: 'Invalid credentials' }, status: :unauthorized
+        end
+      end
+
+      def sign_up
+        @user = User.new(user_params)
+        
+        if @user.save
+          @user.create_new_auth_token
+          render json: {
+            data: @user.as_json(only: [:id, :email, :name]),
+            tokens: @user.tokens
+          }, status: :created
+        else
+          render json: { errors: @user.errors }, status: :unprocessable_entity
+        end
+      end
+
+      def sign_out
+        @user = current_user
+        @user.tokens = {}
+        @user.save
+        
+        render json: { success: true }
+      end
+
+      private
+
+      def user_params
+        params.require(:user).permit(:email, :password, :password_confirmation, :name)
+      end
+    end
+  end
+end
+```
+
+#### ルーティング
+
+```ruby
+# config/routes.rb
+namespace :api do
+  namespace :v1 do
+    post 'auth/sign_in', to: 'auth#sign_in'
+    post 'auth/sign_up', to: 'auth#sign_up'
+    delete 'auth/sign_out', to: 'auth#sign_out'
+    get 'auth/validate_token', to: 'auth#validate_token'
+  end
+end
+```
+
+### Flutter側の実装
+
+#### 認証サービスの作成
+
+```dart
+// lib/services/auth_service.dart
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+
+class AuthService {
+  static const String baseUrl = 'https://your-api.com/api/v1';
+  
+  // ログイン
+  Future<Map<String, dynamic>> signIn(String email, String password) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/sign_in'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'email': email,
+        'password': password,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      await _saveTokens(response.headers, data);
+      return data;
+    } else {
+      throw Exception('ログインに失敗しました');
+    }
+  }
+
+  // 新規登録
+  Future<Map<String, dynamic>> signUp(
+    String email,
+    String password,
+    String name,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/sign_up'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'email': email,
+        'password': password,
+        'password_confirmation': password,
+        'name': name,
+      }),
+    );
+
+    if (response.statusCode == 201) {
+      final data = jsonDecode(response.body);
+      await _saveTokens(response.headers, data);
+      return data;
+    } else {
+      final error = jsonDecode(response.body);
+      throw Exception(error['errors']?.toString() ?? '登録に失敗しました');
+    }
+  }
+
+  // ログアウト
+  Future<void> signOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    final accessToken = prefs.getString('access_token');
+    final client = prefs.getString('client');
+    final uid = prefs.getString('uid');
+
+    await http.delete(
+      Uri.parse('$baseUrl/auth/sign_out'),
+      headers: {
+        'access-token': accessToken ?? '',
+        'client': client ?? '',
+        'uid': uid ?? '',
+      },
+    );
+
+    await _clearTokens();
+  }
+
+  // トークンの保存
+  Future<void> _saveTokens(Map<String, String> headers, Map<String, dynamic> data) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('access_token', headers['access-token'] ?? '');
+    await prefs.setString('client', headers['client'] ?? '');
+    await prefs.setString('uid', headers['uid'] ?? '');
+    await prefs.setString('user_data', jsonEncode(data['data']));
+  }
+
+  // トークンのクリア
+  Future<void> _clearTokens() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('access_token');
+    await prefs.remove('client');
+    await prefs.remove('uid');
+    await prefs.remove('user_data');
+  }
+
+  // トークンの取得
+  Future<Map<String, String>?> getAuthHeaders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final accessToken = prefs.getString('access_token');
+    final client = prefs.getString('client');
+    final uid = prefs.getString('uid');
+
+    if (accessToken == null || client == null || uid == null) {
+      return null;
+    }
+
+    return {
+      'access-token': accessToken,
+      'client': client,
+      'uid': uid,
+      'Content-Type': 'application/json',
+    };
+  }
+
+  // ログイン状態の確認
+  Future<bool> isLoggedIn() async {
+    final headers = await getAuthHeaders();
+    return headers != null;
+  }
+
+  // ユーザー情報の取得
+  Future<Map<String, dynamic>?> getUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userData = prefs.getString('user_data');
+    if (userData != null) {
+      return jsonDecode(userData);
+    }
+    return null;
+  }
+}
+```
+
+#### HTTPクライアントの設定
+
+```dart
+// lib/services/http_client.dart
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'auth_service.dart';
+
+class HttpClient {
+  final AuthService _authService = AuthService();
+  static const String baseUrl = 'https://your-api.com/api/v1';
+
+  Future<http.Response> get(String endpoint) async {
+    final headers = await _authService.getAuthHeaders();
+    if (headers == null) {
+      throw Exception('認証が必要です');
+    }
+
+    return await http.get(
+      Uri.parse('$baseUrl$endpoint'),
+      headers: headers,
+    );
+  }
+
+  Future<http.Response> post(String endpoint, Map<String, dynamic> data) async {
+    final headers = await _authService.getAuthHeaders();
+    if (headers == null) {
+      throw Exception('認証が必要です');
+    }
+
+    return await http.post(
+      Uri.parse('$baseUrl$endpoint'),
+      headers: headers,
+      body: jsonEncode(data),
+    );
+  }
+}
+```
+
+#### ログイン画面の実装
+
+```dart
+// lib/screens/login_screen.dart
+import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
+
+class LoginScreen extends StatefulWidget {
+  @override
+  _LoginScreenState createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _authService = AuthService();
+  bool _isLoading = false;
+
+  Future<void> _handleLogin() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      await _authService.signIn(
+        _emailController.text,
+        _passwordController.text,
+      );
+      Navigator.pushReplacementNamed(context, '/home');
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('ログイン')),
+      body: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              TextFormField(
+                controller: _emailController,
+                decoration: InputDecoration(labelText: 'メールアドレス'),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'メールアドレスを入力してください';
+                  }
+                  return null;
+                },
+              ),
+              TextFormField(
+                controller: _passwordController,
+                decoration: InputDecoration(labelText: 'パスワード'),
+                obscureText: true,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'パスワードを入力してください';
+                  }
+                  return null;
+                },
+              ),
+              SizedBox(height: 20),
+              _isLoading
+                  ? CircularProgressIndicator()
+                  : ElevatedButton(
+                      onPressed: _handleLogin,
+                      child: Text('ログイン'),
+                    ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+```
+
+### トークンリフレッシュ
+
+```dart
+// lib/services/auth_service.dart に追加
+Future<bool> refreshToken() async {
+  final prefs = await SharedPreferences.getInstance();
+  final accessToken = prefs.getString('access_token');
+  final client = prefs.getString('client');
+  final uid = prefs.getString('uid');
+
+  if (accessToken == null || client == null || uid == null) {
+    return false;
+  }
+
+  try {
+    final response = await http.get(
+      Uri.parse('$baseUrl/auth/validate_token'),
+      headers: {
+        'access-token': accessToken,
+        'client': client,
+        'uid': uid,
+      },
+    );
+
+    if (response.statusCode == 200) {
+      // 新しいトークンを保存
+      await _saveTokens(response.headers, jsonDecode(response.body));
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+```
+
+### まとめ
+
+FlutterとRailsの認証連携のポイント：
+
+- **トークンベース認証**: Devise Token Authを使用
+- **トークンの保存**: SharedPreferencesで永続化
+- **HTTPヘッダー**: 認証トークンをヘッダーに含める
+- **トークンリフレッシュ**: トークンの有効期限管理
+- **エラーハンドリング**: 適切なエラー処理
+
+適切に実装することで、FlutterアプリとRails APIを安全に連携できます。
+

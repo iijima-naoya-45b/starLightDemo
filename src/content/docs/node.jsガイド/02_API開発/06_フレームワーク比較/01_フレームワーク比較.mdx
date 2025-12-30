@@ -1,0 +1,343 @@
+---
+title: "フレームワーク比較"
+label: "フレームワーク比較"
+---
+
+## Node.jsフレームワーク比較
+
+Node.jsでWebアプリケーションを構築する際の主要なフレームワークを比較します。
+
+### 比較表
+
+| フレームワーク | 特徴 | パフォーマンス | 学習コスト | エコシステム | 適用範囲 |
+|--------------|------|--------------|-----------|------------|---------|
+| **Express** | 最小限、柔軟 | 中 | 低 | 非常に豊富 | 汎用 |
+| **Hono** | 軽量、高速 | 非常に高い | 低 | 中 | エッジ、API |
+| **Fastify** | 高速、スキーマベース | 高い | 中 | 豊富 | API、マイクロサービス |
+| **Koa** | 軽量、async/await | 中 | 中 | 豊富 | 汎用 |
+| **Nest.js** | エンタープライズ、TypeScript | 中 | 高 | 豊富 | 大規模アプリ |
+
+### Express
+
+#### 特徴
+
+```javascript
+const express = require('express');
+const app = express();
+
+app.get('/users', (req, res) => {
+  res.json({ users: [] });
+});
+```
+
+**メリット:**
+- 最も人気があり、豊富なドキュメントとコミュニティ
+- 最小限の制約で自由に設計可能
+- 豊富なミドルウェアエコシステム
+- 学習コストが低い
+
+**デメリット:**
+- パフォーマンスが他のフレームワークより低い
+- 型安全性がない（TypeScriptなし）
+- 大規模アプリでは構造化が必要
+
+**適用範囲:**
+- 汎用的なWebアプリケーション
+- RESTful API
+- プロトタイピング
+
+### Hono
+
+#### 特徴
+
+```javascript
+import { Hono } from 'hono';
+
+const app = new Hono();
+
+app.get('/users', (c) => {
+  return c.json({ users: [] });
+});
+
+export default app;
+```
+
+**メリット:**
+- 非常に軽量（約13KB）
+- 非常に高速（Expressの2-3倍）
+- エッジランタイム対応（Cloudflare Workers、Deno、Bun）
+- TypeScriptファースト
+- ミドルウェアが豊富
+
+**デメリット:**
+- 比較的新しく、エコシステムが小さい
+- コミュニティが小さい
+
+**適用範囲:**
+- エッジコンピューティング
+- 高速なAPIサーバー
+- サーバーレス関数
+
+#### 実践例
+
+```javascript
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { logger } from 'hono/logger';
+
+const app = new Hono();
+
+app.use('*', cors());
+app.use('*', logger());
+
+app.get('/users', async (c) => {
+  const users = await getUsers();
+  return c.json({ users });
+});
+
+app.post('/users', async (c) => {
+  const userData = await c.req.json();
+  const user = await createUser(userData);
+  return c.json({ user }, 201);
+});
+
+export default app;
+```
+
+### Fastify
+
+#### 特徴
+
+```javascript
+const fastify = require('fastify')({ logger: true });
+
+fastify.get('/users', async (request, reply) => {
+  return { users: [] };
+});
+
+fastify.listen({ port: 3000 }, (err, address) => {
+  if (err) {
+    fastify.log.error(err);
+    process.exit(1);
+  }
+});
+```
+
+**メリット:**
+- Expressより2倍高速
+- JSON Schemaによる自動バリデーション
+- プラグインアーキテクチャ
+- 型安全性（TypeScript対応）
+
+**デメリット:**
+- 学習コストがExpressより高い
+- エコシステムがExpressより小さい
+
+**適用範囲:**
+- 高性能APIサーバー
+- マイクロサービス
+- リアルタイムアプリケーション
+
+#### 実践例
+
+```javascript
+const fastify = require('fastify')({ logger: true });
+
+// JSON Schemaによるバリデーション
+const userSchema = {
+  body: {
+    type: 'object',
+    required: ['name', 'email'],
+    properties: {
+      name: { type: 'string' },
+      email: { type: 'string', format: 'email' }
+    }
+  }
+};
+
+fastify.post('/users', { schema: userSchema }, async (request, reply) => {
+  const { name, email } = request.body;
+  const user = await createUser({ name, email });
+  return reply.code(201).send({ user });
+});
+
+fastify.listen({ port: 3000 });
+```
+
+### Koa
+
+#### 特徴
+
+```javascript
+const Koa = require('koa');
+const app = new Koa();
+
+app.use(async (ctx, next) => {
+  await next();
+  ctx.body = { users: [] };
+});
+
+app.listen(3000);
+```
+
+**メリット:**
+- async/awaitをネイティブサポート
+- より軽量なコア
+- エラーハンドリングが容易
+- ミドルウェアが豊富
+
+**デメリット:**
+- Expressより学習コストが高い
+- エコシステムがExpressより小さい
+
+**適用範囲:**
+- モダンなWebアプリケーション
+- async/awaitを活用したい場合
+
+#### 実践例
+
+```javascript
+const Koa = require('koa');
+const Router = require('@koa/router');
+const bodyParser = require('koa-bodyparser');
+
+const app = new Koa();
+const router = new Router();
+
+app.use(bodyParser());
+
+router.get('/users', async (ctx) => {
+  ctx.body = { users: [] };
+});
+
+router.post('/users', async (ctx) => {
+  const user = await createUser(ctx.request.body);
+  ctx.status = 201;
+  ctx.body = { user };
+});
+
+app.use(router.routes());
+app.listen(3000);
+```
+
+### Nest.js
+
+#### 特徴
+
+```typescript
+import { Controller, Get, Post, Body } from '@nestjs/common';
+import { AppService } from './app.service';
+
+@Controller('users')
+export class UserController {
+  constructor(private readonly appService: AppService) {}
+
+  @Get()
+  findAll() {
+    return this.appService.findAll();
+  }
+
+  @Post()
+  create(@Body() createUserDto: CreateUserDto) {
+    return this.appService.create(createUserDto);
+  }
+}
+```
+
+**メリット:**
+- TypeScriptファースト
+- 依存性注入（DI）
+- モジュールベースのアーキテクチャ
+- エンタープライズ向け
+- 統合されたテストフレームワーク
+
+**デメリット:**
+- 学習コストが高い
+- オーバーヘッドが大きい
+- 小規模プロジェクトには過剰
+
+**適用範囲:**
+- 大規模エンタープライズアプリケーション
+- マイクロサービスアーキテクチャ
+- TypeScriptプロジェクト
+
+### パフォーマンス比較
+
+```javascript
+// ベンチマーク結果（リクエスト/秒）
+// Express: 15,000 req/s
+// Hono: 45,000 req/s
+// Fastify: 30,000 req/s
+// Koa: 18,000 req/s
+// Nest.js: 12,000 req/s
+```
+
+### 選択基準
+
+#### Expressを選ぶべき場合
+
+- 汎用的なWebアプリケーション
+- 豊富なエコシステムが必要
+- 学習コストを抑えたい
+- プロトタイピング
+
+#### Honoを選ぶべき場合
+
+- エッジコンピューティング（Cloudflare Workers、Deno、Bun）
+- 最高のパフォーマンスが必要
+- 軽量なAPIサーバー
+- TypeScriptプロジェクト
+
+#### Fastifyを選ぶべき場合
+
+- 高性能APIサーバー
+- 自動バリデーションが必要
+- マイクロサービス
+- プラグインアーキテクチャを活用したい
+
+#### Koaを選ぶべき場合
+
+- async/awaitを活用したい
+- よりモダンなアプローチ
+- エラーハンドリングを重視
+
+#### Nest.jsを選ぶべき場合
+
+- 大規模エンタープライズアプリケーション
+- TypeScriptプロジェクト
+- 依存性注入が必要
+- モジュールベースのアーキテクチャ
+
+### 実践的な選択例
+
+```javascript
+// 小規模API: Express
+const express = require('express');
+const app = express();
+// シンプルで迅速な開発
+
+// エッジ関数: Hono
+import { Hono } from 'hono';
+const app = new Hono();
+// Cloudflare Workersで実行
+
+// 高性能API: Fastify
+const fastify = require('fastify');
+// 自動バリデーションと高速処理
+
+// エンタープライズ: Nest.js
+// TypeScript、DI、モジュールアーキテクチャ
+```
+
+### まとめ
+
+フレームワーク選択のポイント：
+
+- **Express**: 汎用的で最も人気
+- **Hono**: エッジと最高のパフォーマンス
+- **Fastify**: 高性能APIと自動バリデーション
+- **Koa**: async/awaitとモダンなアプローチ
+- **Nest.js**: エンタープライズとTypeScript
+
+プロジェクトの要件に応じて適切なフレームワークを選択することが重要です。
+

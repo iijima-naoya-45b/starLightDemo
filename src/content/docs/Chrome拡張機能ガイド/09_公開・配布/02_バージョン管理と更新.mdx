@@ -1,0 +1,202 @@
+---
+title: "バージョン管理と更新"
+label: "バージョン管理と更新"
+---
+
+## バージョン管理と更新
+
+Chrome拡張機能のバージョン管理と更新の方法を説明します。
+
+### バージョン番号の管理
+
+#### 1. セマンティックバージョニング
+
+バージョン番号は `MAJOR.MINOR.PATCH` の形式で管理します。
+
+```json
+{
+  "manifest_version": 3,
+  "version": "1.2.3"
+}
+```
+
+**バージョンの意味:**
+- **MAJOR (1)**: 大きな変更、後方互換性のない変更
+- **MINOR (2)**: 機能追加、後方互換性のある変更
+- **PATCH (3)**: バグ修正、小さな変更
+
+#### 2. バージョンアップの例
+
+```json
+// バグ修正
+"version": "1.0.0" → "1.0.1"
+
+// 機能追加
+"version": "1.0.0" → "1.1.0"
+
+// 大きな変更
+"version": "1.0.0" → "2.0.0"
+```
+
+### 自動更新の仕組み
+
+#### 1. Chromeの自動更新
+
+Chromeは定期的に拡張機能の更新をチェックします。
+
+**更新のタイミング:**
+- Chrome起動時
+- 定期的なチェック（数時間ごと）
+- 手動での更新チェック
+
+#### 2. 更新の確認方法
+
+Chromeは以下のURLから更新を確認します：
+
+```
+https://chrome.google.com/webstore/detail/[拡張機能ID]/[バージョン番号]
+```
+
+### 更新通知の実装
+
+#### 1. 更新の検出
+
+```javascript
+// background.js
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === 'install') {
+    // 初回インストール
+    console.log('拡張機能がインストールされました');
+  } else if (details.reason === 'update') {
+    // 更新
+    const currentVersion = chrome.runtime.getManifest().version;
+    console.log(`拡張機能が更新されました: ${currentVersion}`);
+    
+    // 更新通知を表示
+    showUpdateNotification(currentVersion);
+  }
+});
+```
+
+#### 2. 更新通知の表示
+
+```javascript
+function showUpdateNotification(version) {
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: 'icons/icon48.png',
+    title: '拡張機能が更新されました',
+    message: `バージョン ${version} が利用可能です`
+  });
+}
+```
+
+#### 3. 更新内容の表示
+
+```javascript
+// options.html
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === 'update') {
+    // 更新内容を表示
+    const updateInfo = getUpdateInfo(details.previousVersion);
+    displayUpdateInfo(updateInfo);
+  }
+});
+
+function getUpdateInfo(previousVersion) {
+  const currentVersion = chrome.runtime.getManifest().version;
+  
+  // バージョンに応じた更新内容を返す
+  if (previousVersion === '1.0.0' && currentVersion === '1.1.0') {
+    return {
+      version: currentVersion,
+      changes: [
+        '新機能を追加',
+        'バグを修正',
+        'パフォーマンスを改善'
+      ]
+    };
+  }
+  
+  return null;
+}
+```
+
+### 強制更新
+
+#### 1. 強制更新の設定
+
+Chrome Web Storeで強制更新を設定できます。
+
+**設定方法:**
+1. Developer Dashboardにアクセス
+2. 拡張機能を選択
+3. 「公開設定」を開く
+4. 「強制更新」を有効にする
+
+**強制更新の効果:**
+- ユーザーは古いバージョンを使用できない
+- 自動的に最新バージョンに更新される
+
+### バージョン管理のベストプラクティス
+
+#### 1. Gitでのバージョン管理
+
+```bash
+# バージョンタグの作成
+git tag -a v1.0.0 -m "Version 1.0.0"
+git push origin v1.0.0
+
+# バージョンタグの一覧
+git tag
+
+# 特定のバージョンに戻る
+git checkout v1.0.0
+```
+
+#### 2. 変更ログの管理
+
+```markdown
+# CHANGELOG.md
+
+## [1.1.0] - 2024-01-15
+### 追加
+- 新機能を追加
+- 設定画面を追加
+
+### 変更
+- UIを改善
+
+### 修正
+- バグを修正
+
+## [1.0.0] - 2024-01-01
+### 追加
+- 初回リリース
+```
+
+#### 3. 自動バージョン管理
+
+```javascript
+// package.json
+{
+  "scripts": {
+    "version:patch": "npm version patch",
+    "version:minor": "npm version minor",
+    "version:major": "npm version major"
+  }
+}
+```
+
+### まとめ
+
+バージョン管理と更新：
+
+1. **バージョン番号**: セマンティックバージョニングを使用
+2. **自動更新**: Chromeが自動的に更新をチェック
+3. **更新通知**: ユーザーに更新を通知
+4. **強制更新**: 必要に応じて強制更新を設定
+5. **バージョン管理**: Gitでバージョンを管理
+
+適切なバージョン管理により、スムーズに拡張機能を更新できます。
+

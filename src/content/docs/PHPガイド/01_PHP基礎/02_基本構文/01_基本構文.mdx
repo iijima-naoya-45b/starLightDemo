@@ -1,0 +1,88 @@
+---
+title: "基本構文"
+label: "基本構文"
+---
+
+## PHP基本構文
+
+### 変数と型
+
+```php
+<?php
+// 変数の宣言（$が必要）
+$name = "John";
+$age = 30;
+$price = 19.99;
+$isActive = true;
+
+// 型の確認
+var_dump($name);  // string(4) "John"
+var_dump($age);   // int(30)
+```
+
+### 配列
+
+```php
+<?php
+// インデックス配列
+$fruits = ["apple", "banana", "orange"];
+
+// 連想配列
+$user = [
+    "name" => "John",
+    "email" => "john@example.com",
+    "age" => 30
+];
+
+// 配列の操作
+$fruits[] = "grape";  // 追加
+unset($fruits[0]);    // 削除
+```
+
+### 関数
+
+```php
+<?php
+// 関数の定義
+function greet($name) {
+    return "Hello, " . $name . "!";
+}
+
+// デフォルト引数
+function greetWithDefault($name = "Guest") {
+    return "Hello, " . $name . "!";
+}
+
+// 型宣言
+function add(int $a, int $b): int {
+    return $a + $b;
+}
+```
+
+### クラスとオブジェクト
+
+```php
+<?php
+class User {
+    private $name;
+    private $email;
+
+    public function __construct($name, $email) {
+        $this->name = $name;
+        $this->email = $email;
+    }
+
+    public function getName(): string {
+        return $this->name;
+    }
+
+    public function getEmail(): string {
+        return $this->email;
+    }
+}
+
+// 使用例
+$user = new User("John", "john@example.com");
+echo $user->getName();
+```
+

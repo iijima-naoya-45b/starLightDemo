@@ -1,0 +1,353 @@
+---
+title: "Content Scripts詳細"
+label: "Content Scripts詳細"
+---
+
+## Content Scripts詳細
+
+Content Scriptsは、Webページに注入されるJavaScriptスクリプトです。ページのDOMを操作したり、ページのコンテンツを変更したりすることができます。
+
+### Content Scriptsの基本
+
+#### 1. Content Scriptsとは
+
+Content Scriptsは、Webページのコンテキストで実行されるスクリプトです。ページのDOMにアクセスでき、ページの内容を変更できます。
+
+**特徴:**
+- ページのDOMにアクセス可能
+- ページのJavaScriptとは分離された環境で実行
+- ページの変数や関数には直接アクセスできない
+- `window.postMessage`や`chrome.runtime.sendMessage`で通信可能
+
+#### 2. Content Scriptsの登録
+
+```json
+// manifest.json
+{
+  "content_scripts": [{
+    "matches": ["https://example.com/*"],
+    "js": ["content.js"],
+    "css": ["styles.css"],
+    "run_at": "document_idle"
+  }]
+}
+```
+
+**パラメータ:**
+- **matches**: Content Scriptsを注入するURLパターン
+- **js**: 注入するJavaScriptファイル
+- **css**: 注入するCSSファイル
+- **run_at**: 実行タイミング（`document_start`, `document_end`, `document_idle`）
+
+### Content Scriptsの実行タイミング
+
+#### 1. document_start
+
+DOM構築前に実行されます。
+
+```javascript
+// manifest.json
+{
+  "content_scripts": [{
+    "matches": ["https://example.com/*"],
+    "js": ["content.js"],
+    "run_at": "document_start"
+  }]
+}
+
+// content.js
+// DOMが構築される前に実行される
+console.log('DOM構築前');
+```
+
+#### 2. document_end
+
+DOM構築後、リソース読み込み前に実行されます。
+
+```javascript
+// manifest.json
+{
+  "content_scripts": [{
+    "matches": ["https://example.com/*"],
+    "js": ["content.js"],
+    "run_at": "document_end"
+  }]
+}
+
+// content.js
+// DOMが構築された後に実行される
+console.log('DOM構築後');
+document.body.style.backgroundColor = 'lightblue';
+```
+
+#### 3. document_idle（デフォルト）
+
+DOM構築後、リソース読み込み後に実行されます。
+
+```javascript
+// manifest.json
+{
+  "content_scripts": [{
+    "matches": ["https://example.com/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"  // デフォルト
+  }]
+}
+
+// content.js
+// ページの読み込みが完了した後に実行される
+console.log('ページ読み込み完了');
+```
+
+### Content Scriptsの実装
+
+#### 1. DOM操作
+
+```javascript
+// content.js
+// ページのDOMを操作
+const heading = document.createElement('h1');
+heading.textContent = 'Hello from Content Script!';
+heading.style.color = 'blue';
+document.body.appendChild(heading);
+```
+
+#### 2. イベントリスナーの追加
+
+```javascript
+// content.js
+// ページのイベントを監視
+document.addEventListener('click', (event) => {
+  console.log('クリックされた要素:', event.target);
+});
+
+// フォーム送信の監視
+document.addEventListener('submit', (event) => {
+  console.log('フォームが送信されました');
+  event.preventDefault(); // 送信をキャンセル
+});
+```
+
+#### 3. ページスクリプトとの通信
+
+```javascript
+// content.js
+// ページスクリプトにメッセージを送信
+window.postMessage({
+  type: 'FROM_CONTENT_SCRIPT',
+  data: 'Hello from Content Script!'
+}, '*');
+
+// ページスクリプトからのメッセージを受信
+window.addEventListener('message', (event) => {
+  if (event.data.type === 'FROM_PAGE_SCRIPT') {
+    console.log('ページスクリプトからのメッセージ:', event.data.data);
+  }
+});
+```
+
+### 動的なContent Scripts注入
+
+#### 1. chrome.scripting APIの使用
+
+```javascript
+// background.js
+// 動的にContent Scriptを注入
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url.includes('example.com')) {
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      files: ['content.js']
+    });
+  }
+});
+```
+
+#### 2. 関数の直接注入
+
+```javascript
+// background.js
+// 関数を直接注入
+chrome.scripting.executeScript({
+  target: { tabId: tabId },
+  function: () => {
+    document.body.style.backgroundColor = 'lightblue';
+  }
+});
+```
+
+### 実践例: ページの自動操作
+
+```javascript
+// content.js
+// ページの自動操作
+function autoFillForm() {
+  const nameInput = document.querySelector('input[name="name"]');
+  const emailInput = document.querySelector('input[name="email"]');
+  
+  if (nameInput) {
+    nameInput.value = 'John Doe';
+  }
+  
+  if (emailInput) {
+    emailInput.value = 'john@example.com';
+  }
+}
+
+// ページ読み込み完了後に実行
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', autoFillForm);
+} else {
+  autoFillForm();
+}
+```
+
+### まとめ
+
+Content Scriptsのポイント：
+
+- **DOM操作**: ページのDOMにアクセスして操作可能
+- **実行タイミング**: `document_start`, `document_end`, `document_idle`で制御
+- **動的注入**: `chrome.scripting` APIで動的に注入可能
+- **ページスクリプトとの通信**: `window.postMessage`で通信可能
+
+Content Scriptsは、Webページの内容を変更したり、自動操作したりするための強力なツールです。
+
+---
+
+## Content Scripts詳細
+
+Content Scriptsは、Webページのコンテキストで実行されるスクリプトです。ページのDOMにアクセスできますが、ページのJavaScriptとは分離されています。
+
+### Content Scriptsの基本
+
+```javascript
+// content.js
+console.log('Content script loaded');
+
+// DOM操作
+document.body.style.backgroundColor = 'red';
+
+// イベントリスナーの追加
+document.addEventListener('click', (e) => {
+  console.log('Clicked:', e.target);
+});
+```
+
+### 実行タイミングの制御
+
+```json
+{
+  "content_scripts": [{
+    "matches": ["https://*/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"  // document_start, document_end, document_idle
+  }]
+}
+```
+
+**実行タイミング:**
+- `document_start`: DOM構築前
+- `document_end`: DOM構築後、リソース読み込み前
+- `document_idle`: DOM構築後、リソース読み込み後（デフォルト）
+
+### ページスクリプトとの連携
+
+#### 1. メッセージパッシング
+
+```javascript
+// content.js
+window.postMessage({ type: 'FROM_CONTENT', data: 'Hello' }, '*');
+
+window.addEventListener('message', (event) => {
+  if (event.data.type === 'FROM_PAGE') {
+    console.log('Message from page:', event.data.data);
+  }
+});
+```
+
+#### 2. DOMイベントの利用
+
+```javascript
+// content.js
+const customEvent = new CustomEvent('extension-event', {
+  detail: { message: 'Hello from extension' }
+});
+document.dispatchEvent(customEvent);
+
+// ページスクリプトで受信
+document.addEventListener('extension-event', (e) => {
+  console.log(e.detail.message);
+});
+```
+
+### スクリプトの動的注入
+
+```javascript
+// background.js
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url?.includes('example.com')) {
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      files: ['injected.js']
+    });
+  }
+});
+
+// 関数の注入
+chrome.scripting.executeScript({
+  target: { tabId: tabId },
+  func: () => {
+    document.body.style.backgroundColor = 'blue';
+  }
+});
+```
+
+### ページコンテキストへのアクセス
+
+```javascript
+// content.js
+const script = document.createElement('script');
+script.textContent = `
+  // ページのコンテキストで実行される
+  window.pageFunction = function() {
+    return window.somePageVariable;
+  };
+`;
+document.documentElement.appendChild(script);
+script.remove();
+
+// Content Scriptから呼び出し
+const result = window.pageFunction();
+```
+
+### 実践例: フォーム自動入力
+
+```javascript
+// content.js
+function autoFillForm() {
+  const form = document.querySelector('form');
+  if (!form) return;
+
+  const inputs = form.querySelectorAll('input[type="text"], input[type="email"]');
+  inputs.forEach((input, index) => {
+    if (input.type === 'email') {
+      input.value = 'test@example.com';
+    } else {
+      input.value = `Test Value ${index + 1}`;
+    }
+    
+    // イベントを発火
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
+
+// ページ読み込み後に実行
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', autoFillForm);
+} else {
+  autoFillForm();
+}
+```
+

@@ -1,0 +1,47 @@
+---
+title: "Riverpod詳細"
+label: "Riverpod詳細"
+---
+
+## Riverpod詳細
+
+Riverpodは、Flutterの状態管理ライブラリです。Providerの後継として、より型安全で強力な機能を提供します。
+
+### Riverpodの設定
+
+#### 依存関係の追加
+
+```yaml
+# pubspec.yaml
+dependencies:
+  flutter_riverpod: ^2.4.0
+```
+
+#### Providerの定義
+
+```dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+final counterProvider = StateProvider<int>((ref) => 0);
+
+final userProvider = FutureProvider<User>((ref) async {
+  return await fetchUser();
+});
+```
+
+#### 使用例
+
+```dart
+class CounterWidget extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(counterProvider);
+    
+    return ElevatedButton(
+      onPressed: () => ref.read(counterProvider.notifier).state++,
+      child: Text('Count: $count'),
+    );
+  }
+}
+```
+

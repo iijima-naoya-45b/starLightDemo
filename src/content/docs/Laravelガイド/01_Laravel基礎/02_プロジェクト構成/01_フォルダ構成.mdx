@@ -1,0 +1,45 @@
+---
+title: "フォルダ構成"
+label: "フォルダ構成"
+---
+
+## Laravelフォルダ構成
+
+### ディレクトリ構造
+
+```
+my-app/
+├── app/
+│   ├── Console/          # Artisanコマンド
+│   ├── Http/
+│   │   ├── Controllers/  # コントローラー
+│   │   ├── Middleware/    # ミドルウェア
+│   │   └── Requests/      # フォームリクエスト
+│   ├── Models/           # Eloquentモデル
+│   └── Providers/        # サービスプロバイダー
+├── bootstrap/            # アプリケーションの起動ファイル
+├── config/               # 設定ファイル
+├── database/
+│   ├── migrations/       # マイグレーション
+│   ├── seeders/          # シーダー
+│   └── factories/        # ファクトリー
+├── public/               # 公開ディレクトリ
+├── resources/
+│   ├── views/            # Bladeテンプレート
+│   └── lang/             # 言語ファイル
+├── routes/
+│   ├── web.php           # Webルート
+│   ├── api.php           # APIルート
+│   └── console.php       # Artisanコマンドルート
+├── storage/              # ストレージ
+└── tests/                # テスト
+```
+
+### 重要なファイル
+
+- **app/Http/Controllers/**: コントローラーロジック
+- **app/Models/**: Eloquentモデル
+- **routes/web.php**: Webルート定義
+- **routes/api.php**: APIルート定義
+- **database/migrations/**: データベースマイグレーション
+

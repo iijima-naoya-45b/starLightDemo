@@ -1,0 +1,257 @@
+---
+title: "よくある問題と解決方法"
+label: "よくある問題と解決方法"
+---
+
+## よくある問題と解決方法
+
+Chrome拡張機能開発でよくある問題とその解決方法を説明します。
+
+### 問題1: Service Workerがすぐに停止する
+
+#### 症状
+
+Background Script (Service Worker)がすぐに停止してしまう。
+
+#### 原因
+
+Service Workerはイベント駆動で動作するため、イベントがないと停止します。
+
+#### 解決方法
+
+**1. イベントリスナーを設定**
+
+```javascript
+// background.js
+// イベントリスナーを設定してService Workerを維持
+chrome.runtime.onInstalled.addListener(() => {
+  console.log('拡張機能がインストールされました');
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // メッセージを処理
+  return true;
+});
+```
+
+**2. 定期的なイベントを設定**
+
+```javascript
+// 定期的にイベントを発生させる
+chrome.alarms.create('keepAlive', { periodInMinutes: 1 });
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'keepAlive') {
+    console.log('Service Worker is alive');
+  }
+});
+```
+
+### 問題2: Content Scriptが実行されない
+
+#### 症状
+
+Content Scriptがページに注入されない。
+
+#### 原因
+
+- manifest.jsonの`matches`が正しくない
+- ファイルパスが間違っている
+- 実行タイミングの問題
+
+#### 解決方法
+
+**1. manifest.jsonの確認**
+
+```json
+{
+  "content_scripts": [{
+    "matches": ["https://example.com/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }]
+}
+```
+
+**2. 動的注入を使用**
+
+```javascript
+// background.js
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url.includes('example.com')) {
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      files: ['content.js']
+    });
+  }
+});
+```
+
+### 問題3: メッセージパッシングが動作しない
+
+#### 症状
+
+Content ScriptとBackground Scriptの間でメッセージが送信されない。
+
+#### 原因
+
+- `sendResponse`が呼ばれていない
+- 非同期処理で`return true`がない
+- エラーハンドリングがない
+
+#### 解決方法
+
+**1. 非同期処理の場合**
+
+```javascript
+// background.js
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'ASYNC_REQUEST') {
+    // 非同期処理
+    asyncFunction().then(result => {
+      sendResponse({ success: true, data: result });
+    });
+    return true; // 非同期レスポンスのため必須
+  }
+});
+```
+
+**2. エラーハンドリング**
+
+```javascript
+// content.js
+chrome.runtime.sendMessage({ type: 'REQUEST' }, (response) => {
+  if (chrome.runtime.lastError) {
+    console.error('エラー:', chrome.runtime.lastError);
+  } else {
+    console.log('レスポンス:', response);
+  }
+});
+```
+
+### 問題4: Storage APIが動作しない
+
+#### 症状
+
+データが保存されない、または読み込めない。
+
+#### 原因
+
+- パーミッションが不足
+- エラーハンドリングがない
+- キー名の間違い
+
+#### 解決方法
+
+**1. パーミッションの確認**
+
+```json
+{
+  "permissions": ["storage"]
+}
+```
+
+**2. エラーハンドリング**
+
+```javascript
+chrome.storage.local.set({ key: 'value' }, () => {
+  if (chrome.runtime.lastError) {
+    console.error('保存エラー:', chrome.runtime.lastError);
+  } else {
+    console.log('保存成功');
+  }
+});
+```
+
+### 問題5: パフォーマンスの問題
+
+#### 症状
+
+拡張機能の動作が遅い。
+
+#### 原因
+
+- 不要な処理
+- メモリリーク
+- 非効率なアルゴリズム
+
+#### 解決方法
+
+**1. パフォーマンスの測定**
+
+```javascript
+console.time('処理時間');
+// 処理
+console.timeEnd('処理時間');
+```
+
+**2. メモリリークの検出**
+
+```javascript
+// Memoryタブでスナップショットを取得
+// メモリリークを特定
+```
+
+**3. 最適化**
+
+```javascript
+// 悪い例: ループ内でDOM操作
+for (let i = 0; i < 1000; i++) {
+  document.body.appendChild(createElement(i));
+}
+
+// 良い例: バッチ処理
+const fragment = document.createDocumentFragment();
+for (let i = 0; i < 1000; i++) {
+  fragment.appendChild(createElement(i));
+}
+document.body.appendChild(fragment);
+```
+
+### 問題6: セキュリティ警告
+
+#### 症状
+
+Chrome Web Storeでセキュリティ警告が表示される。
+
+#### 原因
+
+- 外部スクリプトの読み込み
+- 不適切なパーミッション
+- セキュリティポリシーの違反
+
+#### 解決方法
+
+**1. Content Security Policyの設定**
+
+```json
+{
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}
+```
+
+**2. 外部スクリプトの使用を避ける**
+
+```javascript
+// 悪い例: 外部スクリプトを直接読み込む
+<script src="https://example.com/script.js"></script>
+
+// 良い例: ローカルにコピーして使用
+<script src="script.js"></script>
+```
+
+### まとめ
+
+よくある問題と解決方法：
+
+1. **Service Workerが停止**: イベントリスナーを設定
+2. **Content Scriptが実行されない**: manifest.jsonと動的注入を確認
+3. **メッセージパッシングが動作しない**: 非同期処理とエラーハンドリングを確認
+4. **Storage APIが動作しない**: パーミッションとエラーハンドリングを確認
+5. **パフォーマンスの問題**: 測定と最適化
+6. **セキュリティ警告**: CSPと外部スクリプトの確認
+
+これらの解決方法を参考に、問題を解決できます。
+

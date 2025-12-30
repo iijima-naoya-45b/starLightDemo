@@ -1,0 +1,42 @@
+---
+title: "Bloc詳細"
+label: "Bloc詳細"
+---
+
+## Bloc詳細
+
+Blocは、Flutterの状態管理パターンです。イベントと状態の分離により、予測可能な状態管理を実現します。
+
+### Blocの設定
+
+#### 依存関係の追加
+
+```yaml
+# pubspec.yaml
+dependencies:
+  flutter_bloc: ^8.1.0
+```
+
+#### Blocの実装
+
+```dart
+// counter_event.dart
+abstract class CounterEvent {}
+class CounterIncremented extends CounterEvent {}
+class CounterDecremented extends CounterEvent {}
+
+// counter_state.dart
+class CounterState {
+  final int value;
+  CounterState(this.value);
+}
+
+// counter_bloc.dart
+class CounterBloc extends Bloc<CounterEvent, CounterState> {
+  CounterBloc() : super(CounterState(0)) {
+    on<CounterIncremented>((event, emit) => emit(CounterState(state.value + 1)));
+    on<CounterDecremented>((event, emit) => emit(CounterState(state.value - 1)));
+  }
+}
+```
+

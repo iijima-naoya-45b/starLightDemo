@@ -1,0 +1,319 @@
+---
+title: "分散トレーシング"
+label: "分散トレーシング"
+---
+
+## 分散トレーシング
+
+分散トレーシングは、マイクロサービスアーキテクチャにおいて、リクエストが複数のサービスを横断する際の追跡と監視を可能にする技術です。Spring Bootでは、**Spring Cloud Sleuth**と**Zipkin**を使用して分散トレーシングを実装できます。
+
+### なぜ分散トレーシングが必要なのか
+
+#### マイクロサービスでの問題
+
+**問題のあるマイクロサービスアーキテクチャ:**
+
+```
+ユーザーリクエスト
+  ↓
+API Gateway
+  ↓
+User Service (10ms)
+  ↓
+Order Service (50ms)
+  ↓
+Payment Service (100ms)
+  ↓
+Inventory Service (30ms)
+  ↓
+Email Service (20ms)
+
+// 問題点:
+// - どのサービスで時間がかかっているかわからない
+// - エラーがどのサービスで発生したかわからない
+// - リクエストの流れを追跡できない
+```
+
+**分散トレーシングの解決:**
+
+```
+Trace ID: abc123
+  Span 1: API Gateway (210ms)
+    Span 2: User Service (10ms)
+    Span 3: Order Service (50ms)
+      Span 4: Payment Service (100ms)
+      Span 5: Inventory Service (30ms)
+    Span 6: Email Service (20ms)
+
+// メリット:
+// - 各サービスの処理時間が可視化される
+// - エラーの発生箇所が特定できる
+// - リクエストの流れが追跡できる
+```
+
+**メリット:**
+1. **可観測性**: リクエストの流れを可視化
+2. **パフォーマンス分析**: ボトルネックの特定
+3. **エラー追跡**: エラーの発生箇所を特定
+4. **依存関係の理解**: サービス間の依存関係を可視化
+
+### 基本概念
+
+- **Trace**: 1つのリクエスト全体を表す（Trace IDで識別）
+- **Span**: Trace内の1つの操作を表す（Span IDで識別）
+- **Parent Span**: 親となるSpan
+- **Child Span**: 子となるSpan
+
+### Spring Cloud Sleuthの設定
+
+#### 依存関係の追加
+
+**Maven (`pom.xml`):**
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-starter-sleuth</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.zipkin.reporter2</groupId>
+        <artifactId>zipkin-reporter-brave</artifactId>
+    </dependency>
+</dependencies>
+```
+
+**Gradle (`build.gradle`):**
+
+```groovy
+dependencies {
+    implementation 'org.springframework.cloud:spring-cloud-starter-sleuth'
+    implementation 'io.zipkin.reporter2:zipkin-reporter-brave'
+}
+```
+
+#### 基本設定
+
+**`application.yml`:**
+
+```yaml
+spring:
+  sleuth:
+    sampler:
+      probability: 1.0  # 100%のリクエストをトレース（本番環境では0.1など）
+    zipkin:
+      base-url: http://localhost:9411
+```
+
+### 自動トレーシング
+
+Spring Cloud Sleuthは、以下の操作を自動的にトレースします：
+
+- HTTPリクエスト/レスポンス
+- メッセージキュー（RabbitMQ、Kafka）
+- データベースクエリ
+- カスタムSpan
+
+```java
+@RestController
+public class UserController {
+    
+    private final UserService userService;
+    
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
+    
+    @GetMapping("/users/{id}")
+    public User getUser(@PathVariable Long id) {
+        // 自動的にTraceとSpanが作成される
+        return userService.findById(id);
+    }
+}
+```
+
+### カスタムSpanの作成
+
+```java
+@Service
+public class UserService {
+    
+    private final Tracer tracer;
+    private final UserRepository userRepository;
+    
+    public UserService(Tracer tracer, UserRepository userRepository) {
+        this.tracer = tracer;
+        this.userRepository = userRepository;
+    }
+    
+    public User findById(Long id) {
+        // カスタムSpanを作成
+        Span span = tracer.nextSpan()
+            .name("find-user")
+            .tag("user.id", id.toString())
+            .start();
+        
+        try (Tracer.SpanInScope ws = tracer.withSpanInScope(span)) {
+            // ビジネスロジック
+            User user = userRepository.findById(id)
+                .orElseThrow(() -> new UserNotFoundException());
+            
+            span.tag("user.found", "true");
+            return user;
+            
+        } catch (Exception e) {
+            span.tag("error", true);
+            span.tag("error.message", e.getMessage());
+            throw e;
+        } finally {
+            span.end();
+        }
+    }
+}
+```
+
+### 非同期処理のトレーシング
+
+```java
+@Service
+public class AsyncService {
+    
+    private final Tracer tracer;
+    
+    public AsyncService(Tracer tracer) {
+        this.tracer = tracer;
+    }
+    
+    @Async
+    public CompletableFuture<String> processAsync(String data) {
+        // 非同期処理でもTraceが継続される
+        Span span = tracer.nextSpan()
+            .name("async-process")
+            .start();
+        
+        try (Tracer.SpanInScope ws = tracer.withSpanInScope(span)) {
+            // 非同期処理
+            String result = processData(data);
+            return CompletableFuture.completedFuture(result);
+        } finally {
+            span.end();
+        }
+    }
+}
+```
+
+### メッセージキューのトレーシング
+
+```java
+@Component
+public class OrderConsumer {
+    
+    @RabbitListener(queues = "order.queue")
+    public void handleOrder(Order order) {
+        // RabbitMQのメッセージも自動的にトレースされる
+        processOrder(order);
+    }
+    
+    @KafkaListener(topics = "orders", groupId = "order-processor")
+    public void handleKafkaOrder(Order order) {
+        // Kafkaのメッセージも自動的にトレースされる
+        processOrder(order);
+    }
+}
+```
+
+### Zipkinの設定
+
+#### Zipkinサーバーの起動
+
+**Docker Compose (`docker-compose.yml`):**
+
+```yaml
+version: '3.8'
+services:
+  zipkin:
+    image: openzipkin/zipkin:latest
+    ports:
+      - "9411:9411"
+    environment:
+      - STORAGE_TYPE=elasticsearch
+      - ES_HOSTS=http://elasticsearch:9200
+```
+
+#### Zipkinへの送信設定
+
+**`application.yml`:**
+
+```yaml
+spring:
+  sleuth:
+    zipkin:
+      base-url: http://localhost:9411
+      sender:
+        type: web  # HTTPでZipkinに送信
+```
+
+### 実践的な例: 分散トレーシングの活用
+
+```java
+@RestController
+public class OrderController {
+    
+    private final OrderService orderService;
+    private final PaymentService paymentService;
+    private final InventoryService inventoryService;
+    private final Tracer tracer;
+    
+    @PostMapping("/orders")
+    public Order createOrder(@RequestBody OrderRequest request) {
+        Span span = tracer.nextSpan()
+            .name("create-order")
+            .tag("order.items.count", String.valueOf(request.getItems().size()))
+            .start();
+        
+        try (Tracer.SpanInScope ws = tracer.withSpanInScope(span)) {
+            // 1. 注文を作成
+            Order order = orderService.createOrder(request);
+            
+            // 2. 決済処理
+            paymentService.processPayment(order);
+            
+            // 3. 在庫更新
+            inventoryService.updateStock(order.getItems());
+            
+            span.tag("order.id", order.getId().toString());
+            span.tag("order.status", order.getStatus().toString());
+            
+            return order;
+        } catch (Exception e) {
+            span.tag("error", true);
+            span.tag("error.message", e.getMessage());
+            throw e;
+        } finally {
+            span.end();
+        }
+    }
+}
+```
+
+### パフォーマンス分析
+
+ZipkinのUIを使用して、以下の分析が可能です：
+
+1. **トレースの検索**: Trace ID、サービス名、時間範囲で検索
+2. **依存関係の可視化**: サービス間の依存関係をグラフで表示
+3. **パフォーマンス分析**: 各Spanの処理時間を可視化
+4. **エラー分析**: エラーが発生したSpanを特定
+
+### まとめ
+
+分散トレーシングを使用した可観測性のポイント：
+
+- **自動トレーシング**: HTTP、メッセージキュー、データベースなど
+- **カスタムSpan**: ビジネスロジックのトレーシング
+- **Zipkin統合**: トレースデータの可視化
+- **パフォーマンス分析**: ボトルネックの特定
+- **エラー追跡**: エラーの発生箇所を特定
+
+分散トレーシングは、マイクロサービスアーキテクチャにおいて不可欠な技術です。適切に実装することで、アプリケーションの可観測性とデバッグ効率を大幅に向上させることができます。
+

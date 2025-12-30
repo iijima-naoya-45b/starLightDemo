@@ -1,0 +1,466 @@
+---
+title: "テーブル設計基礎"
+label: "テーブル設計基礎"
+---
+
+## テーブル設計基礎
+
+データベースのテーブル設計は、システムの基盤となる重要な要素です。適切なテーブル設計により、データの整合性、パフォーマンス、拡張性を確保できます。
+
+### なぜテーブル設計が重要なのか
+
+テーブル設計は、データベースの構造を決定する重要な要素です。テーブル設計が不適切だと、以下のような問題が発生します：
+
+**開発段階での問題:**
+- データの重複が発生し、更新時に不整合が生じる
+- クエリが複雑になり、パフォーマンスが低下する
+- スキーマ変更が困難で、新機能の追加が困難になる
+- データの整合性が保てず、バグが発生しやすくなる
+
+**運用段階での問題:**
+- データベースのパフォーマンスが低下する
+- データの不整合が発生し、修正に時間がかかる
+- バックアップとリストアが困難になる
+- データの移行が困難になる
+
+**長期的な問題:**
+- 技術的負債が蓄積し、リファクタリングが困難になる
+- データの整合性が保てなくなり、信頼性が低下する
+- 新機能の追加が困難になり、開発速度が低下する
+
+#### テーブル設計を軽視した場合の実際の事例
+
+**事例1: 正規化不足によるデータの重複**
+
+あるECサイトで、ユーザー情報と注文情報を1つのテーブルに格納していました：
+
+```sql
+-- 問題のあるテーブル設計
+CREATE TABLE users (
+  id INT,
+  name VARCHAR(255),
+  email VARCHAR(255),
+  order1_id INT,
+  order1_date DATE,
+  order1_total DECIMAL(10,2),
+  order2_id INT,
+  order2_date DATE,
+  order2_total DECIMAL(10,2),
+  -- ... 最大10個の注文まで
+);
+```
+
+**発生した問題:**
+- ユーザーが10個以上の注文をした場合、新しいレコードを作成する必要がある
+- ユーザー情報（名前、メールアドレス）が重複し、更新時に不整合が発生する
+- 注文がないユーザーでも、注文用のカラムが存在し、ストレージが無駄になる
+- クエリが複雑になり、パフォーマンスが低下する
+
+**結果:**
+- データベースのサイズが2倍になる
+- クエリの実行時間が3倍になる
+- データの更新時に不整合が発生し、修正に1週間かかる
+
+**適切なテーブル設計による解決:**
+正規化を行い、ユーザーテーブルと注文テーブルを分離した結果：
+- データベースのサイズが50%削減される
+- クエリの実行時間が50%短縮される
+- データの整合性が保たれ、更新が容易になる
+
+**事例2: インデックスの不足によるパフォーマンス問題**
+
+あるSNSアプリケーションで、ユーザーテーブルにインデックスが設定されていませんでした：
+
+```sql
+-- インデックスがないテーブル
+CREATE TABLE users (
+  id INT PRIMARY KEY,
+  email VARCHAR(255),
+  username VARCHAR(50),
+  created_at TIMESTAMP
+);
+```
+
+**発生した問題:**
+- メールアドレスでユーザーを検索する際、全件スキャンが発生する
+- ユーザー数が100万人を超えると、検索に10秒以上かかる
+- ログイン処理が遅くなり、ユーザーが離脱する
+
+**結果:**
+- ログイン処理の平均レスポンスタイムが10秒になる
+- ユーザーの離脱率が30%増加
+- サーバーのCPU使用率が90%を超える
+
+**適切なインデックス設計による解決:**
+メールアドレスとユーザー名にインデックスを追加した結果：
+- ログイン処理の平均レスポンスタイムが0.1秒になる
+- ユーザーの離脱率が10%減少
+- サーバーのCPU使用率が30%に低下
+
+#### 問題のあるテーブル設計
+
+**問題のある設計:**
+
+```sql
+-- すべてを1つのテーブルに
+CREATE TABLE users (
+  id INT,
+  name VARCHAR(255),
+  email VARCHAR(255),
+  password VARCHAR(255),
+  order1_id INT,
+  order1_date DATE,
+  order1_total DECIMAL(10,2),
+  order2_id INT,
+  order2_date DATE,
+  order2_total DECIMAL(10,2),
+  order3_id INT,
+  order3_date DATE,
+  order3_total DECIMAL(10,2)
+);
+-- 問題点:
+// - 正規化されていない
+// - データの重複
+// - 拡張性がない
+// - データ整合性の問題
+```
+
+**良いテーブル設計:**
+
+```sql
+-- 正規化された設計
+CREATE TABLE users (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE orders (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  total DECIMAL(10,2) NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+-- メリット:
+// - 正規化されている
+// - データの重複がない
+// - 拡張性がある
+// - データ整合性が保たれる
+```
+
+**メリット:**
+1. **データ整合性**: データの一貫性が保たれる
+   - 正規化により、データの重複がなくなる
+   - 外部キー制約により、参照整合性が保たれる
+   - データの更新時に不整合が発生しない
+
+2. **拡張性**: 機能追加が容易
+   - 新しいテーブルを追加するだけで、機能を追加できる
+   - 既存のテーブルへの影響が少ない
+   - スキーマ変更が容易
+
+3. **パフォーマンス**: 効率的なクエリ
+   - 適切なインデックスにより、クエリが高速化される
+   - 正規化により、不要なデータの読み込みがなくなる
+   - データベースのサイズが削減される
+
+4. **保守性**: 変更が容易
+   - テーブル構造が明確で、理解しやすい
+   - 変更時の影響範囲が明確
+   - バグの修正が容易
+
+### テーブル設計の基本原則
+
+テーブル設計の基本原則は、データの整合性、パフォーマンス、拡張性を確保するために重要です。これらの原則に従うことで、保守しやすく、拡張可能なデータベースを構築できます。
+
+#### 1. 正規化
+
+**なぜ正規化が重要なのか:**
+
+正規化は、データの重複を排除し、データの整合性を保つための重要な手法です。正規化が不適切だと、以下のような問題が発生します：
+
+- **データの重複**: 同じデータが複数の場所に存在し、更新時に不整合が発生する
+- **更新異常**: 1つのデータを更新する際に、複数の場所を更新する必要がある
+- **削除異常**: データを削除する際に、意図しないデータも削除される
+- **挿入異常**: データを挿入する際に、不要なデータも挿入する必要がある
+
+**正規化の各段階の目的:**
+
+- **第1正規形 (1NF)**: 各セルに1つの値のみを格納し、重複する行を排除する
+- **第2正規形 (2NF)**: 部分関数従属を排除し、完全関数従属のみを許可する
+- **第3正規形 (3NF)**: 推移的関数従属を排除し、直接的な関数従属のみを許可する
+
+**正規化の実例:**
+
+正規化が不適切な場合、以下のような問題が発生します：
+
+```sql
+-- 正規化が不適切なテーブル
+CREATE TABLE orders (
+  id INT PRIMARY KEY,
+  customer_name VARCHAR(255),  -- 顧客名が重複
+  customer_email VARCHAR(255),  -- 顧客メールが重複
+  product_name VARCHAR(255),  -- 商品名が重複
+  product_price DECIMAL(10,2),  -- 商品価格が重複
+  order_date DATE
+);
+
+-- 問題点:
+-- 1. 同じ顧客が複数の注文をした場合、顧客情報が重複する
+-- 2. 顧客のメールアドレスを変更する際に、すべての注文レコードを更新する必要がある
+-- 3. 商品の価格を変更する際に、過去の注文の価格も変更されてしまう
+```
+
+正規化を行った場合：
+
+```sql
+-- 正規化されたテーブル
+CREATE TABLE customers (
+  id INT PRIMARY KEY,
+  name VARCHAR(255),
+  email VARCHAR(255)
+);
+
+CREATE TABLE products (
+  id INT PRIMARY KEY,
+  name VARCHAR(255),
+  price DECIMAL(10,2)
+);
+
+CREATE TABLE orders (
+  id INT PRIMARY KEY,
+  customer_id INT,
+  order_date DATE,
+  FOREIGN KEY (customer_id) REFERENCES customers(id)
+);
+
+CREATE TABLE order_items (
+  id INT PRIMARY KEY,
+  order_id INT,
+  product_id INT,
+  quantity INT,
+  FOREIGN KEY (order_id) REFERENCES orders(id),
+  FOREIGN KEY (product_id) REFERENCES products(id)
+);
+
+-- メリット:
+-- 1. 顧客情報が1箇所にのみ存在し、更新が容易
+-- 2. 商品情報が1箇所にのみ存在し、過去の注文の価格が保持される
+-- 3. データの整合性が保たれる
+```
+
+**第1正規形 (1NF):**
+- 各セルに1つの値のみ
+- 重複する行がない
+
+**第2正規形 (2NF):**
+- 1NFを満たす
+- 部分関数従属がない
+
+**第3正規形 (3NF):**
+- 2NFを満たす
+- 推移的関数従属がない
+
+#### 2. 主キーと外部キー
+
+**なぜ主キーと外部キーが重要なのか:**
+
+主キーと外部キーは、データの整合性を保つための重要な仕組みです。主キーと外部キーが適切に設定されていないと、以下のような問題が発生します：
+
+- **データの重複**: 同じレコードが複数存在する可能性がある
+- **参照整合性の問題**: 存在しないデータを参照する可能性がある
+- **データの削除の問題**: 関連データを削除する際に、孤立したデータが残る
+- **クエリの複雑化**: データの関連性が明確でないため、クエリが複雑になる
+
+**主キーの役割:**
+
+主キーは、テーブル内の各行を一意に識別するためのカラムまたはカラムの組み合わせです。主キーにより、以下のようなメリットが生まれます：
+
+- **一意性の保証**: 同じデータが重複して登録されることを防ぐ
+- **高速な検索**: 主キーにインデックスが自動的に作成され、高速な検索が可能
+- **参照の明確化**: 他のテーブルから参照する際の基準となる
+
+**外部キーの役割:**
+
+外部キーは、他のテーブルの主キーを参照するカラムです。外部キーにより、以下のようなメリットが生まれます：
+
+- **参照整合性の保証**: 存在しないデータを参照することを防ぐ
+- **データの関連性の明確化**: テーブル間の関係が明確になる
+- **カスケード操作**: 親レコードの削除時に、子レコードも自動的に削除できる
+
+**主キー:**
+
+```sql
+CREATE TABLE users (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL
+);
+```
+
+**外部キー:**
+
+```sql
+CREATE TABLE orders (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+```
+
+#### 3. データ型の選択
+
+**なぜデータ型の選択が重要なのか:**
+
+データ型の選択は、データの整合性、パフォーマンス、ストレージ効率に直接影響します。不適切なデータ型を使用すると、以下のような問題が発生します：
+
+- **データの整合性の問題**: 不正なデータが登録される可能性がある
+- **パフォーマンスの低下**: 不適切なデータ型により、クエリが遅くなる
+- **ストレージの浪費**: 大きなデータ型を使用すると、ストレージが無駄になる
+- **インデックスの非効率**: 大きなデータ型にインデックスを設定すると、インデックスが大きくなる
+
+**データ型選択の実例:**
+
+**整数型の選択:**
+
+```sql
+-- 不適切な選択
+user_id VARCHAR(255)  -- 文字列型を使用（問題: 数値演算ができない、インデックスが非効率）
+
+-- 適切な選択
+user_id INT  -- 整数型を使用（メリット: 数値演算ができる、インデックスが効率的）
+```
+
+**日時型の選択:**
+
+```sql
+-- 不適切な選択
+created_at VARCHAR(255)  -- 文字列型を使用（問題: 日時演算ができない、ソートが正しく動作しない）
+
+-- 適切な選択
+created_at TIMESTAMP  -- 日時型を使用（メリット: 日時演算ができる、ソートが正しく動作する）
+```
+
+**数値型の選択:**
+
+```sql
+-- 不適切な選択
+price FLOAT  -- 浮動小数点型を使用（問題: 精度の問題、金額計算に不向き）
+
+-- 適切な選択
+price DECIMAL(10,2)  -- 固定小数点型を使用（メリット: 精度が保証される、金額計算に適している）
+```
+
+**適切なデータ型:**
+
+```sql
+-- 整数
+id INT PRIMARY KEY AUTO_INCREMENT
+
+-- 文字列
+name VARCHAR(255) NOT NULL
+email VARCHAR(255) UNIQUE NOT NULL
+
+-- 日時
+created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+
+-- 数値
+price DECIMAL(10,2) NOT NULL
+
+-- 真偽値
+is_active BOOLEAN DEFAULT TRUE
+```
+
+#### 4. NULLの扱い
+
+**なぜNULLの扱いが重要なのか:**
+
+NULLは、データが存在しないことを表現する重要な概念です。NULLの扱いが不適切だと、以下のような問題が発生します：
+
+- **データの整合性の問題**: NULLが許可されている場合、必須データが欠落する可能性がある
+- **クエリの複雑化**: NULLのチェックが必要になり、クエリが複雑になる
+- **パフォーマンスの問題**: NULLのチェックにより、クエリが遅くなる
+- **アプリケーションロジックの複雑化**: NULLのチェックが必要になり、アプリケーションロジックが複雑になる
+
+**NULLを使用すべき場合:**
+
+- **オプショナルなデータ**: 必須ではないが、存在する可能性があるデータ
+- **デフォルト値が設定できない場合**: デフォルト値を設定できないが、初期値が不明な場合
+- **履歴データ**: 過去のデータで、現在は存在しないデータ
+
+**NULLを使用すべきでない場合:**
+
+- **必須データ**: 必ず存在する必要があるデータ
+- **デフォルト値が設定できる場合**: デフォルト値を設定できる場合
+- **外部キー**: 参照整合性を保つため、外部キーは通常NOT NULL
+
+**NULLの使用:**
+
+```sql
+-- NULLを許可する場合
+middle_name VARCHAR(255) NULL
+
+-- NULLを許可しない場合
+email VARCHAR(255) NOT NULL
+```
+
+### 実践例: ユーザー管理システム
+
+```sql
+-- ユーザーテーブル
+CREATE TABLE users (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  username VARCHAR(50) UNIQUE NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  first_name VARCHAR(100) NOT NULL,
+  last_name VARCHAR(100) NOT NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_email (email),
+  INDEX idx_username (username)
+);
+
+-- プロフィールテーブル
+CREATE TABLE user_profiles (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  bio TEXT,
+  avatar_url VARCHAR(255),
+  phone VARCHAR(20),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_user_profile (user_id)
+);
+
+-- ロールテーブル
+CREATE TABLE roles (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(50) UNIQUE NOT NULL,
+  description TEXT
+);
+
+-- ユーザーロール中間テーブル
+CREATE TABLE user_roles (
+  user_id INT NOT NULL,
+  role_id INT NOT NULL,
+  PRIMARY KEY (user_id, role_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+);
+```
+
+### まとめ
+
+テーブル設計の基本原則：
+
+- **正規化**: 1NF、2NF、3NFを満たす
+- **主キーと外部キー**: 適切なキーを設定
+- **データ型**: 適切なデータ型を選択
+- **NULLの扱い**: NULLの使用を適切に判断
+
+適切なテーブル設計により、データ整合性とパフォーマンスを確保できます。
+

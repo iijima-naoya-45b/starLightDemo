@@ -1,0 +1,38 @@
+---
+title: "キャッシング"
+label: "キャッシング"
+---
+
+## キャッシング
+
+Djangoでは、Redisを使用したキャッシングを実装できます。
+
+### Redisキャッシングの設定
+
+#### 設定
+
+```python
+# settings.py
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6379/1",
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        }
+    }
+}
+```
+
+#### キャッシュの使用
+
+```python
+from django.core.cache import cache
+
+# キャッシュに保存
+cache.set("key", "value", timeout=300)
+
+# キャッシュから取得
+value = cache.get("key")
+```
+

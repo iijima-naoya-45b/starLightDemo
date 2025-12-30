@@ -6,7 +6,7 @@ import react from '@astrojs/react';
 export default defineConfig({
     integrations: [
         starlight({
-            title: '言語別ドキュメント',
+            title: 'エンジニア用ドキュメント',
             social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/iijima-naoya-45b' }],
             customCss: [
                 './src/styles/common.css',
@@ -103,6 +103,78 @@ export default defineConfig({
                     collapsed: true,
                     autogenerate: { directory: 'Javaガイド' },
                     badge: { text: '実験的', variant: 'caution' },
+                },
+                {
+                    label: 'デザインガイド',
+                    collapsed: true,
+                    autogenerate: { directory: 'デザインガイド' },
+                    badge: { text: '新規', variant: 'success' },
+                },
+                {
+                    label: '法律ガイド',
+                    collapsed: true,
+                    autogenerate: { directory: '法律ガイド' },
+                    badge: { text: '重要', variant: 'danger' },
+                },
+                {
+                    label: 'AWSガイド',
+                    collapsed: true,
+                    autogenerate: { directory: 'AWSガイド' },
+                    badge: { text: '重要', variant: 'success' },
+                },
+                {
+                    label: 'Chrome拡張機能ガイド',
+                    collapsed: true,
+                    autogenerate: { directory: 'Chrome拡張機能ガイド' },
+                    badge: { text: '中級', variant: 'caution' },
+                },
+                {
+                    label: 'Dockerガイド',
+                    collapsed: true,
+                    autogenerate: { directory: 'Dockerガイド' },
+                    badge: { text: 'おすすめ', variant: 'success' },
+                },
+                {
+                    label: 'Laravelガイド',
+                    collapsed: true,
+                    autogenerate: { directory: 'Laravelガイド' },
+                    badge: { text: '新規', variant: 'success' },
+                },
+                {
+                    label: 'PHPガイド',
+                    collapsed: true,
+                    autogenerate: { directory: 'PHPガイド' },
+                    badge: { text: '新規', variant: 'success' },
+                },
+                {
+                    label: 'Reactガイド',
+                    collapsed: true,
+                    autogenerate: { directory: 'Reactガイド' },
+                    badge: { text: 'おすすめ', variant: 'success' },
+                },
+                {
+                    label: '状態管理ガイド',
+                    collapsed: true,
+                    autogenerate: { directory: '状態管理ガイド' },
+                    badge: { text: '重要', variant: 'note' },
+                },
+                {
+                    label: '設計ガイド',
+                    collapsed: true,
+                    autogenerate: { directory: '設計ガイド' },
+                    badge: { text: '重要', variant: 'success' },
+                },
+                {
+                    label: '組織論ガイド',
+                    collapsed: true,
+                    autogenerate: { directory: '組織論ガイド' },
+                    badge: { text: '重要', variant: 'note' },
+                },
+                {
+                    label: 'セキュリティガイド',
+                    collapsed: true,
+                    autogenerate: { directory: 'セキュリティガイド' },
+                    badge: { text: '重要', variant: 'danger' },
                 },
             ],
         }),

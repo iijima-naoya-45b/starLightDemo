@@ -1,0 +1,83 @@
+---
+title: "マイグレーション"
+label: "マイグレーション"
+---
+
+## マイグレーション
+
+マイグレーションは、データベーススキーマのバージョン管理システムです。
+
+### マイグレーションの作成
+
+```bash
+# マイグレーションファイルの作成
+php artisan make:migration create_users_table
+
+# モデルとマイグレーションを同時に作成
+php artisan make:model User -m
+```
+
+### マイグレーションファイル
+
+```php
+<?php
+// database/migrations/2024_01_01_000000_create_users_table.php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up()
+    {
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('email')->unique();
+            $table->timestamp('email_verified_at')->nullable();
+            $table->string('password');
+            $table->rememberToken();
+            $table->timestamps();
+        });
+    }
+
+    public function down()
+    {
+        Schema::dropIfExists('users');
+    }
+};
+```
+
+### マイグレーションの実行
+
+```bash
+# マイグレーションの実行
+php artisan migrate
+
+# ロールバック
+php artisan migrate:rollback
+
+# すべてのマイグレーションをロールバック
+php artisan migrate:reset
+
+# ロールバックして再実行
+php artisan migrate:refresh
+
+# ロールバックして再実行（データも削除）
+php artisan migrate:fresh
+```
+
+### カラムの追加
+
+```php
+<?php
+// マイグレーション: カラムの追加
+public function up()
+{
+    Schema::table('users', function (Blueprint $table) {
+        $table->string('phone')->nullable()->after('email');
+        $table->boolean('is_admin')->default(false);
+    });
+}
+```
+

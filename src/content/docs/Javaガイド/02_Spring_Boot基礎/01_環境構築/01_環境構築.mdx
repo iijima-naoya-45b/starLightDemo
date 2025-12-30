@@ -1,0 +1,346 @@
+---
+title: "環境構築"
+label: "環境構築"
+---
+
+## Java開発環境の構築
+
+Javaアプリケーションを開発するための環境構築手順を詳しく説明します。
+
+### JDK（Java Development Kit）のインストール
+
+Java開発には、**JDK**が必要です。JDKには、Javaコンパイラ、JVM、標準ライブラリなどが含まれています。
+
+#### 1. JDKのバージョン選択
+
+Javaには複数のバージョンがありますが、エンタープライズ開発では**LTS（Long Term Support）**バージョンが推奨されます。
+
+- **Java 17 LTS**: 2021年9月リリース、2029年9月までサポート
+- **Java 21 LTS**: 2023年9月リリース、2031年9月までサポート（最新）
+
+#### 2. JDKのダウンロードとインストール
+
+**macOSの場合:**
+
+```bash
+# Homebrewを使用してインストール
+brew install openjdk@17
+
+# または、OpenJDK 21をインストール
+brew install openjdk@21
+
+# 環境変数の設定（~/.zshrcまたは~/.bash_profileに追加）
+export JAVA_HOME=$(/usr/libexec/java_home -v 17)
+export PATH="$JAVA_HOME/bin:$PATH"
+```
+
+**Windowsの場合:**
+
+1. [Oracle JDK](https://www.oracle.com/java/technologies/downloads/)または[OpenJDK](https://adoptium.net/)からインストーラーをダウンロード
+2. インストーラーを実行してインストール
+3. 環境変数`JAVA_HOME`を設定
+4. `PATH`に`%JAVA_HOME%\bin`を追加
+
+**Linux（Ubuntu/Debian）の場合:**
+
+```bash
+# OpenJDK 17のインストール
+sudo apt update
+sudo apt install openjdk-17-jdk
+
+# 環境変数の設定（~/.bashrcに追加）
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export PATH=$JAVA_HOME/bin:$PATH
+```
+
+#### 3. インストール確認
+
+```bash
+# Javaのバージョン確認
+java -version
+
+# コンパイラのバージョン確認
+javac -version
+
+# JAVA_HOMEの確認
+echo $JAVA_HOME  # macOS/Linux
+echo %JAVA_HOME%  # Windows
+```
+
+### IDE（統合開発環境）のインストール
+
+Java開発には、IDEを使用することで開発効率が大幅に向上します。
+
+#### IntelliJ IDEA（推奨）
+
+**Community Edition（無料版）のインストール:**
+
+```bash
+# macOS
+brew install --cask intellij-idea-ce
+
+# または公式サイトからダウンロード
+# https://www.jetbrains.com/idea/download/
+```
+
+**主な機能:**
+- 強力なコード補完
+- リファクタリング支援
+- 統合デバッガー
+- Maven/Gradle統合
+- Spring Bootサポート
+
+#### Eclipse
+
+**インストール:**
+
+```bash
+# macOS
+brew install --cask eclipse-java
+
+# または公式サイトからダウンロード
+# https://www.eclipse.org/downloads/
+```
+
+#### Visual Studio Code
+
+VS Codeを使用する場合、以下の拡張機能をインストールします：
+
+- **Extension Pack for Java**（Microsoft）
+- **Spring Boot Extension Pack**（VMware）
+
+### ビルドツールのインストール
+
+#### Maven
+
+**インストール:**
+
+```bash
+# macOS
+brew install maven
+
+# Windows
+# Chocolateyを使用する場合
+choco install maven
+
+# Linux
+sudo apt install maven
+```
+
+**確認:**
+
+```bash
+mvn -version
+```
+
+**設定ファイル（~/.m2/settings.xml）:**
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+          http://maven.apache.org/xsd/settings-1.0.0.xsd">
+    <!-- ミラーサーバーの設定（日本のミラーを使用する場合） -->
+    <mirrors>
+        <mirror>
+            <id>maven-central</id>
+            <name>Maven Central</name>
+            <url>https://repo1.maven.org/maven2</url>
+            <mirrorOf>central</mirrorOf>
+        </mirror>
+    </mirrors>
+</settings>
+```
+
+#### Gradle
+
+**インストール:**
+
+```bash
+# macOS
+brew install gradle
+
+# Windows
+# Chocolateyを使用する場合
+choco install gradle
+
+# Linux
+sudo apt install gradle
+```
+
+**確認:**
+
+```bash
+gradle -version
+```
+
+### Spring Boot CLI（オプション）
+
+Spring Bootアプリケーションを素早く作成するためのCLIツールです。
+
+**インストール:**
+
+```bash
+# macOS
+brew tap spring-io/tap
+brew install spring-boot
+
+# 確認
+spring --version
+```
+
+### データベースのセットアップ
+
+#### PostgreSQL
+
+```bash
+# macOS
+brew install postgresql@15
+brew services start postgresql@15
+
+# Linux
+sudo apt install postgresql postgresql-contrib
+sudo systemctl start postgresql
+```
+
+#### MySQL
+
+```bash
+# macOS
+brew install mysql
+brew services start mysql
+
+# Linux
+sudo apt install mysql-server
+sudo systemctl start mysql
+```
+
+#### H2 Database（開発用）
+
+H2は、Spring Bootに組み込まれているインメモリデータベースで、開発やテストに便利です。追加のインストールは不要です。
+
+### プロジェクトの作成
+
+#### Spring Initializrを使用
+
+1. [https://start.spring.io/](https://start.spring.io/)にアクセス
+2. プロジェクトの設定を選択：
+   - **Project**: MavenまたはGradle
+   - **Language**: Java
+   - **Spring Boot**: 最新のLTSバージョン
+   - **Packaging**: Jar
+   - **Java**: 17または21
+3. 依存関係を選択：
+   - Spring Web
+   - Spring Data JPA
+   - PostgreSQL Driver（またはMySQL Driver）
+   - Lombok（オプション）
+4. 「Generate」をクリックしてダウンロード
+5. ダウンロードしたZIPファイルを解凍
+
+#### コマンドラインで作成
+
+```bash
+# Spring Boot CLIを使用
+spring init --dependencies=web,jpa,postgresql --java-version=17 my-app
+
+# または、curlを使用
+curl https://start.spring.io/starter.zip \
+  -d type=maven-project \
+  -d language=java \
+  -d bootVersion=3.1.0 \
+  -d baseDir=my-app \
+  -d groupId=com.example \
+  -d artifactId=my-app \
+  -d name=my-app \
+  -d description=Demo project \
+  -d packageName=com.example.myapp \
+  -d packaging=jar \
+  -d javaVersion=17 \
+  -d dependencies=web,jpa,postgresql \
+  -o my-app.zip
+```
+
+### プロジェクト構造の確認
+
+作成されたプロジェクトの構造は以下のようになります：
+
+```
+my-app/
+├── src/
+│   ├── main/
+│   │   ├── java/
+│   │   │   └── com/
+│   │   │       └── example/
+│   │   │           └── myapp/
+│   │   │               └── MyAppApplication.java
+│   │   └── resources/
+│   │       ├── application.properties
+│   │       └── static/
+│   └── test/
+│       └── java/
+│           └── com/
+│               └── example/
+│                   └── myapp/
+│                       └── MyAppApplicationTests.java
+├── pom.xml  # Mavenの場合
+└── README.md
+```
+
+### アプリケーションの実行
+
+```bash
+# プロジェクトディレクトリに移動
+cd my-app
+
+# Mavenを使用する場合
+./mvnw spring-boot:run
+
+# Gradleを使用する場合
+./gradlew bootRun
+
+# または、IDEから実行
+# IntelliJ IDEAの場合、MyAppApplication.javaを右クリックして「Run」を選択
+```
+
+### 動作確認
+
+ブラウザで `http://localhost:8080` にアクセスして、アプリケーションが起動していることを確認します。
+
+### よくある問題と解決策
+
+#### 問題1: JAVA_HOMEが設定されていない
+
+```bash
+# macOS/Linux
+export JAVA_HOME=$(/usr/libexec/java_home -v 17)
+
+# Windows
+set JAVA_HOME=C:\Program Files\Java\jdk-17
+```
+
+#### 問題2: ポート8080が既に使用されている
+
+`application.properties`でポートを変更：
+
+```properties
+server.port=8081
+```
+
+#### 問題3: Maven/Gradleの依存関係のダウンロードが遅い
+
+ミラーサーバーを設定するか、プロキシ設定を確認します。
+
+### 次のステップ
+
+環境構築が完了したら、以下のステップに進みます：
+
+1. **フォルダ構成の理解**: プロジェクトの構造を理解する
+2. **基本的なアノテーション**: Spring Bootのアノテーションを学ぶ
+3. **コントローラーの作成**: REST APIエンドポイントを作成する
+4. **データベース接続**: JPAを使用してデータベースに接続する
+
+環境構築が完了したら、Javaアプリケーション開発を始める準備が整いました。
+
+

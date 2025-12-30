@@ -1,0 +1,280 @@
+---
+title: "基本的な拡張機能の例"
+label: "基本的な拡張機能の例"
+---
+
+## 基本的な拡張機能の例
+
+実践的な拡張機能の例を通じて、基本的な機能を学びます。
+
+### 例1: ページの背景色を変更する拡張機能
+
+#### manifest.json
+
+```json
+{
+  "manifest_version": 3,
+  "name": "背景色変更",
+  "version": "1.0.0",
+  "description": "ページの背景色を変更します",
+  "permissions": ["activeTab", "scripting"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}
+```
+
+#### popup.html
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 250px;
+      padding: 15px;
+      font-family: Arial, sans-serif;
+    }
+    .color-option {
+      width: 100%;
+      padding: 10px;
+      margin: 5px 0;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      color: white;
+      font-weight: bold;
+    }
+    .color-option:hover {
+      opacity: 0.8;
+    }
+  </style>
+</head>
+<body>
+  <h3>背景色を選択</h3>
+  <button class="color-option" style="background-color: #ff6b6b;" data-color="#ff6b6b">赤</button>
+  <button class="color-option" style="background-color: #4ecdc4;" data-color="#4ecdc4">青</button>
+  <button class="color-option" style="background-color: #ffe66d;" data-color="#ffe66d">黄</button>
+  <button class="color-option" style="background-color: #95e1d3;" data-color="#95e1d3">緑</button>
+  <button class="color-option" style="background-color: #ffffff; color: #000;" data-color="#ffffff">白（リセット）</button>
+  <script src="popup.js"></script>
+</body>
+</html>
+```
+
+#### popup.js
+
+```javascript
+// ボタンクリック時の処理
+document.querySelectorAll('.color-option').forEach(button => {
+  button.addEventListener('click', () => {
+    const color = button.dataset.color;
+    
+    // 現在のタブにスクリプトを注入
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      chrome.scripting.executeScript({
+        target: { tabId: tabs[0].id },
+        function: (color) => {
+          document.body.style.backgroundColor = color;
+        },
+        args: [color]
+      });
+    });
+  });
+});
+```
+
+### 例2: ページのテキストを検索・ハイライトする拡張機能
+
+#### manifest.json
+
+```json
+{
+  "manifest_version": 3,
+  "name": "テキスト検索",
+  "version": "1.0.0",
+  "description": "ページ内のテキストを検索してハイライトします",
+  "permissions": ["activeTab", "scripting"],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
+```
+
+#### popup.html
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 300px;
+      padding: 15px;
+      font-family: Arial, sans-serif;
+    }
+    input {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+  </style>
+</head>
+<body>
+  <h3>テキスト検索</h3>
+  <input type="text" id="searchText" placeholder="検索するテキストを入力">
+  <button id="search">検索</button>
+  <button id="clear">クリア</button>
+  <script src="popup.js"></script>
+</body>
+</html>
+```
+
+#### popup.js
+
+```javascript
+// 検索機能
+document.getElementById('search').addEventListener('click', () => {
+  const searchText = document.getElementById('searchText').value;
+  
+  if (!searchText) {
+    alert('検索テキストを入力してください');
+    return;
+  }
+  
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    chrome.scripting.executeScript({
+      target: { tabId: tabs[0].id },
+      function: (text) => {
+        // 既存のハイライトをクリア
+        const existingHighlights = document.querySelectorAll('.search-highlight');
+        existingHighlights.forEach(el => {
+          const parent = el.parentNode;
+          parent.replaceChild(document.createTextNode(el.textContent), el);
+          parent.normalize();
+        });
+        
+        // テキストを検索してハイライト
+        const walker = document.createTreeWalker(
+          document.body,
+          NodeFilter.SHOW_TEXT,
+          null,
+          false
+        );
+        
+        const textNodes = [];
+        let node;
+        while (node = walker.nextNode()) {
+          if (node.textContent.includes(text)) {
+            textNodes.push(node);
+          }
+        }
+        
+        textNodes.forEach(textNode => {
+          const parent = textNode.parentNode;
+          const text = textNode.textContent;
+          const regex = new RegExp(text, 'gi');
+          const highlightedText = text.replace(regex, match => {
+            return `<span class="search-highlight" style="background-color: yellow;">${match}</span>`;
+          });
+          
+          const wrapper = document.createElement('div');
+          wrapper.innerHTML = highlightedText;
+          while (wrapper.firstChild) {
+            parent.insertBefore(wrapper.firstChild, textNode);
+          }
+          parent.removeChild(textNode);
+        });
+      },
+      args: [searchText]
+    });
+  });
+});
+
+// クリア機能
+document.getElementById('clear').addEventListener('click', () => {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    chrome.scripting.executeScript({
+      target: { tabId: tabs[0].id },
+      function: () => {
+        const highlights = document.querySelectorAll('.search-highlight');
+        highlights.forEach(el => {
+          const parent = el.parentNode;
+          parent.replaceChild(document.createTextNode(el.textContent), el);
+          parent.normalize();
+        });
+      }
+    });
+  });
+});
+```
+
+### 例3: ページのスクリーンショットを撮る拡張機能
+
+#### manifest.json
+
+```json
+{
+  "manifest_version": 3,
+  "name": "スクリーンショット",
+  "version": "1.0.0",
+  "description": "ページのスクリーンショットを撮ります",
+  "permissions": ["activeTab"],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
+```
+
+#### popup.js
+
+```javascript
+document.getElementById('screenshot').addEventListener('click', () => {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+      // 新しいタブで画像を表示
+      chrome.tabs.create({ url: dataUrl });
+      
+      // または、ダウンロード
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = 'screenshot.png';
+      link.click();
+    });
+  });
+});
+```
+
+### まとめ
+
+基本的な拡張機能の例：
+
+1. **背景色変更**: ページの背景色を変更
+2. **テキスト検索**: ページ内のテキストを検索してハイライト
+3. **スクリーンショット**: ページのスクリーンショットを撮影
+
+これらの例を通じて、Chrome拡張機能の基本的な機能を理解できます。
+

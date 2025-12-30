@@ -1,0 +1,162 @@
+---
+title: "最初の拡張機能を作る"
+label: "最初の拡張機能を作る"
+---
+
+## 最初の拡張機能を作る
+
+「Hello World」を表示するシンプルな拡張機能を作りましょう。
+
+### ステップ1: manifest.jsonを作る
+
+拡張機能の設定ファイルを作成します。
+
+```json
+{
+  "manifest_version": 3,
+  "name": "はじめての拡張機能",
+  "version": "1.0.0",
+  "description": "最初のChrome拡張機能です",
+  
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}
+```
+
+**説明:**
+- `manifest_version`: 3を指定（最新版）
+- `name`: 拡張機能の名前
+- `version`: バージョン番号
+- `description`: 説明文
+- `action`: 拡張機能アイコンをクリックしたときの動作
+
+### ステップ2: popup.htmlを作る
+
+ポップアップのHTMLを作成します。
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>はじめての拡張機能</title>
+  <style>
+    body {
+      width: 300px;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+    h1 {
+      color: #4285f4;
+      font-size: 24px;
+    }
+    p {
+      color: #666;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Hello World!</h1>
+  <p>はじめてのChrome拡張機能です</p>
+  <button id="clickButton">クリックしてください</button>
+  <p id="message"></p>
+  <script src="popup.js"></script>
+</body>
+</html>
+```
+
+**説明:**
+- `body`: ポップアップの幅を300pxに設定
+- `h1`: タイトルを表示
+- `button`: クリックできるボタン
+- `script`: popup.jsを読み込む
+
+### ステップ3: popup.jsを作る
+
+ポップアップのJavaScriptを作成します。
+
+```javascript
+// ボタンがクリックされたときの処理
+document.getElementById('clickButton').addEventListener('click', () => {
+  // メッセージを表示
+  document.getElementById('message').textContent = 'ボタンがクリックされました！';
+  
+  // アラートを表示
+  alert('Hello from Chrome Extension!');
+});
+```
+
+**説明:**
+- `getElementById`: HTML要素を取得
+- `addEventListener`: イベントリスナーを追加
+- `textContent`: テキストを設定
+
+### ステップ4: アイコンを用意する
+
+アイコンファイルを用意します。
+
+- `icons/icon16.png` (16x16ピクセル)
+- `icons/icon48.png` (48x48ピクセル)
+- `icons/icon128.png` (128x128ピクセル)
+
+**簡単な方法:**
+1. オンラインで「16x16 icon」などで検索
+2. 無料アイコンサイトからダウンロード
+3. 画像編集ソフトで作成
+
+### ステップ5: 拡張機能を読み込む
+
+1. Chromeで `chrome://extensions/` を開く
+2. 「デベロッパーモード」をONにする
+3. 「パッケージ化されていない拡張機能を読み込む」をクリック
+4. 作成したフォルダを選択
+
+### ステップ6: 動作確認
+
+1. Chromeのツールバーに拡張機能のアイコンが表示される
+2. アイコンをクリックするとポップアップが表示される
+3. 「クリックしてください」ボタンをクリック
+4. メッセージが表示される
+
+### 完成したファイル構造
+
+```
+my-first-extension/
+├── manifest.json
+├── popup.html
+├── popup.js
+└── icons/
+    ├── icon16.png
+    ├── icon48.png
+    └── icon128.png
+```
+
+### 次のステップ
+
+この拡張機能が動作したら、以下の機能を追加してみましょう：
+
+1. **背景色を変更**: ボタンをクリックして背景色を変える
+2. **カウンター**: クリック回数をカウントする
+3. **現在のページ情報**: 現在開いているページのURLを表示する
+
+### まとめ
+
+最初の拡張機能の作成：
+
+1. **manifest.json**: 拡張機能の設定
+2. **popup.html**: ポップアップのHTML
+3. **popup.js**: ポップアップのJavaScript
+4. **アイコン**: 拡張機能のアイコン
+5. **読み込み**: Chromeで読み込む
+6. **動作確認**: 動作を確認する
+
+おめでとうございます！最初のChrome拡張機能が完成しました！
+

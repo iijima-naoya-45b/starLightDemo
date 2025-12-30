@@ -1,0 +1,214 @@
+---
+title: "レスポンシブデザイン基礎"
+label: "レスポンシブデザイン基礎"
+---
+
+## レスポンシブデザイン基礎
+
+レスポンシブデザインは、様々なデバイスサイズに対応するデザイン手法です。
+
+### なぜレスポンシブデザインが必要なのか
+
+#### 問題のある固定幅デザイン
+
+**問題のある固定幅デザイン:**
+
+```css
+.container {
+  width: 1200px; /* 固定幅 */
+  margin: 0 auto;
+}
+/* 問題点:
+    - モバイルデバイスで表示が崩れる
+    - タブレットデバイスで最適化されない
+    - ユーザー体験が悪い
+*/
+```
+
+**レスポンシブデザインの解決:**
+
+```css
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 0 0.5rem;
+  }
+}
+/* メリット:
+    - 様々なデバイスサイズに対応
+    - ユーザー体験が向上
+    - メンテナンスが容易
+*/
+```
+
+**メリット:**
+1. **マルチデバイス対応**: PC、タブレット、スマートフォンに対応
+2. **ユーザー体験の向上**: デバイスに最適化された表示
+3. **SEOの向上**: モバイルフレンドリーなサイト
+4. **メンテナンス性**: 1つのコードベースで管理
+
+### メディアクエリ
+
+#### 基本的なメディアクエリ
+
+```css
+/* モバイルファースト */
+.container {
+  padding: 1rem;
+}
+
+/* タブレット以上 */
+@media (min-width: 768px) {
+  .container {
+    padding: 2rem;
+  }
+}
+
+/* デスクトップ以上 */
+@media (min-width: 1024px) {
+  .container {
+    padding: 3rem;
+  }
+}
+```
+
+#### ブレークポイント
+
+```css
+/* 一般的なブレークポイント */
+/* モバイル: 0-767px */
+/* タブレット: 768px-1023px */
+/* デスクトップ: 1024px以上 */
+
+@media (max-width: 767px) {
+  /* モバイル用スタイル */
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  /* タブレット用スタイル */
+}
+
+@media (min-width: 1024px) {
+  /* デスクトップ用スタイル */
+}
+```
+
+### フレキシブルレイアウト
+
+#### Flexbox
+
+```css
+.container {
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 768px) {
+  .container {
+    flex-direction: row;
+  }
+}
+```
+
+#### Grid
+
+```css
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+```
+
+### 実践例: レスポンシブカード
+
+```html
+<div class="card">
+  <img src="image.jpg" alt="Card image">
+  <div class="card-content">
+    <h2>Card Title</h2>
+    <p>Card description</p>
+  </div>
+</div>
+```
+
+```css
+.card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.card img {
+  width: 100%;
+  height: auto;
+}
+
+.card-content {
+  padding: 1rem;
+}
+
+@media (min-width: 768px) {
+  .card {
+    flex-direction: row;
+  }
+  
+  .card img {
+    width: 300px;
+    height: 200px;
+    object-fit: cover;
+  }
+  
+  .card-content {
+    padding: 2rem;
+  }
+}
+```
+
+### Tailwind CSSでのレスポンシブデザイン
+
+```html
+<!-- モバイルファースト -->
+<div class="text-sm md:text-base lg:text-lg">
+  Responsive Text
+</div>
+
+<!-- グリッドレイアウト -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+  <div>Item 1</div>
+  <div>Item 2</div>
+  <div>Item 3</div>
+</div>
+```
+
+### まとめ
+
+レスポンシブデザインのポイント：
+
+- **マルチデバイス対応**: PC、タブレット、スマートフォンに対応
+- **ユーザー体験の向上**: デバイスに最適化された表示
+- **SEOの向上**: モバイルフレンドリーなサイト
+- **メンテナンス性**: 1つのコードベースで管理
+
+レスポンシブデザインは、モダンなWeb開発において必須のスキルです。
+

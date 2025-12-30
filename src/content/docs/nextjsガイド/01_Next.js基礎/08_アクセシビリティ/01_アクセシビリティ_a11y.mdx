@@ -1,0 +1,382 @@
+---
+title: "アクセシビリティ (a11y)"
+label: "アクセシビリティ (a11y)"
+---
+
+## アクセシビリティ (a11y)
+
+アクセシビリティ（a11y）は、すべてのユーザーがアプリケーションを利用できるようにするための設計原則です。Next.jsでは、**セマンティックHTML**と**ARIA属性**を使用してアクセシビリティを実装できます。
+
+### なぜアクセシビリティが必要なのか
+
+#### アクセシビリティの問題
+
+**問題のあるコード:**
+
+```typescript
+// セマンティックでないHTML
+export default function Button() {
+  return (
+    <div onClick={handleClick} style={{ cursor: 'pointer' }}>
+      Click me
+    </div>
+  );
+}
+
+// 問題点:
+// - スクリーンリーダーがボタンとして認識しない
+// - キーボード操作ができない
+// - フォーカス管理ができない
+```
+
+**アクセシビリティを考慮したコード:**
+
+```typescript
+// セマンティックなHTML
+export default function Button() {
+  return (
+    <button onClick={handleClick} aria-label="Submit form">
+      Click me
+    </button>
+  );
+}
+
+// メリット:
+// - スクリーンリーダーがボタンとして認識
+// - キーボード操作が可能
+// - フォーカス管理が可能
+```
+
+**メリット:**
+1. **包括性**: すべてのユーザーが利用可能
+2. **法的要件**: WCAG準拠が法的に要求される場合がある
+3. **SEO**: 検索エンジンがコンテンツを理解しやすい
+4. **ユーザー体験**: すべてのユーザーにとって使いやすい
+
+### セマンティックHTML
+
+#### 適切なHTML要素の使用
+
+```typescript
+// 良い例: セマンティックなHTML
+export default function Article() {
+  return (
+    <article>
+      <header>
+        <h1>記事のタイトル</h1>
+        <p>公開日: 2024-01-01</p>
+      </header>
+      <main>
+        <p>記事の内容...</p>
+      </main>
+      <footer>
+        <p>著者: 田中太郎</p>
+      </footer>
+    </article>
+  );
+}
+
+// 悪い例: 非セマンティックなHTML
+export default function Article() {
+  return (
+    <div>
+      <div>
+        <div>記事のタイトル</div>
+        <div>公開日: 2024-01-01</div>
+      </div>
+      <div>
+        <div>記事の内容...</div>
+      </div>
+      <div>
+        <div>著者: 田中太郎</div>
+      </div>
+    </div>
+  );
+}
+```
+
+### ARIA属性
+
+#### aria-labelとaria-labelledby
+
+```typescript
+// アイコンボタンにラベルを追加
+export default function CloseButton() {
+  return (
+    <button aria-label="閉じる">
+      <CloseIcon />
+    </button>
+  );
+}
+
+// 複雑な要素にラベルを関連付け
+export default function SearchForm() {
+  return (
+    <form>
+      <label htmlFor="search-input">検索</label>
+      <input
+        id="search-input"
+        type="search"
+        aria-describedby="search-help"
+      />
+      <span id="search-help">キーワードを入力してください</span>
+    </form>
+  );
+}
+```
+
+#### aria-liveとaria-atomic
+
+```typescript
+// 動的なコンテンツの更新を通知
+export default function Notification() {
+  const [message, setMessage] = useState('');
+
+  return (
+    <div aria-live="polite" aria-atomic="true">
+      {message && <p>{message}</p>}
+    </div>
+  );
+}
+```
+
+### キーボード操作
+
+#### フォーカス管理
+
+```typescript
+// モーダルのフォーカス管理
+'use client';
+
+import { useEffect, useRef } from 'react';
+
+export default function Modal({ isOpen, onClose }: ModalProps) {
+  const modalRef = useRef<HTMLDivElement>(null);
+  const firstFocusableRef = useRef<HTMLButtonElement>(null);
+  const lastFocusableRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      // モーダルが開いたときに最初のフォーカス可能要素にフォーカス
+      firstFocusableRef.current?.focus();
+
+      // Escキーで閉じる
+      const handleEscape = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          onClose();
+        }
+      };
+
+      document.addEventListener('keydown', handleEscape);
+      return () => document.removeEventListener('keydown', handleEscape);
+    }
+  }, [isOpen, onClose]);
+
+  // Tabキーのトラップ
+  const handleTabKey = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Tab') return;
+
+    if (e.shiftKey) {
+      if (document.activeElement === firstFocusableRef.current) {
+        lastFocusableRef.current?.focus();
+        e.preventDefault();
+      }
+    } else {
+      if (document.activeElement === lastFocusableRef.current) {
+        firstFocusableRef.current?.focus();
+        e.preventDefault();
+      }
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      ref={modalRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+      onKeyDown={handleTabKey}
+    >
+      <h2 id="modal-title">モーダルのタイトル</h2>
+      <button ref={firstFocusableRef} onClick={onClose}>
+        閉じる
+      </button>
+      <button ref={lastFocusableRef}>OK</button>
+    </div>
+  );
+}
+```
+
+### 色のコントラスト
+
+```typescript
+// 十分なコントラスト比を確保
+export default function Button() {
+  return (
+    <button
+      style={{
+        backgroundColor: '#0070f3', // 十分なコントラスト比
+        color: '#ffffff',
+      }}
+    >
+      Click me
+    </button>
+  );
+}
+
+// 悪い例: コントラスト比が低い
+export default function Button() {
+  return (
+    <button
+      style={{
+        backgroundColor: '#cccccc', // コントラスト比が低い
+        color: '#ffffff',
+      }}
+    >
+      Click me
+    </button>
+  );
+}
+```
+
+### 画像のalt属性
+
+```typescript
+// 装飾的な画像
+export default function DecorativeImage() {
+  return (
+    <img
+      src="/decorative-image.jpg"
+      alt="" // 装飾的な画像は空のalt属性
+      role="presentation"
+    />
+  );
+}
+
+// 意味のある画像
+export default function MeaningfulImage() {
+  return (
+    <img
+      src="/product-image.jpg"
+      alt="赤いTシャツ、サイズM、価格3,000円"
+    />
+  );
+}
+```
+
+### フォームのアクセシビリティ
+
+```typescript
+// 適切なラベルとエラーメッセージ
+export default function ContactForm() {
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  return (
+    <form>
+      <div>
+        <label htmlFor="name">名前</label>
+        <input
+          id="name"
+          type="text"
+          aria-required="true"
+          aria-invalid={!!errors.name}
+          aria-describedby={errors.name ? 'name-error' : undefined}
+        />
+        {errors.name && (
+          <span id="name-error" role="alert">
+            {errors.name}
+          </span>
+        )}
+      </div>
+    </form>
+  );
+}
+```
+
+### 実践的な例: アクセシブルなコンポーネント
+
+```typescript
+// components/AccessibleButton.tsx
+'use client';
+
+import { ButtonHTMLAttributes, forwardRef } from 'react';
+
+interface AccessibleButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  loading?: boolean;
+  variant?: 'primary' | 'secondary';
+}
+
+export const AccessibleButton = forwardRef<
+  HTMLButtonElement,
+  AccessibleButtonProps
+>(({ loading, variant = 'primary', children, ...props }, ref) => {
+  return (
+    <button
+      ref={ref}
+      disabled={loading || props.disabled}
+      aria-busy={loading}
+      aria-disabled={loading || props.disabled}
+      className={`button button-${variant}`}
+      {...props}
+    >
+      {loading ? (
+        <>
+          <span className="sr-only">読み込み中</span>
+          <LoadingSpinner aria-hidden="true" />
+        </>
+      ) : (
+        children
+      )}
+    </button>
+  );
+});
+
+AccessibleButton.displayName = 'AccessibleButton';
+```
+
+### テストツール
+
+#### eslint-plugin-jsx-a11y
+
+```bash
+npm install --save-dev eslint-plugin-jsx-a11y
+```
+
+```json
+// .eslintrc.json
+{
+  "extends": ["plugin:jsx-a11y/recommended"]
+}
+```
+
+#### @axe-core/react
+
+```bash
+npm install --save-dev @axe-core/react
+```
+
+```typescript
+// app/layout.tsx
+if (process.env.NODE_ENV !== 'production') {
+  const React = require('react');
+  const ReactDOM = require('react-dom');
+  const axe = require('@axe-core/react');
+  axe(React, ReactDOM, 1000);
+}
+```
+
+### まとめ
+
+Next.jsでアクセシビリティを実装するポイント：
+
+- **セマンティックHTML**: 適切なHTML要素の使用
+- **ARIA属性**: スクリーンリーダーへの情報提供
+- **キーボード操作**: すべての機能をキーボードで操作可能
+- **色のコントラスト**: WCAG準拠のコントラスト比
+- **フォーム**: 適切なラベルとエラーメッセージ
+- **テスト**: アクセシビリティテストツールの使用
+
+アクセシビリティは、すべてのユーザーがアプリケーションを利用できるようにするための重要な要素です。適切に実装することで、より包括的で使いやすいアプリケーションを構築できます。
+

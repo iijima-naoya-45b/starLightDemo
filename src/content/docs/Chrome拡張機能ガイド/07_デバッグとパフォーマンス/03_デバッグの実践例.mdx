@@ -1,0 +1,237 @@
+---
+title: "デバッグの実践例"
+label: "デバッグの実践例"
+---
+
+## デバッグの実践例
+
+実際の拡張機能開発でよくあるデバッグシナリオを紹介します。
+
+### 例1: Content Scriptが実行されない
+
+#### 問題
+
+Content Scriptがページに注入されない。
+
+#### デバッグ手順
+
+**1. manifest.jsonの確認**
+
+```json
+{
+  "content_scripts": [{
+    "matches": ["https://example.com/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }]
+}
+```
+
+**確認ポイント:**
+- `matches`のURLパターンが正しいか
+- ファイルパスが正しいか
+- `run_at`のタイミングが適切か
+
+**2. Consoleタブで確認**
+
+ページのConsoleタブで、Content Scriptのログを確認：
+
+```javascript
+// content.js
+console.log('Content Scriptが実行されました');
+```
+
+**3. Sourcesタブで確認**
+
+Sourcesタブで、content.jsが読み込まれているか確認。
+
+**4. よくある原因と対処法**
+
+- **URLパターンが一致しない**: `matches`を確認
+- **ファイルパスが間違っている**: manifest.jsonのパスを確認
+- **実行タイミングの問題**: `run_at`を変更してみる
+
+### 例2: メッセージパッシングが動作しない
+
+#### 問題
+
+Content ScriptとBackground Scriptの間でメッセージが送信されない。
+
+#### デバッグ手順
+
+**1. Content Script側の確認**
+
+```javascript
+// content.js
+chrome.runtime.sendMessage(
+  { type: 'HELLO', data: 'Hello from Content Script' },
+  (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('エラー:', chrome.runtime.lastError);
+    } else {
+      console.log('レスポンス:', response);
+    }
+  }
+);
+```
+
+**Consoleタブで確認:**
+- エラーメッセージを確認
+- レスポンスを確認
+
+**2. Background Script側の確認**
+
+```javascript
+// background.js
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('メッセージを受信:', message);
+  
+  if (message.type === 'HELLO') {
+    sendResponse({ success: true, message: 'Hello from Background' });
+  }
+  
+  return true; // 非同期レスポンスの場合
+});
+```
+
+**サービスワーカーのConsoleタブで確認:**
+- メッセージが受信されているか
+- エラーが発生していないか
+
+**3. よくある原因と対処法**
+
+- **sendResponseが呼ばれていない**: `return true`を追加
+- **エラーハンドリングがない**: `chrome.runtime.lastError`を確認
+- **パーミッションが不足**: manifest.jsonのpermissionsを確認
+
+### 例3: Storage APIが動作しない
+
+#### 問題
+
+データが保存されない、または読み込めない。
+
+#### デバッグ手順
+
+**1. 保存の確認**
+
+```javascript
+// データを保存
+chrome.storage.local.set({ key: 'value' }, () => {
+  if (chrome.runtime.lastError) {
+    console.error('保存エラー:', chrome.runtime.lastError);
+  } else {
+    console.log('保存成功');
+  }
+});
+```
+
+**2. 読み込みの確認**
+
+```javascript
+// データを読み込み
+chrome.storage.local.get(['key'], (result) => {
+  if (chrome.runtime.lastError) {
+    console.error('読み込みエラー:', chrome.runtime.lastError);
+  } else {
+    console.log('読み込み成功:', result);
+  }
+});
+```
+
+**3. Applicationタブで確認**
+
+Applicationタブ → Storage → Local Storage で、データが保存されているか確認。
+
+**4. よくある原因と対処法**
+
+- **パーミッションが不足**: manifest.jsonに`"storage"`を追加
+- **コールバックのエラーハンドリング**: `chrome.runtime.lastError`を確認
+- **キー名の間違い**: キー名を確認
+
+### 例4: パフォーマンスの問題
+
+#### 問題
+
+拡張機能の動作が遅い。
+
+#### デバッグ手順
+
+**1. Performanceタブで記録**
+
+1. Performanceタブを開く
+2. 「Record」をクリック
+3. 拡張機能の機能を実行
+4. 「Stop」をクリック
+
+**2. ボトルネックの特定**
+
+- 長い処理時間の関数を特定
+- CPU使用率が高い処理を特定
+- メモリ使用量を確認
+
+**3. 最適化**
+
+```javascript
+// 悪い例: ループ内でDOM操作
+for (let i = 0; i < 1000; i++) {
+  document.body.appendChild(createElement(i));
+}
+
+// 良い例: バッチ処理
+const fragment = document.createDocumentFragment();
+for (let i = 0; i < 1000; i++) {
+  fragment.appendChild(createElement(i));
+}
+document.body.appendChild(fragment);
+```
+
+### 例5: メモリリークの検出
+
+#### 問題
+
+メモリ使用量が増加し続ける。
+
+#### デバッグ手順
+
+**1. Memoryタブでスナップショットを取得**
+
+1. Memoryタブを開く
+2. 「Heap snapshot」を選択
+3. 「Take snapshot」をクリック
+4. 操作を繰り返す
+5. 再度スナップショットを取得
+
+**2. スナップショットの比較**
+
+- 2つのスナップショットを比較
+- 増加しているオブジェクトを特定
+- 参照を確認
+
+**3. よくある原因と対処法**
+
+- **イベントリスナーの削除漏れ**: `removeEventListener`を呼ぶ
+- **タイマーのクリア漏れ**: `clearInterval`や`clearTimeout`を呼ぶ
+- **クロージャの参照**: 不要な参照を削除
+
+```javascript
+// 悪い例: イベントリスナーが削除されない
+document.addEventListener('click', handleClick);
+
+// 良い例: イベントリスナーを削除
+document.addEventListener('click', handleClick);
+// 後で削除
+document.removeEventListener('click', handleClick);
+```
+
+### まとめ
+
+デバッグの実践例：
+
+1. **Content Scriptが実行されない**: manifest.jsonとConsoleタブで確認
+2. **メッセージパッシングが動作しない**: エラーハンドリングとログで確認
+3. **Storage APIが動作しない**: Applicationタブとエラーハンドリングで確認
+4. **パフォーマンスの問題**: Performanceタブでボトルネックを特定
+5. **メモリリーク**: Memoryタブでスナップショットを比較
+
+これらのデバッグ手法を活用することで、効率的に問題を解決できます。
+

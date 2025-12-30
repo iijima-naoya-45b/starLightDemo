@@ -1,0 +1,261 @@
+---
+title: "データライフサイクル管理"
+label: "データライフサイクル管理"
+---
+
+## データライフサイクル管理
+
+データの作成から削除までのライフサイクルを管理する方法を説明します。
+
+### データライフサイクルの段階
+
+#### 1. 作成（Create）
+
+データが作成される段階です。
+
+```sql
+-- データの作成
+INSERT INTO users (name, email, password_hash)
+VALUES ('John Doe', 'john@example.com', 'hashed_password');
+```
+
+#### 2. アクティブ（Active）
+
+データがアクティブに使用されている段階です。
+
+```sql
+-- アクティブなデータの取得
+SELECT * FROM users WHERE deleted_at IS NULL;
+```
+
+#### 3. 非アクティブ（Inactive）
+
+データが使用されなくなった段階です。
+
+```sql
+-- データを非アクティブに
+UPDATE users 
+SET status = 'inactive',
+    inactive_at = NOW()
+WHERE id = 1;
+```
+
+#### 4. 論理削除（Soft Delete）
+
+データが論理削除された段階です。
+
+```sql
+-- 論理削除
+UPDATE users 
+SET deleted_at = NOW(),
+    is_deleted = TRUE
+WHERE id = 1;
+```
+
+#### 5. アーカイブ（Archive）
+
+データがアーカイブされた段階です。
+
+```sql
+-- アーカイブテーブルに移動
+INSERT INTO users_archive
+SELECT * FROM users WHERE deleted_at IS NOT NULL;
+
+-- アーカイブ後に物理削除
+DELETE FROM users WHERE deleted_at IS NOT NULL;
+```
+
+#### 6. 物理削除（Hard Delete）
+
+データが完全に削除された段階です。
+
+```sql
+-- 物理削除
+DELETE FROM users WHERE id = 1;
+```
+
+### データライフサイクル管理の実装
+
+#### 1. ステータス管理
+
+```sql
+-- ステータスカラムを追加
+CREATE TABLE users (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  status ENUM('active', 'inactive', 'deleted', 'archived') DEFAULT 'active',
+  status_changed_at TIMESTAMP NULL,
+  deleted_at TIMESTAMP NULL,
+  archived_at TIMESTAMP NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_status (status),
+  INDEX idx_deleted_at (deleted_at)
+);
+```
+
+#### 2. ライフサイクル管理の実装
+
+```javascript
+// データライフサイクル管理サービスの実装
+class DataLifecycleService {
+  // データを非アクティブに
+  async deactivateUser(userId) {
+    await db.query(
+      `UPDATE users 
+       SET status = 'inactive',
+           status_changed_at = NOW()
+       WHERE id = ?`,
+      [userId]
+    );
+  }
+  
+  // データを論理削除
+  async softDeleteUser(userId) {
+    await db.query(
+      `UPDATE users 
+       SET status = 'deleted',
+           deleted_at = NOW(),
+           status_changed_at = NOW()
+       WHERE id = ?`,
+      [userId]
+    );
+  }
+  
+  // データをアーカイブ
+  async archiveUser(userId) {
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      
+      // アーカイブテーブルに移動
+      await connection.query(
+        `INSERT INTO users_archive
+         SELECT * FROM users WHERE id = ?`,
+        [userId]
+      );
+      
+      // ステータスを更新
+      await connection.query(
+        `UPDATE users 
+         SET status = 'archived',
+             archived_at = NOW(),
+             status_changed_at = NOW()
+         WHERE id = ?`,
+        [userId]
+      );
+      
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+  
+  // データを物理削除
+  async hardDeleteUser(userId) {
+    await db.query('DELETE FROM users WHERE id = ?', [userId]);
+  }
+}
+```
+
+### 自動化されたライフサイクル管理
+
+#### 1. バッチ処理での自動アーカイブ
+
+```javascript
+// バッチ処理: 一定期間後に自動アーカイブ
+async function autoArchiveUsers() {
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    
+    // 1年以上前に削除されたユーザーをアーカイブ
+    const [users] = await connection.query(
+      `SELECT * FROM users 
+       WHERE status = 'deleted'
+         AND deleted_at < DATE_SUB(NOW(), INTERVAL 1 YEAR)`
+    );
+    
+    for (const user of users) {
+      // アーカイブテーブルに移動
+      await connection.query(
+        `INSERT INTO users_archive 
+         (id, name, email, deleted_at, archived_at)
+         VALUES (?, ?, ?, ?, NOW())`,
+        [user.id, user.name, user.email, user.deleted_at]
+      );
+      
+      // ステータスを更新
+      await connection.query(
+        `UPDATE users 
+         SET status = 'archived',
+             archived_at = NOW()
+         WHERE id = ?`,
+        [user.id]
+      );
+    }
+    
+    await connection.commit();
+    return { archivedCount: users.length };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+// 毎日深夜に実行
+cron.schedule('0 2 * * *', autoArchiveUsers);
+```
+
+#### 2. 自動物理削除
+
+```javascript
+// バッチ処理: アーカイブから一定期間後に物理削除
+async function autoPurgeArchivedUsers() {
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    
+    // アーカイブから5年以上経過したユーザーを物理削除
+    const [users] = await connection.query(
+      `SELECT id FROM users_archive 
+       WHERE archived_at < DATE_SUB(NOW(), INTERVAL 5 YEAR)`
+    );
+    
+    for (const user of users) {
+      await connection.query('DELETE FROM users_archive WHERE id = ?', [user.id]);
+    }
+    
+    await connection.commit();
+    return { deletedCount: users.length };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+// 毎週実行
+cron.schedule('0 3 * * 0', autoPurgeArchivedUsers);
+```
+
+### まとめ
+
+データライフサイクル管理：
+
+- **作成**: データの作成
+- **アクティブ**: データの使用
+- **非アクティブ**: データの非アクティブ化
+- **論理削除**: 削除フラグの設定
+- **アーカイブ**: アーカイブテーブルへの移動
+- **物理削除**: データの完全削除
+
+適切なライフサイクル管理により、データの保護とストレージの効率化を両立できます。
+

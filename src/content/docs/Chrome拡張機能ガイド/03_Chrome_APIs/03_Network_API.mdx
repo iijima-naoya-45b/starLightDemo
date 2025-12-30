@@ -1,0 +1,218 @@
+---
+title: "Network API"
+label: "Network API"
+---
+
+## Network API
+
+Network APIは、ネットワークリクエストを監視・操作するためのAPIです。
+
+### Declarative Net Request API
+
+```javascript
+// ルールの追加
+chrome.declarativeNetRequest.updateDynamicRules({
+  addRules: [{
+    id: 1,
+    priority: 1,
+    action: {
+      type: 'block'
+    },
+    condition: {
+      urlFilter: '*://ads.example.com/*',
+      resourceTypes: ['main_frame', 'sub_frame', 'script']
+    }
+  }]
+});
+
+// リクエストのリダイレクト
+chrome.declarativeNetRequest.updateDynamicRules({
+  addRules: [{
+    id: 2,
+    priority: 1,
+    action: {
+      type: 'redirect',
+      redirect: { url: 'https://example.com/blocked' }
+    },
+    condition: {
+      urlFilter: '*://malicious.com/*'
+    }
+  }]
+});
+
+// リクエストヘッダーの変更
+chrome.declarativeNetRequest.updateDynamicRules({
+  addRules: [{
+    id: 3,
+    priority: 1,
+    action: {
+      type: 'modifyHeaders',
+      requestHeaders: [{
+        header: 'User-Agent',
+        operation: 'set',
+        value: 'Custom User Agent'
+      }]
+    },
+    condition: {
+      urlFilter: '*://example.com/*'
+    }
+  }]
+});
+```
+
+### Web Request API（Manifest V2互換）
+
+```javascript
+// リクエストの監視
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    console.log('Request:', details.url);
+    console.log('Method:', details.method);
+    console.log('Headers:', details.requestHeaders);
+    
+    // リクエストをブロック
+    return { cancel: true };
+  },
+  { urls: ['<all_urls>'] },
+  ['blocking', 'requestHeaders']
+);
+
+// レスポンスの監視
+chrome.webRequest.onCompleted.addListener(
+  (details) => {
+    console.log('Response:', details.url);
+    console.log('Status:', details.statusCode);
+    console.log('Headers:', details.responseHeaders);
+  },
+  { urls: ['<all_urls>'] },
+  ['responseHeaders']
+);
+```
+
+### 実践例: APIリクエストのインターセプト
+
+```javascript
+// background.js
+class APIInterceptor {
+  constructor() {
+    this.requests = [];
+    this.setupInterception();
+  }
+
+  setupInterception() {
+    chrome.webRequest.onBeforeRequest.addListener(
+      (details) => {
+        if (details.url.includes('/api/')) {
+          this.requests.push({
+            url: details.url,
+            method: details.method,
+            timestamp: Date.now(),
+            requestBody: details.requestBody
+          });
+          
+          // リクエストボディの解析
+          if (details.requestBody) {
+            const formData = details.requestBody.formData;
+            if (formData) {
+              console.log('Form data:', formData);
+            }
+          }
+        }
+      },
+      { urls: ['<all_urls>'] },
+      ['requestBody']
+    );
+
+    chrome.webRequest.onCompleted.addListener(
+      (details) => {
+        if (details.url.includes('/api/')) {
+          const request = this.requests.find(r => 
+            r.url === details.url && 
+            Math.abs(r.timestamp - Date.now()) < 1000
+          );
+          
+          if (request) {
+            request.response = {
+              statusCode: details.statusCode,
+              headers: details.responseHeaders,
+              timestamp: Date.now()
+            };
+            
+            // ストレージに保存
+            this.saveRequest(request);
+          }
+        }
+      },
+      { urls: ['<all_urls>'] },
+      ['responseHeaders']
+    );
+  }
+
+  async saveRequest(request) {
+    chrome.storage.local.get(['apiRequests'], (result) => {
+      const requests = result.apiRequests || [];
+      requests.push(request);
+      
+      // 最新100件のみ保持
+      if (requests.length > 100) {
+        requests.shift();
+      }
+      
+      chrome.storage.local.set({ apiRequests: requests });
+    });
+  }
+
+  async getRequests() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['apiRequests'], (result) => {
+        resolve(result.apiRequests || []);
+      });
+    });
+  }
+}
+
+const apiInterceptor = new APIInterceptor();
+```
+
+### 実践例: リクエストの改変
+
+```javascript
+// リクエストボディの変更
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    if (details.method === 'POST' && details.requestBody) {
+      const formData = details.requestBody.formData;
+      if (formData) {
+        // フォームデータの変更
+        formData.customField = ['modified_value'];
+        
+        return {
+          redirectUrl: chrome.runtime.getURL('modified.html')
+        };
+      }
+    }
+  },
+  { urls: ['<all_urls>'] },
+  ['blocking', 'requestBody']
+);
+
+// レスポンスヘッダーの変更
+chrome.webRequest.onHeadersReceived.addListener(
+  (details) => {
+    const headers = details.responseHeaders.map(header => {
+      if (header.name.toLowerCase() === 'content-type') {
+        return {
+          name: header.name,
+          value: 'application/json'
+        };
+      }
+      return header;
+    });
+    
+    return { responseHeaders: headers };
+  },
+  { urls: ['<all_urls>'] },
+  ['blocking', 'responseHeaders']
+);
+```
+

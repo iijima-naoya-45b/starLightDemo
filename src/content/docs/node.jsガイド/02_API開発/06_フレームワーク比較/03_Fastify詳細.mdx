@@ -1,0 +1,74 @@
+---
+title: "Fastify詳細"
+label: "Fastify詳細"
+---
+
+## Fastify詳細
+
+Fastifyは、高性能でスキーマベースのWebフレームワークです。
+
+### Fastifyの特徴
+
+```javascript
+const fastify = require('fastify')({ logger: true });
+
+// JSON Schemaによる自動バリデーション
+const userSchema = {
+  body: {
+    type: 'object',
+    required: ['name', 'email'],
+    properties: {
+      name: { type: 'string', minLength: 3 },
+      email: { type: 'string', format: 'email' }
+    }
+  },
+  response: {
+    201: {
+      type: 'object',
+      properties: {
+        user: {
+          type: 'object',
+          properties: {
+            id: { type: 'number' },
+            name: { type: 'string' },
+            email: { type: 'string' }
+          }
+        }
+      }
+    }
+  }
+};
+
+fastify.post('/users', { schema: userSchema }, async (request, reply) => {
+  const { name, email } = request.body;
+  const user = await createUser({ name, email });
+  return reply.code(201).send({ user });
+});
+```
+
+### プラグインシステム
+
+```javascript
+// プラグインの登録
+fastify.register(require('@fastify/cors'), {
+  origin: true
+});
+
+fastify.register(require('@fastify/jwt'), {
+  secret: 'your-secret-key'
+});
+
+// カスタムプラグイン
+async function myPlugin(fastify, options) {
+  fastify.decorate('myUtility', () => {
+    return 'utility function';
+  });
+}
+
+fastify.register(myPlugin);
+```
+
+### まとめ
+
+Fastifyは、高性能と自動バリデーションを重視する場合に最適です。
+

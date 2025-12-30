@@ -1,0 +1,81 @@
+---
+title: "SQS & SNS"
+label: "SQS & SNS"
+---
+
+## SQS & SNS
+
+### SQS (Simple Queue Service)
+
+```yaml
+Queue:
+  Type: AWS::SQS::Queue
+  Properties:
+    QueueName: MyQueue
+    VisibilityTimeoutSeconds: 30
+    MessageRetentionPeriod: 345600
+    ReceiveMessageWaitTimeSeconds: 20
+    DeadLetterQueue:
+      TargetArn: !GetAtt DeadLetterQueue.Arn
+      MaxReceiveCount: 3
+
+DeadLetterQueue:
+  Type: AWS::SQS::Queue
+  Properties:
+    QueueName: MyQueueDLQ
+    MessageRetentionPeriod: 1209600
+```
+
+### SNS (Simple Notification Service)
+
+```yaml
+Topic:
+  Type: AWS::SNS::Topic
+  Properties:
+    TopicName: MyTopic
+    DisplayName: My Topic
+
+Subscription:
+  Type: AWS::SNS::Subscription
+  Properties:
+    TopicArn: !Ref Topic
+    Protocol: email
+    Endpoint: admin@example.com
+```
+
+### 実践例: イベント駆動アーキテクチャ
+
+```yaml
+# S3イベント → SNS → SQS → Lambda
+S3Bucket:
+  Type: AWS::S3::Bucket
+  Properties:
+    NotificationConfiguration:
+      TopicConfigurations:
+        - Topic: !Ref SNSTopic
+          Event: s3:ObjectCreated:*
+
+SNSTopic:
+  Type: AWS::SNS::Topic
+
+SQSQueue:
+  Type: AWS::SQS::Queue
+
+SNSSubscription:
+  Type: AWS::SNS::Subscription
+  Properties:
+    TopicArn: !Ref SNSTopic
+    Protocol: sqs
+    Endpoint: !GetAtt SQSQueue.Arn
+
+LambdaFunction:
+  Type: AWS::Lambda::Function
+  Properties:
+    Events:
+      SQS:
+        Type: SQS
+        Properties:
+          Queue: !GetAtt SQSQueue.Arn
+          BatchSize: 10
+```
+

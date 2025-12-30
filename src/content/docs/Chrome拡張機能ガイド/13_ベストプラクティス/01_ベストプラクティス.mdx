@@ -1,0 +1,241 @@
+---
+title: "ベストプラクティス"
+label: "ベストプラクティス"
+---
+
+## ベストプラクティス
+
+Chrome拡張機能開発のベストプラクティスを説明します。
+
+### コードの品質
+
+#### 1. エラーハンドリング
+
+**常にエラーハンドリングを実装:**
+
+```javascript
+// 良い例
+chrome.storage.local.get(['key'], (result) => {
+  if (chrome.runtime.lastError) {
+    console.error('エラー:', chrome.runtime.lastError);
+    return;
+  }
+  // 処理
+});
+
+// 悪い例
+chrome.storage.local.get(['key'], (result) => {
+  // エラーハンドリングがない
+  // 処理
+});
+```
+
+#### 2. 非同期処理
+
+**Promiseやasync/awaitを使用:**
+
+```javascript
+// 良い例
+async function getData() {
+  try {
+    const result = await chrome.storage.local.get(['key']);
+    return result.key;
+  } catch (error) {
+    console.error('エラー:', error);
+    return null;
+  }
+}
+
+// 悪い例
+function getData() {
+  chrome.storage.local.get(['key'], (result) => {
+    // コールバック地獄
+  });
+}
+```
+
+#### 3. コードの整理
+
+**モジュール化:**
+
+```javascript
+// utils.js
+export function formatDate(date) {
+  return date.toISOString().split('T')[0];
+}
+
+export function validateEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+// content.js
+import { formatDate, validateEmail } from './utils.js';
+```
+
+### パフォーマンス
+
+#### 1. メモリ管理
+
+**不要なイベントリスナーの削除:**
+
+```javascript
+// 良い例
+const handler = () => {
+  // 処理
+};
+
+document.addEventListener('click', handler);
+// 後で削除
+document.removeEventListener('click', handler);
+
+// 悪い例
+document.addEventListener('click', () => {
+  // 削除できない
+});
+```
+
+#### 2. バッチ処理
+
+**DOM操作をバッチ処理:**
+
+```javascript
+// 良い例
+const fragment = document.createDocumentFragment();
+for (let i = 0; i < 1000; i++) {
+  fragment.appendChild(createElement(i));
+}
+document.body.appendChild(fragment);
+
+// 悪い例
+for (let i = 0; i < 1000; i++) {
+  document.body.appendChild(createElement(i)); // 1000回のDOM操作
+}
+```
+
+#### 3. 遅延読み込み
+
+**必要なときだけ読み込む:**
+
+```javascript
+// 良い例
+if (needsFeature) {
+  const module = await import('./feature.js');
+  module.doSomething();
+}
+
+// 悪い例
+import { doSomething } from './feature.js'; // 常に読み込まれる
+```
+
+### セキュリティ
+
+#### 1. 入力値の検証
+
+**すべての入力値を検証:**
+
+```javascript
+// 良い例
+function processInput(input) {
+  if (typeof input !== 'string') {
+    throw new Error('Invalid input type');
+  }
+  
+  // XSS対策
+  const sanitized = input.replace(/<script>/gi, '');
+  
+  return sanitized;
+}
+
+// 悪い例
+function processInput(input) {
+  // 検証なし
+  return input;
+}
+```
+
+#### 2. パーミッションの最小化
+
+**必要なパーミッションのみを要求:**
+
+```json
+// 良い例
+{
+  "permissions": ["activeTab"]
+}
+
+// 悪い例
+{
+  "permissions": ["<all_urls>"] // 不要なパーミッション
+}
+```
+
+#### 3. Content Security Policy
+
+**CSPを設定:**
+
+```json
+{
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}
+```
+
+### ユーザー体験
+
+#### 1. エラーメッセージ
+
+**わかりやすいエラーメッセージ:**
+
+```javascript
+// 良い例
+if (!data) {
+  showError('データが見つかりませんでした。ページをリロードしてください。');
+}
+
+// 悪い例
+if (!data) {
+  showError('Error');
+}
+```
+
+#### 2. ローディング表示
+
+**処理中はローディングを表示:**
+
+```javascript
+// 良い例
+showLoading();
+try {
+  const result = await processData();
+  showResult(result);
+} finally {
+  hideLoading();
+}
+```
+
+#### 3. フィードバック
+
+**ユーザーにフィードバックを提供:**
+
+```javascript
+// 良い例
+chrome.notifications.create({
+  type: 'basic',
+  iconUrl: 'icons/icon48.png',
+  title: '処理完了',
+  message: 'データの保存が完了しました'
+});
+```
+
+### まとめ
+
+ベストプラクティス：
+
+1. **コードの品質**: エラーハンドリング、非同期処理、モジュール化
+2. **パフォーマンス**: メモリ管理、バッチ処理、遅延読み込み
+3. **セキュリティ**: 入力値の検証、パーミッションの最小化、CSP
+4. **ユーザー体験**: わかりやすいエラーメッセージ、ローディング表示、フィードバック
+
+これらのベストプラクティスに従うことで、高品質な拡張機能を開発できます。
+

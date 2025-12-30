@@ -1,0 +1,72 @@
+---
+title: "React Query基礎"
+label: "React Query基礎"
+---
+
+## React Query基礎
+
+React Query（TanStack Query）は、サーバー状態管理のためのライブラリです。
+
+### インストール
+
+```bash
+npm install @tanstack/react-query
+```
+
+### QueryClientの設定
+
+```jsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const queryClient = new QueryClient();
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <YourApp />
+    </QueryClientProvider>
+  );
+}
+```
+
+### データフェッチング
+
+```jsx
+import { useQuery } from '@tanstack/react-query';
+
+function UserProfile({ userId }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  });
+
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+
+  return <div>{data.name}</div>;
+}
+```
+
+### ミューテーション
+
+```jsx
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+
+function CreateUser() {
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: createUser,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+
+  return (
+    <button onClick={() => mutation.mutate({ name: 'John' })}>
+      Create User
+    </button>
+  );
+}
+```
+

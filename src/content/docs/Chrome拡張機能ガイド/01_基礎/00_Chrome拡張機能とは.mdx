@@ -1,0 +1,79 @@
+---
+title: "Chrome拡張機能とは"
+label: "Chrome拡張機能とは"
+---
+
+## Chrome拡張機能とは
+
+Chrome拡張機能は、Google Chromeブラウザの機能を拡張する小さなプログラムです。Webページの表示を変更したり、ブラウザの機能を追加したりすることができます。
+
+### Chrome拡張機能の基本概念
+
+#### 1. 拡張機能の構成要素
+
+Chrome拡張機能は、以下の主要なコンポーネントで構成されます：
+
+- **Manifest**: 拡張機能の設定ファイル（manifest.json）
+- **Background Script (Service Worker)**: バックグラウンドで動作するスクリプト
+- **Content Script**: Webページに注入されるスクリプト
+- **Popup**: 拡張機能アイコンをクリックしたときに表示されるUI
+- **Options Page**: 拡張機能の設定ページ
+
+#### 2. 拡張機能の動作フロー
+
+```
+ユーザーが拡張機能をインストール
+  ↓
+Manifest.jsonが読み込まれる
+  ↓
+Background Script (Service Worker)が起動
+  ↓
+Content Scriptが指定されたページに注入
+  ↓
+PopupやOptions Pageがユーザー操作で表示
+```
+
+### Chrome拡張機能の種類
+
+#### 1. ページ拡張機能
+
+Webページの内容を変更する拡張機能です。
+
+```javascript
+// Content ScriptでページのDOMを操作
+document.body.style.backgroundColor = 'lightblue';
+```
+
+#### 2. ブラウザ拡張機能
+
+ブラウザ自体の機能を拡張する拡張機能です。
+
+```javascript
+// 新しいタブページをカスタマイズ
+chrome.tabs.create({ url: 'custom-new-tab.html' });
+```
+
+#### 3. 開発者ツール拡張機能
+
+開発者ツールに機能を追加する拡張機能です。
+
+```javascript
+// DevToolsパネルを追加
+chrome.devtools.panels.create(
+  'My Panel',
+  'icon.png',
+  'panel.html'
+);
+```
+
+### Chrome拡張機能のメリット
+
+1. **ブラウザ機能の拡張**: ブラウザの機能を自由に拡張できる
+2. **Webページのカスタマイズ**: 任意のWebページの表示や動作を変更できる
+3. **開発効率の向上**: 開発やデバッグを効率化できる
+4. **ユーザー体験の向上**: ユーザーに便利な機能を提供できる
+
+### まとめ
+
+Chrome拡張機能は、ブラウザの機能を拡張し、Web開発やユーザー体験を向上させる強力なツールです。
+

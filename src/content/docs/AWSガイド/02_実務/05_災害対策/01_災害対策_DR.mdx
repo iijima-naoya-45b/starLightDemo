@@ -1,0 +1,77 @@
+---
+title: "災害対策 (DR)"
+label: "災害対策 (DR)"
+---
+
+## 災害対策 (DR)
+
+### マルチリージョン構成
+
+```yaml
+# プライマリリージョン
+PrimaryRegion:
+  Resources:
+    DBInstance:
+      Type: AWS::RDS::DBInstance
+      Properties:
+        Engine: mysql
+        MultiAZ: true
+        BackupRetentionPeriod: 7
+
+# セカンダリリージョン（DR用）
+SecondaryRegion:
+  Resources:
+    DBInstance:
+      Type: AWS::RDS::DBInstance
+      Properties:
+        Engine: mysql
+        SourceDBInstanceIdentifier: !Sub 'arn:aws:rds:primary-region:${AWS::AccountId}:db:primary-db'
+        ReadReplica: true
+```
+
+### バックアップ戦略
+
+```yaml
+BackupPlan:
+  Type: AWS::Backup::BackupPlan
+  Properties:
+    BackupPlan:
+      BackupPlanName: DailyBackup
+      Rules:
+        - RuleName: DailyBackupRule
+          TargetBackupVault: !Ref BackupVault
+          ScheduleExpression: cron(0 2 * * ? *)
+          StartWindowMinutes: 60
+          CompletionWindowMinutes: 120
+          Lifecycle:
+            DeleteAfterDays: 30
+            MoveToColdStorageAfterDays: 7
+```
+
+### Route 53ヘルスチェック
+
+```yaml
+HealthCheck:
+  Type: AWS::Route53::HealthCheck
+  Properties:
+    HealthCheckConfig:
+      Type: HTTP
+      ResourcePath: /health
+      FullyQualifiedDomainName: api.example.com
+      RequestInterval: 30
+      FailureThreshold: 3
+
+RecordSet:
+  Type: AWS::Route53::RecordSet
+  Properties:
+    HostedZoneId: !Ref HostedZone
+    Name: api.example.com
+    Type: A
+    SetIdentifier: primary
+    Failover: PRIMARY
+    HealthCheckId: !Ref HealthCheck
+    AliasTarget:
+      DNSName: !GetAtt PrimaryLoadBalancer.DNSName
+      HostedZoneId: !GetAtt PrimaryLoadBalancer.CanonicalHostedZoneID
+```
+

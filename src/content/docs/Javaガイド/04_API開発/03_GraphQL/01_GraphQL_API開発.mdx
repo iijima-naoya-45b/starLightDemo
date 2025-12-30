@@ -1,0 +1,467 @@
+---
+title: "GraphQL API開発"
+label: "GraphQL API開発"
+---
+
+## GraphQL API開発
+
+GraphQLは、REST APIの代替として、より柔軟で効率的なAPIを構築するためのクエリ言語です。Spring Bootでは、**Spring GraphQL**を使用してGraphQL APIを実装できます。
+
+### なぜGraphQLが必要なのか
+
+#### REST APIの課題
+
+**問題のあるREST APIの例:**
+
+```java
+// REST API: ユーザー情報とその投稿を取得する場合
+// 1. ユーザー情報を取得
+GET /api/users/1
+// 2. そのユーザーの投稿を取得
+GET /api/users/1/posts
+// 3. 各投稿のコメントを取得
+GET /api/posts/1/comments
+GET /api/posts/2/comments
+// ...
+
+// 問題点:
+// - 複数のリクエストが必要（N+1問題）
+// - 不要なデータも取得してしまう（オーバーフェッチ）
+// - 必要なデータが取得できない（アンダーフェッチ）
+```
+
+**GraphQLの解決:**
+
+```graphql
+# 1つのクエリで必要なデータだけを取得
+query {
+  user(id: 1) {
+    name
+    email
+    posts {
+      title
+      content
+      comments {
+        text
+        author {
+          name
+        }
+      }
+    }
+  }
+}
+```
+
+**メリット:**
+1. **必要なデータだけを取得**: クライアントが要求するフィールドだけを返す
+2. **1つのリクエストで複数のリソース**: 関連データを1回のクエリで取得
+3. **型安全性**: スキーマにより型が明確
+4. **APIの進化**: フィールドの追加・削除が容易
+
+### Spring GraphQLの設定
+
+#### 依存関係の追加
+
+**Maven (`pom.xml`):**
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-graphql</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+</dependencies>
+```
+
+**Gradle (`build.gradle`):**
+
+```groovy
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-graphql'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+}
+```
+
+#### 基本設定
+
+**`application.yml`:**
+
+```yaml
+spring:
+  graphql:
+    graphiql:
+      enabled: true  # GraphiQL UIを有効化（開発環境）
+    schema:
+      locations: classpath:graphql/
+      file-extensions: .graphqls
+```
+
+### GraphQLスキーマの定義
+
+**`src/main/resources/graphql/schema.graphqls`:**
+
+```graphql
+type Query {
+    user(id: ID!): User
+    users: [User!]!
+    post(id: ID!): Post
+    posts: [Post!]!
+}
+
+type User {
+    id: ID!
+    name: String!
+    email: String!
+    posts: [Post!]!
+}
+
+type Post {
+    id: ID!
+    title: String!
+    content: String!
+    author: User!
+    comments: [Comment!]!
+}
+
+type Comment {
+    id: ID!
+    text: String!
+    author: User!
+    post: Post!
+}
+
+type Mutation {
+    createUser(input: UserInput!): User!
+    updateUser(id: ID!, input: UserInput!): User!
+    deleteUser(id: ID!): Boolean!
+    createPost(input: PostInput!): Post!
+}
+
+input UserInput {
+    name: String!
+    email: String!
+}
+
+input PostInput {
+    title: String!
+    content: String!
+    authorId: ID!
+}
+```
+
+### リゾルバーの実装
+
+#### Queryリゾルバー
+
+```java
+@Component
+public class UserQueryResolver implements GraphQLQueryResolver {
+    
+    private final UserRepository userRepository;
+    private final PostRepository postRepository;
+    
+    public UserQueryResolver(UserRepository userRepository, 
+                            PostRepository postRepository) {
+        this.userRepository = userRepository;
+        this.postRepository = postRepository;
+    }
+    
+    // Query.user(id: ID!): User
+    public User user(Long id) {
+        return userRepository.findById(id)
+            .orElseThrow(() -> new UserNotFoundException("User not found: " + id));
+    }
+    
+    // Query.users: [User!]!
+    public List<User> users() {
+        return userRepository.findAll();
+    }
+}
+```
+
+#### Mutationリゾルバー
+
+```java
+@Component
+public class UserMutationResolver implements GraphQLMutationResolver {
+    
+    private final UserRepository userRepository;
+    
+    public UserMutationResolver(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+    
+    // Mutation.createUser(input: UserInput!): User!
+    public User createUser(UserInput input) {
+        User user = new User();
+        user.setName(input.getName());
+        user.setEmail(input.getEmail());
+        return userRepository.save(user);
+    }
+    
+    // Mutation.updateUser(id: ID!, input: UserInput!): User!
+    public User updateUser(Long id, UserInput input) {
+        User user = userRepository.findById(id)
+            .orElseThrow(() -> new UserNotFoundException("User not found: " + id));
+        user.setName(input.getName());
+        user.setEmail(input.getEmail());
+        return userRepository.save(user);
+    }
+    
+    // Mutation.deleteUser(id: ID!): Boolean!
+    public Boolean deleteUser(Long id) {
+        if (!userRepository.existsById(id)) {
+            throw new UserNotFoundException("User not found: " + id);
+        }
+        userRepository.deleteById(id);
+        return true;
+    }
+}
+```
+
+#### フィールドリゾルバー（N+1問題の解決）
+
+```java
+@Component
+public class UserFieldResolver implements GraphQLResolver<User> {
+    
+    private final PostRepository postRepository;
+    private final DataLoader<Long, List<Post>> postsDataLoader;
+    
+    public UserFieldResolver(PostRepository postRepository,
+                            DataLoaderRegistry dataLoaderRegistry) {
+        this.postRepository = postRepository;
+        // DataLoaderでN+1問題を解決
+        this.postsDataLoader = dataLoaderRegistry.getDataLoader("posts");
+    }
+    
+    // User.posts: [Post!]!
+    public CompletableFuture<List<Post>> posts(User user) {
+        return postsDataLoader.load(user.getId());
+    }
+}
+```
+
+#### DataLoaderの設定（N+1問題の解決）
+
+```java
+@Configuration
+public class GraphQLConfig {
+    
+    @Bean
+    public DataLoaderRegistry dataLoaderRegistry(PostRepository postRepository) {
+        DataLoaderRegistry registry = new DataLoaderRegistry();
+        
+        // バッチローディングでN+1問題を解決
+        registry.register("posts", 
+            DataLoader.newDataLoader(userIds -> {
+                Map<Long, List<Post>> postsByUserId = postRepository
+                    .findByAuthorIdIn(userIds)
+                    .stream()
+                    .collect(Collectors.groupingBy(Post::getAuthorId));
+                
+                return CompletableFuture.completedFuture(
+                    userIds.stream()
+                        .map(id -> postsByUserId.getOrDefault(id, Collections.emptyList()))
+                        .collect(Collectors.toList())
+                );
+            })
+        );
+        
+        return registry;
+    }
+}
+```
+
+### エラーハンドリング
+
+```java
+@ControllerAdvice
+public class GraphQLExceptionHandler {
+    
+    @ExceptionHandler(UserNotFoundException.class)
+    public GraphQLError handleUserNotFound(UserNotFoundException ex) {
+        return GraphQLException.newException()
+            .errorType(ErrorType.NOT_FOUND)
+            .message(ex.getMessage())
+            .build();
+    }
+    
+    @ExceptionHandler(ValidationException.class)
+    public GraphQLError handleValidation(ValidationException ex) {
+        return GraphQLException.newException()
+            .errorType(ErrorType.BAD_REQUEST)
+            .message(ex.getMessage())
+            .build();
+    }
+}
+```
+
+### 認証・認可
+
+```java
+@Component
+public class SecurityGraphQLInterceptor implements GraphQLInterceptor {
+    
+    @Override
+    public GraphQLResponse intercept(GraphQLRequest request, 
+                                     Chain chain) {
+        // 認証チェック
+        String token = request.getHeaders().get("Authorization");
+        if (token == null || !isValidToken(token)) {
+            throw new GraphQLException("Unauthorized");
+        }
+        
+        // 認可チェック
+        if (isMutation(request) && !hasPermission(token, "WRITE")) {
+            throw new GraphQLException("Forbidden");
+        }
+        
+        return chain.next(request);
+    }
+    
+    private boolean isValidToken(String token) {
+        // JWT検証などの実装
+        return true;
+    }
+    
+    private boolean hasPermission(String token, String permission) {
+        // 権限チェックの実装
+        return true;
+    }
+}
+```
+
+### REST APIとの使い分け
+
+#### GraphQLを使うべき場合
+
+1. **複雑なデータ取得**: 複数のリソースを1回のクエリで取得したい
+2. **モバイルアプリ**: ネットワーク使用量を最小化したい
+3. **フロントエンド主導**: フロントエンドチームがAPIの形状を決定したい
+4. **リアルタイム更新**: Subscriptionが必要
+
+#### REST APIを使うべき場合
+
+1. **シンプルなCRUD**: 基本的なCRUD操作のみ
+2. **キャッシング**: HTTPキャッシングを活用したい
+3. **ファイルアップロード**: 単純なファイルアップロード
+4. **既存のREST API**: 既存のREST APIエコシステムがある
+
+### 実践的な例: ユーザー管理API
+
+```java
+// エンティティ
+@Entity
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    private String email;
+    
+    @OneToMany(mappedBy = "author")
+    private List<Post> posts;
+    
+    // getters and setters
+}
+
+// DTO
+public class UserInput {
+    private String name;
+    private String email;
+    
+    // getters and setters
+}
+
+// リゾルバー
+@Component
+public class UserResolver implements GraphQLQueryResolver, GraphQLMutationResolver {
+    
+    private final UserRepository userRepository;
+    
+    public UserResolver(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+    
+    public User user(Long id) {
+        return userRepository.findById(id)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+    }
+    
+    public List<User> users() {
+        return userRepository.findAll();
+    }
+    
+    public User createUser(UserInput input) {
+        User user = new User();
+        user.setName(input.getName());
+        user.setEmail(input.getEmail());
+        return userRepository.save(user);
+    }
+}
+```
+
+### パフォーマンス最適化
+
+#### 1. DataLoaderによるバッチローディング
+
+```java
+// N+1問題を解決
+@Bean
+public DataLoaderRegistry dataLoaderRegistry() {
+    DataLoaderRegistry registry = new DataLoaderRegistry();
+    registry.register("posts", 
+        DataLoader.newDataLoader(userIds -> {
+            // 1回のクエリで複数ユーザーの投稿を取得
+            return loadPostsBatch(userIds);
+        })
+    );
+    return registry;
+}
+```
+
+#### 2. クエリの複雑度制限
+
+```java
+@Configuration
+public class GraphQLConfig {
+    
+    @Bean
+    public GraphQL graphQL() {
+        return GraphQL.newGraphQL(schema)
+            .instrumentation(new MaxQueryComplexityInstrumentation(100))
+            .build();
+    }
+}
+```
+
+#### 3. クエリの深さ制限
+
+```java
+@Bean
+public GraphQL graphQL() {
+    return GraphQL.newGraphQL(schema)
+        .instrumentation(new MaxQueryDepthInstrumentation(10))
+        .build();
+}
+```
+
+### まとめ
+
+Spring GraphQLを使用したGraphQL API開発のポイント：
+
+- **スキーマファースト**: GraphQLスキーマを先に定義
+- **リゾルバー実装**: Query/Mutation/Fieldリゾルバーを実装
+- **N+1問題の解決**: DataLoaderを使用したバッチローディング
+- **エラーハンドリング**: 適切なエラー型とメッセージ
+- **認証・認可**: セキュリティの実装
+- **パフォーマンス**: クエリの複雑度・深さ制限
+
+GraphQLは、柔軟で効率的なAPIを構築するための強力なツールです。適切に使用することで、フロントエンドとバックエンドの開発効率を大幅に向上させることができます。
+

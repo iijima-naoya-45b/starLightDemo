@@ -1,0 +1,96 @@
+---
+title: "CodePipeline"
+label: "CodePipeline"
+---
+
+## CodePipeline
+
+CodePipelineは、AWSのCI/CDサービスです。
+
+### パイプラインの構成
+
+```yaml
+Pipeline:
+  Type: AWS::CodePipeline::Pipeline
+  Properties:
+    Name: MyPipeline
+    RoleArn: !GetAtt CodePipelineRole.Arn
+    ArtifactStore:
+      Type: S3
+      Location: !Ref ArtifactBucket
+    Stages:
+      - Name: Source
+        Actions:
+          - Name: SourceAction
+            ActionTypeId:
+              Category: Source
+              Owner: AWS
+              Provider: CodeCommit
+            Configuration:
+              RepositoryName: my-repo
+              BranchName: main
+            OutputArtifacts:
+              - Name: SourceOutput
+      - Name: Build
+        Actions:
+          - Name: BuildAction
+            ActionTypeId:
+              Category: Build
+              Owner: AWS
+              Provider: CodeBuild
+            Configuration:
+              ProjectName: !Ref CodeBuildProject
+            InputArtifacts:
+              - Name: SourceOutput
+            OutputArtifacts:
+              - Name: BuildOutput
+      - Name: Deploy
+        Actions:
+          - Name: DeployAction
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Provider: CodeDeploy
+            Configuration:
+              ApplicationName: !Ref CodeDeployApplication
+              DeploymentGroupName: !Ref CodeDeployDeploymentGroup
+            InputArtifacts:
+              - Name: BuildOutput
+```
+
+### CodeBuildの設定
+
+```yaml
+CodeBuildProject:
+  Type: AWS::CodeBuild::Project
+  Properties:
+    Name: MyBuildProject
+    ServiceRole: !GetAtt CodeBuildRole.Arn
+    Artifacts:
+      Type: CODEPIPELINE
+    Environment:
+      Type: LINUX_CONTAINER
+      ComputeType: BUILD_GENERAL1_SMALL
+      Image: aws/codebuild/standard:5.0
+    Source:
+      Type: CODEPIPELINE
+      BuildSpec: |
+        version: 0.2
+        phases:
+          pre_build:
+            commands:
+              - echo Logging in to Amazon ECR...
+              - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+          build:
+            commands:
+              - echo Build started on `date`
+              - echo Building the Docker image...
+              - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
+              - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+          post_build:
+            commands:
+              - echo Build completed on `date`
+              - echo Pushing the Docker image...
+              - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+```
+

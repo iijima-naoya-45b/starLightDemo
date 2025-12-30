@@ -1,0 +1,202 @@
+---
+title: "Solutions Architect Associate 試験範囲と対策"
+label: "Solutions Architect Associate 試験範囲と対策"
+---
+
+## Solutions Architect Associate 試験範囲と対策
+
+### 試験範囲
+
+#### 1. 設計のためのリソースの特定（30%）
+
+**主要トピック:**
+- EC2インスタンスタイプの選択
+- ストレージソリューションの選択
+- データベースソリューションの選択
+- ネットワークコンポーネントの選択
+
+**よく出る問題:**
+
+```yaml
+# 問題例: 高可用性Webアプリケーションの設計
+# 要件:
+# - 99.99%の可用性
+# - 複数リージョン対応
+# - 自動スケーリング
+
+Solution:
+  Components:
+    - Application Load Balancer (ALB)
+    - Auto Scaling Group
+    - Multi-AZ RDS
+    - CloudFront
+    - Route 53 (Health Checks)
+```
+
+#### 2. コスト最適化の設計（10%）
+
+**主要トピック:**
+- リザーブドインスタンス
+- Spotインスタンス
+- S3ライフサイクルポリシー
+- データ転送コストの最適化
+
+**よく出る問題:**
+
+```yaml
+# 問題例: コスト最適化
+# 要件:
+# - 開発環境のコスト削減
+# - バッチ処理のコスト削減
+
+Solution:
+  Development:
+    - Spot Instances
+    - Auto Scaling (夜間は0にスケールダウン)
+  Batch Processing:
+    - Spot Instances
+    - S3 Intelligent-Tiering
+```
+
+#### 3. セキュリティの設計（24%）
+
+**主要トピック:**
+- IAMポリシーとロール
+- VPCセキュリティ
+- 暗号化（KMS）
+- WAFとShield
+
+**よく出る問題:**
+
+```yaml
+# 問題例: セキュアなアーキテクチャ
+# 要件:
+# - プライベートサブネットのリソース保護
+# - データの暗号化
+# - DDoS対策
+
+Solution:
+  Security:
+    - NAT Gateway (アウトバウンドのみ)
+    - Security Groups (最小権限)
+    - KMS (暗号化)
+    - Shield Standard (DDoS対策)
+    - WAF (Webアプリケーション保護)
+```
+
+#### 4. 信頼性の設計（26%）
+
+**主要トピック:**
+- マルチAZ配置
+- バックアップとリカバリ
+- オートスケーリング
+- ヘルスチェック
+
+**よく出る問題:**
+
+```yaml
+# 問題例: 高可用性データベース
+# 要件:
+# - RPO: 5分
+# - RTO: 15分
+# - 自動フェイルオーバー
+
+Solution:
+  Database:
+    - RDS Multi-AZ
+    - Automated Backups (5分間隔)
+    - Read Replicas (複数AZ)
+    - CloudWatch Alarms
+```
+
+#### 5. パフォーマンスの設計（10%）
+
+**主要トピック:**
+- CloudFront
+- ElastiCache
+- データベースの最適化
+- ネットワークの最適化
+
+**よく出る問題:**
+
+```yaml
+# 問題例: パフォーマンス最適化
+# 要件:
+# - グローバルな低遅延
+# - データベースの負荷軽減
+
+Solution:
+  Performance:
+    - CloudFront (CDN)
+    - ElastiCache (Redis/Memcached)
+    - RDS Read Replicas
+    - Application Load Balancer
+```
+
+### 対策方法
+
+#### 1. ハンズオン実践
+
+```bash
+# AWS CLIで実践
+aws ec2 describe-instances
+aws s3 ls
+aws rds describe-db-instances
+```
+
+#### 2. よく出るサービス
+
+- **EC2**: インスタンスタイプ、セキュリティグループ
+- **S3**: ストレージクラス、ライフサイクル
+- **RDS**: Multi-AZ、リードレプリカ
+- **VPC**: サブネット、ルートテーブル、NAT Gateway
+- **CloudFront**: CDN、オリジン
+- **Route 53**: DNS、ヘルスチェック
+- **IAM**: ポリシー、ロール
+- **Lambda**: サーバーレス、イベントソース
+
+#### 3. 実践問題
+
+**問題1: 高可用性Webアプリケーション**
+
+```
+要件:
+- 3層アーキテクチャ（Web、App、DB）
+- 99.99%の可用性
+- 自動スケーリング
+- マルチAZ配置
+
+解答:
+- Application Load Balancer (マルチAZ)
+- Auto Scaling Group (複数AZ)
+- RDS Multi-AZ
+- CloudFront (静的コンテンツ)
+- Route 53 (DNSフェイルオーバー)
+```
+
+**問題2: コスト最適化**
+
+```
+要件:
+- 開発環境のコスト削減
+- バッチ処理の最適化
+
+解答:
+- Spot Instances (開発環境)
+- Scheduled Scaling (夜間停止)
+- S3 Intelligent-Tiering
+- Lambda (バッチ処理)
+```
+
+### まとめ
+
+Solutions Architect Associate試験のポイント：
+
+- **設計思考**: 要件に基づいた最適な設計
+- **コスト意識**: コストとパフォーマンスのバランス
+- **セキュリティ**: セキュアな設計の実装
+- **可用性**: 高可用性アーキテクチャの設計
+- **実践経験**: ハンズオンでの実践が重要
+
+試験対策には、実際にAWSを触りながら学習することが最も効果的です。
+

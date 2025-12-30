@@ -1,0 +1,88 @@
+---
+title: "オブジェクト指向"
+label: "オブジェクト指向"
+---
+
+## PHPオブジェクト指向
+
+### 継承
+
+```php
+<?php
+class Animal {
+    protected $name;
+
+    public function __construct($name) {
+        $this->name = $name;
+    }
+
+    public function speak() {
+        return "Some sound";
+    }
+}
+
+class Dog extends Animal {
+    public function speak() {
+        return "Woof!";
+    }
+}
+
+$dog = new Dog("Buddy");
+echo $dog->speak();  // Woof!
+```
+
+### インターフェース
+
+```php
+<?php
+interface Logger {
+    public function log($message);
+}
+
+class FileLogger implements Logger {
+    public function log($message) {
+        file_put_contents('log.txt', $message . "\n", FILE_APPEND);
+    }
+}
+
+class DatabaseLogger implements Logger {
+    public function log($message) {
+        // データベースにログを保存
+    }
+}
+```
+
+### トレイト
+
+```php
+<?php
+trait Loggable {
+    public function log($message) {
+        echo "[LOG] " . $message . "\n";
+    }
+}
+
+class User {
+    use Loggable;
+
+    public function create() {
+        $this->log("User created");
+    }
+}
+```
+
+### 名前空間
+
+```php
+<?php
+namespace App\Models;
+
+class User {
+    // ...
+}
+
+// 使用例
+use App\Models\User;
+$user = new User();
+```
+

@@ -1,0 +1,26 @@
+---
+title: "Prometheus & Grafana"
+label: "Prometheus & Grafana"
+---
+
+## Prometheus & Grafana
+
+Prometheusは、メトリクス収集と監視のためのシステムです。Grafanaは、可視化ツールです。
+
+### Prometheusの設定
+
+```yaml
+# prometheus.yml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'my-app'
+    static_configs:
+      - targets: ['localhost:8080']
+```
+
+### Grafanaのダッシュボード
+
+Grafanaを使用して、Prometheusのメトリクスを可視化できます。
+

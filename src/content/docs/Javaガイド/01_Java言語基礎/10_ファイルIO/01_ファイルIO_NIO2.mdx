@@ -1,0 +1,370 @@
+---
+title: "ファイルI/O（NIO.2）"
+label: "ファイルI/O"
+---
+
+## ファイルI/O（NIO.2）
+
+Java 7で導入されたNIO.2（`java.nio.file`パッケージ）は、ファイル操作を効率的に行うためのAPIです。この章では、NIO.2の使い方について詳しく解説します。
+
+### Pathインターフェース
+
+`Path`は、ファイルシステム内のパスを表すインターフェースです。
+
+```java
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+// Pathの作成
+Path path1 = Paths.get("/home/user/documents/file.txt");
+Path path2 = Paths.get("C:", "Users", "user", "documents", "file.txt");
+Path path3 = Paths.get(".", "src", "main", "java");
+
+// 相対パスと絶対パス
+Path absolutePath = path1.toAbsolutePath();
+Path normalizedPath = path1.normalize();
+
+// パスの結合
+Path base = Paths.get("/home/user");
+Path file = base.resolve("documents/file.txt");
+Path parent = file.getParent();
+Path fileName = file.getFileName();
+Path root = file.getRoot();
+
+// パスの情報取得
+boolean isAbsolute = path1.isAbsolute();
+int nameCount = path1.getNameCount();
+Path name = path1.getName(0);
+
+// パスの比較
+boolean equals = path1.equals(path2);
+int compare = path1.compareTo(path2);
+boolean startsWith = path1.startsWith("/home");
+boolean endsWith = path1.endsWith("file.txt");
+```
+
+### Filesクラス
+
+`Files`クラスは、ファイル操作のための静的メソッドを提供します。
+
+#### ファイルの読み書き
+
+```java
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
+// ファイルの読み込み
+Path filePath = Paths.get("file.txt");
+
+// すべての行を読み込み
+List<String> lines = Files.readAllLines(filePath, StandardCharsets.UTF_8);
+
+// すべてのバイトを読み込み
+byte[] bytes = Files.readAllBytes(filePath);
+
+// ストリームとして読み込み
+try (Stream<String> stream = Files.lines(filePath, StandardCharsets.UTF_8)) {
+    stream.forEach(System.out::println);
+}
+
+// ファイルの書き込み
+String content = "Hello, World!";
+Files.write(filePath, content.getBytes(StandardCharsets.UTF_8));
+
+// 行のリストを書き込み
+List<String> linesToWrite = Arrays.asList("Line 1", "Line 2", "Line 3");
+Files.write(filePath, linesToWrite, StandardCharsets.UTF_8);
+
+// 追記モードで書き込み
+Files.write(filePath, "New line".getBytes(StandardCharsets.UTF_8),
+    StandardOpenOption.APPEND);
+```
+
+#### ファイルの作成と削除
+
+```java
+// ファイルの作成
+Path newFile = Paths.get("newfile.txt");
+Files.createFile(newFile);
+
+// ディレクトリの作成
+Path newDir = Paths.get("newdir");
+Files.createDirectory(newDir);
+
+// 複数階層のディレクトリを作成
+Path nestedDir = Paths.get("parent/child/grandchild");
+Files.createDirectories(nestedDir);
+
+// ファイルの削除
+Files.delete(newFile);
+
+// ファイルが存在する場合のみ削除
+Files.deleteIfExists(newFile);
+
+// ディレクトリの削除（空の場合のみ）
+Files.delete(newDir);
+```
+
+#### ファイルのコピーと移動
+
+```java
+Path source = Paths.get("source.txt");
+Path target = Paths.get("target.txt");
+
+// ファイルのコピー
+Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+
+// ディレクトリのコピー（再帰的）
+Path sourceDir = Paths.get("sourcedir");
+Path targetDir = Paths.get("targetdir");
+Files.walk(sourceDir).forEach(sourcePath -> {
+    Path targetPath = targetDir.resolve(sourceDir.relativize(sourcePath));
+    try {
+        Files.copy(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING);
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+});
+
+// ファイルの移動（リネーム）
+Path oldPath = Paths.get("oldname.txt");
+Path newPath = Paths.get("newname.txt");
+Files.move(oldPath, newPath, StandardCopyOption.REPLACE_EXISTING);
+```
+
+#### ファイル属性の取得
+
+```java
+// ファイルの存在確認
+boolean exists = Files.exists(filePath);
+
+// ファイルの種類確認
+boolean isRegularFile = Files.isRegularFile(filePath);
+boolean isDirectory = Files.isDirectory(filePath);
+boolean isSymbolicLink = Files.isSymbolicLink(filePath);
+
+// ファイルのサイズ
+long size = Files.size(filePath);
+
+// ファイルの権限確認
+boolean isReadable = Files.isReadable(filePath);
+boolean isWritable = Files.isWritable(filePath);
+boolean isExecutable = Files.isExecutable(filePath);
+
+// 最終更新日時
+FileTime lastModified = Files.getLastModifiedTime(filePath);
+Instant instant = lastModified.toInstant();
+
+// 所有者情報（POSIXファイルシステム）
+UserPrincipal owner = Files.getOwner(filePath);
+System.out.println("Owner: " + owner.getName());
+```
+
+#### ファイル属性の設定
+
+```java
+// 最終更新日時を設定
+FileTime newTime = FileTime.from(Instant.now());
+Files.setLastModifiedTime(filePath, newTime);
+
+// 所有者を設定
+UserPrincipalLookupService lookupService = 
+    FileSystems.getDefault().getUserPrincipalLookupService();
+UserPrincipal newOwner = lookupService.lookupPrincipalByName("username");
+Files.setOwner(filePath, newOwner);
+
+// ファイル権限を設定（POSIX）
+Set<PosixFilePermission> permissions = EnumSet.of(
+    PosixFilePermission.OWNER_READ,
+    PosixFilePermission.OWNER_WRITE,
+    PosixFilePermission.GROUP_READ,
+    PosixFilePermission.OTHERS_READ
+);
+Files.setPosixFilePermissions(filePath, permissions);
+```
+
+### ディレクトリの走査
+
+#### Files.walk()
+
+```java
+// ディレクトリツリーを再帰的に走査
+Path root = Paths.get("/home/user/documents");
+
+try (Stream<Path> stream = Files.walk(root)) {
+    stream.filter(Files::isRegularFile)
+          .forEach(System.out::println);
+}
+
+// 最大深度を指定
+try (Stream<Path> stream = Files.walk(root, 2)) {
+    stream.forEach(System.out::println);
+}
+```
+
+#### Files.list()
+
+```java
+// ディレクトリの直接の子要素のみを取得
+Path dir = Paths.get("/home/user/documents");
+
+try (Stream<Path> stream = Files.list(dir)) {
+    stream.filter(Files::isDirectory)
+          .forEach(System.out::println);
+}
+```
+
+#### Files.find()
+
+```java
+// 条件に合うファイルを検索
+Path root = Paths.get("/home/user/documents");
+
+BiPredicate<Path, BasicFileAttributes> matcher = (path, attrs) -> {
+    return attrs.isRegularFile() && path.getFileName().toString().endsWith(".txt");
+};
+
+try (Stream<Path> stream = Files.find(root, Integer.MAX_VALUE, matcher)) {
+    stream.forEach(System.out::println);
+}
+```
+
+### FileVisitorインターフェース
+
+ディレクトリツリーを走査する際のカスタム動作を定義できます。
+
+```java
+import java.nio.file.FileVisitResult;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
+
+public class MyFileVisitor extends SimpleFileVisitor<Path> {
+    
+    @Override
+    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+        System.out.println("Visiting file: " + file);
+        return FileVisitResult.CONTINUE;
+    }
+    
+    @Override
+    public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+        System.out.println("Entering directory: " + dir);
+        return FileVisitResult.CONTINUE;
+    }
+    
+    @Override
+    public FileVisitResult postVisitDirectory(Path dir, IOException exc) {
+        System.out.println("Leaving directory: " + dir);
+        return FileVisitResult.CONTINUE;
+    }
+    
+    @Override
+    public FileVisitResult visitFileFailed(Path file, IOException exc) {
+        System.err.println("Failed to visit: " + file);
+        return FileVisitResult.CONTINUE;
+    }
+}
+
+// 使用例
+Path root = Paths.get("/home/user/documents");
+Files.walkFileTree(root, new MyFileVisitor());
+```
+
+### WatchService
+
+ファイルシステムの変更を監視するサービスです。
+
+```java
+import java.nio.file.WatchService;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchEvent;
+import java.nio.file.StandardWatchEventKinds;
+
+Path dir = Paths.get("/home/user/documents");
+WatchService watchService = FileSystems.getDefault().newWatchService();
+
+// 監視するイベントを登録
+WatchKey key = dir.register(watchService,
+    StandardWatchEventKinds.ENTRY_CREATE,
+    StandardWatchEventKinds.ENTRY_DELETE,
+    StandardWatchEventKinds.ENTRY_MODIFY);
+
+// イベントを監視
+while (true) {
+    WatchKey watchKey = watchService.take();
+    
+    for (WatchEvent<?> event : watchKey.pollEvents()) {
+        WatchEvent.Kind<?> kind = event.kind();
+        Path fileName = (Path) event.context();
+        
+        if (kind == StandardWatchEventKinds.ENTRY_CREATE) {
+            System.out.println("File created: " + fileName);
+        } else if (kind == StandardWatchEventKinds.ENTRY_DELETE) {
+            System.out.println("File deleted: " + fileName);
+        } else if (kind == StandardWatchEventKinds.ENTRY_MODIFY) {
+            System.out.println("File modified: " + fileName);
+        }
+    }
+    
+    boolean valid = watchKey.reset();
+    if (!valid) {
+        break;
+    }
+}
+```
+
+### 実践例
+
+#### ファイル検索ユーティリティ
+
+```java
+public class FileSearchUtil {
+    
+    public static List<Path> findFiles(Path root, String extension) throws IOException {
+        List<Path> results = new ArrayList<>();
+        
+        Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                if (file.getFileName().toString().endsWith(extension)) {
+                    results.add(file);
+                }
+                return FileVisitResult.CONTINUE;
+            }
+        });
+        
+        return results;
+    }
+    
+    public static long getTotalSize(Path directory) throws IOException {
+        AtomicLong totalSize = new AtomicLong();
+        
+        Files.walkFileTree(directory, new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                totalSize.addAndGet(attrs.size());
+                return FileVisitResult.CONTINUE;
+            }
+        });
+        
+        return totalSize.get();
+    }
+}
+```
+
+### まとめ
+
+NIO.2のポイント：
+
+- **Path**: ファイルシステム内のパスを表す
+- **Files**: ファイル操作の静的メソッド
+- **ファイルの読み書き**: readAllLines、write、linesなど
+- **ディレクトリの走査**: walk、list、find
+- **FileVisitor**: カスタム走査動作の定義
+- **WatchService**: ファイルシステムの変更監視
+
+NIO.2を使用することで、効率的で柔軟なファイル操作が可能です。
+
+

@@ -1,0 +1,338 @@
+---
+title: "gRPC"
+label: "gRPC"
+---
+
+## gRPC
+
+gRPCは、Googleが開発した高性能なRPC（Remote Procedure Call）フレームワークです。Goでは、標準ライブラリと**google.golang.org/grpc**を使用してgRPCを実装できます。
+
+### なぜgRPCが必要なのか
+
+#### REST APIとの比較
+
+**REST APIの課題:**
+
+```go
+// REST API: JSON over HTTP
+// 問題点:
+// - テキストベース（JSON）のためサイズが大きい
+// - HTTP/1.1のため、複数のリクエストを並列処理できない
+// - 型安全性が低い（実行時エラー）
+```
+
+**gRPCの解決:**
+
+```protobuf
+// Protocol Buffers: バイナリ形式、型安全
+service UserService {
+  rpc GetUser(GetUserRequest) returns (User);
+}
+
+// メリット:
+// - バイナリ形式のためサイズが小さい
+// - HTTP/2のため、複数のリクエストを並列処理できる
+// - 型安全性が高い（コンパイル時エラー）
+```
+
+**メリット:**
+1. **高性能**: バイナリ形式とHTTP/2による高速通信
+2. **型安全性**: Protocol Buffersによる型安全なAPI
+3. **ストリーミング**: 双方向ストリーミング対応
+4. **言語非依存**: 複数の言語で実装可能
+
+### Protocol Buffersの定義
+
+**`proto/user.proto`:**
+
+```protobuf
+syntax = "proto3";
+
+package user;
+
+option go_package = "github.com/example/proto/user";
+
+service UserService {
+  rpc GetUser(GetUserRequest) returns (User);
+  rpc ListUsers(ListUsersRequest) returns (stream User);
+  rpc CreateUsers(stream CreateUserRequest) returns (CreateUsersResponse);
+  rpc ChatUsers(stream ChatMessage) returns (stream ChatMessage);
+}
+
+message GetUserRequest {
+  int64 id = 1;
+}
+
+message ListUsersRequest {
+  int32 page = 1;
+  int32 size = 2;
+}
+
+message CreateUserRequest {
+  string name = 1;
+  string email = 2;
+}
+
+message CreateUsersResponse {
+  int32 count = 1;
+  repeated User users = 2;
+}
+
+message ChatMessage {
+  int64 user_id = 1;
+  string message = 2;
+}
+
+message User {
+  int64 id = 1;
+  string name = 2;
+  string email = 3;
+  int64 created_at = 4;
+}
+```
+
+### gRPCサーバーの実装
+
+```go
+// server/user_server.go
+package server
+
+import (
+    "context"
+    "log"
+    "google.golang.org/grpc"
+    pb "github.com/example/proto/user"
+)
+
+type UserServer struct {
+    pb.UnimplementedUserServiceServer
+    users map[int64]*pb.User
+}
+
+func NewUserServer() *UserServer {
+    return &UserServer{
+        users: make(map[int64]*pb.User),
+    }
+}
+
+// 単一リクエスト/レスポンス
+func (s *UserServer) GetUser(ctx context.Context, req *pb.GetUserRequest) (*pb.User, error) {
+    user, exists := s.users[req.Id]
+    if !exists {
+        return nil, status.Errorf(codes.NotFound, "User not found: %d", req.Id)
+    }
+    return user, nil
+}
+
+// サーバーストリーミング
+func (s *UserServer) ListUsers(req *pb.ListUsersRequest, stream pb.UserService_ListUsersServer) error {
+    page := req.Page
+    size := req.Size
+    
+    // ユーザーリストをストリームで送信
+    for _, user := range s.users {
+        if err := stream.Send(user); err != nil {
+            return err
+        }
+    }
+    return nil
+}
+
+// クライアントストリーミング
+func (s *UserServer) CreateUsers(stream pb.UserService_CreateUsersServer) error {
+    var users []*pb.User
+    
+    for {
+        req, err := stream.Recv()
+        if err == io.EOF {
+            // ストリーム終了
+            return stream.SendAndClose(&pb.CreateUsersResponse{
+                Count: int32(len(users)),
+                Users: users,
+            })
+        }
+        if err != nil {
+            return err
+        }
+        
+        user := &pb.User{
+            Id:    int64(len(s.users) + 1),
+            Name:  req.Name,
+            Email: req.Email,
+        }
+        s.users[user.Id] = user
+        users = append(users, user)
+    }
+}
+
+// 双方向ストリーミング
+func (s *UserServer) ChatUsers(stream pb.UserService_ChatUsersServer) error {
+    for {
+        msg, err := stream.Recv()
+        if err == io.EOF {
+            return nil
+        }
+        if err != nil {
+            return err
+        }
+        
+        // エコーを送信
+        reply := &pb.ChatMessage{
+            UserId:  msg.UserId,
+            Message: "Echo: " + msg.Message,
+        }
+        if err := stream.Send(reply); err != nil {
+            return err
+        }
+    }
+}
+
+// サーバーの起動
+func StartServer(port string) error {
+    lis, err := net.Listen("tcp", port)
+    if err != nil {
+        return err
+    }
+    
+    s := grpc.NewServer()
+    pb.RegisterUserServiceServer(s, NewUserServer())
+    
+    log.Printf("Server listening on %s", port)
+    return s.Serve(lis)
+}
+```
+
+### gRPCクライアントの実装
+
+```go
+// client/user_client.go
+package client
+
+import (
+    "context"
+    "google.golang.org/grpc"
+    pb "github.com/example/proto/user"
+)
+
+type UserClient struct {
+    conn *grpc.ClientConn
+    client pb.UserServiceClient
+}
+
+func NewUserClient(addr string) (*UserClient, error) {
+    conn, err := grpc.Dial(addr, grpc.WithInsecure())
+    if err != nil {
+        return nil, err
+    }
+    
+    return &UserClient{
+        conn:   conn,
+        client: pb.NewUserServiceClient(conn),
+    }, nil
+}
+
+func (c *UserClient) GetUser(ctx context.Context, id int64) (*pb.User, error) {
+    return c.client.GetUser(ctx, &pb.GetUserRequest{Id: id})
+}
+
+func (c *UserClient) ListUsers(ctx context.Context, page, size int32) ([]*pb.User, error) {
+    stream, err := c.client.ListUsers(ctx, &pb.ListUsersRequest{
+        Page: page,
+        Size: size,
+    })
+    if err != nil {
+        return nil, err
+    }
+    
+    var users []*pb.User
+    for {
+        user, err := stream.Recv()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return nil, err
+        }
+        users = append(users, user)
+    }
+    return users, nil
+}
+
+func (c *UserClient) Close() error {
+    return c.conn.Close()
+}
+```
+
+### エラーハンドリング
+
+```go
+import (
+    "google.golang.org/grpc/codes"
+    "google.golang.org/grpc/status"
+)
+
+func (s *UserServer) GetUser(ctx context.Context, req *pb.GetUserRequest) (*pb.User, error) {
+    user, exists := s.users[req.Id]
+    if !exists {
+        return nil, status.Errorf(codes.NotFound, "User not found: %d", req.Id)
+    }
+    return user, nil
+}
+
+// クライアント側でのエラーハンドリング
+user, err := client.GetUser(ctx, 1)
+if err != nil {
+    st, ok := status.FromError(err)
+    if ok {
+        switch st.Code() {
+        case codes.NotFound:
+            log.Printf("User not found: %s", st.Message())
+        case codes.InvalidArgument:
+            log.Printf("Invalid argument: %s", st.Message())
+        default:
+            log.Printf("Error: %s", st.Message())
+        }
+    }
+}
+```
+
+### インターセプター（認証・認可）
+
+```go
+// interceptor/auth.go
+func AuthInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+    md, ok := metadata.FromIncomingContext(ctx)
+    if !ok {
+        return nil, status.Errorf(codes.Unauthenticated, "Missing metadata")
+    }
+    
+    tokens := md.Get("authorization")
+    if len(tokens) == 0 {
+        return nil, status.Errorf(codes.Unauthenticated, "Missing authorization token")
+    }
+    
+    token := tokens[0]
+    if !isValidToken(token) {
+        return nil, status.Errorf(codes.Unauthenticated, "Invalid token")
+    }
+    
+    return handler(ctx, req)
+}
+
+// サーバーにインターセプターを登録
+s := grpc.NewServer(
+    grpc.UnaryInterceptor(AuthInterceptor),
+)
+```
+
+### まとめ
+
+GoでgRPCを使用するポイント：
+
+- **Protocol Buffers**: 型安全なAPI定義
+- **ストリーミング**: 単方向・双方向ストリーミング対応
+- **エラーハンドリング**: Statusによる適切なエラー処理
+- **インターセプター**: 認証・認可などの横断的関心事
+
+gRPCは、マイクロサービス間の通信や高性能が求められるAPIで非常に有用です。適切に実装することで、アプリケーションのパフォーマンスと型安全性を大幅に向上させることができます。
+

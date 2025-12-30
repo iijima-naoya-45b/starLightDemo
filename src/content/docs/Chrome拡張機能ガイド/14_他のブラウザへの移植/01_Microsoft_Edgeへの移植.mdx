@@ -1,0 +1,74 @@
+---
+title: "Microsoft Edgeへの移植"
+label: "Microsoft Edgeへの移植"
+---
+
+## Microsoft Edgeへの移植
+
+Chrome拡張機能をMicrosoft Edgeに移植する方法を説明します。
+
+### Edgeでの動作確認
+
+#### 1. Edgeでの読み込み
+
+1. Edgeで `edge://extensions/` を開く
+2. 「開発者モード」を有効にする
+3. 「パッケージ化されていない拡張機能を読み込む」をクリック
+4. 拡張機能のフォルダを選択
+
+#### 2. 動作確認
+
+Chrome拡張機能は、ほとんどの場合Edgeでもそのまま動作します。
+
+**確認ポイント:**
+- 基本的な機能が動作するか
+- APIが正しく動作するか
+- エラーが発生しないか
+
+### 主な違い
+
+#### 1. APIの違い
+
+EdgeはChromeとほぼ同じAPIをサポートしていますが、一部の違いがあります。
+
+**確認が必要なAPI:**
+- `chrome.identity`: 一部の機能が異なる場合がある
+- `chrome.storage`: 基本的に同じ
+- `chrome.tabs`: 基本的に同じ
+
+#### 2. マニフェストの違い
+
+EdgeはManifest V3をサポートしています。
+
+```json
+{
+  "manifest_version": 3,
+  "name": "My Extension",
+  "version": "1.0.0"
+}
+```
+
+### Edge Web Storeへの公開
+
+#### 1. 公開手順
+
+1. [Microsoft Edge Add-ons](https://partner.microsoft.com/en-us/dashboard/microsoftedge/overview)にアクセス
+2. アカウントを作成
+3. 拡張機能をアップロード
+4. 情報を入力
+5. 審査を待つ
+
+#### 2. 審査基準
+
+Edge Web Storeの審査基準は、Chrome Web Storeとほぼ同じです。
+
+### まとめ
+
+Microsoft Edgeへの移植：
+
+1. **動作確認**: Edgeで拡張機能を読み込んで確認
+2. **APIの確認**: 使用しているAPIがEdgeで動作するか確認
+3. **公開**: Edge Web Storeに公開
+
+Chrome拡張機能は、ほとんどの場合Edgeでもそのまま動作します。
+

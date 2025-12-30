@@ -1,0 +1,378 @@
+---
+title: "パフォーマンス設計の実践例"
+label: "パフォーマンス設計の実践例"
+---
+
+## パフォーマンス設計の実践例
+
+実際のシステムを例に、パフォーマンス設計の実践的なユースケースを説明します。
+
+### ユースケース1: 大量データの検索システム
+
+#### 要件
+
+- 100万件以上の商品データ
+- 高速な検索機能
+- リアルタイムでの在庫確認
+
+#### パフォーマンス設計
+
+**1. インデックス設計:**
+
+```sql
+-- 商品テーブル
+CREATE TABLE products (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  category_id INT NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  stock_quantity INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  
+  -- 検索用インデックス
+  INDEX idx_category_id (category_id),
+  INDEX idx_price (price),
+  INDEX idx_stock_quantity (stock_quantity),
+  INDEX idx_created_at (created_at),
+  
+  -- 複合インデックス（よく一緒に検索される）
+  INDEX idx_category_price (category_id, price),
+  INDEX idx_category_stock (category_id, stock_quantity),
+  
+  -- 全文検索用インデックス
+  FULLTEXT INDEX idx_name_description (name, description)
+);
+```
+
+**2. クエリ最適化:**
+
+```sql
+-- 良い例: インデックスを使用
+SELECT * FROM products 
+WHERE category_id = 1 
+  AND price BETWEEN 100 AND 1000
+  AND stock_quantity > 0
+ORDER BY created_at DESC
+LIMIT 20;
+
+-- 悪い例: インデックスを使用しない
+SELECT * FROM products 
+WHERE name LIKE '%laptop%'  -- 前方一致でないためインデックスが使えない
+ORDER BY RAND()  -- RAND()はインデックスが使えない
+LIMIT 20;
+```
+
+**3. ページネーション最適化:**
+
+```sql
+-- カーソルベースページネーション（オフセットベースより高速）
+SELECT * FROM products 
+WHERE category_id = 1 
+  AND id > 1000  -- 前回の最後のID
+ORDER BY id ASC
+LIMIT 20;
+```
+
+**4. キャッシング戦略:**
+
+```javascript
+// Redisを使用したキャッシング
+async function getProducts(categoryId, page, limit) {
+  const cacheKey = `products:category:${categoryId}:page:${page}:limit:${limit}`;
+  
+  // キャッシュから取得
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+  
+  // データベースから取得
+  const products = await db.query(`
+    SELECT * FROM products 
+    WHERE category_id = ? 
+    ORDER BY created_at DESC 
+    LIMIT ? OFFSET ?
+  `, [categoryId, limit, (page - 1) * limit]);
+  
+  // キャッシュに保存（5分間）
+  await redis.setex(cacheKey, 300, JSON.stringify(products));
+  
+  return products;
+}
+```
+
+### ユースケース2: リアルタイム在庫管理
+
+#### 要件
+
+- リアルタイムでの在庫確認
+- 高頻度での在庫更新
+- 在庫の整合性保証
+
+#### パフォーマンス設計
+
+**1. 在庫テーブルの最適化:**
+
+```sql
+-- 在庫テーブル
+CREATE TABLE inventory (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  product_id INT NOT NULL,
+  warehouse_id INT NOT NULL,
+  quantity INT NOT NULL DEFAULT 0,
+  reserved_quantity INT NOT NULL DEFAULT 0,
+  available_quantity INT GENERATED ALWAYS AS (quantity - reserved_quantity) STORED,
+  version INT DEFAULT 0,  -- 楽観的ロック用
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  
+  UNIQUE KEY unique_product_warehouse (product_id, warehouse_id),
+  INDEX idx_product_id (product_id),
+  INDEX idx_warehouse_id (warehouse_id),
+  INDEX idx_available_quantity (available_quantity)
+);
+```
+
+**2. 楽観的ロックの実装:**
+
+```javascript
+// 楽観的ロックを使用した在庫更新
+async function updateInventory(productId, warehouseId, quantityChange) {
+  const maxRetries = 3;
+  
+  for (let i = 0; i < maxRetries; i++) {
+    const connection = await db.getConnection();
+    
+    try {
+      await connection.beginTransaction();
+      
+      // 現在のバージョンを取得
+      const [inventory] = await connection.query(
+        'SELECT quantity, version FROM inventory WHERE product_id = ? AND warehouse_id = ? FOR UPDATE',
+        [productId, warehouseId]
+      );
+      
+      const expectedVersion = inventory.version;
+      const newQuantity = inventory.quantity + quantityChange;
+      
+      if (newQuantity < 0) {
+        throw new Error('Insufficient inventory');
+      }
+      
+      // バージョンチェック付きで更新
+      const [result] = await connection.query(
+        `UPDATE inventory 
+         SET quantity = ?, version = version + 1 
+         WHERE product_id = ? 
+           AND warehouse_id = ? 
+           AND version = ?`,
+        [newQuantity, productId, warehouseId, expectedVersion]
+      );
+      
+      if (result.affectedRows === 0) {
+        // バージョンが一致しない（競合）
+        await connection.rollback();
+        if (i < maxRetries - 1) {
+          await sleep(10 * (i + 1)); // 指数バックオフ
+          continue;
+        }
+        throw new Error('Update conflict');
+      }
+      
+      await connection.commit();
+      return { success: true };
+      
+    } catch (error) {
+      await connection.rollback();
+      if (i === maxRetries - 1) throw error;
+    } finally {
+      connection.release();
+    }
+  }
+}
+```
+
+**3. 在庫の非正規化（パフォーマンス重視）:**
+
+```sql
+-- 商品テーブルに在庫数を非正規化
+CREATE TABLE products (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  total_stock INT DEFAULT 0,  -- 全倉庫の在庫合計（非正規化）
+  -- ...
+);
+
+-- 在庫更新時に合計も更新
+BEGIN TRANSACTION;
+
+UPDATE inventory SET quantity = quantity - 10 WHERE product_id = 1 AND warehouse_id = 1;
+UPDATE products SET total_stock = total_stock - 10 WHERE id = 1;
+
+COMMIT;
+```
+
+### ユースケース3: ログ分析システム
+
+#### 要件
+
+- 大量のログデータ（1日100万件以上）
+- 高速な検索・集計
+- 古いデータのアーカイブ
+
+#### パフォーマンス設計
+
+**1. パーティショニング:**
+
+```sql
+-- 日付でパーティショニング
+CREATE TABLE access_logs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT,
+  url VARCHAR(255),
+  method VARCHAR(10),
+  status_code INT,
+  response_time INT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_user_id (user_id),
+  INDEX idx_created_at (created_at),
+  INDEX idx_status_code (status_code)
+) PARTITION BY RANGE (YEAR(created_at)) (
+  PARTITION p2024 VALUES LESS THAN (2025),
+  PARTITION p2025 VALUES LESS THAN (2026),
+  PARTITION p2026 VALUES LESS THAN (2027)
+);
+```
+
+**2. 集計テーブル:**
+
+```sql
+-- 日次集計テーブル
+CREATE TABLE daily_statistics (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  date DATE NOT NULL,
+  total_requests INT DEFAULT 0,
+  total_errors INT DEFAULT 0,
+  avg_response_time DECIMAL(10,2) DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_date (date),
+  INDEX idx_date (date)
+);
+
+-- 集計処理（バッチ処理）
+INSERT INTO daily_statistics (date, total_requests, total_errors, avg_response_time)
+SELECT 
+  DATE(created_at) as date,
+  COUNT(*) as total_requests,
+  SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) as total_errors,
+  AVG(response_time) as avg_response_time
+FROM access_logs
+WHERE DATE(created_at) = CURDATE() - INTERVAL 1 DAY
+GROUP BY DATE(created_at);
+```
+
+**3. データアーカイブ:**
+
+```sql
+-- 古いデータをアーカイブテーブルに移動
+CREATE TABLE access_logs_archive LIKE access_logs;
+
+-- 1年以上前のデータをアーカイブ
+INSERT INTO access_logs_archive
+SELECT * FROM access_logs
+WHERE created_at < DATE_SUB(NOW(), INTERVAL 1 YEAR);
+
+DELETE FROM access_logs
+WHERE created_at < DATE_SUB(NOW(), INTERVAL 1 YEAR);
+```
+
+### ユースケース4: レコメンデーションシステム
+
+#### 要件
+
+- ユーザーの行動履歴からレコメンデーション
+- リアルタイムでのレコメンデーション生成
+- パーソナライズされたレコメンデーション
+
+#### パフォーマンス設計
+
+**1. ユーザー行動履歴の最適化:**
+
+```sql
+-- ユーザー行動履歴テーブル
+CREATE TABLE user_actions (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  action_type ENUM('view', 'purchase', 'like', 'share') NOT NULL,
+  item_id INT NOT NULL,
+  item_type VARCHAR(50) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_user_id (user_id),
+  INDEX idx_action_type (action_type),
+  INDEX idx_created_at (created_at),
+  INDEX idx_user_action (user_id, action_type, created_at)
+);
+
+-- 最近の行動のみを保持（パーティショニング）
+-- 古いデータはアーカイブ
+```
+
+**2. レコメンデーション結果のキャッシュ:**
+
+```javascript
+// レコメンデーション結果をキャッシュ
+async function getRecommendations(userId) {
+  const cacheKey = `recommendations:user:${userId}`;
+  
+  // キャッシュから取得
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+  
+  // レコメンデーションを生成（重い処理）
+  const recommendations = await generateRecommendations(userId);
+  
+  // キャッシュに保存（1時間）
+  await redis.setex(cacheKey, 3600, JSON.stringify(recommendations));
+  
+  return recommendations;
+}
+```
+
+**3. バッチ処理でのレコメンデーション生成:**
+
+```javascript
+// バッチ処理でレコメンデーションを事前計算
+async function batchGenerateRecommendations() {
+  const users = await db.query('SELECT id FROM users WHERE is_active = 1');
+  
+  for (const user of users) {
+    // レコメンデーションを生成
+    const recommendations = await generateRecommendations(user.id);
+    
+    // 結果をキャッシュに保存
+    await redis.setex(
+      `recommendations:user:${user.id}`,
+      3600,
+      JSON.stringify(recommendations)
+    );
+  }
+}
+
+// 毎日深夜に実行
+cron.schedule('0 2 * * *', batchGenerateRecommendations);
+```
+
+### まとめ
+
+パフォーマンス設計の実践例：
+
+1. **大量データの検索**: インデックス設計、クエリ最適化、カーソルベースページネーション、キャッシング
+2. **リアルタイム在庫管理**: 楽観的ロック、非正規化、バージョン管理
+3. **ログ分析システム**: パーティショニング、集計テーブル、データアーカイブ
+4. **レコメンデーションシステム**: 行動履歴の最適化、結果のキャッシュ、バッチ処理
+
+これらの実践例を参考に、実際のパフォーマンス設計を行えます。
+

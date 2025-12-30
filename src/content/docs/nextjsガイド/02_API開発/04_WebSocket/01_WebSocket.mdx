@@ -1,0 +1,313 @@
+---
+title: "WebSocket"
+label: "WebSocket"
+---
+
+## WebSocket
+
+WebSocketは、クライアントとサーバー間の双方向通信を実現するプロトコルです。Next.jsでは、**Socket.io**や**ws**を使用してリアルタイム通信を実装できます。
+
+### なぜWebSocketが必要なのか
+
+#### HTTPポーリングの課題
+
+**問題のあるHTTPポーリングの例:**
+
+```typescript
+// クライアント側: 定期的にサーバーにリクエスト
+useEffect(() => {
+  const interval = setInterval(() => {
+    fetch('/api/messages')
+      .then(response => response.json())
+      .then(data => setMessages(data));
+  }, 1000); // 1秒ごとにポーリング
+
+  return () => clearInterval(interval);
+}, []);
+
+// 問題点:
+// - 不要なリクエストが多い（サーバー負荷）
+// - リアルタイム性が低い（最大1秒の遅延）
+// - ネットワーク帯域の無駄
+// - バッテリー消費が大きい（モバイル）
+```
+
+**WebSocketの解決:**
+
+```typescript
+// 1回の接続で双方向通信
+const socket = new WebSocket('ws://localhost:3000');
+socket.onmessage = (event) => {
+  setMessages(JSON.parse(event.data));
+};
+
+// メリット:
+// - リアルタイム通信（低遅延）
+// - サーバーからクライアントへのプッシュが可能
+// - ネットワーク効率が良い
+// - 接続を維持するため、オーバーヘッドが少ない
+```
+
+**メリット:**
+1. **リアルタイム性**: 即座にデータを送受信
+2. **双方向通信**: サーバーからクライアントへのプッシュ
+3. **効率性**: 接続オーバーヘッドが少ない
+4. **低遅延**: HTTPリクエスト/レスポンスのオーバーヘッドがない
+
+### Socket.ioの設定
+
+#### 依存関係の追加
+
+```bash
+npm install socket.io socket.io-client
+```
+
+#### サーバー側の設定
+
+```typescript
+// app/api/socket/route.ts
+import { Server as SocketIOServer } from 'socket.io';
+import { NextRequest } from 'next/server';
+
+let io: SocketIOServer | null = null;
+
+export async function GET(request: NextRequest) {
+  if (!io) {
+    io = new SocketIOServer({
+      path: '/api/socket',
+      addTrailingSlash: false,
+    });
+
+    io.on('connection', (socket) => {
+      console.log('Client connected:', socket.id);
+
+      socket.on('message', (data) => {
+        // メッセージを受信して全クライアントにブロードキャスト
+        io!.emit('message', data);
+      });
+
+      socket.on('disconnect', () => {
+        console.log('Client disconnected:', socket.id);
+      });
+    });
+  }
+
+  return new Response('Socket.IO server initialized', { status: 200 });
+}
+```
+
+#### クライアント側の設定
+
+```typescript
+// lib/socket.ts
+import { io, Socket } from 'socket.io-client';
+
+let socket: Socket | null = null;
+
+export const getSocket = (): Socket => {
+  if (!socket) {
+    socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000', {
+      path: '/api/socket',
+    });
+  }
+  return socket;
+};
+```
+
+### リアルタイムチャットの実装
+
+```typescript
+// components/Chat.tsx
+'use client';
+
+import { useEffect, useState } from 'react';
+import { getSocket } from '@/lib/socket';
+
+interface Message {
+  id: string;
+  text: string;
+  user: string;
+  timestamp: Date;
+}
+
+export default function Chat() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const socket = getSocket();
+
+  useEffect(() => {
+    // メッセージを受信
+    socket.on('message', (message: Message) => {
+      setMessages((prev) => [...prev, message]);
+    });
+
+    // クリーンアップ
+    return () => {
+      socket.off('message');
+    };
+  }, [socket]);
+
+  const sendMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (input.trim()) {
+      socket.emit('message', {
+        id: Date.now().toString(),
+        text: input,
+        user: 'User', // 実際の実装では認証情報から取得
+        timestamp: new Date(),
+      });
+      setInput('');
+    }
+  };
+
+  return (
+    <div>
+      <div>
+        {messages.map((message) => (
+          <div key={message.id}>
+            <strong>{message.user}:</strong> {message.text}
+            <span>{new Date(message.timestamp).toLocaleTimeString()}</span>
+          </div>
+        ))}
+      </div>
+      <form onSubmit={sendMessage}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Type a message..."
+        />
+        <button type="submit">Send</button>
+      </form>
+    </div>
+  );
+}
+```
+
+### リアルタイム通知の実装
+
+```typescript
+// hooks/useNotifications.ts
+import { useEffect, useState } from 'react';
+import { getSocket } from '@/lib/socket';
+
+interface Notification {
+  id: string;
+  type: 'info' | 'warning' | 'error' | 'success';
+  message: string;
+  timestamp: Date;
+}
+
+export function useNotifications() {
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const socket = getSocket();
+
+  useEffect(() => {
+    socket.on('notification', (notification: Notification) => {
+      setNotifications((prev) => [...prev, notification]);
+      
+      // 5秒後に自動削除
+      setTimeout(() => {
+        setNotifications((prev) =>
+          prev.filter((n) => n.id !== notification.id)
+        );
+      }, 5000);
+    });
+
+    return () => {
+      socket.off('notification');
+    };
+  }, [socket]);
+
+  const removeNotification = (id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
+  return { notifications, removeNotification };
+}
+```
+
+### 認証付きWebSocket
+
+```typescript
+// lib/socket.ts
+import { io, Socket } from 'socket.io-client';
+
+export const getSocket = (token: string): Socket => {
+  return io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000', {
+    path: '/api/socket',
+    auth: {
+      token,
+    },
+    transports: ['websocket'],
+  });
+};
+```
+
+```typescript
+// app/api/socket/route.ts
+import { Server as SocketIOServer } from 'socket.io';
+
+io.on('connection', (socket) => {
+  const token = socket.handshake.auth.token;
+  
+  if (!isValidToken(token)) {
+    socket.disconnect();
+    return;
+  }
+
+  const userId = getUserIdFromToken(token);
+  socket.join(`user:${userId}`);
+
+  socket.on('message', (data) => {
+    io.to(`user:${data.recipientId}`).emit('message', data);
+  });
+});
+```
+
+### パフォーマンス最適化
+
+#### 1. 接続の再利用
+
+```typescript
+// lib/socket.ts
+let socket: Socket | null = null;
+
+export const getSocket = (): Socket => {
+  if (!socket || !socket.connected) {
+    socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000', {
+      path: '/api/socket',
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+    });
+  }
+  return socket;
+};
+```
+
+#### 2. メッセージのバッチ処理
+
+```typescript
+// 複数のメッセージをバッチで送信
+const messageQueue: Message[] = [];
+
+setInterval(() => {
+  if (messageQueue.length > 0) {
+    socket.emit('batch-messages', messageQueue);
+    messageQueue.length = 0;
+  }
+}, 100);
+```
+
+### まとめ
+
+Next.jsでWebSocketを使用するポイント：
+
+- **Socket.io**: リアルタイム通信ライブラリ
+- **双方向通信**: サーバーからクライアントへのプッシュ
+- **認証**: トークンベースの認証
+- **パフォーマンス**: 接続の再利用とメッセージのバッチ処理
+- **エラーハンドリング**: 再接続とエラー処理
+
+WebSocketは、リアルタイム通信が必要なアプリケーション（チャット、通知、ライブ更新など）で非常に有用です。適切に実装することで、ユーザー体験を大幅に向上させることができます。
+

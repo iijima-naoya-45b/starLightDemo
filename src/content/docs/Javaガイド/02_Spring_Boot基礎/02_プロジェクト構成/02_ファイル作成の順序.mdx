@@ -1,0 +1,376 @@
+---
+title: "ファイル作成の順序"
+label: "ファイル作成の順序"
+---
+
+## Spring Bootプロジェクトでのファイル作成の順序
+
+Spring Bootアプリケーションを開発する際の、効率的なファイル作成の順序について解説します。
+
+### 基本的な開発フロー
+
+Spring Bootプロジェクトでは、**下位レイヤーから上位レイヤーへ**順番にファイルを作成するのが一般的です。
+
+```
+1. Model/Entity層
+   ↓
+2. Repository層
+   ↓
+3. Service層
+   ↓
+4. Controller層
+   ↓
+5. DTO層
+   ↓
+6. Config層
+   ↓
+7. Exception層
+```
+
+### 1. Model/Entity層の作成
+
+まず、データベースのテーブルに対応するエンティティクラスを作成します。
+
+```java
+// src/main/java/com/example/myapp/model/User.java
+@Entity
+@Table(name = "users")
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @Column(nullable = false, length = 100)
+    private String name;
+    
+    @Column(unique = true, nullable = false, length = 255)
+    @Email
+    private String email;
+    
+    @Column(nullable = false)
+    private String password;
+    
+    @CreatedDate
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+    
+    @LastModifiedDate
+    @Column(nullable = false)
+    private LocalDateTime updatedAt;
+    
+    // コンストラクタ、getter/setter
+    public User() {}
+    
+    public User(String name, String email, String password) {
+        this.name = name;
+        this.email = email;
+        this.password = password;
+    }
+    
+    // getter/setter
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+    
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+    
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
+    
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+}
+```
+
+**作成する理由:**
+- データベースのスキーマを定義する
+- 他のレイヤーの基盤となる
+
+### 2. Repository層の作成
+
+次に、データアクセスを担当するリポジトリインターフェースを作成します。
+
+```java
+// src/main/java/com/example/myapp/repository/UserRepository.java
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    Optional<User> findByEmail(String email);
+    boolean existsByEmail(String email);
+    List<User> findByNameContaining(String name);
+}
+```
+
+**作成する理由:**
+- エンティティのCRUD操作を提供
+- カスタムクエリを定義
+
+### 3. DTO層の作成
+
+APIのリクエスト・レスポンス用のDTOクラスを作成します。
+
+```java
+// src/main/java/com/example/myapp/dto/UserDTO.java
+public class UserDTO {
+    private Long id;
+    private String name;
+    private String email;
+    
+    // コンストラクタ、getter/setter
+    public UserDTO() {}
+    
+    public UserDTO(Long id, String name, String email) {
+        this.id = id;
+        this.name = name;
+        this.email = email;
+    }
+    
+    // getter/setter
+}
+
+// src/main/java/com/example/myapp/dto/UserCreateRequest.java
+public class UserCreateRequest {
+    @NotBlank(message = "Name is required")
+    @Size(min = 1, max = 100)
+    private String name;
+    
+    @NotBlank(message = "Email is required")
+    @Email(message = "Email must be valid")
+    private String email;
+    
+    @NotBlank(message = "Password is required")
+    @Size(min = 8, message = "Password must be at least 8 characters")
+    private String password;
+    
+    // getter/setter
+}
+```
+
+**作成する理由:**
+- エンティティとAPIの分離
+- バリデーションルールの定義
+
+### 4. Service層の作成
+
+ビジネスロジックを実装するサービスクラスを作成します。
+
+```java
+// src/main/java/com/example/myapp/service/UserService.java
+@Service
+@Transactional(readOnly = true)
+public class UserService {
+    
+    private final UserRepository userRepository;
+    
+    public UserService(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+    
+    public UserDTO findById(Long id) {
+        User user = userRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("User", id));
+        return convertToDTO(user);
+    }
+    
+    @Transactional
+    public UserDTO create(UserCreateRequest request) {
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new DuplicateResourceException("User", request.getEmail());
+        }
+        
+        User user = new User();
+        user.setName(request.getName());
+        user.setEmail(request.getEmail());
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        
+        User savedUser = userRepository.save(user);
+        return convertToDTO(savedUser);
+    }
+    
+    private UserDTO convertToDTO(User user) {
+        return new UserDTO(user.getId(), user.getName(), user.getEmail());
+    }
+}
+```
+
+**作成する理由:**
+- ビジネスロジックの実装
+- トランザクション管理
+- エンティティとDTOの変換
+
+### 5. Exception層の作成
+
+カスタム例外クラスを作成します。
+
+```java
+// src/main/java/com/example/myapp/exception/ResourceNotFoundException.java
+public class ResourceNotFoundException extends RuntimeException {
+    public ResourceNotFoundException(String resourceName, Object identifier) {
+        super(String.format("%s with identifier %s not found", resourceName, identifier));
+    }
+}
+
+// src/main/java/com/example/myapp/exception/DuplicateResourceException.java
+public class DuplicateResourceException extends RuntimeException {
+    public DuplicateResourceException(String resourceName, Object identifier) {
+        super(String.format("%s with identifier %s already exists", resourceName, identifier));
+    }
+}
+```
+
+**作成する理由:**
+- 統一された例外処理
+- エラーメッセージの標準化
+
+### 6. Controller層の作成
+
+最後に、HTTPリクエストを処理するコントローラークラスを作成します。
+
+```java
+// src/main/java/com/example/myapp/controller/UserController.java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    private final UserService userService;
+    
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<UserDTO> getUser(@PathVariable Long id) {
+        UserDTO user = userService.findById(id);
+        return ResponseEntity.ok(user);
+    }
+    
+    @PostMapping
+    public ResponseEntity<UserDTO> createUser(
+            @Valid @RequestBody UserCreateRequest request) {
+        UserDTO createdUser = userService.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(createdUser);
+    }
+}
+```
+
+**作成する理由:**
+- HTTPリクエストの受け取り
+- レスポンスの生成
+
+### 7. Config層の作成（必要に応じて）
+
+設定クラスを作成します。
+
+```java
+// src/main/java/com/example/myapp/config/SecurityConfig.java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+    // セキュリティ設定
+}
+
+// src/main/java/com/example/myapp/config/RestTemplateConfig.java
+@Configuration
+public class RestTemplateConfig {
+    @Bean
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
+}
+```
+
+### 実践的な開発順序の例
+
+#### 機能単位での開発
+
+1つの機能（例: ユーザー管理）を完全に実装してから、次の機能に進む方法です。
+
+```
+1. Userエンティティの作成
+2. UserRepositoryの作成
+3. UserDTO、UserCreateRequestの作成
+4. UserServiceの作成
+5. UserControllerの作成
+6. テストの作成
+7. 次の機能（例: Order管理）に進む
+```
+
+#### レイヤー単位での開発
+
+すべてのレイヤーを一度に作成する方法です。
+
+```
+1. すべてのエンティティを作成
+2. すべてのリポジトリを作成
+3. すべてのDTOを作成
+4. すべてのサービスを作成
+5. すべてのコントローラーを作成
+```
+
+### 推奨される開発順序
+
+**小規模プロジェクト:**
+```
+機能単位での開発を推奨
+→ 1つの機能を完全に実装してから次に進む
+```
+
+**中規模プロジェクト:**
+```
+レイヤー単位での開発を推奨
+→ すべてのエンティティを作成してから、次のレイヤーに進む
+```
+
+**大規模プロジェクト:**
+```
+モジュール単位での開発を推奨
+→ 1つのモジュール（例: ユーザー管理モジュール）を完全に実装してから次に進む
+```
+
+### ファイル作成時のチェックリスト
+
+各レイヤーのファイルを作成する際に確認すべき項目：
+
+#### Entity作成時
+- [ ] `@Entity`アノテーションが付いているか
+- [ ] `@Id`と`@GeneratedValue`が設定されているか
+- [ ] 適切な`@Column`設定があるか
+- [ ] getter/setterが定義されているか
+
+#### Repository作成時
+- [ ] `JpaRepository`を継承しているか
+- [ ] 必要なカスタムクエリが定義されているか
+- [ ] メソッド名が適切か
+
+#### Service作成時
+- [ ] `@Service`アノテーションが付いているか
+- [ ] `@Transactional`が適切に設定されているか
+- [ ] 例外処理が実装されているか
+- [ ] DTOへの変換メソッドがあるか
+
+#### Controller作成時
+- [ ] `@RestController`アノテーションが付いているか
+- [ ] `@RequestMapping`が適切に設定されているか
+- [ ] `@Valid`アノテーションが使用されているか
+- [ ] 適切なHTTPステータスコードが返されているか
+
+### まとめ
+
+Spring Bootプロジェクトでのファイル作成の順序：
+
+1. **Model/Entity層**: データベーススキーマの定義
+2. **Repository層**: データアクセスの実装
+3. **DTO層**: APIのリクエスト・レスポンスの定義
+4. **Service層**: ビジネスロジックの実装
+5. **Exception層**: カスタム例外の定義
+6. **Controller層**: HTTPリクエストの処理
+7. **Config層**: 設定クラスの定義（必要に応じて）
+
+この順序に従うことで、依存関係を明確にし、効率的に開発を進めることができます。
+
+

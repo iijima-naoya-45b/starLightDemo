@@ -1,0 +1,48 @@
+---
+title: "GraphQL"
+label: "GraphQL"
+---
+
+## GraphQL
+
+Node.jsでは、**Apollo Server**や**GraphQL Yoga**を使用してGraphQL APIを実装できます。
+
+### Apollo Serverの設定
+
+#### 依存関係の追加
+
+```bash
+npm install apollo-server graphql
+```
+
+#### 基本的な実装
+
+```javascript
+const { ApolloServer, gql } = require('apollo-server');
+
+const typeDefs = gql`
+  type User {
+    id: ID!
+    name: String!
+    email: String!
+  }
+
+  type Query {
+    user(id: ID!): User
+  }
+`;
+
+const resolvers = {
+  Query: {
+    user: (parent, args) => {
+      return getUserById(args.id);
+    },
+  },
+};
+
+const server = new ApolloServer({ typeDefs, resolvers });
+server.listen().then(({ url }) => {
+  console.log(`Server ready at ${url}`);
+});
+```
+

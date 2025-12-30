@@ -1,0 +1,133 @@
+---
+title: "Storage API"
+label: "Storage API"
+---
+
+## Storage API
+
+Chrome Storage APIは、拡張機能のデータを永続化するためのAPIです。
+
+### Storage APIの種類
+
+#### 1. chrome.storage.local
+
+```javascript
+// データの保存
+chrome.storage.local.set({ key: 'value' }, () => {
+  console.log('Data saved');
+});
+
+// データの取得
+chrome.storage.local.get(['key'], (result) => {
+  console.log('Value:', result.key);
+});
+
+// すべてのデータを取得
+chrome.storage.local.get(null, (result) => {
+  console.log('All data:', result);
+});
+
+// データの削除
+chrome.storage.local.remove(['key'], () => {
+  console.log('Data removed');
+});
+
+// すべてのデータを削除
+chrome.storage.local.clear(() => {
+  console.log('All data cleared');
+});
+```
+
+#### 2. chrome.storage.sync
+
+```javascript
+// ユーザーのChromeアカウント間で同期
+chrome.storage.sync.set({ settings: { theme: 'dark' } }, () => {
+  console.log('Settings synced');
+});
+
+// 変更の監視
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'sync' && changes.settings) {
+    console.log('Settings changed:', changes.settings.newValue);
+  }
+});
+```
+
+### 高度な使用例
+
+#### 1. データのバッチ操作
+
+```javascript
+// 複数のキーを一度に操作
+chrome.storage.local.set({
+  user: { name: 'John', email: 'john@example.com' },
+  settings: { theme: 'dark', language: 'ja' },
+  cache: { timestamp: Date.now(), data: [] }
+}, () => {
+  console.log('Batch save completed');
+});
+```
+
+#### 2. ストレージのクォータ管理
+
+```javascript
+// ストレージ使用量の確認
+chrome.storage.local.getBytesInUse(null, (bytesInUse) => {
+  const quota = chrome.storage.local.QUOTA_BYTES;
+  const usagePercent = (bytesInUse / quota) * 100;
+  console.log(`Storage usage: ${usagePercent.toFixed(2)}%`);
+});
+
+// 特定のキーの使用量
+chrome.storage.local.getBytesInUse(['largeData'], (bytes) => {
+  console.log(`Key usage: ${bytes} bytes`);
+});
+```
+
+#### 3. データの圧縮
+
+```javascript
+// 大きなデータを圧縮して保存
+function compressAndSave(data) {
+  const jsonString = JSON.stringify(data);
+  const compressed = LZString.compress(jsonString);
+  
+  chrome.storage.local.set({ compressedData: compressed }, () => {
+    console.log('Compressed data saved');
+  });
+}
+
+// データの展開
+function loadAndDecompress() {
+  chrome.storage.local.get(['compressedData'], (result) => {
+    if (result.compressedData) {
+      const decompressed = LZString.decompress(result.compressedData);
+      const data = JSON.parse(decompressed);
+      console.log('Decompressed data:', data);
+    }
+  });
+}
+```
+
+### ストレージイベントの監視
+
+```javascript
+// ストレージ変更の監視
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  for (let key in changes) {
+    const change = changes[key];
+    console.log(`Key "${key}" changed:`);
+    console.log('  Old value:', change.oldValue);
+    console.log('  New value:', change.newValue);
+  }
+});
+
+// 特定のキーのみ監視
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (changes.user) {
+    console.log('User data changed');
+  }
+});
+```
+

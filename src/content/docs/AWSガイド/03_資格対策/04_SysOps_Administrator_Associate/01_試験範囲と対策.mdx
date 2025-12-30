@@ -1,0 +1,172 @@
+---
+title: "SysOps Administrator Associate 試験範囲と対策"
+label: "SysOps Administrator Associate 試験範囲と対策"
+---
+
+## SysOps Administrator Associate 試験範囲と対策
+
+### 試験範囲
+
+#### 1. モニタリングとレポート（20%）
+
+**主要トピック:**
+- CloudWatchメトリクスとアラーム
+- CloudWatch Logs
+- CloudTrail
+- コスト管理
+
+**よく出る問題:**
+
+```yaml
+# CloudWatchアラームの設定
+Alarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: HighCPUUtilization
+    ComparisonOperator: GreaterThanThreshold
+    EvaluationPeriods: 2
+    MetricName: CPUUtilization
+    Namespace: AWS/EC2
+    Period: 300
+    Statistic: Average
+    Threshold: 80
+    AlarmActions:
+      - !Ref SNSTopic
+      - !Ref AutoScalingPolicy
+```
+
+#### 2. 高可用性（24%）
+
+**主要トピック:**
+- マルチAZ配置
+- オートスケーリング
+- ELB
+- Route 53
+
+**よく出る問題:**
+
+```yaml
+# オートスケーリング設定
+AutoScalingGroup:
+  Type: AWS::AutoScaling::AutoScalingGroup
+  Properties:
+    MinSize: 2
+    MaxSize: 10
+    DesiredCapacity: 2
+    HealthCheckType: ELB
+    HealthCheckGracePeriod: 300
+    VPCZoneIdentifier:
+      - !Ref Subnet1
+      - !Ref Subnet2
+```
+
+#### 3. デプロイとプロビジョニング（24%）
+
+**主要トピック:**
+- CloudFormation
+- Elastic Beanstalk
+- OpsWorks
+- Systems Manager
+
+**よく出る問題:**
+
+```yaml
+# CloudFormationスタックの作成
+Stack:
+  Type: AWS::CloudFormation::Stack
+  Properties:
+    TemplateURL: https://s3.amazonaws.com/bucket/template.yaml
+    Parameters:
+      InstanceType: t3.medium
+      KeyName: my-key
+```
+
+#### 4. セキュリティとコンプライアンス（18%）
+
+**主要トピック:**
+- IAM
+- VPCセキュリティ
+- 暗号化
+- コンプライアンス
+
+**よく出る問題:**
+
+```yaml
+# IAMロールの設定
+Role:
+  Type: AWS::IAM::Role
+  Properties:
+    AssumeRolePolicyDocument:
+      Version: '2012-10-17'
+      Statement:
+        - Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action: sts:AssumeRole
+    ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+```
+
+#### 5. ネットワーキング（14%）
+
+**主要トピック:**
+- VPC
+- サブネット
+- ルートテーブル
+- VPN
+
+**よく出る問題:**
+
+```yaml
+# VPCエンドポイントの設定
+VPCEndpoint:
+  Type: AWS::EC2::VPCEndpoint
+  Properties:
+    VpcId: !Ref VPC
+    ServiceName: com.amazonaws.region.s3
+    VpcEndpointType: Gateway
+    RouteTableIds:
+      - !Ref RouteTable
+```
+
+### 対策方法
+
+#### 1. CloudWatchの実践
+
+```bash
+# CloudWatchメトリクスの確認
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/EC2 \
+  --metric-name CPUUtilization \
+  --dimensions Name=InstanceId,Value=i-1234567890abcdef0 \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-01T23:59:59Z \
+  --period 3600 \
+  --statistics Average
+```
+
+#### 2. オートスケーリングの実践
+
+```bash
+# オートスケーリンググループの作成
+aws autoscaling create-auto-scaling-group \
+  --auto-scaling-group-name my-asg \
+  --min-size 2 \
+  --max-size 10 \
+  --desired-capacity 2 \
+  --launch-template LaunchTemplateName=my-template,Version='$Latest' \
+  --vpc-zone-identifier subnet-12345,subnet-67890
+```
+
+### まとめ
+
+SysOps Administrator Associate試験のポイント：
+
+- **運用**: 日常的な運用タスクの理解
+- **モニタリング**: CloudWatchの活用
+- **自動化**: CloudFormation、Systems Manager
+- **セキュリティ**: IAM、VPCセキュリティ
+- **トラブルシューティング**: 問題の特定と解決
+
+実務での運用経験が重要です。
+

@@ -1,0 +1,73 @@
+---
+title: "不正アクセス禁止法"
+label: "不正アクセス禁止法"
+---
+
+## 不正アクセス禁止法
+
+不正アクセス禁止法は、不正アクセス行為を禁止する法律です。
+
+### 不正アクセス禁止法の主要な規定
+
+#### 1. 不正アクセス行為の禁止
+
+不正アクセス禁止法では、以下のような行為が禁止されています。
+
+- **他人のID・パスワードの使用**: 他人のID・パスワードを使用してアクセスすること
+- **セキュリティホールの悪用**: セキュリティホールを悪用してアクセスすること
+- **なりすまし**: 他人になりすましてアクセスすること
+
+#### 2. 実践例: セキュリティ対策
+
+```javascript
+// セキュリティ対策の実装
+class SecurityMeasures {
+  // パスワードのハッシュ化
+  async hashPassword(password) {
+    const bcrypt = require('bcrypt');
+    const saltRounds = 10;
+    return await bcrypt.hash(password, saltRounds);
+  }
+  
+  // ログイン試行回数の制限
+  async checkLoginAttempts(email) {
+    const attempts = await database.getLoginAttempts(email);
+    if (attempts >= 5) {
+      throw new Error('ログイン試行回数が上限に達しました');
+    }
+  }
+  
+  // 二要素認証
+  async enableTwoFactorAuth(userId) {
+    const secret = generateSecret();
+    await database.saveTwoFactorSecret(userId, secret);
+    return secret;
+  }
+  
+  // セッション管理
+  async createSession(userId) {
+    const sessionId = generateSessionId();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24時間
+    await database.saveSession(sessionId, userId, expiresAt);
+    return sessionId;
+  }
+}
+```
+
+### 不正アクセス禁止法の罰則
+
+#### 罰則
+
+- **不正アクセス行為**: 3年以下の懲役または100万円以下の罰金
+- **不正アクセス行為を助長する行為**: 1年以下の懲役または50万円以下の罰金
+
+### まとめ
+
+不正アクセス禁止法のポイント：
+
+- **不正アクセス行為の禁止**: 他人のID・パスワードの使用などの禁止
+- **セキュリティ対策**: 適切なセキュリティ対策の実施
+- **ログ記録**: アクセスログの記録
+
+不正アクセス禁止法に準拠することで、適切なセキュリティ対策と法的リスクの回避を実現できます。
+

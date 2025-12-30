@@ -1,0 +1,57 @@
+---
+title: "GraphQL"
+label: "GraphQL"
+---
+
+## GraphQL
+
+FastAPIでは、**Strawberry GraphQL**を使用してGraphQL APIを実装できます。
+
+### Strawberry GraphQLの設定
+
+#### 依存関係の追加
+
+```bash
+pip install strawberry-graphql[fastapi]
+```
+
+#### 基本的な実装
+
+```python
+import strawberry
+from fastapi import FastAPI
+from strawberry.fastapi import GraphQLRouter
+
+@strawberry.type
+class User:
+    id: int
+    name: str
+    email: str
+
+@strawberry.type
+class Query:
+    @strawberry.field
+    def user(self, id: int) -> User:
+        return User(id=id, name="John Doe", email="john@example.com")
+
+schema = strawberry.Schema(Query)
+graphql_app = GraphQLRouter(schema)
+
+app = FastAPI()
+app.include_router(graphql_app, prefix="/graphql")
+```
+
+### ミューテーション
+
+```python
+@strawberry.type
+class Mutation:
+    @strawberry.mutation
+    def create_user(self, name: str, email: str) -> User:
+        user = User(id=1, name=name, email=email)
+        # データベースに保存
+        return user
+
+schema = strawberry.Schema(Query, Mutation)
+```
+

@@ -1,0 +1,200 @@
+---
+title: "電子契約法基礎"
+label: "電子契約法基礎"
+---
+
+## 電子契約法基礎
+
+電子契約法は、電子契約の有効性を認めた法律です。
+
+### なぜ電子契約法が重要なのか
+
+#### 電子契約の有効性
+
+電子契約法により、電子契約は書面による契約と同等の効力を持ちます。
+
+**問題のある電子契約:**
+
+```html
+<!-- 契約内容が不明確 -->
+<form>
+  <button type="submit">同意する</button>
+</form>
+<!-- 問題点:
+    - 契約内容が不明確
+    - 確認画面がない
+    - 契約の記録がない
+-->
+```
+
+**電子契約法に準拠した電子契約:**
+
+```html
+<!-- 契約内容が明確 -->
+<form id="contract-form">
+  <div class="contract-terms">
+    <h2>利用規約</h2>
+    <div class="terms-content">
+      <p>1. 本サービスの利用...</p>
+      <p>2. 利用者の義務...</p>
+    </div>
+  </div>
+  
+  <label>
+    <input type="checkbox" name="agree" required>
+    利用規約に同意します
+  </label>
+  
+  <button type="submit">同意する</button>
+</form>
+
+<script>
+document.getElementById('contract-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  
+  // 契約の記録
+  const contractRecord = {
+    userId: getUserId(),
+    terms: getTermsContent(),
+    agreedAt: new Date().toISOString(),
+    ipAddress: getIpAddress(),
+  };
+  
+  // 契約記録を保存
+  saveContractRecord(contractRecord);
+  
+  // 確認画面を表示
+  showConfirmation(contractRecord);
+});
+</script>
+```
+
+**メリット:**
+1. **契約の有効性**: 電子契約が法的に有効
+2. **効率性**: 書面による契約よりも効率的
+3. **記録の保存**: 契約の記録を適切に保存
+
+### 電子契約法の要件
+
+#### 1. 契約内容の明示
+
+電子契約では、契約内容を明確に示す必要があります。
+
+```html
+<div class="contract-terms">
+  <h2>利用規約</h2>
+  <div class="terms-content">
+    <h3>第1条 定義</h3>
+    <p>本規約において...</p>
+    
+    <h3>第2条 利用者の義務</h3>
+    <p>利用者は...</p>
+  </div>
+</div>
+```
+
+#### 2. 同意の確認
+
+電子契約では、利用者の同意を確認する必要があります。
+
+```html
+<label>
+  <input type="checkbox" name="agree" required>
+  利用規約に同意します
+</label>
+```
+
+#### 3. 契約の記録
+
+電子契約では、契約の記録を保存する必要があります。
+
+```javascript
+function saveContractRecord(contractData) {
+  const record = {
+    userId: contractData.userId,
+    terms: contractData.terms,
+    agreedAt: contractData.agreedAt,
+    ipAddress: contractData.ipAddress,
+    userAgent: navigator.userAgent,
+  };
+  
+  // データベースに保存
+  database.save('contracts', record);
+  
+  // ログに記録
+  logService.log('contractAgreed', record);
+}
+```
+
+### 実践例: 電子契約の実装
+
+```javascript
+class ElectronicContract {
+  constructor(termsContent) {
+    this.termsContent = termsContent;
+  }
+  
+  async createContract(userId) {
+    // 契約内容の表示
+    this.displayTerms();
+    
+    // 同意の確認
+    const agreed = await this.confirmAgreement();
+    
+    if (agreed) {
+      // 契約の記録
+      const contractRecord = {
+        userId: userId,
+        terms: this.termsContent,
+        agreedAt: new Date().toISOString(),
+        ipAddress: await this.getIpAddress(),
+      };
+      
+      // 契約記録を保存
+      await this.saveContractRecord(contractRecord);
+      
+      return contractRecord;
+    } else {
+      throw new Error('契約に同意されませんでした');
+    }
+  }
+  
+  displayTerms() {
+    // 利用規約を表示
+    document.getElementById('terms-content').innerHTML = this.termsContent;
+  }
+  
+  async confirmAgreement() {
+    // 同意の確認を待つ
+    return new Promise((resolve) => {
+      document.getElementById('agree-button').addEventListener('click', () => {
+        const agreed = document.getElementById('agree-checkbox').checked;
+        resolve(agreed);
+      });
+    });
+  }
+  
+  async saveContractRecord(record) {
+    // データベースに保存
+    await database.save('contracts', record);
+  }
+  
+  async getIpAddress() {
+    // IPアドレスを取得
+    const response = await fetch('https://api.ipify.org?format=json');
+    const data = await response.json();
+    return data.ip;
+  }
+}
+```
+
+### まとめ
+
+電子契約法のポイント：
+
+- **契約内容の明示**: 契約内容を明確に示す
+- **同意の確認**: 利用者の同意を確認する
+- **契約の記録**: 契約の記録を保存する
+
+電子契約法に準拠することで、適切な電子契約の実装と法的リスクの回避を実現できます。
+

@@ -1,0 +1,73 @@
+---
+title: "Context API"
+label: "Context API"
+---
+
+## Context API
+
+Context APIは、Reactに組み込まれた状態管理の仕組みです。プロップドリリングを避けるために使用します。
+
+### 基本的な使用
+
+```jsx
+import { createContext, useContext, useState } from 'react';
+
+const ThemeContext = createContext();
+
+function ThemeProvider({ children }) {
+  const [theme, setTheme] = useState('light');
+
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+}
+
+function useTheme() {
+  const context = useContext(ThemeContext);
+  if (!context) {
+    throw new Error('useTheme must be used within ThemeProvider');
+  }
+  return context;
+}
+
+// 使用例
+function App() {
+  return (
+    <ThemeProvider>
+      <ThemedComponent />
+    </ThemeProvider>
+  );
+}
+
+function ThemedComponent() {
+  const { theme, setTheme } = useTheme();
+  return (
+    <div>
+      <p>Current theme: {theme}</p>
+      <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+        Toggle Theme
+      </button>
+    </div>
+  );
+}
+```
+
+### 複数のContext
+
+```jsx
+const UserContext = createContext();
+const ThemeContext = createContext();
+
+function App() {
+  return (
+    <UserContext.Provider value={{ name: 'John' }}>
+      <ThemeContext.Provider value={{ theme: 'dark' }}>
+        <Component />
+      </ThemeContext.Provider>
+    </UserContext.Provider>
+  );
+}
+```
+

@@ -1,0 +1,217 @@
+---
+title: "CSS設計手法"
+label: "CSS設計手法"
+---
+
+## CSS設計手法
+
+### なぜCSS設計が重要なのか
+
+#### 問題のあるCSS
+
+**問題のあるCSS:**
+
+```css
+/* グローバルなスタイル */
+.button {
+  background: blue;
+}
+
+/* 同じクラス名で上書き */
+.button {
+  background: red; /* どちらが適用されるか不明 */
+}
+
+/* 特定性の問題 */
+#header .button {
+  background: green; /* より高い特定性 */
+}
+/* 問題点:
+    - クラス名の衝突
+    - スタイルの上書きが予測不可能
+    - 保守が困難
+    - 再利用が困難
+*/
+```
+
+**良いCSS設計:**
+
+```css
+/* BEM記法 */
+.button { }
+.button--primary { }
+.button__icon { }
+
+/* CSS Modules */
+.Button { }
+.Button--primary { }
+
+/* Styled Components */
+const Button = styled.button``;
+/* メリット:
+    - クラス名の衝突を防ぐ
+    - スタイルの予測可能性
+    - 保守しやすい
+    - 再利用可能
+*/
+```
+
+### BEM（Block Element Modifier）
+
+#### 基本構造
+
+```css
+/* Block: 独立したコンポーネント */
+.button { }
+
+/* Element: Blockの一部 */
+.button__icon { }
+.button__text { }
+
+/* Modifier: BlockやElementのバリエーション */
+.button--primary { }
+.button--large { }
+.button--disabled { }
+```
+
+#### 実践例
+
+```html
+<button class="button button--primary button--large">
+  <span class="button__icon">✓</span>
+  <span class="button__text">Submit</span>
+</button>
+```
+
+```css
+.button {
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+}
+
+.button--primary {
+  background-color: blue;
+  color: white;
+}
+
+.button--large {
+  padding: 0.75rem 1.5rem;
+  font-size: 1.25rem;
+}
+
+.button__icon {
+  margin-right: 0.5rem;
+}
+```
+
+### CSS Modules
+
+#### 基本構造
+
+```css
+/* Button.module.css */
+.button {
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+}
+
+.primary {
+  background-color: blue;
+  color: white;
+}
+
+.large {
+  padding: 0.75rem 1.5rem;
+  font-size: 1.25rem;
+}
+```
+
+```typescript
+// Button.tsx
+import styles from './Button.module.css';
+
+function Button({ variant, size, children }) {
+  return (
+    <button className={`${styles.button} ${styles[variant]} ${styles[size]}`}>
+      {children}
+    </button>
+  );
+}
+```
+
+**メリット:**
+- クラス名が自動的に一意になる
+- グローバルな名前空間の汚染を防ぐ
+- TypeScriptとの統合が容易
+
+### Styled Components
+
+#### 基本構造
+
+```typescript
+import styled from 'styled-components';
+
+const Button = styled.button`
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  background-color: ${props => props.primary ? 'blue' : 'gray'};
+  color: white;
+  
+  &:hover {
+    opacity: 0.8;
+  }
+`;
+
+function App() {
+  return (
+    <>
+      <Button>Default</Button>
+      <Button primary>Primary</Button>
+    </>
+  );
+}
+```
+
+**メリット:**
+- JavaScriptの機能を活用できる
+- 動的なスタイルが容易
+- コンポーネントとスタイルが一体化
+
+### 設計手法の比較
+
+| 手法 | メリット | デメリット | 適用範囲 |
+|------|---------|-----------|---------|
+| **BEM** | シンプル、学習コストが低い | クラス名が長くなる | 小規模〜中規模 |
+| **CSS Modules** | 名前空間の分離、TypeScript対応 | ビルド設定が必要 | 中規模〜大規模 |
+| **Styled Components** | 動的スタイル、コンポーネント統合 | ランタイムオーバーヘッド | Reactプロジェクト |
+
+### 実践的な選択基準
+
+#### BEMを選ぶべき場合
+
+- 小規模〜中規模のプロジェクト
+- シンプルな設計を好む
+- 学習コストを抑えたい
+
+#### CSS Modulesを選ぶべき場合
+
+- TypeScriptプロジェクト
+- 名前空間の分離が必要
+- ビルドツールが利用可能
+
+#### Styled Componentsを選ぶべき場合
+
+- Reactプロジェクト
+- 動的なスタイルが必要
+- コンポーネントとスタイルを一体化したい
+
+### まとめ
+
+CSS設計手法のポイント：
+
+- **BEM**: シンプルで学習コストが低い
+- **CSS Modules**: 名前空間の分離とTypeScript対応
+- **Styled Components**: 動的スタイルとコンポーネント統合
+
+プロジェクトの要件に応じて適切な設計手法を選択することが重要です。
+

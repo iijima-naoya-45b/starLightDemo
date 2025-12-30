@@ -1,0 +1,683 @@
+---
+title: "トランザクション処理の実例"
+label: "トランザクション処理の実例"
+---
+
+## トランザクション処理の実例
+
+支払いサイトや決済システムなど、金融取引を扱うアプリケーションでは、トランザクション処理が極めて重要です。この章では、実践的なトランザクション処理の実装例について詳しく解説します。
+
+### 決済処理の基本要件
+
+決済処理では、以下の要件を満たす必要があります：
+
+- **ACID特性の保証**: 原子性、一貫性、独立性、永続性
+- **二重支払いの防止**: 同じ取引が重複して処理されないようにする
+- **ロールバック処理**: エラー発生時の適切な処理
+- **冪等性の保証**: 同じリクエストを複数回実行しても結果が同じ
+
+### 決済処理のエンティティ設計
+
+```java
+@Entity
+@Table(name = "payments")
+public class Payment {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @Column(unique = true, nullable = false, length = 50)
+    private String transactionId;  // 外部システムとの取引ID（冪等性のため）
+    
+    @Column(nullable = false)
+    private Long userId;
+    
+    @Column(nullable = false)
+    private Long orderId;
+    
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal amount;
+    
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private PaymentStatus status;
+    
+    @Column(length = 500)
+    private String failureReason;
+    
+    @CreatedDate
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+    
+    @LastModifiedDate
+    @Column(nullable = false)
+    private LocalDateTime updatedAt;
+    
+    @Version
+    private Long version;  // 楽観ロック用
+    
+    // getter/setter
+}
+
+public enum PaymentStatus {
+    PENDING,      // 処理中
+    PROCESSING,   // 決済処理中
+    COMPLETED,    // 完了
+    FAILED,       // 失敗
+    CANCELLED,    // キャンセル
+    REFUNDED      // 返金済み
+}
+
+@Entity
+@Table(name = "accounts")
+public class Account {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @Column(unique = true, nullable = false, length = 50)
+    private String accountNumber;
+    
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal balance;
+    
+    @Version
+    private Long version;  // 楽観ロック用
+    
+    // getter/setter
+}
+
+@Entity
+@Table(name = "payment_logs")
+public class PaymentLog {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @Column(nullable = false)
+    private Long paymentId;
+    
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private PaymentStatus fromStatus;
+    
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private PaymentStatus toStatus;
+    
+    @Column(length = 500)
+    private String message;
+    
+    @CreatedDate
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+    
+    // getter/setter
+}
+```
+
+### 基本的な決済処理の実装
+
+```java
+@Service
+@Transactional
+public class PaymentService {
+    
+    private final PaymentRepository paymentRepository;
+    private final AccountRepository accountRepository;
+    private final PaymentLogRepository paymentLogRepository;
+    private final PaymentGatewayClient paymentGatewayClient;
+    
+    public PaymentService(
+            PaymentRepository paymentRepository,
+            AccountRepository accountRepository,
+            PaymentLogRepository paymentLogRepository,
+            PaymentGatewayClient paymentGatewayClient) {
+        this.paymentRepository = paymentRepository;
+        this.accountRepository = accountRepository;
+        this.paymentLogRepository = paymentLogRepository;
+        this.paymentGatewayClient = paymentGatewayClient;
+    }
+    
+    /**
+     * 決済処理を実行
+     * 
+     * @param transactionId 外部システムとの取引ID（冪等性のため）
+     * @param userId ユーザーID
+     * @param orderId 注文ID
+     * @param amount 決済金額
+     * @return 決済情報
+     */
+    public Payment processPayment(String transactionId, Long userId, Long orderId, BigDecimal amount) {
+        // 1. 冪等性チェック: 同じtransactionIdで既に処理済みか確認
+        Optional<Payment> existingPayment = paymentRepository.findByTransactionId(transactionId);
+        if (existingPayment.isPresent()) {
+            Payment payment = existingPayment.get();
+            log.info("Payment already processed: transactionId={}, status={}", 
+                transactionId, payment.getStatus());
+            return payment;  // 既に処理済みの場合はそのまま返す
+        }
+        
+        // 2. 決済レコードを作成（PENDING状態）
+        Payment payment = new Payment();
+        payment.setTransactionId(transactionId);
+        payment.setUserId(userId);
+        payment.setOrderId(orderId);
+        payment.setAmount(amount);
+        payment.setStatus(PaymentStatus.PENDING);
+        payment = paymentRepository.save(payment);
+        
+        logPaymentStatusChange(payment.getId(), null, PaymentStatus.PENDING, "Payment created");
+        
+        try {
+            // 3. 口座残高の確認と引き落とし
+            Account account = accountRepository.findByUserId(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Account", userId));
+            
+            // 悲観ロックで口座を取得（二重支払いを防ぐ）
+            Account lockedAccount = accountRepository.findByIdWithLock(account.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Account", account.getId()));
+            
+            if (lockedAccount.getBalance().compareTo(amount) < 0) {
+                throw new InsufficientBalanceException(
+                    String.format("Insufficient balance: available=%s, required=%s", 
+                        lockedAccount.getBalance(), amount)
+                );
+            }
+            
+            // 4. 決済ステータスをPROCESSINGに変更
+            payment.setStatus(PaymentStatus.PROCESSING);
+            payment = paymentRepository.save(payment);
+            logPaymentStatusChange(payment.getId(), PaymentStatus.PENDING, 
+                PaymentStatus.PROCESSING, "Processing payment");
+            
+            // 5. 外部決済ゲートウェイにリクエスト
+            PaymentGatewayResponse response = paymentGatewayClient.charge(
+                transactionId, 
+                lockedAccount.getAccountNumber(), 
+                amount
+            );
+            
+            if (response.isSuccess()) {
+                // 6. 口座残高を減らす
+                lockedAccount.setBalance(lockedAccount.getBalance().subtract(amount));
+                accountRepository.save(lockedAccount);
+                
+                // 7. 決済ステータスをCOMPLETEDに変更
+                payment.setStatus(PaymentStatus.COMPLETED);
+                payment = paymentRepository.save(payment);
+                logPaymentStatusChange(payment.getId(), PaymentStatus.PROCESSING, 
+                    PaymentStatus.COMPLETED, "Payment completed");
+                
+                log.info("Payment processed successfully: transactionId={}, amount={}", 
+                    transactionId, amount);
+                
+                return payment;
+            } else {
+                // 決済ゲートウェイでの処理が失敗
+                throw new PaymentGatewayException("Payment gateway error: " + response.getErrorMessage());
+            }
+            
+        } catch (Exception e) {
+            // 8. エラー発生時の処理
+            log.error("Payment processing failed: transactionId={}", transactionId, e);
+            
+            payment.setStatus(PaymentStatus.FAILED);
+            payment.setFailureReason(e.getMessage());
+            payment = paymentRepository.save(payment);
+            logPaymentStatusChange(payment.getId(), PaymentStatus.PROCESSING, 
+                PaymentStatus.FAILED, "Payment failed: " + e.getMessage());
+            
+            // トランザクションがロールバックされるため、口座残高の変更は自動的に元に戻る
+            throw new PaymentProcessingException("Payment processing failed", e);
+        }
+    }
+    
+    private void logPaymentStatusChange(Long paymentId, PaymentStatus fromStatus, 
+                                       PaymentStatus toStatus, String message) {
+        PaymentLog log = new PaymentLog();
+        log.setPaymentId(paymentId);
+        log.setFromStatus(fromStatus);
+        log.setToStatus(toStatus);
+        log.setMessage(message);
+        paymentLogRepository.save(log);
+    }
+}
+```
+
+### 二重支払いの防止
+
+同じ取引が重複して処理されないようにするための実装：
+
+```java
+@Service
+@Transactional
+public class PaymentService {
+    
+    @Autowired
+    private PaymentRepository paymentRepository;
+    
+    @Autowired
+    private RedisTemplate<String, String> redisTemplate;
+    
+    private static final String PAYMENT_LOCK_PREFIX = "payment:lock:";
+    private static final int LOCK_TIMEOUT_SECONDS = 30;
+    
+    /**
+     * 分散ロックを使用した二重支払いの防止
+     */
+    public Payment processPaymentWithDistributedLock(
+            String transactionId, Long userId, Long orderId, BigDecimal amount) {
+        
+        String lockKey = PAYMENT_LOCK_PREFIX + transactionId;
+        Boolean lockAcquired = redisTemplate.opsForValue()
+            .setIfAbsent(lockKey, "locked", Duration.ofSeconds(LOCK_TIMEOUT_SECONDS));
+        
+        if (!Boolean.TRUE.equals(lockAcquired)) {
+            // ロックが取得できない場合（他のプロセスが処理中）
+            throw new ConcurrentPaymentException(
+                "Payment is already being processed: " + transactionId
+            );
+        }
+        
+        try {
+            // 冪等性チェック
+            Optional<Payment> existingPayment = paymentRepository.findByTransactionId(transactionId);
+            if (existingPayment.isPresent()) {
+                return existingPayment.get();
+            }
+            
+            // 決済処理を実行
+            return processPayment(transactionId, userId, orderId, amount);
+            
+        } finally {
+            // ロックを解放
+            redisTemplate.delete(lockKey);
+        }
+    }
+}
+```
+
+### 補償トランザクション（Saga パターン）
+
+複数のサービスにまたがるトランザクション処理の場合、補償トランザクションを使用します：
+
+```java
+@Service
+@Transactional
+public class OrderPaymentService {
+    
+    @Autowired
+    private PaymentService paymentService;
+    
+    @Autowired
+    private OrderService orderService;
+    
+    @Autowired
+    private InventoryService inventoryService;
+    
+    /**
+     * 注文と決済を同時に処理（Saga パターン）
+     */
+    public OrderPaymentResult processOrderWithPayment(OrderCreateRequest request) {
+        String transactionId = UUID.randomUUID().toString();
+        List<CompensationAction> compensations = new ArrayList<>();
+        
+        try {
+            // 1. 在庫を確保
+            inventoryService.reserveInventory(request.getItems());
+            compensations.add(() -> inventoryService.releaseInventory(request.getItems()));
+            
+            // 2. 注文を作成
+            Order order = orderService.createOrder(request);
+            compensations.add(() -> orderService.cancelOrder(order.getId()));
+            
+            // 3. 決済を処理
+            Payment payment = paymentService.processPayment(
+                transactionId,
+                request.getUserId(),
+                order.getId(),
+                request.getTotalAmount()
+            );
+            
+            if (payment.getStatus() != PaymentStatus.COMPLETED) {
+                // 決済が失敗した場合、補償処理を実行
+                executeCompensations(compensations);
+                throw new PaymentProcessingException("Payment failed");
+            }
+            
+            // 4. 注文ステータスを確定に変更
+            orderService.confirmOrder(order.getId());
+            
+            return new OrderPaymentResult(order, payment);
+            
+        } catch (Exception e) {
+            // エラー発生時は補償処理を実行
+            log.error("Order payment processing failed: transactionId={}", transactionId, e);
+            executeCompensations(compensations);
+            throw e;
+        }
+    }
+    
+    private void executeCompensations(List<CompensationAction> compensations) {
+        // 補償処理を逆順で実行
+        Collections.reverse(compensations);
+        for (CompensationAction compensation : compensations) {
+            try {
+                compensation.execute();
+            } catch (Exception e) {
+                log.error("Compensation failed", e);
+                // 補償処理の失敗もログに記録
+            }
+        }
+    }
+    
+    @FunctionalInterface
+    public interface CompensationAction {
+        void execute();
+    }
+}
+```
+
+### 返金処理の実装
+
+```java
+@Service
+@Transactional
+public class RefundService {
+    
+    @Autowired
+    private PaymentRepository paymentRepository;
+    
+    @Autowired
+    private AccountRepository accountRepository;
+    
+    @Autowired
+    private PaymentGatewayClient paymentGatewayClient;
+    
+    /**
+     * 返金処理を実行
+     */
+    public Payment refundPayment(Long paymentId, BigDecimal refundAmount, String reason) {
+        // 1. 決済情報を取得（楽観ロック）
+        Payment payment = paymentRepository.findById(paymentId)
+            .orElseThrow(() -> new ResourceNotFoundException("Payment", paymentId));
+        
+        if (payment.getStatus() != PaymentStatus.COMPLETED) {
+            throw new InvalidPaymentStatusException(
+                "Cannot refund payment with status: " + payment.getStatus()
+            );
+        }
+        
+        if (refundAmount.compareTo(payment.getAmount()) > 0) {
+            throw new InvalidRefundAmountException(
+                "Refund amount cannot exceed payment amount"
+            );
+        }
+        
+        // 2. 返金レコードを作成
+        Payment refund = new Payment();
+        refund.setTransactionId(UUID.randomUUID().toString());
+        refund.setUserId(payment.getUserId());
+        refund.setOrderId(payment.getOrderId());
+        refund.setAmount(refundAmount.negate());  // 負の値で返金を表現
+        refund.setStatus(PaymentStatus.PROCESSING);
+        refund = paymentRepository.save(refund);
+        
+        try {
+            // 3. 外部決済ゲートウェイに返金リクエスト
+            PaymentGatewayResponse response = paymentGatewayClient.refund(
+                payment.getTransactionId(),
+                refundAmount,
+                reason
+            );
+            
+            if (response.isSuccess()) {
+                // 4. 口座残高を戻す
+                Account account = accountRepository.findByUserId(payment.getUserId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Account", payment.getUserId()));
+                
+                Account lockedAccount = accountRepository.findByIdWithLock(account.getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Account", account.getId()));
+                
+                lockedAccount.setBalance(lockedAccount.getBalance().add(refundAmount));
+                accountRepository.save(lockedAccount);
+                
+                // 5. 返金ステータスを完了に変更
+                refund.setStatus(PaymentStatus.COMPLETED);
+                refund = paymentRepository.save(refund);
+                
+                // 6. 元の決済レコードを返金済みに更新
+                payment.setStatus(PaymentStatus.REFUNDED);
+                paymentRepository.save(payment);
+                
+                log.info("Refund processed successfully: paymentId={}, refundAmount={}", 
+                    paymentId, refundAmount);
+                
+                return refund;
+            } else {
+                throw new PaymentGatewayException("Refund gateway error: " + response.getErrorMessage());
+            }
+            
+        } catch (Exception e) {
+            log.error("Refund processing failed: paymentId={}", paymentId, e);
+            
+            refund.setStatus(PaymentStatus.FAILED);
+            refund.setFailureReason(e.getMessage());
+            refund = paymentRepository.save(refund);
+            
+            throw new RefundProcessingException("Refund processing failed", e);
+        }
+    }
+}
+```
+
+### トランザクション分離レベルの設定
+
+決済処理では、適切な分離レベルを設定することが重要です：
+
+```java
+@Service
+public class PaymentService {
+    
+    /**
+     * SERIALIZABLE分離レベルで決済処理を実行
+     * 最も厳格な分離レベルで、データの整合性を最大限に保証
+     */
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public Payment processPaymentWithSerializable(
+            String transactionId, Long userId, Long orderId, BigDecimal amount) {
+        // 決済処理の実装
+        // SERIALIZABLEレベルでは、他のトランザクションからの影響を完全に遮断
+    }
+    
+    /**
+     * READ_COMMITTED分離レベルで決済処理を実行（デフォルト）
+     * パフォーマンスと整合性のバランスが良い
+     */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Payment processPaymentWithReadCommitted(
+            String transactionId, Long userId, Long orderId, BigDecimal amount) {
+        // 決済処理の実装
+    }
+}
+```
+
+### リトライ処理の実装
+
+一時的なエラーに対するリトライ処理：
+
+```java
+@Service
+@Transactional
+public class PaymentService {
+    
+    @Retryable(
+        value = {PaymentGatewayException.class, OptimisticLockException.class},
+        maxAttempts = 3,
+        backoff = @Backoff(delay = 1000, multiplier = 2)
+    )
+    public Payment processPaymentWithRetry(
+            String transactionId, Long userId, Long orderId, BigDecimal amount) {
+        // 決済処理の実装
+        // PaymentGatewayExceptionやOptimisticLockExceptionが発生した場合、
+        // 最大3回までリトライ（1秒、2秒、4秒の間隔）
+    }
+    
+    @Recover
+    public Payment recoverPaymentProcessing(
+            PaymentGatewayException e, 
+            String transactionId, Long userId, Long orderId, BigDecimal amount) {
+        // リトライがすべて失敗した場合の処理
+        log.error("Payment processing failed after retries: transactionId={}", transactionId, e);
+        
+        Payment payment = new Payment();
+        payment.setTransactionId(transactionId);
+        payment.setUserId(userId);
+        payment.setOrderId(orderId);
+        payment.setAmount(amount);
+        payment.setStatus(PaymentStatus.FAILED);
+        payment.setFailureReason("Payment failed after retries: " + e.getMessage());
+        return paymentRepository.save(payment);
+    }
+}
+```
+
+### イベント駆動アーキテクチャとの連携
+
+決済完了後にイベントを発行する実装：
+
+```java
+@Service
+@Transactional
+public class PaymentService {
+    
+    @Autowired
+    private ApplicationEventPublisher eventPublisher;
+    
+    public Payment processPayment(String transactionId, Long userId, Long orderId, BigDecimal amount) {
+        // 決済処理の実装...
+        
+        if (payment.getStatus() == PaymentStatus.COMPLETED) {
+            // トランザクションコミット後にイベントを発行
+            TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronizationAdapter() {
+                    @Override
+                    public void afterCommit() {
+                        eventPublisher.publishEvent(
+                            new PaymentCompletedEvent(payment.getId(), payment.getOrderId())
+                        );
+                    }
+                }
+            );
+        }
+        
+        return payment;
+    }
+}
+
+// イベントクラス
+public class PaymentCompletedEvent {
+    private final Long paymentId;
+    private final Long orderId;
+    
+    public PaymentCompletedEvent(Long paymentId, Long orderId) {
+        this.paymentId = paymentId;
+        this.orderId = orderId;
+    }
+    
+    // getter
+}
+
+// イベントリスナー
+@Component
+@Slf4j
+public class PaymentEventListener {
+    
+    @Autowired
+    private OrderService orderService;
+    
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void handlePaymentCompleted(PaymentCompletedEvent event) {
+        log.info("Payment completed: paymentId={}, orderId={}", 
+            event.getPaymentId(), event.getOrderId());
+        
+        // 注文ステータスを更新
+        orderService.updateOrderStatus(event.getOrderId(), OrderStatus.PAID);
+    }
+}
+```
+
+### ベストプラクティス
+
+#### 1. 冪等性の保証
+
+```java
+// 同じtransactionIdで複数回呼び出されても、同じ結果を返す
+public Payment processPayment(String transactionId, ...) {
+    Optional<Payment> existing = paymentRepository.findByTransactionId(transactionId);
+    if (existing.isPresent()) {
+        return existing.get();  // 既に処理済みの場合はそのまま返す
+    }
+    // 新規処理...
+}
+```
+
+#### 2. ロックの適切な使用
+
+```java
+// 口座残高の更新時は悲観ロックを使用
+Account account = accountRepository.findByIdWithLock(accountId);
+
+// 決済レコードの更新時は楽観ロックを使用
+@Version
+private Long version;
+```
+
+#### 3. エラーハンドリング
+
+```java
+try {
+    // 決済処理
+} catch (InsufficientBalanceException e) {
+    // 残高不足の場合は適切なエラーメッセージを返す
+    throw new BusinessException("INSUFFICIENT_BALANCE", e.getMessage());
+} catch (PaymentGatewayException e) {
+    // 外部APIエラーの場合はリトライ可能なエラーとして扱う
+    throw new RetryableException("PAYMENT_GATEWAY_ERROR", e);
+} catch (Exception e) {
+    // 予期しないエラーはログに記録して再スロー
+    log.error("Unexpected error", e);
+    throw e;
+}
+```
+
+#### 4. 監査ログの記録
+
+```java
+// すべての状態変更をログに記録
+private void logPaymentStatusChange(Long paymentId, PaymentStatus fromStatus, 
+                                   PaymentStatus toStatus, String message) {
+    PaymentLog log = new PaymentLog();
+    log.setPaymentId(paymentId);
+    log.setFromStatus(fromStatus);
+    log.setToStatus(toStatus);
+    log.setMessage(message);
+    paymentLogRepository.save(log);
+}
+```
+
+### まとめ
+
+決済処理でのトランザクション管理のポイント：
+
+- **冪等性の保証**: 同じ取引IDで複数回呼び出されても安全
+- **二重支払いの防止**: 分散ロックや悲観ロックの使用
+- **適切なロック戦略**: 口座残高は悲観ロック、決済レコードは楽観ロック
+- **補償トランザクション**: Sagaパターンによる複数サービス間の整合性保証
+- **エラーハンドリング**: 適切な例外処理とリトライ
+- **監査ログ**: すべての状態変更を記録
+
+これらの実装により、安全で信頼性の高い決済処理システムを構築できます。
+
+

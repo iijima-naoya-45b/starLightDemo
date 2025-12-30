@@ -1,0 +1,288 @@
+---
+title: "Stripe基礎"
+label: "Stripe基礎"
+---
+
+## Stripe基礎
+
+Stripeは、オンライン決済処理を簡単に実装できる決済サービスです。
+
+### なぜStripeが必要なのか
+
+#### 手動決済処理の課題
+
+**問題のある手動決済処理:**
+
+```ruby
+# 問題点:
+# - カード情報の安全な管理が困難
+# - PCI DSS準拠が必要
+# - 複雑な決済フローの実装が必要
+# - エラーハンドリングが複雑
+```
+
+**Stripeの解決:**
+
+```ruby
+# Stripeを使用することで:
+# - カード情報を直接扱わない（セキュア）
+# - PCI DSS準拠が不要
+# - シンプルなAPI
+# - 充実したエラーハンドリング
+```
+
+**メリット:**
+1. **セキュリティ**: カード情報を直接扱わない
+2. **簡単な実装**: シンプルなAPI
+3. **多様な決済方法**: カード、銀行振込、デジタルウォレットなど
+4. **国際対応**: 多通貨、多言語対応
+
+### Stripeの設定
+
+#### Gemの追加
+
+```ruby
+# Gemfile
+gem 'stripe'
+gem 'stripe-rails' # オプション: Rails統合
+```
+
+```bash
+bundle install
+```
+
+#### 環境変数の設定
+
+```ruby
+# config/initializers/stripe.rb
+Rails.configuration.stripe = {
+  publishable_key: ENV['STRIPE_PUBLISHABLE_KEY'],
+  secret_key: ENV['STRIPE_SECRET_KEY']
+}
+
+Stripe.api_key = Rails.configuration.stripe[:secret_key]
+```
+
+```bash
+# .env
+STRIPE_PUBLISHABLE_KEY=pk_test_...
+STRIPE_SECRET_KEY=sk_test_...
+```
+
+### 基本的な決済フロー
+
+#### 1. フロントエンド: カード情報の収集
+
+```javascript
+// JavaScript (Stripe.js)
+const stripe = Stripe('pk_test_...');
+const elements = stripe.elements();
+const cardElement = elements.create('card');
+cardElement.mount('#card-element');
+
+// カード情報の送信
+const { token, error } = await stripe.createToken(cardElement);
+```
+
+#### 2. バックエンド: 決済の処理
+
+```ruby
+# app/controllers/payments_controller.rb
+class PaymentsController < ApplicationController
+  def create
+    amount = params[:amount].to_i
+    token = params[:stripe_token]
+
+    begin
+      charge = Stripe::Charge.create({
+        amount: amount,
+        currency: 'jpy',
+        source: token,
+        description: '商品の購入'
+      })
+
+      # 決済成功時の処理
+      payment = Payment.create!(
+        user: current_user,
+        amount: amount,
+        stripe_charge_id: charge.id,
+        status: 'completed'
+      )
+
+      render json: { success: true, payment: payment }
+    rescue Stripe::CardError => e
+      render json: { error: e.message }, status: :unprocessable_entity
+    end
+  end
+end
+```
+
+### PaymentIntentを使用した決済（推奨）
+
+```ruby
+# app/controllers/payments_controller.rb
+class PaymentsController < ApplicationController
+  def create_intent
+    amount = params[:amount].to_i
+
+    payment_intent = Stripe::PaymentIntent.create({
+      amount: amount,
+      currency: 'jpy',
+      metadata: {
+        user_id: current_user.id
+      }
+    })
+
+    render json: {
+      client_secret: payment_intent.client_secret
+    }
+  end
+
+  def confirm
+    payment_intent_id = params[:payment_intent_id]
+
+    payment_intent = Stripe::PaymentIntent.retrieve(payment_intent_id)
+
+    if payment_intent.status == 'succeeded'
+      # 決済成功時の処理
+      payment = Payment.create!(
+        user: current_user,
+        amount: payment_intent.amount,
+        stripe_payment_intent_id: payment_intent.id,
+        status: 'completed'
+      )
+
+      render json: { success: true, payment: payment }
+    else
+      render json: { error: '決済に失敗しました' }, status: :unprocessable_entity
+    end
+  end
+end
+```
+
+### サブスクリプション（定期課金）
+
+```ruby
+# app/controllers/subscriptions_controller.rb
+class SubscriptionsController < ApplicationController
+  def create
+    customer = Stripe::Customer.create(
+      email: current_user.email,
+      source: params[:stripe_token]
+    )
+
+    subscription = Stripe::Subscription.create(
+      customer: customer.id,
+      items: [{
+        price: 'price_1234567890' # Stripeダッシュボードで作成した価格ID
+      }]
+    )
+
+    current_user.update!(
+      stripe_customer_id: customer.id,
+      stripe_subscription_id: subscription.id
+    )
+
+    render json: { success: true, subscription: subscription }
+  end
+
+  def cancel
+    subscription = Stripe::Subscription.retrieve(
+      current_user.stripe_subscription_id
+    )
+    subscription.cancel_at_period_end = true
+    subscription.save
+
+    render json: { success: true }
+  end
+end
+```
+
+### Webhookの処理
+
+```ruby
+# app/controllers/webhooks_controller.rb
+class WebhooksController < ApplicationController
+  skip_before_action :verify_authenticity_token
+
+  def stripe
+    payload = request.body.read
+    sig_header = request.env['HTTP_STRIPE_SIGNATURE']
+    endpoint_secret = ENV['STRIPE_WEBHOOK_SECRET']
+
+    begin
+      event = Stripe::Webhook.construct_event(
+        payload, sig_header, endpoint_secret
+      )
+    rescue JSON::ParserError => e
+      render json: { error: e.message }, status: 400
+      return
+    rescue Stripe::SignatureVerificationError => e
+      render json: { error: e.message }, status: 400
+      return
+    end
+
+    case event.type
+    when 'payment_intent.succeeded'
+      handle_payment_succeeded(event.data.object)
+    when 'customer.subscription.deleted'
+      handle_subscription_deleted(event.data.object)
+    end
+
+    render json: { received: true }
+  end
+
+  private
+
+  def handle_payment_succeeded(payment_intent)
+    payment = Payment.find_by(stripe_payment_intent_id: payment_intent.id)
+    payment&.update!(status: 'completed')
+  end
+
+  def handle_subscription_deleted(subscription)
+    user = User.find_by(stripe_subscription_id: subscription.id)
+    user&.update!(stripe_subscription_id: nil)
+  end
+end
+```
+
+### テスト
+
+```ruby
+# spec/controllers/payments_controller_spec.rb
+require 'rails_helper'
+
+RSpec.describe PaymentsController, type: :controller do
+  let(:user) { create(:user) }
+  
+  before { sign_in user }
+
+  describe 'POST #create' do
+    let(:valid_token) { 'tok_visa' } # Stripeテストトークン
+
+    it '決済が成功すること' do
+      expect {
+        post :create, params: {
+          amount: 1000,
+          stripe_token: valid_token
+        }
+      }.to change { Payment.count }.by(1)
+
+      expect(response).to have_http_status(:success)
+    end
+  end
+end
+```
+
+### まとめ
+
+Stripeを使用した決済処理のポイント：
+
+- **セキュリティ**: カード情報を直接扱わない
+- **PaymentIntent**: 最新の推奨方法
+- **Webhook**: 決済状態の非同期更新
+- **テスト**: Stripeテストトークンの使用
+- **エラーハンドリング**: 適切な例外処理
+
+Stripeは、安全で簡単な決済処理を実装するための強力なツールです。適切に実装することで、ユーザーに安全な決済体験を提供できます。
+

@@ -1,0 +1,189 @@
+---
+title: "ダークモード変換拡張機能"
+label: "ダークモード変換拡張機能"
+---
+
+## ダークモード変換拡張機能
+
+Webページをダークモードに変換する拡張機能の実装例です。
+
+### 機能概要
+
+- ページをダークモードに変換
+- オン/オフの切り替え
+- 設定の保存
+
+### manifest.json
+
+```json
+{
+  "manifest_version": 3,
+  "name": "ダークモード変換",
+  "version": "1.0.0",
+  "description": "Webページをダークモードに変換します",
+  
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}
+```
+
+### popup.html
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 250px;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+    }
+    .toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 60px;
+      height: 34px;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 34px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 26px;
+      width: 26px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+    input:checked + .slider {
+      background-color: #2196F3;
+    }
+    input:checked + .slider:before {
+      transform: translateX(26px);
+    }
+  </style>
+</head>
+<body>
+  <div class="toggle">
+    <span>ダークモード</span>
+    <label class="switch">
+      <input type="checkbox" id="darkModeToggle">
+      <span class="slider"></span>
+    </label>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
+```
+
+### popup.js
+
+```javascript
+// 現在の状態を読み込む
+chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  const tabId = tabs[0].id;
+  
+  chrome.storage.local.get(['darkMode'], (result) => {
+    const isDarkMode = result.darkMode || false;
+    document.getElementById('darkModeToggle').checked = isDarkMode;
+    
+    if (isDarkMode) {
+      applyDarkMode(tabId);
+    }
+  });
+});
+
+// トグルが変更されたとき
+document.getElementById('darkModeToggle').addEventListener('change', (e) => {
+  const isDarkMode = e.target.checked;
+  
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tabId = tabs[0].id;
+    
+    if (isDarkMode) {
+      applyDarkMode(tabId);
+    } else {
+      removeDarkMode(tabId);
+    }
+    
+    // 設定を保存
+    chrome.storage.local.set({ darkMode: isDarkMode });
+  });
+});
+
+// ダークモードを適用
+function applyDarkMode(tabId) {
+  chrome.scripting.insertCSS({
+    target: { tabId: tabId },
+    css: `
+      html {
+        filter: invert(1) hue-rotate(180deg);
+      }
+      img, video, iframe {
+        filter: invert(1) hue-rotate(180deg);
+      }
+    `
+  });
+}
+
+// ダークモードを削除
+function removeDarkMode(tabId) {
+  chrome.scripting.removeCSS({
+    target: { tabId: tabId },
+    css: `
+      html {
+        filter: invert(1) hue-rotate(180deg);
+      }
+      img, video, iframe {
+        filter: invert(1) hue-rotate(180deg);
+      }
+    `
+  });
+}
+```
+
+### まとめ
+
+ダークモード変換拡張機能の実装：
+
+1. **CSS注入**: `chrome.scripting.insertCSS`でダークモードを適用
+2. **設定の保存**: `chrome.storage.local`で設定を保存
+3. **トグル機能**: オン/オフの切り替え
+
+この実装を参考に、独自のダークモード拡張機能を作成できます。
+

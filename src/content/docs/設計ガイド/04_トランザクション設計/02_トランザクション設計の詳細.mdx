@@ -1,0 +1,221 @@
+---
+title: "トランザクション設計の詳細"
+label: "トランザクション設計の詳細"
+---
+
+## トランザクション設計の詳細
+
+トランザクション設計の詳細なベストプラクティスを説明します。
+
+### トランザクションの境界
+
+#### 1. トランザクションの範囲
+
+**適切な範囲:**
+
+```javascript
+// 良い例: 関連する処理を1つのトランザクションに
+function createOrder(userId, items) {
+  beginTransaction();
+  try {
+    const order = createOrderRecord(userId);
+    createOrderItems(order.id, items);
+    updateInventory(items);
+    commitTransaction();
+    return order;
+  } catch (error) {
+    rollbackTransaction();
+    throw error;
+  }
+}
+
+// 悪い例: トランザクションが長すぎる
+function processOrder(orderId) {
+  beginTransaction();
+  try {
+    // 時間のかかる処理
+    sendEmail();
+    generateReport();
+    updateStatistics();
+    // ...
+    commitTransaction();
+  } catch (error) {
+    rollbackTransaction();
+    throw error;
+  }
+}
+```
+
+#### 2. トランザクションの粒度
+
+**細かいトランザクション:**
+
+```javascript
+// 良い例: 適切な粒度
+function updateUserProfile(userId, profile) {
+  beginTransaction();
+  try {
+    updateUser(userId, profile);
+    commitTransaction();
+  } catch (error) {
+    rollbackTransaction();
+    throw error;
+  }
+}
+```
+
+### ロック戦略
+
+#### 1. 悲観的ロック
+
+**ロックを取得してから処理:**
+
+```sql
+-- SELECT FOR UPDATE
+BEGIN TRANSACTION;
+
+SELECT * FROM accounts WHERE id = 1 FOR UPDATE;
+-- 他のトランザクションは待機
+
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+
+COMMIT;
+```
+
+#### 2. 楽観的ロック
+
+**バージョン番号で競合を検出:**
+
+```sql
+-- バージョンカラムを使用
+CREATE TABLE accounts (
+  id INT PRIMARY KEY,
+  balance DECIMAL(10,2),
+  version INT DEFAULT 0
+);
+
+-- 更新時
+UPDATE accounts 
+SET balance = balance - 100, version = version + 1
+WHERE id = 1 AND version = @expected_version;
+
+-- 更新行数が0の場合は競合
+```
+
+### 分散トランザクション
+
+#### 1. 2フェーズコミット (2PC)
+
+**複数のデータベースにまたがるトランザクション:**
+
+```javascript
+// 2フェーズコミット
+function distributedTransaction() {
+  const coordinator = new TransactionCoordinator();
+  
+  try {
+    // フェーズ1: 準備
+    coordinator.prepare('db1', () => updateDB1());
+    coordinator.prepare('db2', () => updateDB2());
+    
+    // フェーズ2: コミット
+    coordinator.commit('db1');
+    coordinator.commit('db2');
+  } catch (error) {
+    // ロールバック
+    coordinator.rollback('db1');
+    coordinator.rollback('db2');
+    throw error;
+  }
+}
+```
+
+#### 2. Sagaパターン
+
+**分散トランザクションの代替:**
+
+```javascript
+// Sagaパターン
+async function sagaTransaction() {
+  const compensations = [];
+  
+  try {
+    // ステップ1
+    await step1();
+    compensations.push(() => compensateStep1());
+    
+    // ステップ2
+    await step2();
+    compensations.push(() => compensateStep2());
+    
+    // ステップ3
+    await step3();
+  } catch (error) {
+    // 補償トランザクションを実行
+    for (const compensate of compensations.reverse()) {
+      await compensate();
+    }
+    throw error;
+  }
+}
+```
+
+### トランザクションのパフォーマンス
+
+#### 1. トランザクションの短縮
+
+**トランザクションを短く保つ:**
+
+```javascript
+// 良い例: トランザクション外で時間のかかる処理
+function processOrder(orderId) {
+  // トランザクション外で処理
+  const order = getOrder(orderId);
+  
+  // トランザクション内でデータベース操作のみ
+  beginTransaction();
+  try {
+    updateOrderStatus(orderId, 'processed');
+    commitTransaction();
+  } catch (error) {
+    rollbackTransaction();
+    throw error;
+  }
+  
+  // トランザクション外で処理
+  sendEmail(order);
+  generateReport(order);
+}
+```
+
+#### 2. バッチ処理
+
+**複数の操作をバッチ処理:**
+
+```javascript
+// 良い例: バッチ処理
+function updateMultipleUsers(updates) {
+  beginTransaction();
+  try {
+    for (const update of updates) {
+      updateUser(update.id, update.data);
+    }
+    commitTransaction();
+  } catch (error) {
+    rollbackTransaction();
+    throw error;
+  }
+}
+```
+
+### まとめ
+
+トランザクション設計の詳細：
+
+- **トランザクションの境界**: 適切な範囲と粒度
+- **ロック戦略**: 悲観的ロックと楽観的ロック
+- **分散トランザクション**: 2フェーズコミットとSagaパターン
+- **パフォーマンス**: トランザクションの短縮とバッチ処理
+
+これらの詳細を考慮することで、効率的で堅牢なトランザクション設計が可能です。
+

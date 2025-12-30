@@ -1,0 +1,84 @@
+---
+title: "セキュリティベストプラクティス"
+label: "セキュリティベストプラクティス"
+---
+
+## セキュリティベストプラクティス
+
+### Content Security Policy (CSP)
+
+```json
+{
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}
+```
+
+### 最小権限の原則
+
+```json
+{
+  "permissions": [
+    "storage"  // 必要な権限のみ
+  ],
+  "host_permissions": [
+    "https://api.example.com/*"  // 特定のドメインのみ
+  ]
+}
+```
+
+### ユーザー入力の検証
+
+```javascript
+function sanitizeInput(input) {
+  // XSS対策
+  const div = document.createElement('div');
+  div.textContent = input;
+  return div.innerHTML;
+}
+
+function validateURL(url) {
+  try {
+    const parsed = new URL(url);
+    // 許可されたドメインのみ
+    const allowedDomains = ['example.com', 'api.example.com'];
+    return allowedDomains.includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+```
+
+### 機密情報の保護
+
+```javascript
+// 機密情報はストレージに保存しない
+// 悪い例
+chrome.storage.local.set({ apiKey: 'secret-key' });
+
+// 良い例: 環境変数や暗号化
+chrome.storage.local.set({ 
+  encryptedData: encrypt('secret-key', userPassword) 
+});
+```
+
+### メッセージの検証
+
+```javascript
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // 送信元の検証
+  if (sender.id !== chrome.runtime.id) {
+    return;
+  }
+
+  // メッセージの型検証
+  if (!message.type || typeof message.type !== 'string') {
+    sendResponse({ error: 'Invalid message type' });
+    return;
+  }
+
+  // 処理
+});
+```
+

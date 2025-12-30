@@ -1,0 +1,398 @@
+---
+title: "マイクロサービスアーキテクチャ"
+label: "マイクロサービスアーキテクチャ"
+---
+
+## マイクロサービスアーキテクチャ
+
+マイクロサービスアーキテクチャは、アプリケーションを小さな独立したサービスに分割するアーキテクチャパターンです。Spring Bootでは、**Spring Cloud**を使用してマイクロサービスを構築できます。
+
+### なぜマイクロサービスが必要なのか
+
+#### モノリシックアーキテクチャの課題
+
+**問題のあるモノリシックアーキテクチャ:**
+
+```
+┌─────────────────────────────────────┐
+│      Monolithic Application         │
+│  ┌─────────┐  ┌─────────┐         │
+│  │  User   │  │  Order  │         │
+│  │ Service │  │ Service │         │
+│  └─────────┘  └─────────┘         │
+│  ┌─────────┐  ┌─────────┐         │
+│  │Payment  │  │Inventory│         │
+│  │Service  │  │ Service │         │
+│  └─────────┘  └─────────┘         │
+└─────────────────────────────────────┘
+
+// 問題点:
+// - 1つのサービスが大きくなりすぎる
+// - デプロイが困難（1つの変更で全体をデプロイ）
+// - スケーリングが困難（必要な部分だけスケールできない）
+// - 技術スタックの変更が困難
+```
+
+**マイクロサービスアーキテクチャの解決:**
+
+```
+┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐
+│  User   │  │  Order  │  │Payment  │  │Inventory│
+│ Service │  │ Service │  │ Service │  │ Service │
+└─────────┘  └─────────┘  └─────────┘  └─────────┘
+     │            │            │            │
+     └────────────┴────────────┴────────────┘
+                    │
+            ┌───────────────┐
+            │  API Gateway  │
+            └───────────────┘
+
+// メリット:
+// - 各サービスが独立してデプロイ可能
+// - 必要なサービスだけスケール可能
+// - 技術スタックを自由に選択可能
+// - チームが独立して開発可能
+```
+
+**メリット:**
+1. **独立性**: 各サービスが独立して開発・デプロイ可能
+2. **スケーラビリティ**: 必要なサービスだけスケール可能
+3. **技術の多様性**: サービスごとに異なる技術スタックを使用可能
+4. **フォールトトレランス**: 1つのサービスの障害が他に影響しない
+
+### Spring Cloudの構成要素
+
+- **Spring Cloud Gateway**: API Gateway
+- **Spring Cloud Eureka**: サービスディスカバリ
+- **Spring Cloud Config**: 設定管理
+- **Spring Cloud OpenFeign**: HTTPクライアント
+- **Spring Cloud Sleuth**: 分散トレーシング
+- **Spring Cloud Circuit Breaker**: サーキットブレーカー
+
+### サービスディスカバリ（Eureka）
+
+#### Eurekaサーバーの設定
+
+```java
+@SpringBootApplication
+@EnableEurekaServer
+public class EurekaServerApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(EurekaServerApplication.class, args);
+    }
+}
+```
+
+**`application.yml`:**
+
+```yaml
+server:
+  port: 8761
+
+eureka:
+  instance:
+    hostname: localhost
+  client:
+    register-with-eureka: false
+    fetch-registry: false
+```
+
+#### サービスの登録
+
+```java
+@SpringBootApplication
+@EnableEurekaClient
+public class UserServiceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(UserServiceApplication.class, args);
+    }
+}
+```
+
+**`application.yml`:**
+
+```yaml
+spring:
+  application:
+    name: user-service
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+```
+
+### API Gateway（Spring Cloud Gateway）
+
+```java
+@Configuration
+public class GatewayConfig {
+    
+    @Bean
+    public RouteLocator customRouteLocator(RouteLocatorBuilder builder) {
+        return builder.routes()
+            .route("user-service", r -> r
+                .path("/api/users/**")
+                .uri("lb://user-service"))
+            .route("order-service", r -> r
+                .path("/api/orders/**")
+                .uri("lb://order-service"))
+            .build();
+    }
+}
+```
+
+**`application.yml`:**
+
+```yaml
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/users/**
+        - id: order-service
+          uri: lb://order-service
+          predicates:
+            - Path=/api/orders/**
+```
+
+### サービス間通信（OpenFeign）
+
+```java
+@FeignClient(name = "order-service")
+public interface OrderServiceClient {
+    
+    @GetMapping("/orders/{id}")
+    Order getOrder(@PathVariable Long id);
+    
+    @PostMapping("/orders")
+    Order createOrder(@RequestBody OrderRequest request);
+}
+
+@Service
+public class UserService {
+    
+    private final OrderServiceClient orderServiceClient;
+    
+    public UserService(OrderServiceClient orderServiceClient) {
+        this.orderServiceClient = orderServiceClient;
+    }
+    
+    public UserWithOrders getUserWithOrders(Long userId) {
+        User user = userRepository.findById(userId)
+            .orElseThrow(() -> new UserNotFoundException());
+        
+        // 他のサービスを呼び出し
+        List<Order> orders = orderServiceClient.getOrdersByUserId(userId);
+        
+        return new UserWithOrders(user, orders);
+    }
+}
+```
+
+### 設定管理（Spring Cloud Config）
+
+#### Config Serverの設定
+
+```java
+@SpringBootApplication
+@EnableConfigServer
+public class ConfigServerApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(ConfigServerApplication.class, args);
+    }
+}
+```
+
+**`application.yml`:**
+
+```yaml
+spring:
+  cloud:
+    config:
+      server:
+        git:
+          uri: https://github.com/example/config-repo
+```
+
+#### クライアントの設定
+
+**`bootstrap.yml`:**
+
+```yaml
+spring:
+  application:
+    name: user-service
+  cloud:
+    config:
+      uri: http://localhost:8888
+```
+
+### サーキットブレーカー（Resilience4j）
+
+```java
+@Service
+public class OrderService {
+    
+    private final OrderServiceClient orderServiceClient;
+    private final CircuitBreaker circuitBreaker;
+    
+    public OrderService(OrderServiceClient orderServiceClient,
+                       CircuitBreakerRegistry circuitBreakerRegistry) {
+        this.orderServiceClient = orderServiceClient;
+        this.circuitBreaker = circuitBreakerRegistry.circuitBreaker("orderService");
+    }
+    
+    public Order getOrder(Long id) {
+        return circuitBreaker.executeSupplier(() -> 
+            orderServiceClient.getOrder(id)
+        );
+    }
+}
+```
+
+**`application.yml`:**
+
+```yaml
+resilience4j:
+  circuitbreaker:
+    instances:
+      orderService:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 5s
+        failureRateThreshold: 50
+        eventConsumerBufferSize: 10
+```
+
+### 実践的な例: マイクロサービスアーキテクチャ
+
+```java
+// User Service
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    private final UserService userService;
+    
+    @GetMapping("/{id}")
+    public User getUser(@PathVariable Long id) {
+        return userService.findById(id);
+    }
+}
+
+// Order Service
+@RestController
+@RequestMapping("/api/orders")
+public class OrderController {
+    
+    private final OrderService orderService;
+    
+    @PostMapping
+    public Order createOrder(@RequestBody OrderRequest request) {
+        return orderService.createOrder(request);
+    }
+}
+
+// API Gateway
+@RestController
+public class GatewayController {
+    
+    private final UserServiceClient userServiceClient;
+    private final OrderServiceClient orderServiceClient;
+    
+    @GetMapping("/users/{userId}/orders")
+    public UserWithOrders getUserWithOrders(@PathVariable Long userId) {
+        User user = userServiceClient.getUser(userId);
+        List<Order> orders = orderServiceClient.getOrdersByUserId(userId);
+        return new UserWithOrders(user, orders);
+    }
+}
+```
+
+### デプロイメント戦略
+
+#### Docker Compose
+
+```yaml
+version: '3.8'
+services:
+  eureka-server:
+    image: eureka-server:latest
+    ports:
+      - "8761:8761"
+  
+  api-gateway:
+    image: api-gateway:latest
+    ports:
+      - "8080:8080"
+    depends_on:
+      - eureka-server
+  
+  user-service:
+    image: user-service:latest
+    depends_on:
+      - eureka-server
+  
+  order-service:
+    image: order-service:latest
+    depends_on:
+      - eureka-server
+```
+
+#### Kubernetes
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: user-service
+  template:
+    metadata:
+      labels:
+        app: user-service
+    spec:
+      containers:
+      - name: user-service
+        image: user-service:latest
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service
+spec:
+  selector:
+    app: user-service
+  ports:
+  - port: 80
+    targetPort: 8080
+```
+
+### まとめ
+
+マイクロサービスアーキテクチャのポイント：
+
+- **サービスディスカバリ**: Eurekaによるサービスの自動検出
+- **API Gateway**: 統一されたエントリーポイント
+- **サービス間通信**: OpenFeignによるHTTP通信
+- **設定管理**: Config Serverによる集中設定管理
+- **サーキットブレーカー**: 障害の伝播を防止
+- **分散トレーシング**: リクエストの追跡
+
+マイクロサービスアーキテクチャは、大規模なアプリケーションにおいて非常に有用です。適切に実装することで、アプリケーションのスケーラビリティと保守性を大幅に向上させることができます。
+

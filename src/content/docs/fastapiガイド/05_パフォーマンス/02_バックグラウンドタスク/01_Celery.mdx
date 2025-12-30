@@ -1,0 +1,48 @@
+---
+title: "Celery"
+label: "Celery"
+---
+
+## Celery
+
+Celeryは、Pythonの分散タスクキューシステムです。FastAPIと組み合わせて、非同期タスクを処理できます。
+
+### Celeryの設定
+
+#### 依存関係の追加
+
+```bash
+pip install celery redis
+```
+
+#### Celeryアプリの設定
+
+```python
+from celery import Celery
+
+celery_app = Celery(
+    "tasks",
+    broker="redis://localhost:6379/0",
+    backend="redis://localhost:6379/0"
+)
+
+@celery_app.task
+def send_email(email: str, message: str):
+    # メール送信処理
+    pass
+```
+
+#### FastAPIとの統合
+
+```python
+from fastapi import FastAPI
+from .celery_app import celery_app, send_email
+
+app = FastAPI()
+
+@app.post("/send-email")
+async def send_email_endpoint(email: str, message: str):
+    send_email.delay(email, message)
+    return {"status": "Email queued"}
+```
+

@@ -1,0 +1,325 @@
+---
+title: "SWRとTanStack Queryの比較"
+label: "SWRとTanStack Queryの比較"
+---
+
+## SWRとTanStack Queryの比較
+
+useSWRとTanStack Query（旧React Query）の違いと選択基準を説明します。
+
+### 基本的な比較
+
+#### 1. APIの違い
+
+**useSWR:**
+
+```typescript
+import useSWR from 'swr';
+
+const fetcher = (url: string) => fetch(url).then(res => res.json());
+
+function UserProfile({ userId }: { userId: string }) {
+  const { data, error, isLoading } = useSWR(
+    `/api/users/${userId}`,
+    fetcher
+  );
+  
+  // ...
+}
+```
+
+**TanStack Query:**
+
+```typescript
+import { useQuery } from '@tanstack/react-query';
+
+function UserProfile({ userId }: { userId: string }) {
+  const { data, error, isLoading } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetch(`/api/users/${userId}`).then(res => res.json()),
+  });
+  
+  // ...
+}
+```
+
+#### 2. 主な違い
+
+| 項目 | useSWR | TanStack Query |
+|------|--------|----------------|
+| **APIの複雑さ** | シンプル | やや複雑 |
+| **学習コスト** | 低い | 中程度 |
+| **機能の豊富さ** | 基本的な機能 | 豊富な機能 |
+| **バンドルサイズ** | 小さい（約4KB） | やや大きい（約13KB） |
+| **キャッシュキー** | URL文字列 | 配列（柔軟） |
+| **DevTools** | なし | あり（優秀） |
+| **TypeScriptサポート** | 良好 | 優秀 |
+| **コミュニティ** | Vercel中心 | 大規模 |
+
+### 機能比較
+
+#### 1. キャッシュキー
+
+**useSWR:**
+
+```typescript
+// URL文字列をキーとして使用
+useSWR('/api/users/1', fetcher);
+useSWR('/api/users/2', fetcher);
+
+// 問題: 動的なキー生成がやや複雑
+const key = userId ? `/api/users/${userId}` : null;
+useSWR(key, fetcher);
+```
+
+**TanStack Query:**
+
+```typescript
+// 配列をキーとして使用（柔軟）
+useQuery({
+  queryKey: ['user', userId],
+  queryFn: () => fetchUser(userId),
+});
+
+// 複雑なキーも簡単
+useQuery({
+  queryKey: ['users', { status: 'active', page: 1 }],
+  queryFn: () => fetchUsers({ status: 'active', page: 1 }),
+});
+```
+
+#### 2. 依存クエリ
+
+**useSWR:**
+
+```typescript
+// 条件付きフェッチング
+const { data: user } = useSWR(
+  userId ? `/api/users/${userId}` : null,
+  fetcher
+);
+
+const { data: posts } = useSWR(
+  user ? `/api/users/${userId}/posts` : null,
+  fetcher
+);
+```
+
+**TanStack Query:**
+
+```typescript
+// enabledオプションで条件付き実行
+const { data: user } = useQuery({
+  queryKey: ['user', userId],
+  queryFn: () => fetchUser(userId),
+  enabled: !!userId,
+});
+
+const { data: posts } = useQuery({
+  queryKey: ['posts', userId],
+  queryFn: () => fetchUserPosts(userId),
+  enabled: !!user,  // より明確
+});
+```
+
+#### 3. ミューテーション
+
+**useSWR:**
+
+```typescript
+import useSWRMutation from 'swr/mutation';
+
+const { trigger, isMutating } = useSWRMutation(
+  '/api/users',
+  async (url, { arg }) => {
+    const response = await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify(arg),
+    });
+    return response.json();
+  }
+);
+
+await trigger({ name: 'John' });
+```
+
+**TanStack Query:**
+
+```typescript
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+
+const queryClient = useQueryClient();
+
+const mutation = useMutation({
+  mutationFn: (newUser) => createUser(newUser),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['users'] });
+  },
+});
+
+mutation.mutate({ name: 'John' });
+```
+
+#### 4. 無限スクロール
+
+**useSWR:**
+
+```typescript
+import useSWRInfinite from 'swr/infinite';
+
+const {
+  data,
+  size,
+  setSize,
+} = useSWRInfinite(
+  (index) => `/api/posts?page=${index + 1}`,
+  fetcher
+);
+```
+
+**TanStack Query:**
+
+```typescript
+import { useInfiniteQuery } from '@tanstack/react-query';
+
+const {
+  data,
+  fetchNextPage,
+  hasNextPage,
+} = useInfiniteQuery({
+  queryKey: ['posts'],
+  queryFn: ({ pageParam = 1 }) => fetchPosts(pageParam),
+  getNextPageParam: (lastPage, pages) => {
+    return lastPage.hasNextPage ? pages.length + 1 : undefined;
+  },
+});
+```
+
+### 選択基準
+
+#### 1. useSWRを選ぶべき場合
+
+**メリット:**
+- シンプルなAPI
+- 軽量（約4KB）
+- 学習コストが低い
+- Vercelのエコシステムとの統合が良い
+
+**適しているプロジェクト:**
+- 小規模から中規模のプロジェクト
+- シンプルなデータフェッチングが必要
+- Next.jsを使用している
+- チームの学習コストを抑えたい
+
+**例:**
+
+```typescript
+// シンプルなデータフェッチング
+function UserList() {
+  const { data: users } = useSWR('/api/users', fetcher);
+  return (
+    <div>
+      {users?.map(user => <div key={user.id}>{user.name}</div>)}
+    </div>
+  );
+}
+```
+
+#### 2. TanStack Queryを選ぶべき場合
+
+**メリット:**
+- 豊富な機能
+- 優秀なDevTools
+- 柔軟なキャッシュキー
+- 大規模なコミュニティ
+- 複雑なデータフェッチングに対応
+
+**適しているプロジェクト:**
+- 中規模から大規模のプロジェクト
+- 複雑なデータフェッチングが必要
+- キャッシュ戦略を細かく制御したい
+- DevToolsが必要
+
+**例:**
+
+```typescript
+// 複雑なデータフェッチング
+function UserDashboard({ userId }: { userId: string }) {
+  const { data: user } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: posts } = useQuery({
+    queryKey: ['posts', userId, { status: 'active' }],
+    queryFn: () => fetchUserPosts(userId, { status: 'active' }),
+    enabled: !!user,
+  });
+
+  // ...
+}
+```
+
+### 実践的な選択例
+
+#### 1. 小規模プロジェクト
+
+```typescript
+// useSWRが適している
+import useSWR from 'swr';
+
+const fetcher = (url: string) => fetch(url).then(res => res.json());
+
+function App() {
+  const { data } = useSWR('/api/data', fetcher);
+  return <div>{data?.name}</div>;
+}
+```
+
+#### 2. 中規模プロジェクト
+
+```typescript
+// どちらでも良いが、プロジェクトの要件に応じて選択
+// シンプルさを重視 → useSWR
+// 機能の豊富さを重視 → TanStack Query
+```
+
+#### 3. 大規模プロジェクト
+
+```typescript
+// TanStack Queryが適している
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,
+      cacheTime: 10 * 60 * 1000,
+    },
+  },
+});
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <YourApp />
+    </QueryClientProvider>
+  );
+}
+```
+
+### まとめ
+
+SWRとTanStack Queryの比較：
+
+- **useSWR**: シンプル、軽量、学習コストが低い
+- **TanStack Query**: 機能が豊富、DevToolsが優秀、柔軟
+
+**選択基準:**
+- **小規模プロジェクト**: useSWR
+- **中規模プロジェクト**: 要件に応じて選択
+- **大規模プロジェクト**: TanStack Query
+
+どちらも優れたライブラリなので、プロジェクトの要件に応じて適切な方を選択することが重要です。
+
