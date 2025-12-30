@@ -1,0 +1,497 @@
+---
+title: "可用性要件の詳細"
+label: "可用性要件の詳細"
+---
+
+## 可用性要件の詳細
+
+可用性要件は、システムが利用可能な時間の割合を定義する重要な要件です。適切な可用性要件を設定することで、サービスの継続性を確保できます。
+
+### なぜ可用性要件が重要なのか
+
+#### 可用性の影響
+
+**実際のデータ:**
+
+- **99.9%の可用性**: 年間約8.76時間のダウンタイム
+- **99.99%の可用性**: 年間約52.56分のダウンタイム
+- **99.999%の可用性**: 年間約5.26分のダウンタイム
+
+**ビジネスへの影響:**
+
+- **売上の減少**: ダウンタイム中は、売上が発生しない
+- **ユーザー満足度の低下**: サービスが利用できないと、ユーザー満足度が低下する
+- **信頼の失墜**: 頻繁なダウンタイムは、サービスの信頼を失う
+
+### 可用性要件の定義
+
+#### 1. 稼働率要件
+
+**稼働率の目標値:**
+
+```markdown
+# 稼働率要件
+
+## 一般的なWebアプリケーション
+- **目標稼働率**: 99.9%（年間約8.76時間のダウンタイム）
+- **計画メンテナンス**: 月1回、2時間以内
+
+## エンタープライズアプリケーション
+- **目標稼働率**: 99.99%（年間約52.56分のダウンタイム）
+- **計画メンテナンス**: 四半期1回、1時間以内
+
+## クリティカルシステム
+- **目標稼働率**: 99.999%（年間約5.26分のダウンタイム）
+- **計画メンテナンス**: 年1回、30分以内
+- **ゼロダウンタイム**: 可能な限りゼロダウンタイムを目指す
+```
+
+**稼働率の測定:**
+
+```javascript
+// 稼働率の測定
+class AvailabilityMonitor {
+  constructor() {
+    this.uptime = 0;
+    this.downtime = 0;
+    this.startTime = Date.now();
+    this.incidents = [];
+  }
+  
+  async checkAvailability() {
+    // ヘルスチェックを実行
+    const healthCheck = await this.performHealthCheck();
+    
+    if (healthCheck.healthy) {
+      this.uptime += this.getCheckInterval();
+    } else {
+      this.downtime += this.getCheckInterval();
+      
+      // インシデントを記録
+      await this.recordIncident({
+        startTime: new Date(),
+        reason: healthCheck.reason,
+      });
+    }
+    
+    // 稼働率を計算
+    const availability = this.calculateAvailability();
+    
+    // 目標値を下回った場合はアラート
+    const target = 0.999;  // 99.9%
+    if (availability < target) {
+      await this.sendAlert({
+        type: 'low_availability',
+        availability,
+        target,
+      });
+    }
+    
+    return availability;
+  }
+  
+  calculateAvailability() {
+    const totalTime = this.uptime + this.downtime;
+    if (totalTime === 0) {
+      return 1.0;  // 100%
+    }
+    
+    return this.uptime / totalTime;
+  }
+  
+  async performHealthCheck() {
+    try {
+      const response = await fetch('/health', {
+        timeout: 5000,  // 5秒のタイムアウト
+      });
+      
+      if (response.ok) {
+        return { healthy: true };
+      } else {
+        return {
+          healthy: false,
+          reason: `HTTP ${response.status}`,
+        };
+      }
+    } catch (error) {
+      return {
+        healthy: false,
+        reason: error.message,
+      };
+    }
+  }
+}
+```
+
+#### 2. 障害復旧時間要件
+
+**障害復旧時間の目標値:**
+
+```markdown
+# 障害復旧時間要件
+
+## 一般的なWebアプリケーション
+- **平均復旧時間（MTTR）**: 1時間以内
+- **最大復旧時間**: 4時間以内
+
+## エンタープライズアプリケーション
+- **平均復旧時間（MTTR）**: 30分以内
+- **最大復旧時間**: 2時間以内
+
+## クリティカルシステム
+- **平均復旧時間（MTTR）**: 15分以内
+- **最大復旧時間**: 1時間以内
+- **自動復旧**: 可能な限り自動復旧を実装
+```
+
+**障害復旧時間の測定:**
+
+```javascript
+// 障害復旧時間の測定
+class RecoveryTimeMonitor {
+  async recordIncident(incident) {
+    // インシデントを記録
+    await db.incidents.create({
+      id: incident.id,
+      startTime: incident.startTime,
+      type: incident.type,
+      severity: incident.severity,
+      status: 'open',
+    });
+  }
+  
+  async recordRecovery(incidentId, recoveryTime) {
+    // 復旧を記録
+    await db.incidents.update(incidentId, {
+      status: 'resolved',
+      recoveryTime,
+      endTime: new Date(),
+    });
+    
+    // MTTRを計算
+    const mttr = await this.calculateMTTR();
+    
+    // 目標値を超えた場合はアラート
+    const target = 60 * 60 * 1000;  // 1時間
+    if (mttr > target) {
+      await this.sendAlert({
+        type: 'high_mttr',
+        mttr,
+        target,
+      });
+    }
+  }
+  
+  async calculateMTTR() {
+    // 過去30日間のインシデントからMTTRを計算
+    const incidents = await db.incidents.find({
+      status: 'resolved',
+      endTime: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+    });
+    
+    if (incidents.length === 0) {
+      return 0;
+    }
+    
+    const totalRecoveryTime = incidents.reduce(
+      (sum, incident) => sum + incident.recoveryTime,
+      0
+    );
+    
+    return totalRecoveryTime / incidents.length;
+  }
+}
+```
+
+#### 3. バックアップ要件
+
+**バックアップの目標値:**
+
+```markdown
+# バックアップ要件
+
+## データベース
+- **バックアップ頻度**: 日次（フルバックアップ）、時間次（増分バックアップ）
+- **バックアップ保持期間**: 30日間
+- **復旧時間目標（RTO）**: 1時間以内
+- **復旧ポイント目標（RPO）**: 1時間以内
+
+## ファイル
+- **バックアップ頻度**: 日次
+- **バックアップ保持期間**: 90日間
+- **復旧時間目標（RTO）**: 4時間以内
+- **復旧ポイント目標（RPO）**: 24時間以内
+```
+
+**バックアップの実装:**
+
+```javascript
+// バックアップの実装
+class BackupManager {
+  async performBackup(type = 'full') {
+    const backupId = this.generateBackupId();
+    const startTime = Date.now();
+    
+    try {
+      if (type === 'full') {
+        // フルバックアップ
+        await this.performFullBackup(backupId);
+      } else if (type === 'incremental') {
+        // 増分バックアップ
+        await this.performIncrementalBackup(backupId);
+      }
+      
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+      
+      // バックアップを記録
+      await db.backups.create({
+        id: backupId,
+        type,
+        startTime: new Date(startTime),
+        endTime: new Date(endTime),
+        duration,
+        status: 'completed',
+        size: await this.getBackupSize(backupId),
+      });
+      
+      // 古いバックアップを削除
+      await this.cleanupOldBackups();
+      
+      return backupId;
+    } catch (error) {
+      // バックアップ失敗を記録
+      await db.backups.create({
+        id: backupId,
+        type,
+        startTime: new Date(startTime),
+        endTime: new Date(),
+        status: 'failed',
+        error: error.message,
+      });
+      
+      throw error;
+    }
+  }
+  
+  async performFullBackup(backupId) {
+    // データベースのフルバックアップ
+    await db.backup({
+      backupId,
+      type: 'full',
+      destination: `s3://backups/${backupId}.sql`,
+    });
+  }
+  
+  async performIncrementalBackup(backupId) {
+    // データベースの増分バックアップ
+    const lastBackup = await this.getLastBackup();
+    
+    await db.backup({
+      backupId,
+      type: 'incremental',
+      since: lastBackup.endTime,
+      destination: `s3://backups/${backupId}.sql`,
+    });
+  }
+  
+  async restoreBackup(backupId) {
+    // バックアップから復元
+    const backup = await db.backups.findById(backupId);
+    
+    if (!backup) {
+      throw new Error('Backup not found');
+    }
+    
+    const startTime = Date.now();
+    
+    try {
+      await db.restore({
+        backupId,
+        source: `s3://backups/${backupId}.sql`,
+      });
+      
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+      
+      // 復元を記録
+      await db.restores.create({
+        backupId,
+        startTime: new Date(startTime),
+        endTime: new Date(endTime),
+        duration,
+        status: 'completed',
+      });
+      
+      return duration;
+    } catch (error) {
+      // 復元失敗を記録
+      await db.restores.create({
+        backupId,
+        startTime: new Date(startTime),
+        endTime: new Date(),
+        status: 'failed',
+        error: error.message,
+      });
+      
+      throw error;
+    }
+  }
+  
+  async cleanupOldBackups() {
+    // 30日以上古いバックアップを削除
+    const threshold = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    
+    const oldBackups = await db.backups.find({
+      endTime: { $lt: threshold },
+    });
+    
+    for (const backup of oldBackups) {
+      // S3からバックアップファイルを削除
+      await s3.deleteObject(`backups/${backup.id}.sql`);
+      
+      // データベースからレコードを削除
+      await db.backups.delete(backup.id);
+    }
+  }
+}
+```
+
+### 可用性要件の実装
+
+#### 1. 冗長化
+
+**冗長化の実装:**
+
+```javascript
+// 冗長化の実装
+class RedundancyManager {
+  async setupRedundancy() {
+    // 1. 複数のサーバーインスタンスを起動
+    const instances = await this.createInstances(3);
+    
+    // 2. ロードバランサーを設定
+    const loadBalancer = await this.setupLoadBalancer(instances);
+    
+    // 3. ヘルスチェックを設定
+    await this.setupHealthChecks(instances);
+    
+    // 4. 自動スケーリングを設定
+    await this.setupAutoScaling(instances);
+    
+    return {
+      instances,
+      loadBalancer,
+    };
+  }
+  
+  async createInstances(count) {
+    const instances = [];
+    
+    for (let i = 0; i < count; i++) {
+      const instance = await ec2.createInstance({
+        imageId: 'ami-12345678',
+        instanceType: 't3.medium',
+        securityGroups: ['web-server'],
+      });
+      
+      instances.push(instance);
+    }
+    
+    return instances;
+  }
+  
+  async setupHealthChecks(instances) {
+    // 各インスタンスのヘルスチェックを設定
+    for (const instance of instances) {
+      await elb.configureHealthCheck({
+        target: instance.id,
+        protocol: 'HTTP',
+        path: '/health',
+        interval: 30,
+        timeout: 5,
+        healthyThreshold: 2,
+        unhealthyThreshold: 3,
+      });
+    }
+  }
+}
+```
+
+#### 2. フェイルオーバー
+
+**フェイルオーバーの実装:**
+
+```javascript
+// フェイルオーバーの実装
+class FailoverManager {
+  async setupFailover() {
+    // 1. プライマリサーバーとセカンダリサーバーを設定
+    const primary = await this.setupPrimaryServer();
+    const secondary = await this.setupSecondaryServer();
+    
+    // 2. レプリケーションを設定
+    await this.setupReplication(primary, secondary);
+    
+    // 3. フェイルオーバーの監視を設定
+    await this.setupFailoverMonitoring(primary, secondary);
+    
+    return {
+      primary,
+      secondary,
+    };
+  }
+  
+  async setupFailoverMonitoring(primary, secondary) {
+    // プライマリサーバーのヘルスチェック
+    setInterval(async () => {
+      const healthy = await this.checkHealth(primary);
+      
+      if (!healthy) {
+        // プライマリサーバーがダウンした場合、セカンダリにフェイルオーバー
+        await this.failoverToSecondary(secondary);
+      }
+    }, 5000);  // 5秒ごとにチェック
+  }
+  
+  async failoverToSecondary(secondary) {
+    // DNSレコードを更新してセカンダリサーバーに切り替え
+    await route53.changeResourceRecordSets({
+      ChangeBatch: {
+        Changes: [{
+          Action: 'UPSERT',
+          ResourceRecordSet: {
+            Name: 'api.example.com',
+            Type: 'A',
+            TTL: 60,
+            ResourceRecords: [{
+              Value: secondary.ipAddress,
+            }],
+          },
+        }],
+      },
+    });
+    
+    // フェイルオーバーを記録
+    await db.failovers.create({
+      timestamp: new Date(),
+      from: 'primary',
+      to: 'secondary',
+      reason: 'primary_unhealthy',
+    });
+  }
+}
+```
+
+### まとめ
+
+可用性要件のポイント：
+
+- **稼働率**: 目標稼働率を設定し、継続的に監視
+- **障害復旧時間**: MTTRを測定し、目標値を達成
+- **バックアップ**: 適切なバックアップ戦略でデータを保護
+- **冗長化**: 複数のサーバーインスタンスで可用性を向上
+- **フェイルオーバー**: 自動フェイルオーバーでダウンタイムを最小化
+
+適切な可用性要件を設定し、実装することで、サービスの継続性を確保できます。
+

@@ -1,0 +1,488 @@
+---
+title: "データ暗号化の詳細"
+label: "データ暗号化の詳細"
+---
+
+## データ暗号化の詳細
+
+データ暗号化は、機密情報を保護するための重要な技術です。適切な暗号化を実装することで、データの漏洩や不正アクセスを防ぎます。
+
+### なぜデータ暗号化が重要なのか
+
+#### 暗号化の不備による問題
+
+**実際の事例:**
+
+2019年、あるクラウドサービスで暗号化の不備が発見されました：
+
+- **問題**: データベースの暗号化が不適切で、キー管理が不十分だった
+- **結果**: データベースが漏洩し、約50万人の個人情報が平文で取得された
+- **影響**: 
+  - 約20億円の損害賠償
+  - サービスの信頼失墜
+  - 法的責任が問われた
+
+**教訓:**
+- データの暗号化は必須
+- キー管理が重要
+
+### 暗号化の種類
+
+#### 1. 転送中のデータの暗号化（TLS/SSL）
+
+**TLS/SSLの設定:**
+
+```javascript
+// Node.jsでのTLS/SSL設定
+const https = require('https');
+const fs = require('fs');
+
+const options = {
+  key: fs.readFileSync('private-key.pem'),
+  cert: fs.readFileSync('certificate.pem'),
+  ca: fs.readFileSync('ca-certificate.pem'),
+  
+  // セキュリティ設定
+  minVersion: 'TLSv1.2',  // TLS 1.2以上
+  ciphers: [
+    'ECDHE-RSA-AES128-GCM-SHA256',
+    'ECDHE-RSA-AES256-GCM-SHA384',
+    '!aNULL',
+    '!eNULL',
+    '!EXPORT',
+    '!DES',
+    '!RC4',
+    '!MD5',
+    '!PSK',
+    '!SRP',
+    '!CAMELLIA',
+  ].join(':'),
+  
+  // HSTS（HTTP Strict Transport Security）の設定
+  hsts: {
+    maxAge: 31536000,  // 1年
+    includeSubDomains: true,
+    preload: true,
+  },
+};
+
+const server = https.createServer(options, (req, res) => {
+  res.writeHead(200);
+  res.end('Hello, HTTPS!');
+});
+
+server.listen(443);
+```
+
+**Express.jsでのTLS設定:**
+
+```javascript
+// Express.jsでのTLS設定
+const express = require('express');
+const helmet = require('helmet');
+
+const app = express();
+
+// Helmetでセキュリティヘッダーを設定
+app.use(helmet({
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+}));
+
+// HTTPSへのリダイレクト
+app.use((req, res, next) => {
+  if (req.header('x-forwarded-proto') !== 'https') {
+    res.redirect(`https://${req.header('host')}${req.url}`);
+  } else {
+    next();
+  }
+});
+```
+
+#### 2. 保存時のデータの暗号化
+
+**データベースの暗号化:**
+
+```javascript
+// データベースの暗号化（AES-256-GCM）
+const crypto = require('crypto');
+
+class DatabaseEncryption {
+  constructor() {
+    // 暗号化キー（環境変数から取得）
+    this.encryptionKey = Buffer.from(
+      process.env.ENCRYPTION_KEY,
+      'hex'
+    );
+    this.algorithm = 'aes-256-gcm';
+  }
+  
+  encrypt(text) {
+    // IV（初期化ベクトル）を生成
+    const iv = crypto.randomBytes(16);
+    
+    // 暗号化器を作成
+    const cipher = crypto.createCipheriv(
+      this.algorithm,
+      this.encryptionKey,
+      iv
+    );
+    
+    // データを暗号化
+    let encrypted = cipher.update(text, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    
+    // 認証タグを取得
+    const authTag = cipher.getAuthTag();
+    
+    // IV、認証タグ、暗号化データを結合
+    return {
+      iv: iv.toString('hex'),
+      authTag: authTag.toString('hex'),
+      encrypted: encrypted,
+    };
+  }
+  
+  decrypt(encryptedData) {
+    // データを分解
+    const iv = Buffer.from(encryptedData.iv, 'hex');
+    const authTag = Buffer.from(encryptedData.authTag, 'hex');
+    const encrypted = encryptedData.encrypted;
+    
+    // 復号化器を作成
+    const decipher = crypto.createDecipheriv(
+      this.algorithm,
+      this.encryptionKey,
+      iv
+    );
+    
+    // 認証タグを設定
+    decipher.setAuthTag(authTag);
+    
+    // データを復号化
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    
+    return decrypted;
+  }
+  
+  async saveEncryptedData(userId, sensitiveData) {
+    // データを暗号化
+    const encrypted = this.encrypt(JSON.stringify(sensitiveData));
+    
+    // データベースに保存
+    await db.encryptedData.create({
+      userId,
+      iv: encrypted.iv,
+      authTag: encrypted.authTag,
+      encrypted: encrypted.encrypted,
+    });
+  }
+  
+  async getEncryptedData(userId) {
+    // 暗号化データを取得
+    const encryptedData = await db.encryptedData.findOne({ userId });
+    
+    if (!encryptedData) {
+      return null;
+    }
+    
+    // データを復号化
+    const decrypted = this.decrypt({
+      iv: encryptedData.iv,
+      authTag: encryptedData.authTag,
+      encrypted: encryptedData.encrypted,
+    });
+    
+    return JSON.parse(decrypted);
+  }
+}
+```
+
+**ファイルの暗号化:**
+
+```javascript
+// ファイルの暗号化
+const fs = require('fs');
+const crypto = require('crypto');
+
+class FileEncryption {
+  constructor() {
+    this.algorithm = 'aes-256-gcm';
+    this.encryptionKey = Buffer.from(
+      process.env.FILE_ENCRYPTION_KEY,
+      'hex'
+    );
+  }
+  
+  async encryptFile(inputPath, outputPath) {
+    // ファイルを読み込む
+    const fileData = fs.readFileSync(inputPath);
+    
+    // IVを生成
+    const iv = crypto.randomBytes(16);
+    
+    // 暗号化器を作成
+    const cipher = crypto.createCipheriv(
+      this.algorithm,
+      this.encryptionKey,
+      iv
+    );
+    
+    // ファイルを暗号化
+    const encrypted = Buffer.concat([
+      cipher.update(fileData),
+      cipher.final(),
+    ]);
+    
+    // 認証タグを取得
+    const authTag = cipher.getAuthTag();
+    
+    // IV、認証タグ、暗号化データを結合して保存
+    const encryptedFile = Buffer.concat([
+      iv,
+      authTag,
+      encrypted,
+    ]);
+    
+    fs.writeFileSync(outputPath, encryptedFile);
+  }
+  
+  async decryptFile(inputPath, outputPath) {
+    // 暗号化ファイルを読み込む
+    const encryptedFile = fs.readFileSync(inputPath);
+    
+    // IV、認証タグ、暗号化データを分離
+    const iv = encryptedFile.slice(0, 16);
+    const authTag = encryptedFile.slice(16, 32);
+    const encrypted = encryptedFile.slice(32);
+    
+    // 復号化器を作成
+    const decipher = crypto.createDecipheriv(
+      this.algorithm,
+      this.encryptionKey,
+      iv
+    );
+    
+    // 認証タグを設定
+    decipher.setAuthTag(authTag);
+    
+    // ファイルを復号化
+    const decrypted = Buffer.concat([
+      decipher.update(encrypted),
+      decipher.final(),
+    ]);
+    
+    fs.writeFileSync(outputPath, decrypted);
+  }
+}
+```
+
+#### 3. キー管理
+
+**AWS KMSを使用したキー管理:**
+
+```javascript
+// AWS KMSを使用したキー管理
+const AWS = require('aws-sdk');
+const kms = new AWS.KMS({ region: 'ap-northeast-1' });
+
+class KMSKeyManagement {
+  async encryptData(plaintext, keyId) {
+    // KMSでデータを暗号化
+    const params = {
+      KeyId: keyId,
+      Plaintext: Buffer.from(plaintext),
+    };
+    
+    const result = await kms.encrypt(params).promise();
+    
+    // 暗号化データをBase64エンコード
+    return result.CiphertextBlob.toString('base64');
+  }
+  
+  async decryptData(ciphertextBlob, keyId) {
+    // KMSでデータを復号化
+    const params = {
+      KeyId: keyId,
+      CiphertextBlob: Buffer.from(ciphertextBlob, 'base64'),
+    };
+    
+    const result = await kms.decrypt(params).promise();
+    
+    // 復号化データを文字列に変換
+    return result.Plaintext.toString('utf8');
+  }
+  
+  async generateDataKey(keyId) {
+    // データキーを生成
+    const params = {
+      KeyId: keyId,
+      KeySpec: 'AES_256',
+    };
+    
+    const result = await kms.generateDataKey(params).promise();
+    
+    return {
+      plaintext: result.Plaintext,
+      ciphertextBlob: result.CiphertextBlob.toString('base64'),
+    };
+  }
+}
+```
+
+**HashiCorp Vaultを使用したキー管理:**
+
+```javascript
+// HashiCorp Vaultを使用したキー管理
+const axios = require('axios');
+
+class VaultKeyManagement {
+  constructor() {
+    this.vaultUrl = process.env.VAULT_ADDR;
+    this.vaultToken = process.env.VAULT_TOKEN;
+  }
+  
+  async getSecret(path) {
+    // Vaultからシークレットを取得
+    const response = await axios.get(
+      `${this.vaultUrl}/v1/secret/data/${path}`,
+      {
+        headers: {
+          'X-Vault-Token': this.vaultToken,
+        },
+      }
+    );
+    
+    return response.data.data.data;
+  }
+  
+  async setSecret(path, data) {
+    // Vaultにシークレットを保存
+    await axios.post(
+      `${this.vaultUrl}/v1/secret/data/${path}`,
+      { data },
+      {
+        headers: {
+          'X-Vault-Token': this.vaultToken,
+        },
+      }
+    );
+  }
+  
+  async rotateKey(keyName) {
+    // キーをローテーション
+    await axios.post(
+      `${this.vaultUrl}/v1/transit/keys/${keyName}/rotate`,
+      {},
+      {
+        headers: {
+          'X-Vault-Token': this.vaultToken,
+        },
+      }
+    );
+  }
+}
+```
+
+### 暗号化のベストプラクティス
+
+#### 1. キーのローテーション
+
+**キーローテーションの実装:**
+
+```javascript
+// キーローテーションの実装
+class KeyRotation {
+  async rotateEncryptionKey() {
+    // 新しいキーを生成
+    const newKey = crypto.randomBytes(32);
+    
+    // 既存のデータを新しいキーで再暗号化
+    await this.reencryptAllData(newKey);
+    
+    // 新しいキーを保存
+    await this.saveEncryptionKey(newKey);
+    
+    // 古いキーを無効化（一定期間後に削除）
+    await this.markOldKeyAsDeprecated();
+  }
+  
+  async reencryptAllData(newKey) {
+    // すべての暗号化データを取得
+    const allData = await db.encryptedData.find({});
+    
+    for (const data of allData) {
+      // 古いキーで復号化
+      const decrypted = await this.decryptWithOldKey(data);
+      
+      // 新しいキーで暗号化
+      const reencrypted = await this.encryptWithNewKey(decrypted, newKey);
+      
+      // データベースを更新
+      await db.encryptedData.update(data.id, reencrypted);
+    }
+  }
+}
+```
+
+#### 2. 暗号化のパフォーマンス
+
+**暗号化のパフォーマンス最適化:**
+
+```javascript
+// 暗号化のパフォーマンス最適化
+class OptimizedEncryption {
+  constructor() {
+    // 暗号化キーをキャッシュ
+    this.keyCache = new Map();
+  }
+  
+  async getEncryptionKey(keyId) {
+    // キャッシュから取得
+    if (this.keyCache.has(keyId)) {
+      return this.keyCache.get(keyId);
+    }
+    
+    // KMSから取得
+    const key = await kms.getKey(keyId);
+    
+    // キャッシュに保存（1時間）
+    this.keyCache.set(keyId, key);
+    setTimeout(() => {
+      this.keyCache.delete(keyId);
+    }, 60 * 60 * 1000);
+    
+    return key;
+  }
+  
+  async encryptBatch(dataArray) {
+    // バッチで暗号化（並列処理）
+    const promises = dataArray.map(data => this.encrypt(data));
+    return await Promise.all(promises);
+  }
+}
+```
+
+### まとめ
+
+データ暗号化のポイント：
+
+- **転送中の暗号化**: TLS/SSL、適切な設定とセキュリティヘッダー
+- **保存時の暗号化**: AES-256-GCM、適切なIVと認証タグ
+- **キー管理**: AWS KMS、HashiCorp Vault、適切なキーローテーション
+- **パフォーマンス**: キーのキャッシュ、バッチ処理、並列処理
+
+適切な暗号化を実装することで、データの機密性を確保できます。
+

@@ -1,0 +1,398 @@
+---
+title: "認可の詳細"
+label: "認可の詳細"
+---
+
+## 認可の詳細
+
+認可は、認証されたユーザーが特定のリソースにアクセスする権限があるかを確認するプロセスです。適切な認可を実装することで、権限のないアクセスを防ぎます。
+
+### なぜ認可が重要なのか
+
+#### 認可の不備による問題
+
+**実際の事例:**
+
+2022年、あるSaaSサービスで認可の不備が発見されました：
+
+- **問題**: ユーザーIDを変更するだけで、他のユーザーのデータにアクセスできた
+- **結果**: 約1万人のユーザーデータが漏洩
+- **影響**: 
+  - 約3億円の損害賠償
+  - サービスの信頼失墜
+  - 法的責任が問われた
+
+**教訓:**
+- 認可の実装が不適切だと、重大なセキュリティホールになる
+- すべてのリソースアクセスで認可チェックが必要
+
+### 認可の方式
+
+#### 1. ロールベースアクセス制御（RBAC）
+
+**RBACの実装:**
+
+```javascript
+// ロールベースアクセス制御（RBAC）の実装
+class RBAC {
+  constructor() {
+    // ロールと権限の定義
+    this.roles = {
+      admin: ['read', 'write', 'delete', 'manage_users'],
+      editor: ['read', 'write'],
+      viewer: ['read'],
+    };
+  }
+  
+  async assignRole(userId, role) {
+    // ユーザーにロールを割り当て
+    await db.userRoles.create({
+      userId,
+      role,
+      assignedAt: new Date(),
+    });
+  }
+  
+  async getUserRoles(userId) {
+    // ユーザーのロールを取得
+    const userRoles = await db.userRoles.find({
+      userId,
+      revoked: false,
+    });
+    
+    return userRoles.map(ur => ur.role);
+  }
+  
+  async hasPermission(userId, permission) {
+    // ユーザーが権限を持っているか確認
+    const roles = await this.getUserRoles(userId);
+    
+    for (const role of roles) {
+      if (this.roles[role]?.includes(permission)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+  
+  async checkPermission(userId, permission) {
+    // 権限をチェック（権限がない場合は例外をスロー）
+    const hasPermission = await this.hasPermission(userId, permission);
+    
+    if (!hasPermission) {
+      throw new Error('Permission denied');
+    }
+  }
+}
+
+// 使用例
+const rbac = new RBAC();
+
+// 管理者のみがユーザーを削除できる
+async function deleteUser(currentUserId, targetUserId) {
+  // 権限をチェック
+  await rbac.checkPermission(currentUserId, 'delete');
+  
+  // ユーザーを削除
+  await db.users.delete(targetUserId);
+}
+```
+
+#### 2. リソースベースアクセス制御
+
+**リソースベースアクセス制御の実装:**
+
+```javascript
+// リソースベースアクセス制御の実装
+class ResourceBasedAccessControl {
+  async checkResourceAccess(userId, resourceType, resourceId, action) {
+    // リソースの所有者を確認
+    const resource = await this.getResource(resourceType, resourceId);
+    
+    if (!resource) {
+      throw new Error('Resource not found');
+    }
+    
+    // 所有者の場合は許可
+    if (resource.ownerId === userId) {
+      return true;
+    }
+    
+    // 共有設定を確認
+    const share = await db.shares.findOne({
+      resourceType,
+      resourceId,
+      userId,
+      action,
+      expiresAt: { $gt: new Date() },
+    });
+    
+    if (share) {
+      return true;
+    }
+    
+    // ロールベースの権限を確認
+    const hasRolePermission = await rbac.hasPermission(
+      userId,
+      `${action}_${resourceType}`
+    );
+    
+    return hasRolePermission;
+  }
+  
+  async getResource(resourceType, resourceId) {
+    // リソースを取得
+    switch (resourceType) {
+      case 'document':
+        return await db.documents.findById(resourceId);
+      case 'project':
+        return await db.projects.findById(resourceId);
+      default:
+        throw new Error('Unknown resource type');
+    }
+  }
+}
+
+// 使用例
+const resourceAC = new ResourceBasedAccessControl();
+
+// ドキュメントの編集権限をチェック
+async function updateDocument(userId, documentId, data) {
+  // リソースアクセスをチェック
+  const hasAccess = await resourceAC.checkResourceAccess(
+    userId,
+    'document',
+    documentId,
+    'write'
+  );
+  
+  if (!hasAccess) {
+    throw new Error('Access denied');
+  }
+  
+  // ドキュメントを更新
+  await db.documents.update(documentId, data);
+}
+```
+
+#### 3. 属性ベースアクセス制御（ABAC）
+
+**ABACの実装:**
+
+```javascript
+// 属性ベースアクセス制御（ABAC）の実装
+class ABAC {
+  async evaluatePolicy(user, resource, action, environment) {
+    // ポリシーを評価
+    const policies = await this.getPolicies();
+    
+    for (const policy of policies) {
+      // ポリシーの条件を評価
+      const matches = await this.evaluateConditions(policy, {
+        user,
+        resource,
+        action,
+        environment,
+      });
+      
+      if (matches) {
+        // ポリシーが一致した場合、許可または拒否を返す
+        return policy.effect === 'allow';
+      }
+    }
+    
+    // デフォルトは拒否
+    return false;
+  }
+  
+  async evaluateConditions(policy, context) {
+    // 条件を評価
+    for (const condition of policy.conditions) {
+      const result = await this.evaluateCondition(condition, context);
+      if (!result) {
+        return false;
+      }
+    }
+    
+    return true;
+  }
+  
+  async evaluateCondition(condition, context) {
+    // 条件を評価
+    switch (condition.operator) {
+      case 'equals':
+        return this.getValue(condition.left, context) === 
+               this.getValue(condition.right, context);
+      
+      case 'in':
+        return this.getValue(condition.left, context).includes(
+          this.getValue(condition.right, context)
+        );
+      
+      case 'greaterThan':
+        return this.getValue(condition.left, context) > 
+               this.getValue(condition.right, context);
+      
+      case 'timeBetween':
+        const now = new Date();
+        const start = new Date(condition.start);
+        const end = new Date(condition.end);
+        return now >= start && now <= end;
+      
+      default:
+        throw new Error(`Unknown operator: ${condition.operator}`);
+    }
+  }
+  
+  getValue(path, context) {
+    // パスから値を取得
+    const parts = path.split('.');
+    let value = context;
+    
+    for (const part of parts) {
+      value = value[part];
+      if (value === undefined) {
+        return undefined;
+      }
+    }
+    
+    return value;
+  }
+}
+
+// ポリシーの例
+const policies = [
+  {
+    effect: 'allow',
+    conditions: [
+      {
+        left: 'user.role',
+        operator: 'equals',
+        right: 'admin',
+      },
+    ],
+  },
+  {
+    effect: 'allow',
+    conditions: [
+      {
+        left: 'user.department',
+        operator: 'equals',
+        right: 'resource.department',
+      },
+      {
+        left: 'environment.time',
+        operator: 'timeBetween',
+        start: '09:00',
+        end: '18:00',
+      },
+    ],
+  },
+];
+```
+
+### 認可のベストプラクティス
+
+#### 1. 最小権限の原則
+
+**最小権限の原則の実装:**
+
+```javascript
+// 最小権限の原則の実装
+class LeastPrivilege {
+  async grantMinimalPermissions(userId, task) {
+    // タスクに必要な最小限の権限のみを付与
+    const requiredPermissions = this.getRequiredPermissions(task);
+    
+    // 一時的な権限を付与
+    await db.temporaryPermissions.create({
+      userId,
+      permissions: requiredPermissions,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),  // 1時間後
+      task,
+    });
+  }
+  
+  getRequiredPermissions(task) {
+    // タスクに必要な権限を返す
+    switch (task) {
+      case 'edit_document':
+        return ['read', 'write'];
+      case 'view_report':
+        return ['read'];
+      case 'delete_user':
+        return ['delete', 'manage_users'];
+      default:
+        return [];
+    }
+  }
+  
+  async revokeTemporaryPermissions(userId) {
+    // 一時的な権限を無効化
+    await db.temporaryPermissions.update(
+      { userId },
+      { revoked: true, revokedAt: new Date() }
+    );
+  }
+}
+```
+
+#### 2. 認可のキャッシュ
+
+**認可結果のキャッシュ:**
+
+```javascript
+// 認可結果のキャッシュ
+class CachedAuthorization {
+  async checkPermission(userId, permission, resourceId) {
+    // キャッシュキーを生成
+    const cacheKey = `auth:${userId}:${permission}:${resourceId}`;
+    
+    // キャッシュから取得
+    const cached = await redis.get(cacheKey);
+    if (cached !== null) {
+      return cached === 'true';
+    }
+    
+    // 認可をチェック
+    const hasPermission = await this.checkPermissionInternal(
+      userId,
+      permission,
+      resourceId
+    );
+    
+    // キャッシュに保存（5分間）
+    await redis.setex(cacheKey, 300, hasPermission ? 'true' : 'false');
+    
+    return hasPermission;
+  }
+  
+  async invalidateCache(userId, permission, resourceId) {
+    // キャッシュを無効化
+    const cacheKey = `auth:${userId}:${permission}:${resourceId}`;
+    await redis.del(cacheKey);
+  }
+  
+  async invalidateUserCache(userId) {
+    // ユーザーのすべてのキャッシュを無効化
+    const keys = await redis.keys(`auth:${userId}:*`);
+    if (keys.length > 0) {
+      await redis.del(...keys);
+    }
+  }
+}
+```
+
+### まとめ
+
+認可のポイント：
+
+- **RBAC**: ロールベースの権限管理、シンプルで理解しやすい
+- **リソースベース**: リソースの所有者や共有設定に基づく認可
+- **ABAC**: 属性ベースの柔軟な認可、複雑な条件に対応
+- **最小権限**: 必要な最小限の権限のみを付与
+- **キャッシュ**: 認可結果をキャッシュしてパフォーマンスを向上
+
+適切な認可を実装することで、権限のないアクセスを防ぎ、セキュリティを確保できます。
+

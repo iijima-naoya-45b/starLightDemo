@@ -176,6 +176,12 @@ export default defineConfig({
                     autogenerate: { directory: 'セキュリティガイド' },
                     badge: { text: '重要', variant: 'danger' },
                 },
+                {
+                    label: '認証ガイド',
+                    collapsed: true,
+                    autogenerate: { directory: '認証ガイド' },
+                    badge: { text: '重要', variant: 'success' },
+                },
             ],
         }),
         react(),

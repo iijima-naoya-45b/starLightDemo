@@ -1,0 +1,982 @@
+---
+title: "良いコードと悪いコードのパターン"
+label: "良いコードと悪いコードのパターン"
+---
+
+## 良いコードと悪いコードのパターン
+
+React開発において、良いコードと悪いコードのパターンを理解することで、保守性の高いコードを書くことができます。ここでは、よくある問題のあるコードと、それを改善した良いコードを対比して説明します。
+
+### なぜコードの品質が重要なのか
+
+#### 悪いコードによる問題
+
+**実際の事例:**
+
+あるプロジェクトで、コードの品質が低かったため、以下の問題が発生しました：
+
+- **バグの多発**: 予期しない動作が頻繁に発生
+- **開発速度の低下**: 新機能の追加に時間がかかる
+- **保守性の低下**: 既存コードの修正が困難
+- **チーム開発の困難**: コードレビューに時間がかかる
+
+**教訓:**
+- 良いコードパターンを理解し、実践することが重要
+- 悪いコードパターンを避けることで、問題を予防できる
+
+### パターン1: コンポーネントの分割
+
+#### 悪いコード: 巨大なコンポーネント
+
+**問題のある実装:**
+
+```typescript
+// 悪いコード: すべてを1つのコンポーネントに
+function UserDashboard() {
+  const [users, setUsers] = useState([]);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [settings, setSettings] = useState({});
+
+  // ユーザー一覧のロジック
+  useEffect(() => {
+    fetch('/api/users')
+      .then(res => res.json())
+      .then(data => setUsers(data));
+  }, []);
+
+  // 通知のロジック
+  useEffect(() => {
+    fetch('/api/notifications')
+      .then(res => res.json())
+      .then(data => setNotifications(data));
+  }, []);
+
+  // メッセージのロジック
+  useEffect(() => {
+    fetch('/api/messages')
+      .then(res => res.json())
+      .then(data => setMessages(data));
+  }, []);
+
+  // 設定のロジック
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(res => res.json())
+      .then(data => setSettings(data));
+  }, []);
+
+  return (
+    <div>
+      {/* ユーザー一覧 */}
+      <div>
+        <h2>ユーザー一覧</h2>
+        {users.map(user => (
+          <div key={user.id} onClick={() => setSelectedUser(user)}>
+            {user.name}
+          </div>
+        ))}
+      </div>
+
+      {/* 選択されたユーザーの詳細 */}
+      {selectedUser && (
+        <div>
+          <h2>ユーザー詳細</h2>
+          <p>名前: {selectedUser.name}</p>
+          <p>メール: {selectedUser.email}</p>
+        </div>
+      )}
+
+      {/* 通知 */}
+      <div>
+        <h2>通知</h2>
+        {notifications.map(notification => (
+          <div key={notification.id}>
+            {notification.message}
+          </div>
+        ))}
+      </div>
+
+      {/* メッセージ */}
+      <div>
+        <h2>メッセージ</h2>
+        {messages.map(message => (
+          <div key={message.id}>
+            {message.text}
+          </div>
+        ))}
+      </div>
+
+      {/* 設定 */}
+      <div>
+        <h2>設定</h2>
+        <input
+          value={settings.theme}
+          onChange={(e) => setSettings({ ...settings, theme: e.target.value })}
+        />
+      </div>
+    </div>
+  );
+}
+
+// 問題点:
+// - 1つのコンポーネントが大きすぎる（500行以上）
+// - 複数の責任を持っている（ユーザー管理、通知、メッセージ、設定）
+// - テストが困難
+// - 再利用が困難
+// - パフォーマンスの問題（不要な再レンダリング）
+```
+
+**なぜ悪いのか:**
+
+- **単一責任の原則違反**: 1つのコンポーネントが複数の責任を持っている
+- **再利用性の欠如**: 個別の機能を他の場所で使えない
+- **テストの困難**: 巨大なコンポーネントはテストが難しい
+- **パフォーマンス**: 1つの状態変更で全体が再レンダリングされる
+
+#### 良いコード: 適切に分割されたコンポーネント
+
+**改善された実装:**
+
+```typescript
+// 良いコード: 適切に分割されたコンポーネント
+
+// 1. ユーザー一覧コンポーネント
+function UserList({ onSelectUser }: { onSelectUser: (user: User) => void }) {
+  const { users, isLoading, error } = useUsers();
+
+  if (isLoading) return <div>読み込み中...</div>;
+  if (error) return <div>エラー: {error.message}</div>;
+
+  return (
+    <div>
+      <h2>ユーザー一覧</h2>
+      {users.map(user => (
+        <UserListItem
+          key={user.id}
+          user={user}
+          onClick={() => onSelectUser(user)}
+        />
+      ))}
+    </div>
+  );
+}
+
+// 2. ユーザー詳細コンポーネント
+function UserDetail({ user }: { user: User }) {
+  return (
+    <div>
+      <h2>ユーザー詳細</h2>
+      <p>名前: {user.name}</p>
+      <p>メール: {user.email}</p>
+    </div>
+  );
+}
+
+// 3. 通知コンポーネント
+function NotificationList() {
+  const { notifications } = useNotifications();
+
+  return (
+    <div>
+      <h2>通知</h2>
+      {notifications.map(notification => (
+        <NotificationItem key={notification.id} notification={notification} />
+      ))}
+    </div>
+  );
+}
+
+// 4. メッセージコンポーネント
+function MessageList() {
+  const { messages } = useMessages();
+
+  return (
+    <div>
+      <h2>メッセージ</h2>
+      {messages.map(message => (
+        <MessageItem key={message.id} message={message} />
+      ))}
+    </div>
+  );
+}
+
+// 5. 設定コンポーネント
+function SettingsPanel() {
+  const { settings, updateSettings } = useSettings();
+
+  return (
+    <div>
+      <h2>設定</h2>
+      <input
+        value={settings.theme}
+        onChange={(e) => updateSettings({ theme: e.target.value })}
+      />
+    </div>
+  );
+}
+
+// 6. メインコンポーネント（コンポジション）
+function UserDashboard() {
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+
+  return (
+    <div className="dashboard">
+      <div className="dashboard-sidebar">
+        <UserList onSelectUser={setSelectedUser} />
+        <NotificationList />
+      </div>
+      <div className="dashboard-main">
+        {selectedUser && <UserDetail user={selectedUser} />}
+        <MessageList />
+        <SettingsPanel />
+      </div>
+    </div>
+  );
+}
+
+// メリット:
+// - 各コンポーネントが単一の責任を持つ
+// - 再利用可能
+// - テストが容易
+// - パフォーマンスが向上（必要な部分のみ再レンダリング）
+```
+
+### パターン2: 状態管理
+
+#### 悪いコード: 不適切な状態管理
+
+**問題のある実装:**
+
+```typescript
+// 悪いコード: 状態が散在している
+function TodoApp() {
+  const [todos, setTodos] = useState([]);
+  const [filter, setFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState('asc');
+  const [selectedTodo, setSelectedTodo] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // 複雑なロジックがコンポーネント内に
+  const filteredTodos = todos
+    .filter(todo => {
+      if (filter === 'completed') return todo.completed;
+      if (filter === 'active') return !todo.completed;
+      return true;
+    })
+    .filter(todo => todo.title.includes(searchQuery))
+    .sort((a, b) => {
+      if (sortOrder === 'asc') return a.title.localeCompare(b.title);
+      return b.title.localeCompare(a.title);
+    });
+
+  const handleAddTodo = async (title: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/todos', {
+        method: 'POST',
+        body: JSON.stringify({ title }),
+      });
+      const newTodo = await response.json();
+      setTodos([...todos, newTodo]);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleToggleTodo = async (id: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/todos/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ completed: true }),
+      });
+      const updatedTodo = await response.json();
+      setTodos(todos.map(todo => 
+        todo.id === id ? updatedTodo : todo
+      ));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 問題点:
+  // - 状態が多すぎる（7つの状態）
+  // - ロジックがコンポーネント内に散在
+  // - 重複したエラーハンドリング
+  // - テストが困難
+  // - 再利用が困難
+```
+
+**なぜ悪いのか:**
+
+- **状態の散在**: 関連する状態がバラバラに管理されている
+- **ロジックの重複**: 同じようなエラーハンドリングが繰り返される
+- **テストの困難**: コンポーネントとロジックが密結合している
+- **再利用性の欠如**: ロジックを他のコンポーネントで使えない
+
+#### 良いコード: 適切な状態管理
+
+**改善された実装:**
+
+```typescript
+// 良いコード: カスタムフックで状態管理を分離
+
+// 1. カスタムフックで状態管理を分離
+function useTodos() {
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const addTodo = async (title: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/todos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      });
+      if (!response.ok) throw new Error('Failed to add todo');
+      const newTodo = await response.json();
+      setTodos(prev => [...prev, newTodo]);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Unknown error'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const toggleTodo = async (id: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const todo = todos.find(t => t.id === id);
+      if (!todo) throw new Error('Todo not found');
+      
+      const response = await fetch(`/api/todos/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed: !todo.completed }),
+      });
+      if (!response.ok) throw new Error('Failed to update todo');
+      const updatedTodo = await response.json();
+      setTodos(prev => prev.map(t => t.id === id ? updatedTodo : t));
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Unknown error'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return {
+    todos,
+    isLoading,
+    error,
+    addTodo,
+    toggleTodo,
+  };
+}
+
+// 2. フィルタリングとソートのロジックを分離
+function useFilteredTodos(
+  todos: Todo[],
+  filter: 'all' | 'active' | 'completed',
+  searchQuery: string,
+  sortOrder: 'asc' | 'desc'
+) {
+  return useMemo(() => {
+    return todos
+      .filter(todo => {
+        if (filter === 'completed') return todo.completed;
+        if (filter === 'active') return !todo.completed;
+        return true;
+      })
+      .filter(todo => todo.title.toLowerCase().includes(searchQuery.toLowerCase()))
+      .sort((a, b) => {
+        if (sortOrder === 'asc') return a.title.localeCompare(b.title);
+        return b.title.localeCompare(a.title);
+      });
+  }, [todos, filter, searchQuery, sortOrder]);
+}
+
+// 3. コンポーネントはシンプルに
+function TodoApp() {
+  const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [selectedTodo, setSelectedTodo] = useState<Todo | null>(null);
+
+  const { todos, isLoading, error, addTodo, toggleTodo } = useTodos();
+  const filteredTodos = useFilteredTodos(todos, filter, searchQuery, sortOrder);
+
+  if (error) {
+    return <ErrorDisplay error={error} />;
+  }
+
+  return (
+    <div className="todo-app">
+      <TodoFilters
+        filter={filter}
+        searchQuery={searchQuery}
+        sortOrder={sortOrder}
+        onFilterChange={setFilter}
+        onSearchChange={setSearchQuery}
+        onSortChange={setSortOrder}
+      />
+      <TodoList
+        todos={filteredTodos}
+        isLoading={isLoading}
+        onToggleTodo={toggleTodo}
+        onSelectTodo={setSelectedTodo}
+      />
+      {selectedTodo && <TodoDetail todo={selectedTodo} />}
+      <TodoForm onSubmit={addTodo} />
+    </div>
+  );
+}
+
+// メリット:
+// - 状態管理が分離されている
+// - ロジックが再利用可能
+// - テストが容易
+// - コンポーネントがシンプル
+```
+
+### パターン3: 副作用の管理
+
+#### 悪いコード: 不適切なuseEffectの使用
+
+**問題のある実装:**
+
+```typescript
+// 悪いコード: useEffectの依存関係が不適切
+function UserProfile({ userId }: { userId: string }) {
+  const [user, setUser] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [comments, setComments] = useState([]);
+
+  // 問題1: 依存関係が不足している
+  useEffect(() => {
+    fetch(`/api/users/${userId}`)
+      .then(res => res.json())
+      .then(data => setUser(data));
+  }, []); // userIdが変更されても再実行されない
+
+  // 問題2: 無限ループの可能性
+  useEffect(() => {
+    fetch(`/api/posts?userId=${userId}`)
+      .then(res => res.json())
+      .then(data => setPosts(data));
+  }, [userId, posts]); // postsが変更されるたびに再実行される
+
+  // 問題3: クリーンアップがない
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetch(`/api/comments?userId=${userId}`)
+        .then(res => res.json())
+        .then(data => setComments(data));
+    }, 1000);
+    // クリーンアップがないため、メモリリークの可能性
+  }, [userId]);
+
+  // 問題点:
+  // - 依存関係が不適切
+  // - 無限ループの可能性
+  // - メモリリークの可能性
+  // - 不要な再レンダリング
+```
+
+**なぜ悪いのか:**
+
+- **依存関係の不足**: 必要な依存関係が不足していると、古いデータが表示される
+- **無限ループ**: 依存関係に状態を含めると、無限ループが発生する可能性がある
+- **メモリリーク**: クリーンアップがないと、メモリリークが発生する可能性がある
+
+#### 良いコード: 適切なuseEffectの使用
+
+**改善された実装:**
+
+```typescript
+// 良いコード: 適切なuseEffectの使用
+
+// 1. カスタムフックでデータフェッチングを分離
+function useUser(userId: string) {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchUser() {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(`/api/users/${userId}`);
+        if (!response.ok) throw new Error('Failed to fetch user');
+        const data = await response.json();
+        if (!cancelled) {
+          setUser(data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err : new Error('Unknown error'));
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    fetchUser();
+
+    // クリーンアップ: コンポーネントがアンマウントされた場合、状態を更新しない
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]); // userIdが変更された場合のみ再実行
+
+  return { user, isLoading, error };
+}
+
+// 2. ポーリングの適切な実装
+function useComments(userId: string, enabled: boolean = true) {
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    let cancelled = false;
+
+    async function fetchComments() {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(`/api/comments?userId=${userId}`);
+        if (!response.ok) throw new Error('Failed to fetch comments');
+        const data = await response.json();
+        if (!cancelled) {
+          setComments(data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err : new Error('Unknown error'));
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    fetchComments();
+
+    // ポーリング: 5秒ごとに更新
+    const interval = setInterval(() => {
+      if (!cancelled) {
+        fetchComments();
+      }
+    }, 5000);
+
+    // クリーンアップ: インターバルをクリア
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [userId, enabled]); // userIdまたはenabledが変更された場合のみ再実行
+
+  return { comments, isLoading, error };
+}
+
+// 3. コンポーネントはシンプルに
+function UserProfile({ userId }: { userId: string }) {
+  const { user, isLoading: userLoading, error: userError } = useUser(userId);
+  const { comments, isLoading: commentsLoading } = useComments(userId);
+
+  if (userLoading) return <LoadingSpinner />;
+  if (userError) return <ErrorDisplay error={userError} />;
+  if (!user) return <div>ユーザーが見つかりません</div>;
+
+  return (
+    <div className="user-profile">
+      <UserInfo user={user} />
+      <CommentsList
+        comments={comments}
+        isLoading={commentsLoading}
+      />
+    </div>
+  );
+}
+
+// メリット:
+// - 依存関係が適切
+// - クリーンアップが実装されている
+// - メモリリークがない
+// - 不要な再レンダリングがない
+```
+
+### パターン4: パフォーマンス最適化
+
+#### 悪いコード: 不要な再レンダリング
+
+**問題のある実装:**
+
+```typescript
+// 悪いコード: 不要な再レンダリング
+function ProductList({ products }: { products: Product[] }) {
+  const [filter, setFilter] = useState('all');
+
+  // 問題: 毎回再計算される
+  const filteredProducts = products.filter(product => {
+    if (filter === 'all') return true;
+    if (filter === 'inStock') return product.inStock;
+    if (filter === 'outOfStock') return !product.inStock;
+    return true;
+  });
+
+  // 問題: 毎回新しい関数が作成される
+  const handleProductClick = (product: Product) => {
+    console.log('Product clicked:', product);
+  };
+
+  return (
+    <div>
+      <FilterButtons filter={filter} onFilterChange={setFilter} />
+      {filteredProducts.map(product => (
+        <ProductItem
+          key={product.id}
+          product={product}
+          onClick={handleProductClick} // 毎回新しい関数が渡される
+        />
+      ))}
+    </div>
+  );
+}
+
+// 問題: ProductItemが毎回再レンダリングされる
+function ProductItem({ product, onClick }: { product: Product; onClick: (product: Product) => void }) {
+  // 高価な計算
+  const discountedPrice = calculateDiscount(product.price, product.discount);
+  
+  return (
+    <div onClick={() => onClick(product)}>
+      <h3>{product.name}</h3>
+      <p>価格: {discountedPrice}円</p>
+    </div>
+  );
+}
+
+// 問題点:
+// - 不要な再レンダリング
+// - 毎回新しい関数が作成される
+// - 高価な計算が毎回実行される
+```
+
+**なぜ悪いのか:**
+
+- **不要な再レンダリング**: propsが変更されていないのに再レンダリングされる
+- **パフォーマンスの低下**: 高価な計算が毎回実行される
+- **メモリの無駄**: 毎回新しい関数が作成される
+
+#### 良いコード: 適切な最適化
+
+**改善された実装:**
+
+```typescript
+// 良いコード: 適切な最適化
+
+// 1. useMemoで計算結果をメモ化
+function ProductList({ products }: { products: Product[] }) {
+  const [filter, setFilter] = useState('all');
+
+  // メモ化: filterまたはproductsが変更された場合のみ再計算
+  const filteredProducts = useMemo(() => {
+    return products.filter(product => {
+      if (filter === 'all') return true;
+      if (filter === 'inStock') return product.inStock;
+      if (filter === 'outOfStock') return !product.inStock;
+      return true;
+    });
+  }, [products, filter]);
+
+  // useCallbackで関数をメモ化
+  const handleProductClick = useCallback((product: Product) => {
+    console.log('Product clicked:', product);
+  }, []); // 依存関係がないため、関数は1回だけ作成される
+
+  return (
+    <div>
+      <FilterButtons filter={filter} onFilterChange={setFilter} />
+      {filteredProducts.map(product => (
+        <ProductItem
+          key={product.id}
+          product={product}
+          onClick={handleProductClick}
+        />
+      ))}
+    </div>
+  );
+}
+
+// 2. React.memoでコンポーネントをメモ化
+const ProductItem = React.memo(function ProductItem({
+  product,
+  onClick,
+}: {
+  product: Product;
+  onClick: (product: Product) => void;
+}) {
+  // useMemoで高価な計算をメモ化
+  const discountedPrice = useMemo(
+    () => calculateDiscount(product.price, product.discount),
+    [product.price, product.discount]
+  );
+
+  const handleClick = useCallback(() => {
+    onClick(product);
+  }, [product, onClick]);
+
+  return (
+    <div onClick={handleClick}>
+      <h3>{product.name}</h3>
+      <p>価格: {discountedPrice}円</p>
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  // カスタム比較関数: product.idが同じで、他のプロパティが変更されていない場合、再レンダリングをスキップ
+  return (
+    prevProps.product.id === nextProps.product.id &&
+    prevProps.product.name === nextProps.product.name &&
+    prevProps.product.price === nextProps.product.price &&
+    prevProps.product.discount === nextProps.product.discount
+  );
+});
+
+// メリット:
+// - 不要な再レンダリングを防止
+// - パフォーマンスが向上
+// - メモリ効率が向上
+```
+
+### パターン5: エラーハンドリング
+
+#### 悪いコード: 不適切なエラーハンドリング
+
+**問題のある実装:**
+
+```typescript
+// 悪いコード: エラーハンドリングが不適切
+function UserList() {
+  const [users, setUsers] = useState([]);
+
+  useEffect(() => {
+    // 問題: エラーハンドリングがない
+    fetch('/api/users')
+      .then(res => res.json())
+      .then(data => setUsers(data));
+  }, []);
+
+  // 問題: エラー状態を管理していない
+  return (
+    <div>
+      {users.map(user => (
+        <div key={user.id}>{user.name}</div>
+      ))}
+    </div>
+  );
+}
+
+// 問題点:
+// - エラーハンドリングがない
+// - ローディング状態を管理していない
+// - ユーザーにエラーが伝わらない
+```
+
+**なぜ悪いのか:**
+
+- **エラーが無視される**: エラーが発生してもユーザーに伝わらない
+- **ローディング状態がない**: データ取得中かどうかがわからない
+- **ユーザー体験の低下**: エラーが発生しても何も表示されない
+
+#### 良いコード: 適切なエラーハンドリング
+
+**改善された実装:**
+
+```typescript
+// 良いコード: 適切なエラーハンドリング
+
+// 1. エラーバウンダリーコンポーネント
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // エラーログを送信
+    console.error('Error caught by boundary:', error, errorInfo);
+    // エラー報告サービスに送信（Sentryなど）
+    // errorReportingService.captureException(error, { extra: errorInfo });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="error-boundary">
+          <h2>エラーが発生しました</h2>
+          <p>{this.state.error?.message}</p>
+          <button onClick={() => this.setState({ hasError: false, error: null })}>
+            再試行
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// 2. カスタムフックでエラーハンドリング
+function useUsers() {
+  const [users, setUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchUsers() {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetch('/api/users');
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        if (!cancelled) {
+          setUsers(data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const error = err instanceof Error ? err : new Error('Unknown error');
+          setError(error);
+          // エラーログを送信
+          console.error('Failed to fetch users:', error);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    fetchUsers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const retry = useCallback(() => {
+    setError(null);
+    setIsLoading(true);
+    // 再試行ロジック
+  }, []);
+
+  return { users, isLoading, error, retry };
+}
+
+// 3. コンポーネントでエラーを適切に表示
+function UserList() {
+  const { users, isLoading, error, retry } = useUsers();
+
+  if (isLoading) {
+    return <LoadingSpinner />;
+  }
+
+  if (error) {
+    return (
+      <ErrorDisplay
+        error={error}
+        onRetry={retry}
+        message="ユーザー一覧の取得に失敗しました"
+      />
+    );
+  }
+
+  if (users.length === 0) {
+    return <EmptyState message="ユーザーがありません" />;
+  }
+
+  return (
+    <div>
+      {users.map(user => (
+        <UserItem key={user.id} user={user} />
+      ))}
+    </div>
+  );
+}
+
+// 4. エラー表示コンポーネント
+function ErrorDisplay({
+  error,
+  onRetry,
+  message,
+}: {
+  error: Error;
+  onRetry: () => void;
+  message: string;
+}) {
+  return (
+    <div className="error-display">
+      <h3>エラー</h3>
+      <p>{message}</p>
+      <details>
+        <summary>詳細</summary>
+        <pre>{error.message}</pre>
+      </details>
+      <button onClick={onRetry}>再試行</button>
+    </div>
+  );
+}
+
+// メリット:
+// - エラーが適切に処理される
+// - ユーザーにエラーが伝わる
+// - ローディング状態が管理されている
+// - 再試行機能がある
+```
+
+### まとめ
+
+良いコードと悪いコードのパターン：
+
+- **コンポーネントの分割**: 単一責任の原則、適切な分割
+- **状態管理**: カスタムフックで分離、ロジックの再利用
+- **副作用の管理**: 適切な依存関係、クリーンアップの実装
+- **パフォーマンス最適化**: useMemo、useCallback、React.memoの適切な使用
+- **エラーハンドリング**: エラーバウンダリー、適切なエラー表示
+
+良いコードパターンを理解し、実践することで、保守性の高いReactアプリケーションを構築できます。
+
