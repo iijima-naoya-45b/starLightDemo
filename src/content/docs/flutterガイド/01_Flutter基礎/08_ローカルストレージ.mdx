@@ -1,0 +1,367 @@
+---
+title: ローカルストレージ
+sidebar:
+    label: ローカルストレージ
+---
+
+# Flutterローカルストレージ完全ガイド
+
+Flutterアプリでデータをローカルに保存する方法を、用途別に詳しく解説します。
+
+## 1. SharedPreferences（キー・バリューストレージ）
+
+### 用途
+- 設定値の保存
+- ユーザー設定の保存
+- 小さなデータの保存
+
+### pubspec.yamlへの追加
+
+```yaml
+dependencies:
+  shared_preferences: ^2.2.0
+```
+
+### 基本的な使用
+
+```dart
+import 'package:shared_preferences/shared_preferences.dart';
+
+class PreferencesService {
+  static const String _keyUsername = 'username';
+  static const String _keyIsLoggedIn = 'is_logged_in';
+
+  // 文字列の保存
+  Future<void> saveUsername(String username) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyUsername, username);
+  }
+
+  // 文字列の取得
+  Future<String?> getUsername() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyUsername);
+  }
+
+  // ブール値の保存
+  Future<void> saveIsLoggedIn(bool isLoggedIn) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyIsLoggedIn, isLoggedIn);
+  }
+
+  // ブール値の取得
+  Future<bool> getIsLoggedIn() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyIsLoggedIn) ?? false;
+  }
+
+  // データの削除
+  Future<void> clear() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+  }
+}
+```
+
+## 2. Hive（NoSQLデータベース）
+
+### 用途
+- 構造化データの保存
+- 高速な読み書きが必要な場合
+- オフライン対応
+
+### pubspec.yamlへの追加
+
+```yaml
+dependencies:
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+dev_dependencies:
+  hive_generator: ^2.0.0
+  build_runner: ^2.4.0
+```
+
+### モデルクラスの定義
+
+```dart
+import 'package:hive/hive.dart';
+
+part 'user.g.dart';
+
+@HiveType(typeId: 0)
+class User extends HiveObject {
+  @HiveField(0)
+  String id;
+
+  @HiveField(1)
+  String name;
+
+  @HiveField(2)
+  String email;
+
+  User({
+    required this.id,
+    required this.name,
+    required this.email,
+  });
+}
+```
+
+### モデルの生成
+
+```bash
+flutter pub run build_runner build
+```
+
+### 基本的な使用
+
+```dart
+import 'package:hive_flutter/hive_flutter.dart';
+
+class HiveService {
+  static const String _boxName = 'userBox';
+
+  // 初期化
+  static Future<void> init() async {
+    await Hive.initFlutter();
+    Hive.registerAdapter(UserAdapter());
+    await Hive.openBox<User>(_boxName);
+  }
+
+  // データの保存
+  static Future<void> saveUser(User user) async {
+    final box = Hive.box<User>(_boxName);
+    await box.put(user.id, user);
+  }
+
+  // データの取得
+  static User? getUser(String id) {
+    final box = Hive.box<User>(_boxName);
+    return box.get(id);
+  }
+
+  // すべてのデータを取得
+  static List<User> getAllUsers() {
+    final box = Hive.box<User>(_boxName);
+    return box.values.toList();
+  }
+
+  // データの削除
+  static Future<void> deleteUser(String id) async {
+    final box = Hive.box<User>(_boxName);
+    await box.delete(id);
+  }
+}
+```
+
+## 3. Drift（SQLiteラッパー）
+
+### 用途
+- リレーショナルデータの保存
+- 複雑なクエリが必要な場合
+- SQLの知識を活用したい場合
+
+### pubspec.yamlへの追加
+
+```yaml
+dependencies:
+  drift: ^2.14.0
+  sqlite3_flutter_libs: ^0.5.18
+  path_provider: ^2.1.0
+  path: ^1.8.3
+
+dev_dependencies:
+  drift_dev: ^2.14.0
+  build_runner: ^2.4.0
+```
+
+### データベースの定義
+
+```dart
+import 'package:drift/drift.dart';
+import 'package:drift/native.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
+
+part 'database.g.dart';
+
+class Users extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get name => text()();
+  TextColumn get email => text()();
+}
+
+@DriftDatabase(tables: [Users])
+class AppDatabase extends _$AppDatabase {
+  AppDatabase() : super(_openConnection());
+
+  @override
+  int get schemaVersion => 1;
+}
+
+LazyDatabase _openConnection() {
+  return LazyDatabase(() async {
+    final dbFolder = await getApplicationDocumentsDirectory();
+    final file = File(p.join(dbFolder.path, 'app.db'));
+    return NativeDatabase(file);
+  });
+}
+```
+
+### データベースの生成
+
+```bash
+flutter pub run build_runner build
+```
+
+### 基本的な使用
+
+```dart
+class DatabaseService {
+  late AppDatabase _db;
+
+  Future<void> init() async {
+    _db = AppDatabase();
+  }
+
+  // データの挿入
+  Future<void> insertUser(String name, String email) async {
+    await _db.users.insert(
+      UsersCompanion(
+        name: Value(name),
+        email: Value(email),
+      ),
+    );
+  }
+
+  // データの取得
+  Future<List<User>> getAllUsers() async {
+    return await _db.select(_db.users).get();
+  }
+
+  // クエリの実行
+  Future<User?> getUserById(int id) async {
+    return await (_db.select(_db.users)
+          ..where((u) => u.id.equals(id)))
+        .getSingleOrNull();
+  }
+
+  // データの更新
+  Future<void> updateUser(int id, String name) async {
+    await (_db.update(_db.users)
+          ..where((u) => u.id.equals(id)))
+        .write(UsersCompanion(name: Value(name)));
+  }
+
+  // データの削除
+  Future<void> deleteUser(int id) async {
+    await (_db.delete(_db.users)
+          ..where((u) => u.id.equals(id)))
+        .go();
+  }
+}
+```
+
+## 4. 実務での使い分け
+
+### 選択基準
+
+| 用途 | 推奨ライブラリ | 理由 |
+|------|---------------|------|
+| 設定値の保存 | SharedPreferences | シンプルで軽量 |
+| 構造化データ（小規模） | Hive | 高速で使いやすい |
+| 構造化データ（大規模） | Drift | リレーション対応、クエリが柔軟 |
+| オフライン対応 | Hive/Drift | ローカルDBとして機能 |
+
+### パターン1: ユーザー設定の保存
+
+```dart
+// SharedPreferencesを使用
+class SettingsService {
+  static const String _keyTheme = 'theme';
+  static const String _keyLanguage = 'language';
+
+  Future<void> saveTheme(String theme) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyTheme, theme);
+  }
+
+  Future<String> getTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyTheme) ?? 'light';
+  }
+}
+```
+
+### パターン2: キャッシュデータの保存
+
+```dart
+// Hiveを使用
+class CacheService {
+  static const String _boxName = 'cacheBox';
+
+  static Future<void> init() async {
+    await Hive.initFlutter();
+    await Hive.openBox(_boxName);
+  }
+
+  static Future<void> saveCache(String key, dynamic value) async {
+    final box = Hive.box(_boxName);
+    await box.put(key, value);
+  }
+
+  static dynamic getCache(String key) {
+    final box = Hive.box(_boxName);
+    return box.get(key);
+  }
+}
+```
+
+## 5. よくある問題と解決策
+
+### 問題1: SharedPreferencesが非同期
+
+**解決策**: `await`を必ず使用します。
+
+```dart
+// 悪い例
+SharedPreferences.getInstance().then((prefs) {
+  prefs.setString('key', 'value');
+});
+
+// 良い例
+final prefs = await SharedPreferences.getInstance();
+await prefs.setString('key', 'value');
+```
+
+### 問題2: Hiveのアダプターが登録されていない
+
+**解決策**: 初期化時にアダプターを登録します。
+
+```dart
+await Hive.initFlutter();
+Hive.registerAdapter(UserAdapter()); // 必ず登録
+```
+
+### 問題3: Driftのスキーマ変更
+
+**解決策**: `schemaVersion`を更新し、マイグレーションを実装します。
+
+```dart
+@override
+int get schemaVersion => 2; // バージョンを更新
+
+@override
+MigrationStrategy get migration {
+  return MigrationStrategy(
+    onUpgrade: (migrator, from, to) async {
+      if (from < 2) {
+        // マイグレーション処理
+      }
+    },
+  );
+}
+```
+
+これで、Flutterでのローカルストレージの実装方法を理解できるようになりました。

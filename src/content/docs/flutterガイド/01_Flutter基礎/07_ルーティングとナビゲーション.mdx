@@ -1,0 +1,298 @@
+---
+title: ルーティングとナビゲーション
+sidebar:
+    label: ルーティングとナビゲーション
+---
+
+# Flutterルーティングとナビゲーション完全ガイド
+
+Flutterでの画面遷移とルーティングの実装方法を、基本的な方法から高度なパターンまで詳しく解説します。
+
+## 1. 基本的なナビゲーション
+
+### Navigator.push/pop
+
+```dart
+// 画面遷移
+Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (context) => SecondScreen(),
+  ),
+);
+
+// 前の画面に戻る
+Navigator.pop(context);
+
+// 戻り値を返す
+Navigator.pop(context, '戻り値');
+```
+
+### 名前付きルーティング
+
+```dart
+// MaterialAppでルートを定義
+MaterialApp(
+  initialRoute: '/',
+  routes: {
+    '/': (context) => HomeScreen(),
+    '/second': (context) => SecondScreen(),
+    '/third': (context) => ThirdScreen(),
+  },
+);
+
+// 画面遷移
+Navigator.pushNamed(context, '/second');
+
+// 戻り値を受け取る
+final result = await Navigator.pushNamed(context, '/second');
+```
+
+## 2. go_routerを使用したルーティング
+
+### pubspec.yamlへの追加
+
+```yaml
+dependencies:
+  go_router: ^12.0.0
+```
+
+### 基本的な設定
+
+```dart
+import 'package:go_router/go_router.dart';
+
+final router = GoRouter(
+  initialLocation: '/',
+  routes: [
+    GoRoute(
+      path: '/',
+      builder: (context, state) => HomeScreen(),
+    ),
+    GoRoute(
+      path: '/second',
+      builder: (context, state) => SecondScreen(),
+    ),
+    GoRoute(
+      path: '/user/:id',
+      builder: (context, state) {
+        final id = state.pathParameters['id']!;
+        return UserScreen(userId: id);
+      },
+    ),
+  ],
+);
+
+// main.dart
+void main() {
+  runApp(MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp.router(
+      routerConfig: router,
+    );
+  }
+}
+```
+
+### 画面遷移
+
+```dart
+// 画面遷移
+context.go('/second');
+
+// 戻る
+context.pop();
+
+// 戻り値を返す
+context.pop('戻り値');
+```
+
+### クエリパラメータ
+
+```dart
+GoRoute(
+  path: '/search',
+  builder: (context, state) {
+    final query = state.uri.queryParameters['q'] ?? '';
+    return SearchScreen(query: query);
+  },
+);
+
+// 使用例
+context.go('/search?q=flutter');
+```
+
+## 3. ネストされたルーティング
+
+```dart
+final router = GoRouter(
+  routes: [
+    GoRoute(
+      path: '/',
+      builder: (context, state) => HomeScreen(),
+      routes: [
+        GoRoute(
+          path: 'profile',
+          builder: (context, state) => ProfileScreen(),
+          routes: [
+            GoRoute(
+              path: 'settings',
+              builder: (context, state) => SettingsScreen(),
+            ),
+          ],
+        ),
+      ],
+    ),
+  ],
+);
+```
+
+## 4. リダイレクトとガード
+
+### 認証ガード
+
+```dart
+final router = GoRouter(
+  redirect: (context, state) {
+    final isLoggedIn = AuthService.isLoggedIn();
+    final isGoingToLogin = state.matchedLocation == '/login';
+
+    if (!isLoggedIn && !isGoingToLogin) {
+      return '/login';
+    }
+    if (isLoggedIn && isGoingToLogin) {
+      return '/';
+    }
+    return null;
+  },
+  routes: [
+    GoRoute(
+      path: '/login',
+      builder: (context, state) => LoginScreen(),
+    ),
+    GoRoute(
+      path: '/',
+      builder: (context, state) => HomeScreen(),
+    ),
+  ],
+);
+```
+
+## 5. 実務でのルーティングパターン
+
+### パターン1: タブナビゲーション
+
+```dart
+final router = GoRouter(
+  routes: [
+    ShellRoute(
+      builder: (context, state, child) => MainScreen(child: child),
+      routes: [
+        GoRoute(
+          path: '/home',
+          builder: (context, state) => HomeTab(),
+        ),
+        GoRoute(
+          path: '/search',
+          builder: (context, state) => SearchTab(),
+        ),
+        GoRoute(
+          path: '/profile',
+          builder: (context, state) => ProfileTab(),
+        ),
+      ],
+    ),
+  ],
+);
+```
+
+### パターン2: モーダル表示
+
+```dart
+// モーダルとして表示
+showModalBottomSheet(
+  context: context,
+  builder: (context) => ModalScreen(),
+);
+
+// 全画面モーダル
+Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (context) => FullScreenModal(),
+    fullscreenDialog: true,
+  ),
+);
+```
+
+### パターン3: カスタムページ遷移
+
+```dart
+class CustomPageRoute extends PageRouteBuilder {
+  final Widget child;
+
+  CustomPageRoute({required this.child})
+      : super(
+          transitionDuration: Duration(milliseconds: 300),
+          pageBuilder: (context, animation, secondaryAnimation) => child,
+        );
+
+  @override
+  Widget buildTransitions(
+    context,
+    animation,
+    secondaryAnimation,
+    child,
+  ) {
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: Offset(1.0, 0.0),
+        end: Offset.zero,
+      ).animate(animation),
+      child: child,
+    );
+  }
+}
+
+// 使用例
+Navigator.push(
+  context,
+  CustomPageRoute(child: SecondScreen()),
+);
+```
+
+## 6. よくある問題と解決策
+
+### 問題1: 戻るボタンが動作しない
+
+**解決策**: `WillPopScope`または`PopScope`を使用します。
+
+```dart
+PopScope(
+  canPop: false,
+  onPopInvoked: (didPop) {
+    if (!didPop) {
+      // カスタム処理
+      Navigator.pop(context);
+    }
+  },
+  child: Scaffold(...),
+)
+```
+
+### 問題2: ルートが見つからない
+
+**解決策**: ルート定義を確認し、パスが正しいか確認します。
+
+```dart
+// デバッグモードでルート情報を表示
+if (kDebugMode) {
+  print('Current route: ${GoRouter.of(context).routerDelegate.currentConfiguration}');
+}
+```
+
+これで、Flutterでのルーティングとナビゲーションの実装方法を理解できるようになりました。

@@ -1,0 +1,288 @@
+---
+title: Dockerネットワーク完全ガイド
+sidebar:
+    label: Dockerネットワーク
+---
+
+# Dockerネットワーク完全ガイド
+
+Dockerのネットワーク機能を、実務で使える実装例とともに詳しく解説します。
+
+## 1. Dockerネットワークとは
+
+### ネットワークの役割
+
+Dockerネットワークは、コンテナ間の通信を可能にし、コンテナを外部からアクセス可能にします。
+
+```
+コンテナ1
+   ↓（ネットワーク）
+コンテナ2
+   ↓（ネットワーク）
+外部（インターネット）
+```
+
+### なぜネットワークが必要か
+
+**問題のある構成（ネットワークなし）:**
+
+```bash
+# 問題: コンテナ間で通信できない
+docker run -d --name app my-app:latest
+docker run -d --name db postgres:14
+
+# 問題点:
+# 1. コンテナ間で通信できない
+# 2. 外部からアクセスできない
+# 3. ネットワーク設定が複雑
+```
+
+**解決: Dockerネットワークによる接続**
+
+```bash
+# 解決: ネットワークの作成と接続
+docker network create my-network
+docker run -d --name app --network my-network my-app:latest
+docker run -d --name db --network my-network postgres:14
+
+# メリット:
+# 1. コンテナ間で通信可能
+# 2. 外部からアクセス可能
+# 3. ネットワークの一元管理
+```
+
+## 2. ネットワークの種類
+
+### bridgeネットワーク（デフォルト）
+
+```bash
+# デフォルトのbridgeネットワーク
+docker network ls
+
+# カスタムbridgeネットワークの作成
+docker network create my-bridge-network
+
+# コンテナをネットワークに接続
+docker run -d --name app --network my-bridge-network my-app:latest
+```
+
+### hostネットワーク
+
+```bash
+# ホストネットワークを使用
+docker run -d --name app --network host my-app:latest
+
+# ホストのネットワークスタックを直接使用
+# ポートマッピングが不要
+```
+
+### noneネットワーク
+
+```bash
+# ネットワークを無効化
+docker run -d --name app --network none my-app:latest
+
+# 外部との通信ができない
+```
+
+## 3. Docker Composeでのネットワーク
+
+### デフォルトネットワーク
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+  
+  db:
+    image: postgres:14-alpine
+
+# 自動的に同じネットワークに接続される
+```
+
+### カスタムネットワーク
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    networks:
+      - frontend
+      - backend
+  
+  db:
+    image: postgres:14-alpine
+    networks:
+      - backend
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+```
+
+### 外部ネットワーク
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    networks:
+      - existing-network
+
+networks:
+  existing-network:
+    external: true
+```
+
+## 4. コンテナ間通信
+
+### サービス名での通信
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/mydb
+  
+  db:
+    image: postgres:14-alpine
+
+# appコンテナからdbコンテナにアクセス可能
+```
+
+### リンクの使用（非推奨）
+
+```bash
+# リンクの使用（非推奨）
+docker run -d --name app --link db:database my-app:latest
+```
+
+## 5. ポートの公開
+
+### ポートマッピング
+
+```yaml
+# docker-compose.yml
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"  # ホスト:コンテナ
+      - "8080:80"    # 複数ポート
+```
+
+### ポート範囲の公開
+
+```yaml
+services:
+  app:
+    build: .
+    ports:
+      - "3000-3010:3000-3010"
+```
+
+## 6. 実務でのベストプラクティス
+
+### パターン1: マイクロサービスアーキテクチャ
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  api:
+    build: ./api
+    networks:
+      - app-network
+  
+  frontend:
+    build: ./frontend
+    networks:
+      - app-network
+    ports:
+      - "3000:3000"
+  
+  db:
+    image: postgres:14-alpine
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+```
+
+### パターン2: ネットワークの分離
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    networks:
+      - public-network
+      - private-network
+  
+  db:
+    image: postgres:14-alpine
+    networks:
+      - private-network  # 外部からアクセス不可
+
+networks:
+  public-network:
+    driver: bridge
+  private-network:
+    driver: bridge
+    internal: true  # 外部アクセスを無効化
+```
+
+## 7. よくある問題と解決策
+
+### 問題1: コンテナ間で通信できない
+
+**原因:**
+- 同じネットワークに接続されていない
+- サービス名が間違っている
+
+**解決策:**
+```bash
+# ネットワークの確認
+docker network inspect network_name
+
+# コンテナのネットワーク確認
+docker inspect container_name | grep NetworkMode
+```
+
+### 問題2: ポートが公開されない
+
+**原因:**
+- ポートマッピングが正しく設定されていない
+- ファイアウォールでブロックされている
+
+**解決策:**
+```yaml
+# ポートマッピングの確認
+services:
+  app:
+    ports:
+      - "3000:3000"  # 正しい形式
+```
+
+これで、Dockerネットワークの基礎知識と実務での使い方を理解できるようになりました。

@@ -1,0 +1,499 @@
+---
+title: Djangoデプロイメント完全ガイド
+sidebar:
+    label: デプロイメント
+---
+
+# Djangoデプロイメント完全ガイド
+
+Djangoアプリケーションのデプロイメントを、実務で使える実装例とともに詳しく解説します。
+
+## 1. デプロイメントとは
+
+### デプロイメントの準備
+
+本番環境へのデプロイメントには、開発環境とは異なる設定と手順が必要です。
+
+```
+デプロイメントの流れ
+   ├─ 環境の準備
+   ├─ 設定の最適化
+   ├─ 静的ファイルの収集
+   ├─ データベースのマイグレーション
+   └─ サーバーの起動
+```
+
+## 2. 本番環境の設定
+
+### 設定ファイルの分割
+
+```python
+# settings/production.py
+from .base import *
+from decouple import config
+
+DEBUG = False
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=lambda v: [s.strip() for s in v.split(',')])
+
+# セキュリティ設定
+SECURE_SSL_REDIRECT = True
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+
+# データベース設定
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': config('DB_NAME'),
+        'USER': config('DB_USER'),
+        'PASSWORD': config('DB_PASSWORD'),
+        'HOST': config('DB_HOST'),
+        'PORT': config('DB_PORT', default='5432'),
+        'CONN_MAX_AGE': 600,
+    }
+}
+
+# 静的ファイルの設定
+STATIC_ROOT = '/var/www/myproject/staticfiles'
+STATIC_URL = '/static/'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# メディアファイルの設定
+MEDIA_ROOT = '/var/www/myproject/media'
+MEDIA_URL = '/media/'
+
+# ロギング設定
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'file': {
+            'level': 'ERROR',
+            'class': 'logging.FileHandler',
+            'filename': '/var/log/django/error.log',
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['file'],
+            'level': 'ERROR',
+            'propagate': True,
+        },
+    },
+}
+```
+
+## 3. Gunicornの設定
+
+### Gunicornのインストール
+
+```bash
+pip install gunicorn
+```
+
+### Gunicornの起動
+
+```bash
+# 基本的な起動
+gunicorn myproject.wsgi:application
+
+# ワーカー数を指定
+gunicorn myproject.wsgi:application --workers 4
+
+# バインディングアドレスを指定
+gunicorn myproject.wsgi:application --bind 0.0.0.0:8000
+
+# 設定ファイルを使用
+gunicorn myproject.wsgi:application --config gunicorn_config.py
+```
+
+### Gunicornの設定ファイル
+
+```python
+# gunicorn_config.py
+bind = "0.0.0.0:8000"
+workers = 4
+worker_class = "sync"
+worker_connections = 1000
+timeout = 30
+keepalive = 2
+max_requests = 1000
+max_requests_jitter = 50
+preload_app = True
+```
+
+### systemdサービスとして設定
+
+```ini
+# /etc/systemd/system/gunicorn.service
+[Unit]
+Description=gunicorn daemon
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/myproject
+ExecStart=/var/www/myproject/venv/bin/gunicorn \
+    --config /var/www/myproject/gunicorn_config.py \
+    myproject.wsgi:application
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# サービスの起動
+sudo systemctl start gunicorn
+sudo systemctl enable gunicorn
+
+# サービスの状態確認
+sudo systemctl status gunicorn
+```
+
+## 4. Nginxの設定
+
+### Nginxの設定例
+
+```nginx
+# /etc/nginx/sites-available/myproject
+upstream django {
+    server 127.0.0.1:8000;
+}
+
+server {
+    listen 80;
+    server_name example.com www.example.com;
+    
+    # リダイレクト（HTTPS）
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name example.com www.example.com;
+    
+    # SSL証明書
+    ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
+    
+    # セキュリティヘッダー
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    
+    # 静的ファイル
+    location /static/ {
+        alias /var/www/myproject/staticfiles/;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # メディアファイル
+    location /media/ {
+        alias /var/www/myproject/media/;
+        expires 7d;
+        add_header Cache-Control "public";
+    }
+    
+    # Djangoアプリケーション
+    location / {
+        proxy_pass http://django;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_redirect off;
+    }
+}
+```
+
+### Nginxの有効化
+
+```bash
+# シンボリックリンクの作成
+sudo ln -s /etc/nginx/sites-available/myproject /etc/nginx/sites-enabled/
+
+# 設定のテスト
+sudo nginx -t
+
+# Nginxの再起動
+sudo systemctl restart nginx
+```
+
+## 5. 静的ファイルの収集
+
+### collectstaticの実行
+
+```bash
+# 静的ファイルの収集
+python manage.py collectstatic --noinput
+
+# 本番環境での実行
+DJANGO_SETTINGS_MODULE=myproject.settings.production python manage.py collectstatic --noinput
+```
+
+### WhiteNoiseの使用
+
+```bash
+pip install whitenoise
+```
+
+```python
+# settings.py
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # WhiteNoiseを追加
+    # ...
+]
+
+# 静的ファイルの設定
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+```
+
+## 6. データベースのマイグレーション
+
+### マイグレーションの実行
+
+```bash
+# マイグレーションの実行
+python manage.py migrate
+
+# 本番環境での実行
+DJANGO_SETTINGS_MODULE=myproject.settings.production python manage.py migrate
+```
+
+### バックアップの取得
+
+```bash
+# PostgreSQLのバックアップ
+pg_dump -U myuser -d mydb > backup.sql
+
+# リストア
+psql -U myuser -d mydb < backup.sql
+```
+
+## 7. Dockerを使用したデプロイメント
+
+### Dockerfile
+
+```dockerfile
+# Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# システムの依存関係をインストール
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pythonの依存関係をインストール
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# アプリケーションコードをコピー
+COPY . .
+
+# 静的ファイルの収集
+RUN python manage.py collectstatic --noinput
+
+# Gunicornの起動
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "myproject.wsgi:application"]
+```
+
+### docker-compose.yml
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: mydb
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  web:
+    build: .
+    command: gunicorn myproject.wsgi:application --bind 0.0.0.0:8000
+    volumes:
+      - .:/app
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      - DJANGO_SETTINGS_MODULE=myproject.settings.production
+
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - web
+
+volumes:
+  postgres_data:
+  static_volume:
+  media_volume:
+```
+
+## 8. CI/CDパイプライン
+
+### GitHub Actionsの例
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install -r requirements/dev.txt
+      - name: Run tests
+        run: |
+          python manage.py test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Deploy to server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd /var/www/myproject
+            git pull
+            source venv/bin/activate
+            pip install -r requirements/prod.txt
+            python manage.py collectstatic --noinput
+            python manage.py migrate
+            sudo systemctl restart gunicorn
+            sudo systemctl restart nginx
+```
+
+## 9. 実務でのベストプラクティス
+
+### パターン1: 環境変数の管理
+
+```bash
+# .env.production
+SECRET_KEY=your-secret-key-here
+DEBUG=False
+ALLOWED_HOSTS=example.com,www.example.com
+DB_NAME=mydb
+DB_USER=myuser
+DB_PASSWORD=mypassword
+DB_HOST=localhost
+DB_PORT=5432
+```
+
+### パターン2: ログの管理
+
+```python
+# settings/production.py
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': 'ERROR',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': '/var/log/django/error.log',
+            'maxBytes': 1024 * 1024 * 5,  # 5MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['file', 'console'],
+            'level': 'ERROR',
+            'propagate': True,
+        },
+        'myapp': {
+            'handlers': ['file', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+```
+
+## 10. よくある問題と解決策
+
+### 問題1: 静的ファイルが表示されない
+
+**原因:**
+- `collectstatic`が実行されていない
+- `STATIC_ROOT`が正しく設定されていない
+
+**解決策:**
+```bash
+# 静的ファイルの収集
+python manage.py collectstatic --noinput
+
+# 権限の確認
+ls -la /var/www/myproject/staticfiles/
+```
+
+### 問題2: データベース接続エラー
+
+**原因:**
+- データベースの設定が間違っている
+- データベースサーバーが起動していない
+
+**解決策:**
+```bash
+# データベース接続のテスト
+python manage.py dbshell
+
+# データベースの状態確認
+sudo systemctl status postgresql
+```
+
+これで、Djangoのデプロイメントの基礎知識と実務での使い方を理解できるようになりました。

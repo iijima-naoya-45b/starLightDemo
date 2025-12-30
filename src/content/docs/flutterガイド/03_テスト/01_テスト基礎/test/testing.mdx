@@ -77,3 +77,326 @@ test('Async test example', () async {
 ```
 
 - **モックの使用**: 外部依存をモック化して、特定の機能をテストします。`mockito`パッケージを使用して、モックを作成します。
+
+## 3. モックの使い方（mockito）
+
+### pubspec.yamlへの追加
+
+```yaml
+dev_dependencies:
+  mockito: ^5.4.0
+  build_runner: ^2.4.0
+```
+
+### モッククラスの作成
+
+```dart
+// user_repository.dart
+abstract class UserRepository {
+  Future<User> getUserById(String id);
+}
+
+// user_repository_test.mocks.dart (自動生成)
+import 'package:mockito/mockito.dart';
+import 'package:mockito/annotations.dart';
+import 'user_repository.dart';
+
+@GenerateMocks([UserRepository])
+void main() {}
+```
+
+### モックを使用したテスト
+
+```dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mockito/mockito.dart';
+import 'package:mockito/annotations.dart';
+import 'user_repository_test.mocks.dart';
+
+@GenerateMocks([UserRepository])
+void main() {
+  late MockUserRepository mockRepository;
+  late UserService userService;
+
+  setUp(() {
+    mockRepository = MockUserRepository();
+    userService = UserService(mockRepository);
+  });
+
+  test('getUserById returns user when repository succeeds', () async {
+    // Arrange
+    final expectedUser = User(id: '1', name: 'Test User');
+    when(mockRepository.getUserById('1'))
+        .thenAnswer((_) async => expectedUser);
+
+    // Act
+    final result = await userService.getUserById('1');
+
+    // Assert
+    expect(result, equals(expectedUser));
+    verify(mockRepository.getUserById('1')).called(1);
+  });
+
+  test('getUserById throws exception when repository fails', () async {
+    // Arrange
+    when(mockRepository.getUserById('1'))
+        .thenThrow(Exception('User not found'));
+
+    // Act & Assert
+    expect(
+      () => userService.getUserById('1'),
+      throwsException,
+    );
+  });
+}
+```
+
+### モックの生成コマンド
+
+```bash
+flutter pub run build_runner build
+```
+
+## 4. インテグレーションテストの実装
+
+### integration_testディレクトリの作成
+
+プロジェクトルートに`integration_test`ディレクトリを作成します。
+
+### インテグレーションテストの例
+
+```dart
+// integration_test/app_test.dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
+import 'package:my_app/main.dart' as app;
+
+void main() {
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  group('end-to-end test', () {
+    testWidgets('complete user flow', (WidgetTester tester) async {
+      app.main();
+      await tester.pumpAndSettle();
+
+      // ログイン画面の確認
+      expect(find.text('ログイン'), findsOneWidget);
+
+      // ログイン
+      await tester.enterText(find.byKey(Key('email')), 'test@example.com');
+      await tester.enterText(find.byKey(Key('password')), 'password');
+      await tester.tap(find.byKey(Key('loginButton')));
+      await tester.pumpAndSettle();
+
+      // ホーム画面の確認
+      expect(find.text('ホーム'), findsOneWidget);
+
+      // アイテムの追加
+      await tester.tap(find.byKey(Key('addButton')));
+      await tester.pumpAndSettle();
+      expect(find.text('新しいアイテム'), findsOneWidget);
+    });
+  });
+}
+```
+
+### インテグレーションテストの実行
+
+```bash
+# デバイスで実行
+flutter test integration_test/app_test.dart
+
+# 特定のデバイスで実行
+flutter test integration_test/app_test.dart -d <device_id>
+```
+
+## 5. 実務でのテスト戦略
+
+### テストピラミッド
+
+```
+        /\
+       /  \  E2E Tests (少数)
+      /____\
+     /      \  Integration Tests (中程度)
+    /________\
+   /          \  Unit Tests (多数)
+  /____________\
+```
+
+### テストの分類
+
+1. **ユニットテスト**: 個々の関数やクラスをテスト
+2. **ウィジェットテスト**: UIコンポーネントをテスト
+3. **インテグレーションテスト**: 複数のコンポーネントの連携をテスト
+4. **E2Eテスト**: アプリ全体の動作をテスト
+
+### テストカバレッジの確認
+
+```bash
+# カバレッジレポートの生成
+flutter test --coverage
+
+# カバレッジの確認（lcovが必要）
+genhtml coverage/lcov.info -o coverage/html
+```
+
+## 6. CI/CDへの組み込み方法
+
+### GitHub Actionsの例
+
+```yaml
+# .github/workflows/flutter_test.yml
+name: Flutter Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.16.0'
+      
+      - name: Install dependencies
+        run: flutter pub get
+      
+      - name: Run tests
+        run: flutter test
+      
+      - name: Generate coverage
+        run: flutter test --coverage
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/lcov.info
+```
+
+### GitLab CIの例
+
+```yaml
+# .gitlab-ci.yml
+stages:
+  - test
+
+flutter_test:
+  stage: test
+  image: cirrusci/flutter:latest
+  script:
+    - flutter pub get
+    - flutter test
+    - flutter test --coverage
+  coverage: '/lines\.*: \d+\.\d+%/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage/lcov.info
+```
+
+## 7. テストのベストプラクティス
+
+### AAA パターン（Arrange-Act-Assert）
+
+```dart
+test('example test', () {
+  // Arrange: テストの準備
+  final calculator = Calculator();
+  
+  // Act: テスト対象の実行
+  final result = calculator.add(2, 3);
+  
+  // Assert: 結果の検証
+  expect(result, equals(5));
+});
+```
+
+### テストの独立性
+
+各テストは独立して実行できるようにします。
+
+```dart
+class TestHelper {
+  static UserRepository createMockRepository() {
+    return MockUserRepository();
+  }
+  
+  static User createTestUser() {
+    return User(id: '1', name: 'Test User');
+  }
+}
+
+void main() {
+  test('test 1', () {
+    final repository = TestHelper.createMockRepository();
+    // テスト実行
+  });
+  
+  test('test 2', () {
+    final repository = TestHelper.createMockRepository();
+    // テスト実行（test 1に依存しない）
+  });
+}
+```
+
+### テストデータの管理
+
+```dart
+class TestData {
+  static User validUser() => User(
+    id: '1',
+    name: 'Test User',
+    email: 'test@example.com',
+  );
+  
+  static User invalidUser() => User(
+    id: '',
+    name: '',
+    email: '',
+  );
+}
+```
+
+## 8. よくある問題と解決策
+
+### 問題1: 非同期処理のテストが失敗する
+
+**解決策**: `pumpAndSettle`や`pump`を使用して、非同期処理の完了を待ちます。
+
+```dart
+testWidgets('async test', (WidgetTester tester) async {
+  await tester.pumpWidget(MyWidget());
+  await tester.pumpAndSettle(); // すべてのアニメーションが完了するまで待つ
+  expect(find.text('Loaded'), findsOneWidget);
+});
+```
+
+### 問題2: モックが正しく動作しない
+
+**解決策**: `build_runner`でモックを再生成します。
+
+```bash
+flutter pub run build_runner build --delete-conflicting-outputs
+```
+
+### 問題3: テストが遅い
+
+**解決策**: 
+- 不要な`pumpAndSettle`を避ける
+- モックを使用して外部依存を排除
+- テストを並列実行
+
+```bash
+flutter test --concurrency=4
+```
+
+これで、Flutterでのテスト実装方法を理解できるようになりました。

@@ -1,219 +1,394 @@
 ---
-title: "FastAPIのセキュリティ強化"
-label: "FastAPIのセキュリティ強化"
+title: FastAPI認証・認可完全ガイド
+sidebar:
+    label: 認証・認可
 ---
 
-承知しました。提供された内容を、より簡潔に、かつサンプルコードを充実させる形で再構成します。
+# FastAPI認証・認可完全ガイド
 
-## `FastAPI`のセキュリティ強化
+FastAPIでの認証と認可の実装を、実務で使える実装例とともに詳しく解説します。
 
-`FastAPI`は、その設計自体がセキュリティに優れていますが、より堅牢な`API`を構築するためには、追加の対策が不可欠です。以下に、主要なセキュリティ対策を具体的なサンプルコードと共に解説します。
+## 1. 認証・認可とは
 
-1. **認証と認可 (`Authentication & Authorization`) 🔑**
-   - `API`エンドポイントへのアクセスを保護するため、`OAuth2`と`JWT`（`JSON Web Tokens`）を組み合わせるのが一般的です。`FastAPI`の**`Depends`**機能を使うことで、認証ロジックをシンプルに実装できます。
+### 認証と認可の違い
 
-   - **実装例**:
-     - ユーザー認証と`JWT`トークン発行のためのエンドポイントを作成。
-     - 認証が必要なエンドポイントに`Depends(get_current_user)`を適用して、リクエストを保護します。
+- **認証（Authentication）**: ユーザーが誰であるかを確認する
+- **認可（Authorization）**: ユーザーが特定のリソースにアクセスできるかを確認する
 
-     ```python
-     # main.py
-     from fastapi import Depends, FastAPI, HTTPException, status
-     from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-     from jose import JWTError, jwt
+```
+認証・認可の流れ
+   ├─ ログイン（認証）
+   ├─ トークン発行
+   ├─ リクエストにトークンを含める
+   └─ トークンの検証（認可）
+```
 
-     app = FastAPI()
-     SECRET_KEY = "your-super-secret-key"
-     ALGORITHM = "HS256"
-     oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+### なぜ認証・認可が必要か
 
-     def authenticate_user(username, password):
-         if username == "test" and password == "password":
-             return {"username": "test"}
-         return None
+**問題のある構成（認証なし）:**
 
-     def create_access_token(data: dict):
-         return jwt.encode(data, SECRET_KEY, algorithm=ALGORITHM)
+```python
+# 問題: 誰でもアクセス可能
+@app.get("/users/me")
+def get_current_user():
+    return {"user": "anonymous"}
 
-     def get_current_user(token: str = Depends(oauth2_scheme)):
-         try:
-             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-             username: str = payload.get("sub")
-             if username is None:
-                 raise HTTPException(status_code=401, detail="Invalid token")
-             return username
-         except JWTError:
-             raise HTTPException(status_code=401, detail="Invalid token")
+# 問題点:
+# 1. 機密情報が漏洩する可能性
+# 2. 不正アクセスのリスク
+# 3. ユーザー識別ができない
+```
 
-     @app.post("/token")
-     async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-         user = authenticate_user(form_data.username, form_data.password)
-         if not user:
-             raise HTTPException(status_code=401)
-         access_token = create_access_token(data={"sub": user["username"]})
-         return {"access_token": access_token, "token_type": "bearer"}
+**解決: 認証・認可による保護**
 
-     @app.get("/users/me")
-     async def read_users_me(current_user: str = Depends(get_current_user)):
-         return {"username": current_user}
-     ```
+```python
+# 解決: 認証が必要
+@app.get("/users/me")
+def get_current_user(current_user: str = Depends(get_current_user)):
+    return {"user": current_user}
+```
 
-2. **`CORS`（オリジン間リソース共有） 🌐**
-   - 悪意のあるドメインからの`API`利用を防ぐための基本的なセキュリティ対策です。**`main.py`**に`CORSMiddleware`を読み込み、許可するドメインを設定します。
+## 2. OAuth2とJWT
 
-   - **実装例**:
+### OAuth2の基本設定
 
-     ```python
-     # main.py
-     from fastapi import FastAPI
-     from fastapi.middleware.cors import CORSMiddleware
+```python
+# app/core/security.py
+from fastapi.security import OAuth2PasswordBearer
 
-     app = FastAPI()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+```
 
-     app.add_middleware(
-         CORSMiddleware,
-         allow_origins=["https://your-frontend.com", "http://localhost:3000"],
-         allow_credentials=True,
-         allow_methods=["*"],
-         allow_headers=["*"],
-     )
-     ```
+### JWTトークンの生成
 
-3. **セキュリティヘッダーの適用 🛡️**
-   - `XSS`やクリックジャッキングを防ぐため、ブラウザにセキュリティを強化するよう指示します。`FastAPI`のミドルウェアとして簡単に適用できます。
+```python
+# app/core/security.py
+from datetime import datetime, timedelta
+from jose import jwt
+from typing import Optional
 
-   - **実装例**:
+SECRET_KEY = "your-secret-key"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-     ```python
-     # main.py
-     from fastapi import FastAPI, Request
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+```
 
-     app = FastAPI()
+### JWTトークンの検証
 
-     @app.middleware("http")
-     async def add_security_headers(request: Request, call_next):
-         response = await call_next(request)
-         response.headers["X-Content-Type-Options"] = "nosniff"
-         response.headers["X-Frame-Options"] = "DENY"
-         response.headers["Content-Security-Policy"] = "default-src 'self'"
-         return response
-     ```
+```python
+# app/core/security.py
+from jose import JWTError, jwt
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 
-4. **入力データの検証とサニタイズ 🧹**
-   - `FastAPI`の`Pydantic`モデルは、受け取るデータの型や構造を自動で検証します。さらに、`bleach`のようなライブラリを使って、悪意のある`HTML`やスクリプトを無害化（サニタイズ）します。
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-   - **実装例**:
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    return username
+```
 
-     ```python
-     # main.py
-     from fastapi import FastAPI
-     from pydantic import BaseModel
-     import bleach
+## 3. パスワードのハッシュ化
 
-     app = FastAPI()
+### bcryptを使用したハッシュ化
 
-     class Post(BaseModel):
-         title: str
-         content: str
+```python
+# app/core/security.py
+from passlib.context import CryptContext
 
-     @app.post("/posts/")
-     async def create_post(post: Post):
-         sanitized_content = bleach.clean(post.content, tags=[], attributes={})
-         return {"title": post.title, "content": sanitized_content}
-     ```
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-5. **レートリミット ⏱️**
-   - `DoS`（サービス拒否）攻撃を防ぐため、一定期間内のリクエスト数を制限します。`fastapi-limiter`ライブラリと`Redis`を組み合わせるのが一般的です。
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
 
-   - **実装例**:
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
+```
 
-     ```python
-     # main.py
-     from fastapi import FastAPI, Depends
-     from fastapi_limiter import FastAPILimiter
-     from fastapi_limiter.depends import RateLimiter
-     import redis.asyncio as redis
+## 4. ログインエンドポイント
 
-     app = FastAPI()
+### 基本的なログイン
 
-     @app.on_event("startup")
-     async def startup():
-         redis_client = redis.Redis(host='localhost', port=6379, db=0)
-         await FastAPILimiter.init(redis_client)
+```python
+# app/api/v1/endpoints/auth.py
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+from datetime import timedelta
 
-     @app.get("/items", dependencies=[Depends(RateLimiter(times=10, seconds=60))])
-     async def read_items():
-         return {"message": "Limited access"}
-     ```
+from app.core import security
+from app.core.config import settings
+from app.database import get_db
+from app import models, schemas
 
-6. **`SQL`インジェクションと`ORM` 🛡️**
-   - 悪意のある`SQL`クエリの挿入を防ぐため、`SQLAlchemy`などの`ORM`（`Object-Relational Mapper`）を使用します。`ORM`は、プリペアドステートメントを自動的に生成するため、`SQL`インジェクションのリスクを大幅に低減します。
+router = APIRouter()
 
-   - **実装例**:
+@router.post("/token", response_model=schemas.Token)
+def login_for_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db)
+):
+    user = authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = security.create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
 
-     ```python
-     # main.py
-     from fastapi import FastAPI, Depends
-     from sqlalchemy import create_engine, Column, Integer, String
-     from sqlalchemy.orm import declarative_base, Session, sessionmaker
+def authenticate_user(db: Session, username: str, password: str):
+    user = db.query(models.User).filter(models.User.username == username).first()
+    if not user:
+        return False
+    if not security.verify_password(password, user.hashed_password):
+        return False
+    return user
+```
 
-     app = FastAPI()
+## 5. 認証が必要なエンドポイント
 
-     SQLALCHEMY_DATABASE_URL = "sqlite:///./sql_app.db"
-     engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
-     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-     Base = declarative_base()
+### 基本的な実装
 
-     class User(Base):
-         __tablename__ = "users"
-         id = Column(Integer, primary_key=True, index=True)
-         name = Column(String, index=True)
+```python
+# app/api/v1/endpoints/users.py
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 
-     Base.metadata.create_all(bind=engine)
+from app.core.security import get_current_user
+from app.database import get_db
+from app import models, schemas
 
-     def get_db():
-         db = SessionLocal()
-         try:
-             yield db
-         finally:
-             db.close()
+router = APIRouter()
 
-     @app.post("/users/")
-     def create_user(name: str, db: Session = Depends(get_db)):
-         db_user = User(name=name)
-         db.add(db_user)
-         db.commit()
-         db.refresh(db_user)
-         return db_user
-     ```
+@router.get("/users/me", response_model=schemas.User)
+def read_users_me(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return current_user
 
-7. **環境変数の活用 🔐**
-   - `SECRET KEY`やデータベースのパスワードといった機密情報は、コードに直接書かず、環境変数として管理します。`python-dotenv`ライブラリを使うと、`.env`ファイルから簡単に環境変数を読み込めます。
+@router.get("/users/{user_id}", response_model=schemas.User)
+def read_user(
+    user_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+```
 
-   - **実装例**:
+## 6. 権限ベースの認可
 
-     ```python
-     # .envファイル
-     SECRET_KEY="your-super-secret-key"
-     DATABASE_URL="postgresql://user:password@host/dbname"
-     ```
+### ロールベースの認可
 
-     ```python
-     # main.py
-     from fastapi import FastAPI
-     from dotenv import load_dotenv
-     import os
+```python
+# app/core/security.py
+from fastapi import Depends, HTTPException, status
+from app import models
 
-     load_dotenv()
+def get_current_active_user(
+    current_user: models.User = Depends(get_current_user)
+) -> models.User:
+    if not current_user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
 
-     app = FastAPI()
+def get_current_admin_user(
+    current_user: models.User = Depends(get_current_active_user)
+) -> models.User:
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions"
+        )
+    return current_user
+```
 
-     SECRET_KEY = os.getenv("SECRET_KEY")
-     DB_URL = os.getenv("DATABASE_URL")
+### エンドポイントでの使用
 
-     @app.get("/secret")
-     async def get_secret():
-         if SECRET_KEY:
-             return {"message": "Secret key is loaded"}
-         return {"message": "Secret key is NOT loaded"}
-     ```
+```python
+# app/api/v1/endpoints/admin.py
+from fastapi import APIRouter, Depends
+from app.core.security import get_current_admin_user
+from app import models
+
+router = APIRouter()
+
+@router.get("/admin/users/")
+def get_all_users(
+    admin_user: models.User = Depends(get_current_admin_user)
+):
+    # 管理者のみアクセス可能
+    return {"users": []}
+```
+
+## 7. CORSの設定
+
+### CORSミドルウェア
+
+```python
+# app/main.py
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://your-frontend.com", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+## 8. セキュリティヘッダー
+
+### セキュリティヘッダーの追加
+
+```python
+# app/main.py
+from fastapi import Request
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+```
+
+## 9. 実務でのベストプラクティス
+
+### パターン1: リフレッシュトークン
+
+```python
+# app/core/security.py
+def create_refresh_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(days=7)
+    to_encode.update({"exp": expire, "type": "refresh"})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+# app/api/v1/endpoints/auth.py
+@router.post("/token/refresh")
+def refresh_access_token(
+    refresh_token: str,
+    db: Session = Depends(get_db)
+):
+    try:
+        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = security.create_access_token(
+        data={"sub": username}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+```
+
+### パターン2: APIキー認証
+
+```python
+# app/core/security.py
+from fastapi import Security, HTTPException, status
+from fastapi.security import APIKeyHeader
+
+api_key_header = APIKeyHeader(name="X-API-Key")
+
+def get_api_key(api_key: str = Security(api_key_header)):
+    if api_key != "your-api-key":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid API Key"
+        )
+    return api_key
+
+# app/api/v1/endpoints/items.py
+@router.get("/items/")
+def get_items(api_key: str = Depends(get_api_key)):
+    return {"items": []}
+```
+
+## 10. よくある問題と解決策
+
+### 問題1: トークンが無効
+
+**原因:**
+- トークンの有効期限が切れている
+- トークンの署名が間違っている
+
+**解決策:**
+```python
+# トークンの有効期限を確認
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        # 有効期限の確認
+        exp = payload.get("exp")
+        if exp and datetime.utcnow().timestamp() > exp:
+            raise HTTPException(status_code=401, detail="Token expired")
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return username
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+```
+
+### 問題2: CORSエラー
+
+**原因:**
+- 許可されていないオリジンからのリクエスト
+- CORS設定が正しくない
+
+**解決策:**
+```python
+# 開発環境と本番環境で設定を分ける
+from app.core.config import settings
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+これで、FastAPIの認証・認可の基礎知識と実務での使い方を理解できるようになりました。

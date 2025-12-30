@@ -123,15 +123,146 @@ Playwrightは、Webアプリケーションのセキュリティテストにも�
 ```javascript
 test('不正なログイン', async ({ page }) => {
   await page.goto('https://playwright.dev/login');
-  await page.fill('#username', 'invalid-user');
-  await page.fill('#password', 'wrong-password');
-  await page.click('#login-button');
+  await page.getByLabel('Username').fill('invalid-user');
+  await page.getByLabel('Password').fill('wrong-password');
+  await page.getByRole('button', { name: 'Log in' }).click();
   
   // エラーメッセージが表示されることを検証
-  const errorMessage = await page.locator('.error-message');
+  const errorMessage = page.getByText('Invalid credentials');
   await expect(errorMessage).toBeVisible();
 });
 ```
 
 #### APIリクエストの検証
 `page.route()`メソッドを使って、特定のリクエストをインターセプトし、レスポンスを検証することも可能です。これにより、アプリケーションが機密データを正しく扱っているかをテストできます。
+
+```javascript
+test('APIリクエストの検証', async ({ page }) => {
+  let interceptedRequest = null;
+  
+  await page.route('**/api/login', route => {
+    interceptedRequest = route.request();
+    route.continue();
+  });
+  
+  await page.goto('https://example.com/login');
+  await page.getByLabel('Username').fill('testuser');
+  await page.getByLabel('Password').fill('password123');
+  await page.getByRole('button', { name: 'Log in' }).click();
+  
+  // リクエストが正しく送信されたか検証
+  expect(interceptedRequest.postData()).toContain('testuser');
+});
+```
+
+## 7. テストの構造化
+
+### test.describe()でテストをグループ化
+
+```javascript
+import { test, expect } from '@playwright/test';
+
+test.describe('ログイン機能', () => {
+  test('正常なログイン', async ({ page }) => {
+    await page.goto('https://example.com/login');
+    await page.getByLabel('Username').fill('validuser');
+    await page.getByLabel('Password').fill('validpassword');
+    await page.getByRole('button', { name: 'Log in' }).click();
+    
+    await expect(page).toHaveURL(/dashboard/);
+  });
+  
+  test('不正な認証情報でのログイン', async ({ page }) => {
+    await page.goto('https://example.com/login');
+    await page.getByLabel('Username').fill('invaliduser');
+    await page.getByLabel('Password').fill('wrongpassword');
+    await page.getByRole('button', { name: 'Log in' }).click();
+    
+    await expect(page.getByText('Invalid credentials')).toBeVisible();
+  });
+});
+```
+
+### test.beforeEach()とtest.afterEach()
+
+```javascript
+test.describe('ユーザー管理', () => {
+  test.beforeEach(async ({ page }) => {
+    // 各テストの前に実行
+    await page.goto('https://example.com');
+    await page.getByRole('button', { name: 'Log in' }).click();
+    await page.getByLabel('Username').fill('admin');
+    await page.getByLabel('Password').fill('admin123');
+    await page.getByRole('button', { name: 'Log in' }).click();
+  });
+  
+  test.afterEach(async ({ page }) => {
+    // 各テストの後に実行
+    await page.getByRole('button', { name: 'Log out' }).click();
+  });
+  
+  test('ユーザー一覧の表示', async ({ page }) => {
+    await page.getByRole('link', { name: 'Users' }).click();
+    await expect(page.getByText('User List')).toBeVisible();
+  });
+});
+```
+
+## 8. 実務でのテストパターン
+
+### パターン1: フォーム送信のテスト
+
+```javascript
+test('フォーム送信のテスト', async ({ page }) => {
+  await page.goto('https://example.com/contact');
+  
+  // フォームに入力
+  await page.getByLabel('Name').fill('John Doe');
+  await page.getByLabel('Email').fill('john@example.com');
+  await page.getByLabel('Message').fill('Hello, this is a test message.');
+  
+  // 送信
+  await page.getByRole('button', { name: 'Submit' }).click();
+  
+  // 成功メッセージの確認
+  await expect(page.getByText('Thank you for your message')).toBeVisible();
+});
+```
+
+### パターン2: 検索機能のテスト
+
+```javascript
+test('検索機能のテスト', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // 検索ボックスに入力
+  await page.getByPlaceholder('Search...').fill('Playwright');
+  await page.getByRole('button', { name: 'Search' }).click();
+  
+  // 検索結果の確認
+  await expect(page.getByText('Search results')).toBeVisible();
+  await expect(page.getByText('Playwright')).toBeVisible();
+});
+```
+
+### パターン3: モーダルダイアログのテスト
+
+```javascript
+test('モーダルダイアログのテスト', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // モーダルを開く
+  await page.getByRole('button', { name: 'Open modal' }).click();
+  
+  // モーダルが表示されることを確認
+  const modal = page.getByRole('dialog');
+  await expect(modal).toBeVisible();
+  
+  // モーダル内の操作
+  await modal.getByLabel('Input').fill('Test value');
+  await modal.getByRole('button', { name: 'Save' }).click();
+  
+  // モーダルが閉じることを確認
+  await expect(modal).toBeHidden();
+});
+```

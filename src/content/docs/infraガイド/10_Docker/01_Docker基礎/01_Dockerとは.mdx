@@ -1,0 +1,245 @@
+---
+title: Dockerとは
+sidebar:
+    label: Dockerとは
+---
+
+# Docker完全ガイド
+
+Dockerは、コンテナ技術を使用してアプリケーションをパッケージ化し、どこでも同じように実行できるようにするツールです。実務で使える実装例とベストプラクティスを詳しく解説します。
+
+## 1. Dockerとは
+
+### Dockerの役割
+
+Dockerは、アプリケーションとその依存関係をコンテナとしてパッケージ化し、どの環境でも同じように実行できるようにします。
+
+```
+開発環境
+   ↓（Dockerイメージ）
+本番環境（同じイメージで実行）
+```
+
+### なぜDockerが必要か
+
+**問題のある構成（Dockerなし）:**
+
+```bash
+# 問題: 環境依存の問題
+# 開発環境: Node.js 18, PostgreSQL 14
+# 本番環境: Node.js 16, PostgreSQL 13
+
+# 問題点:
+# 1. 環境の違いによるバグ
+# 2. セットアップの手間
+# 3. 依存関係の管理が困難
+# 4. 再現性が低い
+```
+
+**解決: Dockerによるコンテナ化**
+
+```dockerfile
+# 解決: Dockerfileで環境を定義
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+EXPOSE 3000
+CMD ["npm", "start"]
+
+# メリット:
+# 1. 環境の一貫性（どこでも同じ環境）
+# 2. 簡単なセットアップ（docker run だけで起動）
+# 3. 依存関係の管理（Dockerfileに記述）
+# 4. 高い再現性（同じイメージで同じ結果）
+```
+
+## 2. Dockerの基本概念
+
+### イメージ
+
+イメージは、アプリケーションとその依存関係を含む読み取り専用のテンプレートです。
+
+```bash
+# イメージのビルド
+docker build -t my-app:latest .
+
+# イメージの一覧表示
+docker images
+
+# イメージの削除
+docker rmi my-app:latest
+```
+
+### コンテナ
+
+コンテナは、イメージから作成された実行可能なインスタンスです。
+
+```bash
+# コンテナの起動
+docker run -d -p 3000:3000 my-app:latest
+
+# コンテナの一覧表示
+docker ps
+
+# コンテナの停止
+docker stop <container-id>
+
+# コンテナの削除
+docker rm <container-id>
+```
+
+### Dockerfile
+
+Dockerfileは、イメージを構築するための手順を記述したファイルです。
+
+```dockerfile
+# ベースイメージ
+FROM node:18-alpine
+
+# 作業ディレクトリの設定
+WORKDIR /app
+
+# 依存関係のインストール
+COPY package*.json ./
+RUN npm ci --only=production
+
+# アプリケーションコードのコピー
+COPY . .
+
+# ポートの公開
+EXPOSE 3000
+
+# アプリケーションの起動
+CMD ["npm", "start"]
+```
+
+## 3. 実務でのDockerfile
+
+### マルチステージビルド
+
+```dockerfile
+# ビルドステージ
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+# 本番ステージ
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY --from=builder /app/dist ./dist
+EXPOSE 3000
+CMD ["node", "dist/index.js"]
+```
+
+### セキュリティのベストプラクティス
+
+```dockerfile
+# 非rootユーザーで実行
+FROM node:18-alpine
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nodejs -u 1001
+USER nodejs
+WORKDIR /app
+COPY --chown=nodejs:nodejs . .
+EXPOSE 3000
+CMD ["node", "index.js"]
+```
+
+## 4. Docker Compose
+
+### Docker Composeとは
+
+Docker Composeは、複数のコンテナを定義し、管理するためのツールです。
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/mydb
+    depends_on:
+      - db
+  
+  db:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mydb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+```
+
+### Docker Composeのコマンド
+
+```bash
+# サービスの起動
+docker-compose up -d
+
+# サービスの停止
+docker-compose down
+
+# ログの確認
+docker-compose logs -f
+
+# サービスの再ビルド
+docker-compose up -d --build
+```
+
+## 5. よくある問題と解決策
+
+### 問題1: イメージのビルドが遅い
+
+**原因:**
+- キャッシュが効いていない
+- 不要なファイルをコピーしている
+
+**解決策:**
+```dockerfile
+# .dockerignoreファイルを作成
+node_modules
+.git
+.env
+*.log
+
+# Dockerfileの最適化
+# 依存関係のインストールを先に行う（キャッシュを活用）
+COPY package*.json ./
+RUN npm ci
+COPY . .
+```
+
+### 問題2: コンテナが起動しない
+
+**原因:**
+- ポートが既に使用されている
+- 環境変数が設定されていない
+
+**解決策:**
+```bash
+# ポートの使用状況を確認
+lsof -i :3000
+
+# 環境変数を確認
+docker run -e DATABASE_URL=... my-app:latest
+
+# ログを確認
+docker logs <container-id>
+```
+
+これで、Dockerの基礎知識と実務での使い方を理解できるようになりました。

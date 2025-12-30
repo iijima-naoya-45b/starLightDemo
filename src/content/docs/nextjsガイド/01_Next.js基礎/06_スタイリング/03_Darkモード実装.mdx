@@ -1,0 +1,501 @@
+---
+title: Darkモード実装（Tailwind CSS）
+sidebar:
+    label: Darkモード実装
+---
+
+# Next.js/ReactでのDarkモード実装（Tailwind CSS）
+
+Tailwind CSSを使用して、Next.jsやReactアプリにdarkモード切り替え機能を実装する方法を詳しく解説します。
+
+## 1. Tailwind CSSの設定
+
+### tailwind.config.jsの設定
+
+```javascript
+// tailwind.config.js
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  darkMode: 'class', // 'media' または 'class' を指定
+  content: [
+    './pages/**/*.{js,ts,jsx,tsx,mdx}',
+    './components/**/*.{js,ts,jsx,tsx,mdx}',
+    './app/**/*.{js,ts,jsx,tsx,mdx}',
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+```
+
+**設定の違い:**
+- `'media'`: システムの設定（prefers-color-scheme）に自動的に従う
+- `'class'`: HTML要素の`class`属性で手動制御（推奨）
+
+## 2. Next.jsでの実装（App Router）
+
+### ThemeProviderの作成
+
+```typescript
+// app/providers/theme-provider.tsx
+'use client'
+
+import { createContext, useContext, useEffect, useState } from 'react'
+
+type Theme = 'dark' | 'light' | 'system'
+
+type ThemeProviderProps = {
+  children: React.ReactNode
+  defaultTheme?: Theme
+  storageKey?: string
+}
+
+type ThemeProviderState = {
+  theme: Theme
+  setTheme: (theme: Theme) => void
+}
+
+const initialState: ThemeProviderState = {
+  theme: 'system',
+  setTheme: () => null,
+}
+
+const ThemeProviderContext = createContext<ThemeProviderState>(initialState)
+
+export function ThemeProvider({
+  children,
+  defaultTheme = 'system',
+  storageKey = 'vite-ui-theme',
+  ...props
+}: ThemeProviderProps) {
+  const [theme, setTheme] = useState<Theme>(
+    () => (typeof window !== 'undefined' && localStorage.getItem(storageKey)) as Theme || defaultTheme
+  )
+
+  useEffect(() => {
+    const root = window.document.documentElement
+
+    root.classList.remove('light', 'dark')
+
+    if (theme === 'system') {
+      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
+        .matches
+        ? 'dark'
+        : 'light'
+
+      root.classList.add(systemTheme)
+      return
+    }
+
+    root.classList.add(theme)
+  }, [theme])
+
+  const value = {
+    theme,
+    setTheme: (theme: Theme) => {
+      localStorage.setItem(storageKey, theme)
+      setTheme(theme)
+    },
+  }
+
+  return (
+    <ThemeProviderContext.Provider {...props} value={value}>
+      {children}
+    </ThemeProviderContext.Provider>
+  )
+}
+
+export const useTheme = () => {
+  const context = useContext(ThemeProviderContext)
+
+  if (context === undefined)
+    throw new Error('useTheme must be used within a ThemeProvider')
+
+  return context
+}
+```
+
+### layout.tsxでの設定
+
+```typescript
+// app/layout.tsx
+import { ThemeProvider } from './providers/theme-provider'
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="ja" suppressHydrationWarning>
+      <body>
+        <ThemeProvider
+          defaultTheme="system"
+          storageKey="app-theme"
+        >
+          {children}
+        </ThemeProvider>
+      </body>
+    </html>
+  )
+}
+```
+
+### テーマ切り替えコンポーネント
+
+```typescript
+// components/theme-toggle.tsx
+'use client'
+
+import { useTheme } from '@/app/providers/theme-provider'
+import { Moon, Sun } from 'lucide-react'
+
+export function ThemeToggle() {
+  const { theme, setTheme } = useTheme()
+
+  return (
+    <button
+      onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+      className="fixed bottom-4 right-4 p-3 rounded-full bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors"
+      aria-label="Toggle theme"
+    >
+      {theme === 'dark' ? (
+        <Sun className="h-5 w-5 text-yellow-500" />
+      ) : (
+        <Moon className="h-5 w-5 text-gray-700" />
+      )}
+    </button>
+  )
+}
+```
+
+### 使用例
+
+```typescript
+// app/page.tsx
+import { ThemeToggle } from '@/components/theme-toggle'
+
+export default function Home() {
+  return (
+    <div className="min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+      <div className="container mx-auto px-4 py-8">
+        <h1 className="text-4xl font-bold mb-4">
+          Dark Mode Example
+        </h1>
+        <p className="text-lg mb-8">
+          このページはdarkモードに対応しています。
+        </p>
+        <ThemeToggle />
+      </div>
+    </div>
+  )
+}
+```
+
+## 3. Next.jsでの実装（Pages Router）
+
+### _app.tsxでの設定
+
+```typescript
+// pages/_app.tsx
+import { ThemeProvider } from '@/contexts/theme-context'
+import type { AppProps } from 'next/app'
+import { useEffect, useState } from 'react'
+
+export default function App({ Component, pageProps }: AppProps) {
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) {
+    return null
+  }
+
+  return (
+    <ThemeProvider>
+      <Component {...pageProps} />
+    </ThemeProvider>
+  )
+}
+```
+
+### ThemeContextの作成
+
+```typescript
+// contexts/theme-context.tsx
+import { createContext, useContext, useEffect, useState } from 'react'
+
+type Theme = 'dark' | 'light'
+
+type ThemeContextType = {
+  theme: Theme
+  toggleTheme: () => void
+}
+
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
+
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setTheme] = useState<Theme>('light')
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+    const savedTheme = localStorage.getItem('theme') as Theme | null
+    if (savedTheme) {
+      setTheme(savedTheme)
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      setTheme('dark')
+    }
+  }, [])
+
+  useEffect(() => {
+    if (mounted) {
+      const root = document.documentElement
+      root.classList.remove('light', 'dark')
+      root.classList.add(theme)
+      localStorage.setItem('theme', theme)
+    }
+  }, [theme, mounted])
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark')
+  }
+
+  return (
+    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  )
+}
+
+export function useTheme() {
+  const context = useContext(ThemeContext)
+  if (context === undefined) {
+    throw new Error('useTheme must be used within a ThemeProvider')
+  }
+  return context
+}
+```
+
+## 4. React（Vite）での実装
+
+### ThemeProviderの作成
+
+```typescript
+// src/contexts/ThemeContext.tsx
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+
+type Theme = 'dark' | 'light'
+
+interface ThemeContextType {
+  theme: Theme
+  toggleTheme: () => void
+}
+
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('theme')
+      if (saved) {
+        return saved as Theme
+      }
+      return window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'
+    }
+    return 'light'
+  })
+
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.remove('light', 'dark')
+    root.classList.add(theme)
+    localStorage.setItem('theme', theme)
+  }, [theme])
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark')
+  }
+
+  return (
+    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  )
+}
+
+export function useTheme() {
+  const context = useContext(ThemeContext)
+  if (context === undefined) {
+    throw new Error('useTheme must be used within a ThemeProvider')
+  }
+  return context
+}
+```
+
+### main.tsxでの設定
+
+```typescript
+// src/main.tsx
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.tsx'
+import { ThemeProvider } from './contexts/ThemeContext.tsx'
+import './index.css'
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <ThemeProvider>
+      <App />
+    </ThemeProvider>
+  </React.StrictMode>,
+)
+```
+
+### テーマ切り替えコンポーネント
+
+```typescript
+// src/components/ThemeToggle.tsx
+import { useTheme } from '../contexts/ThemeContext'
+
+export function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme()
+
+  return (
+    <button
+      onClick={toggleTheme}
+      className="p-2 rounded-lg bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors"
+      aria-label="Toggle theme"
+    >
+      {theme === 'dark' ? (
+        <span className="text-yellow-500">☀️</span>
+      ) : (
+        <span className="text-gray-700">🌙</span>
+      )}
+    </button>
+  )
+}
+```
+
+## 5. Tailwind CSSのdarkモードクラス
+
+### 基本的な使い方
+
+```typescript
+// dark:プレフィックスを使用
+<div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+  <h1 className="text-2xl font-bold">タイトル</h1>
+  <p className="text-gray-600 dark:text-gray-400">説明文</p>
+</div>
+```
+
+### よく使うパターン
+
+```typescript
+// 背景色
+className="bg-white dark:bg-gray-900"
+
+// テキスト色
+className="text-gray-900 dark:text-white"
+
+// ボーダー
+className="border-gray-200 dark:border-gray-700"
+
+// ホバー効果
+className="hover:bg-gray-100 dark:hover:bg-gray-800"
+
+// シャドウ
+className="shadow-lg dark:shadow-gray-900/50"
+```
+
+## 6. 実務での実装パターン
+
+### パターン1: システム設定に従う
+
+```typescript
+// システムの設定を監視
+useEffect(() => {
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+  
+  const handleChange = (e: MediaQueryListEvent) => {
+    setTheme(e.matches ? 'dark' : 'light')
+  }
+  
+  mediaQuery.addEventListener('change', handleChange)
+  return () => mediaQuery.removeEventListener('change', handleChange)
+}, [])
+```
+
+### パターン2: カスタムフックの作成
+
+```typescript
+// hooks/useDarkMode.ts
+import { useEffect, useState } from 'react'
+
+export function useDarkMode() {
+  const [theme, setTheme] = useState<'dark' | 'light'>('light')
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+    const savedTheme = localStorage.getItem('theme')
+    if (savedTheme) {
+      setTheme(savedTheme as 'dark' | 'light')
+    }
+  }, [])
+
+  useEffect(() => {
+    if (mounted) {
+      document.documentElement.classList.toggle('dark', theme === 'dark')
+      localStorage.setItem('theme', theme)
+    }
+  }, [theme, mounted])
+
+  return [theme, setTheme, mounted] as const
+}
+```
+
+## 7. よくある問題と解決策
+
+### 問題1: フラッシュ（FOUC: Flash of Unstyled Content）
+
+**解決策**: `suppressHydrationWarning`を使用
+
+```typescript
+<html lang="ja" suppressHydrationWarning>
+```
+
+### 問題2: サーバーサイドレンダリングでのエラー
+
+**解決策**: `mounted`状態をチェック
+
+```typescript
+const [mounted, setMounted] = useState(false)
+
+useEffect(() => {
+  setMounted(true)
+}, [])
+
+if (!mounted) {
+  return null // またはデフォルトのUI
+}
+```
+
+### 問題3: テーマが保存されない
+
+**解決策**: `localStorage`の使用を確認
+
+```typescript
+useEffect(() => {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('theme', theme)
+  }
+}, [theme])
+```
+
+これで、Next.jsやReactアプリでTailwind CSSを使用したdarkモード実装が完了します。

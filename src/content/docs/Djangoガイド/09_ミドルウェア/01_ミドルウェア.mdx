@@ -1,0 +1,438 @@
+---
+title: Djangoミドルウェア完全ガイド
+sidebar:
+    label: ミドルウェア
+---
+
+# Djangoミドルウェア完全ガイド
+
+Djangoのミドルウェアを、実務で使える実装例とともに詳しく解説します。
+
+## 1. ミドルウェアとは
+
+### ミドルウェアの役割
+
+ミドルウェアは、リクエストとレスポンスの処理パイプラインで、各リクエストとレスポンスに対して特定の処理を実行するコンポーネントです。
+
+```
+リクエスト
+   ↓
+ミドルウェア1
+   ↓
+ミドルウェア2
+   ↓
+ビュー
+   ↓
+ミドルウェア2
+   ↓
+ミドルウェア1
+   ↓
+レスポンス
+```
+
+### なぜミドルウェアが必要か
+
+**問題のある構成（ミドルウェアなし）:**
+
+```python
+# 問題: 各ビューで同じ処理を繰り返す
+def view1(request):
+    # ログイン確認
+    if not request.user.is_authenticated:
+        return redirect('login')
+    # 処理
+    pass
+
+def view2(request):
+    # ログイン確認（重複）
+    if not request.user.is_authenticated:
+        return redirect('login')
+    # 処理
+    pass
+```
+
+**解決: ミドルウェアによる共通処理**
+
+```python
+# 解決: ミドルウェアで共通処理
+class AuthenticationMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+    
+    def __call__(self, request):
+        # リクエスト処理
+        if not request.user.is_authenticated:
+            return redirect('login')
+        response = self.get_response(request)
+        return response
+```
+
+## 2. ミドルウェアの基本構造
+
+### 関数ベースのミドルウェア
+
+```python
+# middleware.py
+def simple_middleware(get_response):
+    def middleware(request):
+        # リクエスト処理
+        print(f'Request: {request.path}')
+        response = get_response(request)
+        # レスポンス処理
+        print(f'Response: {response.status_code}')
+        return response
+    return middleware
+```
+
+### クラスベースのミドルウェア
+
+```python
+# middleware.py
+class SimpleMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+    
+    def __call__(self, request):
+        # リクエスト処理
+        print(f'Request: {request.path}')
+        response = self.get_response(request)
+        # レスポンス処理
+        print(f'Response: {response.status_code}')
+        return response
+```
+
+## 3. 標準ミドルウェア
+
+### SecurityMiddleware
+
+```python
+# settings.py
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',  # セキュリティヘッダー
+    # ...
+]
+```
+
+**機能:**
+- セキュリティヘッダーの追加
+- HTTPSリダイレクト
+- HSTSヘッダー
+
+### SessionMiddleware
+
+```python
+# settings.py
+MIDDLEWARE = [
+    # ...
+    'django.contrib.sessions.middleware.SessionMiddleware',  # セッション管理
+    # ...
+]
+```
+
+**機能:**
+- セッションの管理
+- セッションCookieの設定
+
+### CsrfViewMiddleware
+
+```python
+# settings.py
+MIDDLEWARE = [
+    # ...
+    'django.middleware.csrf.CsrfViewMiddleware',  # CSRF保護
+    # ...
+]
+```
+
+**機能:**
+- CSRFトークンの検証
+- CSRF Cookieの設定
+
+## 4. カスタムミドルウェアの作成
+
+### リクエストロギングミドルウェア
+
+```python
+# middleware.py
+import logging
+import time
+
+logger = logging.getLogger(__name__)
+
+class RequestLoggingMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+    
+    def __call__(self, request):
+        # リクエスト開始時刻
+        start_time = time.time()
+        
+        # リクエスト情報のログ
+        logger.info(
+            f'Request: {request.method} {request.path}',
+            extra={
+                'user': request.user.username if request.user.is_authenticated else 'Anonymous',
+                'ip': self.get_client_ip(request),
+            }
+        )
+        
+        response = self.get_response(request)
+        
+        # 処理時間の計算
+        duration = time.time() - start_time
+        
+        # レスポンス情報のログ
+        logger.info(
+            f'Response: {response.status_code} ({duration:.2f}s)',
+            extra={
+                'status_code': response.status_code,
+                'duration': duration,
+            }
+        )
+        
+        return response
+    
+    def get_client_ip(self, request):
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+```
+
+### エラーハンドリングミドルウェア
+
+```python
+# middleware.py
+import logging
+from django.http import JsonResponse
+
+logger = logging.getLogger(__name__)
+
+class ErrorHandlingMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+    
+    def __call__(self, request):
+        try:
+            response = self.get_response(request)
+            return response
+        except Exception as e:
+            logger.error(f'Error: {str(e)}', exc_info=True)
+            return JsonResponse(
+                {'error': 'Internal server error'},
+                status=500
+            )
+```
+
+### レート制限ミドルウェア
+
+```python
+# middleware.py
+from django.core.cache import cache
+from django.http import JsonResponse
+import time
+
+class RateLimitMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+    
+    def __call__(self, request):
+        # APIエンドポイントのみに適用
+        if request.path.startswith('/api/'):
+            ip = self.get_client_ip(request)
+            cache_key = f'rate_limit:{ip}'
+            
+            # レート制限のチェック
+            requests = cache.get(cache_key, 0)
+            if requests >= 100:  # 1分間に100リクエストまで
+                return JsonResponse(
+                    {'error': 'Rate limit exceeded'},
+                    status=429
+                )
+            
+            # リクエスト数のカウント
+            cache.set(cache_key, requests + 1, 60)  # 60秒間有効
+        
+        response = self.get_response(request)
+        return response
+    
+    def get_client_ip(self, request):
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+```
+
+## 5. ミドルウェアの登録
+
+### settings.pyでの登録
+
+```python
+# settings.py
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'myapp.middleware.RequestLoggingMiddleware',  # カスタムミドルウェア
+    'myapp.middleware.RateLimitMiddleware',
+]
+```
+
+## 6. ミドルウェアのフックメソッド
+
+### process_request
+
+```python
+# middleware.py
+class MyMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+    
+    def process_request(self, request):
+        # リクエスト処理
+        request.custom_attribute = 'value'
+        return None  # 次のミドルウェアに進む
+        # または HttpResponse を返すと、ビューをスキップ
+```
+
+### process_response
+
+```python
+# middleware.py
+class MyMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+    
+    def process_response(self, request, response):
+        # レスポンス処理
+        response['X-Custom-Header'] = 'value'
+        return response
+```
+
+### process_view
+
+```python
+# middleware.py
+class MyMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+    
+    def process_view(self, request, view_func, view_args, view_kwargs):
+        # ビュー実行前の処理
+        return None  # ビューを実行
+        # または HttpResponse を返すと、ビューをスキップ
+```
+
+### process_exception
+
+```python
+# middleware.py
+class MyMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+    
+    def process_exception(self, request, exception):
+        # 例外処理
+        logger.error(f'Exception: {str(exception)}', exc_info=True)
+        return None  # デフォルトのエラーハンドリング
+        # または HttpResponse を返すと、カスタムエラーレスポンス
+```
+
+## 7. 実務でのベストプラクティス
+
+### パターン1: 認証トークンの検証
+
+```python
+# middleware.py
+from django.contrib.auth.models import AnonymousUser
+from rest_framework.authentication import TokenAuthentication
+
+class TokenAuthMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self.token_auth = TokenAuthentication()
+    
+    def __call__(self, request):
+        # APIエンドポイントのみに適用
+        if request.path.startswith('/api/'):
+            # トークン認証の実行
+            try:
+                user, token = self.token_auth.authenticate(request)
+                if user:
+                    request.user = user
+            except Exception:
+                request.user = AnonymousUser()
+        
+        response = self.get_response(request)
+        return response
+```
+
+### パターン2: タイムゾーンの設定
+
+```python
+# middleware.py
+from django.utils import timezone
+from django.utils.deprecation import MiddlewareMixin
+
+class TimezoneMiddleware(MiddlewareMixin):
+    def process_request(self, request):
+        if request.user.is_authenticated:
+            # ユーザーのタイムゾーンを設定
+            timezone.activate(request.user.timezone)
+        else:
+            timezone.deactivate()
+```
+
+## 8. よくある問題と解決策
+
+### 問題1: ミドルウェアが実行されない
+
+**原因:**
+- `MIDDLEWARE`に登録されていない
+- ミドルウェアの順序が間違っている
+
+**解決策:**
+```python
+# settings.py
+MIDDLEWARE = [
+    # 順序が重要
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'myapp.middleware.MyMiddleware',  # 正しい位置に追加
+]
+```
+
+### 問題2: パフォーマンスの問題
+
+**原因:**
+- ミドルウェアで重い処理を実行している
+- 不要なミドルウェアが有効になっている
+
+**解決策:**
+```python
+# 条件付きでミドルウェアを適用
+class ConditionalMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+    
+    def __call__(self, request):
+        # 特定のパスのみに適用
+        if request.path.startswith('/api/'):
+            # 処理
+            pass
+        response = self.get_response(request)
+        return response
+```
+
+これで、Djangoのミドルウェアの基礎知識と実務での使い方を理解できるようになりました。

@@ -1,24 +1,139 @@
 ---
-title: "React Query基礎"
-label: "React Query基礎"
+title: TanStack Query完全ガイド
+sidebar:
+    label: React Query基礎
 ---
 
-## React Query基礎
+# TanStack Query完全ガイド
 
-React Query（TanStack Query）は、サーバー状態管理のためのライブラリです。
+TanStack Query（旧React Query）を使用したサーバー状態管理を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
 
-### インストール
+## 1. TanStack Queryとは
+
+### TanStack Queryの特徴
+
+TanStack Queryは、サーバー状態管理のためのライブラリです。データフェッチング、キャッシング、同期、更新を簡単に実現します。
+
+```
+TanStack Queryの特徴
+   ├─ 自動キャッシング
+   ├─ バックグラウンド更新
+   ├─ オプティミスティック更新
+   └─ エラーハンドリング
+```
+
+### なぜTanStack Queryが必要か
+
+**問題のある構成（TanStack Queryなし）:**
+
+```jsx
+// 問題: 手動でのデータフェッチング管理
+function UserProfile({ userId }) {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/users/${userId}`)
+      .then(res => res.json())
+      .then(data => {
+        setUser(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        setError(err);
+        setLoading(false);
+      });
+  }, [userId]);
+
+  if (loading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+  return <div>{user?.name}</div>;
+}
+
+// 問題点:
+// 1. キャッシングがない
+// 2. 再取得のロジックが必要
+// 3. エラーハンドリングが複雑
+// 4. ローディング状態の管理が複雑
+```
+
+**解決: TanStack Queryによる簡潔な実装**
+
+```jsx
+// 解決: TanStack Queryによる簡潔な実装
+import { useQuery } from '@tanstack/react-query';
+
+function UserProfile({ userId }) {
+  const { data: user, isLoading, error } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  });
+
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+  return <div>{user?.name}</div>;
+}
+
+// メリット:
+// 1. 自動キャッシング
+// 2. 自動再取得
+// 3. エラーハンドリング
+// 4. ローディング状態の管理
+```
+
+## 2. インストール
+
+### 基本的なインストール
 
 ```bash
 npm install @tanstack/react-query
 ```
 
-### QueryClientの設定
+### DevToolsのインストール
+
+```bash
+npm install @tanstack/react-query-devtools
+```
+
+## 3. QueryClientの設定
+
+### 基本的な設定
 
 ```jsx
+// App.jsx
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 const queryClient = new QueryClient();
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <YourApp />
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
+  );
+}
+```
+
+### カスタム設定
+
+```jsx
+// App.jsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5分
+      cacheTime: 10 * 60 * 1000, // 10分
+      retry: 3,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    },
+  },
+});
 
 function App() {
   return (
@@ -29,27 +144,84 @@ function App() {
 }
 ```
 
-### データフェッチング
+## 4. データフェッチング
+
+### 基本的なクエリ
 
 ```jsx
+// components/UserProfile.jsx
 import { useQuery } from '@tanstack/react-query';
 
 function UserProfile({ userId }) {
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, isError } = useQuery({
     queryKey: ['user', userId],
     queryFn: () => fetchUser(userId),
   });
 
   if (isLoading) return <div>Loading...</div>;
-  if (error) return <div>Error: {error.message}</div>;
-
-  return <div>{data.name}</div>;
+  if (isError) return <div>Error: {error.message}</div>;
+  return <div>{data?.name}</div>;
 }
 ```
 
-### ミューテーション
+### 条件付きクエリ
 
 ```jsx
+// enabledオプションで条件付き実行
+function UserPosts({ userId }) {
+  const { data: user } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  });
+
+  const { data: posts } = useQuery({
+    queryKey: ['posts', userId],
+    queryFn: () => fetchUserPosts(userId),
+    enabled: !!user, // userが存在する場合のみ実行
+  });
+
+  return <div>{posts?.map(post => <div key={post.id}>{post.title}</div>)}</div>;
+}
+```
+
+### 依存クエリ
+
+```jsx
+// 依存クエリの実装
+function UserDashboard({ userId }) {
+  const { data: user } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  });
+
+  const { data: posts } = useQuery({
+    queryKey: ['posts', userId],
+    queryFn: () => fetchUserPosts(userId),
+    enabled: !!user,
+  });
+
+  const { data: comments } = useQuery({
+    queryKey: ['comments', userId],
+    queryFn: () => fetchUserComments(userId),
+    enabled: !!user && !!posts,
+  });
+
+  return (
+    <div>
+      <div>User: {user?.name}</div>
+      <div>Posts: {posts?.length}</div>
+      <div>Comments: {comments?.length}</div>
+    </div>
+  );
+}
+```
+
+## 5. ミューテーション
+
+### 基本的なミューテーション
+
+```jsx
+// components/CreateUser.jsx
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 function CreateUser() {
@@ -58,15 +230,174 @@ function CreateUser() {
   const mutation = useMutation({
     mutationFn: createUser,
     onSuccess: () => {
+      // クエリの無効化
       queryClient.invalidateQueries({ queryKey: ['users'] });
     },
   });
 
   return (
-    <button onClick={() => mutation.mutate({ name: 'John' })}>
-      Create User
+    <button
+      onClick={() => mutation.mutate({ name: 'John', email: 'john@example.com' })}
+      disabled={mutation.isPending}
+    >
+      {mutation.isPending ? 'Creating...' : 'Create User'}
     </button>
   );
 }
 ```
+
+### オプティミスティック更新
+
+```jsx
+// オプティミスティック更新の実装
+function UpdateUser({ userId }) {
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: updateUser,
+    onMutate: async (newUser) => {
+      // 進行中のクエリをキャンセル
+      await queryClient.cancelQueries({ queryKey: ['user', userId] });
+
+      // スナップショットを取得
+      const previousUser = queryClient.getQueryData(['user', userId]);
+
+      // オプティミスティック更新
+      queryClient.setQueryData(['user', userId], newUser);
+
+      return { previousUser };
+    },
+    onError: (err, newUser, context) => {
+      // エラー時はロールバック
+      queryClient.setQueryData(['user', userId], context.previousUser);
+    },
+    onSettled: () => {
+      // 最終的にサーバーから再取得
+      queryClient.invalidateQueries({ queryKey: ['user', userId] });
+    },
+  });
+
+  return (
+    <button onClick={() => mutation.mutate({ id: userId, name: 'New Name' })}>
+      Update User
+    </button>
+  );
+}
+```
+
+## 6. 実務でのベストプラクティス
+
+### パターン1: カスタムフックの作成
+
+```jsx
+// hooks/useUser.js
+import { useQuery } from '@tanstack/react-query';
+
+export function useUser(userId) {
+  return useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+    enabled: !!userId,
+  });
+}
+
+// 使用
+function UserProfile({ userId }) {
+  const { data: user, isLoading } = useUser(userId);
+  if (isLoading) return <div>Loading...</div>;
+  return <div>{user?.name}</div>;
+}
+```
+
+### パターン2: クエリキーの管理
+
+```jsx
+// constants/queryKeys.js
+export const queryKeys = {
+  users: {
+    all: ['users'] as const,
+    lists: () => [...queryKeys.users.all, 'list'] as const,
+    list: (filters: string) => [...queryKeys.users.lists(), { filters }] as const,
+    details: () => [...queryKeys.users.all, 'detail'] as const,
+    detail: (id: number) => [...queryKeys.users.details(), id] as const,
+  },
+};
+
+// 使用
+function UserList() {
+  const { data } = useQuery({
+    queryKey: queryKeys.users.lists(),
+    queryFn: fetchUsers,
+  });
+  return <div>{data?.map(user => <div key={user.id}>{user.name}</div>)}</div>;
+}
+```
+
+### パターン3: エラーハンドリング
+
+```jsx
+// グローバルエラーハンドラー
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      onError: (error) => {
+        // グローバルエラーハンドリング
+        console.error('Query error:', error);
+        // エラー通知など
+      },
+    },
+    mutations: {
+      onError: (error) => {
+        // グローバルエラーハンドリング
+        console.error('Mutation error:', error);
+      },
+    },
+  },
+});
+```
+
+## 7. よくある問題と解決策
+
+### 問題1: キャッシュが更新されない
+
+**原因:**
+- クエリキーが一致していない
+- 無効化が実行されていない
+
+**解決策:**
+```jsx
+// クエリキーの一貫性を保つ
+const queryKeys = {
+  users: {
+    all: ['users'] as const,
+    detail: (id: number) => ['users', id] as const,
+  },
+};
+
+// ミューテーション後の無効化
+const mutation = useMutation({
+  mutationFn: updateUser,
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+  },
+});
+```
+
+### 問題2: 不要な再取得
+
+**原因:**
+- staleTimeが短すぎる
+- キャッシュ設定が不適切
+
+**解決策:**
+```jsx
+// staleTimeを適切に設定
+const { data } = useQuery({
+  queryKey: ['user', userId],
+  queryFn: () => fetchUser(userId),
+  staleTime: 5 * 60 * 1000, // 5分間は再取得しない
+});
+```
+
+これで、TanStack Queryの基礎知識と実務での使い方を理解できるようになりました。
 

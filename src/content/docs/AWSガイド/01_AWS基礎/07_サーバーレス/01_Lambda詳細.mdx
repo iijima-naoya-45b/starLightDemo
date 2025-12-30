@@ -1,71 +1,558 @@
 ---
-title: "Lambda詳細"
-label: "Lambda詳細"
+title: Lambda完全ガイド
+sidebar:
+    label: Lambda詳細
 ---
 
-## Lambda詳細
+# Lambda完全ガイド
 
-### Lambda関数の設定
+Lambdaは、AWSのサーバーレスコンピューティングサービスです。実務で使える実装例とベストプラクティスを詳しく解説します。
 
-```yaml
-LambdaFunction:
-  Type: AWS::Lambda::Function
-  Properties:
-    FunctionName: MyFunction
-    Runtime: python3.11
-    Handler: index.lambda_handler
-    Role: !GetAtt LambdaExecutionRole.Arn
-    Code:
-      ZipFile: |
-        def lambda_handler(event, context):
-            return {'statusCode': 200, 'body': 'Hello'}
-    Timeout: 30
-    MemorySize: 512
-    Environment:
-      Variables:
-        ENV: production
-    Layers:
-      - !Ref LambdaLayer
+## 1. Lambdaとは
+
+### Lambdaの役割
+
+Lambdaは、サーバーの管理なしでコードを実行できるサービスです。イベント駆動で自動スケーリングします。
+
+```
+イベント（API Gateway、S3、DynamoDBなど）
+   ↓
+Lambda関数（コードを実行）
+   ↓
+結果を返す
 ```
 
-### Lambdaレイヤー
+### なぜLambdaが必要か
 
-```yaml
-LambdaLayer:
-  Type: AWS::Lambda::LayerVersion
-  Properties:
-    LayerName: MyLayer
-    Content:
-      S3Bucket: my-bucket
-      S3Key: layer.zip
-    CompatibleRuntimes:
-      - python3.11
+**問題のある構成（従来のサーバー）:**
+
+```bash
+# 問題: EC2インスタンスを常時稼働
+# 1. EC2インスタンスを起動（24時間稼働）
+# 2. OSのセットアップ
+# 3. アプリケーションのデプロイ
+# 4. 監視とメンテナンス
+
+# コスト計算:
+# t3.mediumインスタンス: $0.0416/時間
+# 24時間 × 30日 = 720時間/月
+# コスト: $0.0416 × 720 = $29.95/月
+
+# 問題点:
+# 1. アイドル時間も課金される
+# 2. サーバー管理が必要
+# 3. スケーリングが手動
+# 4. 運用コストが高い
 ```
 
-### API Gatewayとの統合
+**解決: Lambdaによるサーバーレス**
 
-```yaml
-ApiGateway:
-  Type: AWS::ApiGateway::RestApi
-  Properties:
-    Name: MyAPI
+```python
+# 解決: Lambda関数（イベント駆動）
+import json
 
-Resource:
-  Type: AWS::ApiGateway::Resource
-  Properties:
-    RestApiId: !Ref ApiGateway
-    PathPart: users
+def lambda_handler(event, context):
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Hello from Lambda!')
+    }
 
-Method:
-  Type: AWS::ApiGateway::Method
-  Properties:
-    RestApiId: !Ref ApiGateway
-    ResourceId: !Ref Resource
-    HttpMethod: GET
-    AuthorizationType: AWS_IAM
-    Integration:
-      Type: AWS_PROXY
-      IntegrationHttpMethod: POST
-      Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunction.Arn}/invocations'
+# コスト計算:
+# リクエスト数: 100万回/月
+# 実行時間: 100ms/リクエスト
+# メモリ: 512MB
+# コスト: 約$0.20/月（最初の100万リクエストは無料）
+
+# メリット:
+# 1. 実行時間のみ課金
+# 2. サーバー管理が不要
+# 3. 自動スケーリング
+# 4. 運用コストが低い
 ```
 
+## 2. Lambda関数の基本
+
+### 基本的な関数
+
+```python
+# Pythonでの実装
+import json
+
+def lambda_handler(event, context):
+    # イベントの処理
+    name = event.get('name', 'World')
+    
+    # 処理の実行
+    message = f'Hello, {name}!'
+    
+    # レスポンスの返却
+    return {
+        'statusCode': 200,
+        'headers': {
+            'Content-Type': 'application/json'
+        },
+        'body': json.dumps({
+            'message': message
+        })
+    }
+```
+
+### Node.jsでの実装
+
+```javascript
+// Node.jsでの実装
+exports.handler = async (event, context) => {
+    const name = event.name || 'World';
+    const message = `Hello, ${name}!`;
+    
+    return {
+        statusCode: 200,
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            message: message
+        })
+    };
+};
+```
+
+## 3. Lambda関数の設定
+
+### 基本的な設定
+
+```yaml
+Resources:
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: MyFunction
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+              return {'statusCode': 200, 'body': 'Hello'}
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          ENV: production
+          DATABASE_URL: !Ref DatabaseURL
+      Layers:
+        - !Ref LambdaLayer
+```
+
+### 環境変数
+
+```yaml
+Resources:
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Environment:
+        Variables:
+          ENV: production
+          DATABASE_URL: postgresql://...
+          API_KEY: !Ref SecretsManagerSecret
+          LOG_LEVEL: INFO
+```
+
+### Secrets Managerとの統合
+
+```python
+import boto3
+import json
+
+def lambda_handler(event, context):
+    # Secrets Managerからシークレットを取得
+    secrets_client = boto3.client('secretsmanager')
+    secret = secrets_client.get_secret_value(
+        SecretId='my-secret'
+    )
+    secret_dict = json.loads(secret['SecretString'])
+    
+    # シークレットを使用
+    api_key = secret_dict['api_key']
+    database_url = secret_dict['database_url']
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Secret retrieved')
+    }
+```
+
+## 4. Lambdaレイヤー
+
+### レイヤーとは
+
+レイヤーは、Lambda関数で共通して使用するライブラリやコードをパッケージ化したものです。
+
+### レイヤーの作成
+
+```bash
+# レイヤー用のディレクトリ構造
+layer/
+  python/
+    requests/
+      __init__.py
+      ...
+
+# レイヤーのパッケージ化
+cd layer
+zip -r ../layer.zip python/
+
+# レイヤーのアップロード
+aws lambda publish-layer-version \
+  --layer-name my-layer \
+  --zip-file fileb://layer.zip \
+  --compatible-runtimes python3.11
+```
+
+### レイヤーの使用
+
+```yaml
+Resources:
+  LambdaLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: MyLayer
+      Content:
+        S3Bucket: my-bucket
+        S3Key: layer.zip
+      CompatibleRuntimes:
+        - python3.11
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Layers:
+        - !Ref LambdaLayer
+```
+
+## 5. イベントソース
+
+### API Gateway
+
+```yaml
+Resources:
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: ApiHandler
+      Runtime: python3.11
+      Handler: index.lambda_handler
+
+  ApiGatewayMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref Resource
+      HttpMethod: GET
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunction.Arn}/invocations'
+
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*'
+```
+
+### S3イベント
+
+```yaml
+Resources:
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: S3EventHandler
+      Runtime: python3.11
+      Handler: index.lambda_handler
+
+  S3EventPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub '${S3Bucket}/*'
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt LambdaFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .jpg
+```
+
+### DynamoDBストリーム
+
+```yaml
+Resources:
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: DynamoDBStreamHandler
+      Runtime: python3.11
+      Handler: index.lambda_handler
+
+  EventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt DynamoDBTable.StreamArn
+      FunctionName: !Ref LambdaFunction
+      StartingPosition: LATEST
+      BatchSize: 100
+      MaximumBatchingWindowInSeconds: 5
+```
+
+### CloudWatch Events（スケジュール）
+
+```yaml
+Resources:
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: ScheduledTask
+      Runtime: python3.11
+      Handler: index.lambda_handler
+
+  ScheduledRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Run every day at 1 AM
+      ScheduleExpression: cron(0 1 * * ? *)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt LambdaFunction.Arn
+          Id: ScheduledTaskTarget
+
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ScheduledRule.Arn
+```
+
+## 6. エラーハンドリング
+
+### リトライとデッドレターキュー（DLQ）
+
+```yaml
+Resources:
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: MyFunction
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      DeadLetterConfig:
+        TargetArn: !GetAtt DLQ.Arn
+
+  DLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: my-function-dlq
+      MessageRetentionPeriod: 1209600  # 14日間
+
+  EventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt DynamoDBTable.StreamArn
+      FunctionName: !Ref LambdaFunction
+      MaximumRetryAttempts: 3
+      BisectBatchOnFunctionError: true
+```
+
+### エラーハンドリングの実装
+
+```python
+import json
+import boto3
+from botocore.exceptions import ClientError
+
+def lambda_handler(event, context):
+    try:
+        # 処理の実行
+        result = process_event(event)
+        return {
+            'statusCode': 200,
+            'body': json.dumps(result)
+        }
+    except ClientError as e:
+        # AWSサービスのエラー
+        print(f'AWS Error: {e}')
+        raise
+    except Exception as e:
+        # その他のエラー
+        print(f'Error: {e}')
+        # DLQに送信される
+        raise
+```
+
+## 7. パフォーマンス最適化
+
+### コールドスタートの対策
+
+```python
+# グローバル変数で接続を再利用
+import boto3
+
+# 関数外で初期化（コールドスタート時のみ実行）
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('my-table')
+
+def lambda_handler(event, context):
+    # 接続は再利用される（ウォームスタート時は高速）
+    response = table.get_item(Key={'id': '123'})
+    return response
+```
+
+### メモリの最適化
+
+```yaml
+Resources:
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      MemorySize: 512  # メモリを増やすとCPUも増える
+      # メモリが多いほど実行時間が短くなる可能性がある
+```
+
+## 8. 実務でのベストプラクティス
+
+### パターン1: APIエンドポイント
+
+```python
+import json
+import boto3
+
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('users')
+
+def lambda_handler(event, context):
+    method = event['httpMethod']
+    path = event['path']
+    
+    if method == 'GET' and path == '/users':
+        # ユーザー一覧を取得
+        response = table.scan()
+        return {
+            'statusCode': 200,
+            'body': json.dumps(response['Items'])
+        }
+    elif method == 'POST' and path == '/users':
+        # ユーザーを作成
+        body = json.loads(event['body'])
+        table.put_item(Item=body)
+        return {
+            'statusCode': 201,
+            'body': json.dumps({'message': 'User created'})
+        }
+    
+    return {
+        'statusCode': 404,
+        'body': json.dumps({'error': 'Not found'})
+    }
+```
+
+### パターン2: 画像処理
+
+```python
+import boto3
+from PIL import Image
+import io
+
+s3 = boto3.client('s3')
+
+def lambda_handler(event, context):
+    bucket = event['Records'][0]['s3']['bucket']['name']
+    key = event['Records'][0]['s3']['object']['key']
+    
+    # 画像をダウンロード
+    response = s3.get_object(Bucket=bucket, Key=key)
+    image_data = response['Body'].read()
+    
+    # 画像をリサイズ
+    img = Image.open(io.BytesIO(image_data))
+    img.thumbnail((800, 600))
+    
+    # リサイズした画像をアップロード
+    output = io.BytesIO()
+    img.save(output, format='JPEG')
+    output.seek(0)
+    
+    s3.put_object(
+        Bucket=bucket,
+        Key=f'resized/{key}',
+        Body=output,
+        ContentType='image/jpeg'
+    )
+    
+    return {'statusCode': 200}
+```
+
+## 9. よくある問題と解決策
+
+### 問題1: タイムアウトエラー
+
+**原因:**
+- 実行時間が15分を超えている
+- 外部APIの応答が遅い
+
+**解決策:**
+```python
+# タイムアウトを考慮した設計
+import signal
+
+def timeout_handler(signum, frame):
+    raise TimeoutError('Function timeout')
+
+def lambda_handler(event, context):
+    # タイムアウトを設定（例: 10秒）
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(10)
+    
+    try:
+        # 処理
+        result = process_event(event)
+        signal.alarm(0)  # タイムアウトを解除
+        return result
+    except TimeoutError:
+        return {
+            'statusCode': 504,
+            'body': json.dumps({'error': 'Timeout'})
+        }
+```
+
+### 問題2: メモリ不足
+
+**原因:**
+- メモリサイズが小さすぎる
+- 大きなデータを処理している
+
+**解決策:**
+```yaml
+# メモリサイズを増やす
+Resources:
+  LambdaFunction:
+    Properties:
+      MemorySize: 1024  # 512MB → 1024MB
+      # メモリが多いほどCPUも増えるため、実行時間が短くなる可能性がある
+```
+
+これで、Lambdaの基礎知識と実務での使い方を理解できるようになりました。

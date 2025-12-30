@@ -1,0 +1,225 @@
+---
+title: Dockerボリューム完全ガイド
+sidebar:
+    label: Dockerボリューム
+---
+
+# Dockerボリューム完全ガイド
+
+Dockerのボリューム機能を、実務で使える実装例とともに詳しく解説します。
+
+## 1. Dockerボリュームとは
+
+### ボリュームの役割
+
+ボリュームは、コンテナのデータを永続化し、コンテナ間でデータを共有するための仕組みです。
+
+```
+コンテナ1
+   ↓（ボリューム）
+データ（永続化）
+   ↓（ボリューム）
+コンテナ2
+```
+
+### なぜボリュームが必要か
+
+**問題のある構成（ボリュームなし）:**
+
+```bash
+# 問題: コンテナを削除するとデータが失われる
+docker run -d --name db postgres:14
+# コンテナを削除
+docker rm db
+# データが失われる
+```
+
+**解決: ボリュームによるデータ永続化**
+
+```bash
+# 解決: ボリュームを使用
+docker volume create postgres_data
+docker run -d --name db -v postgres_data:/var/lib/postgresql/data postgres:14
+
+# メリット:
+# 1. データの永続化（コンテナを削除してもデータが残る）
+# 2. コンテナ間でのデータ共有
+# 3. バックアップが容易
+```
+
+## 2. ボリュームの種類
+
+### 名前付きボリューム
+
+```bash
+# ボリュームの作成
+docker volume create my-volume
+
+# ボリュームの使用
+docker run -d -v my-volume:/data my-app:latest
+
+# ボリュームの一覧表示
+docker volume ls
+
+# ボリュームの詳細確認
+docker volume inspect my-volume
+
+# ボリュームの削除
+docker volume rm my-volume
+```
+
+### 匿名ボリューム
+
+```bash
+# 匿名ボリュームの作成
+docker run -d -v /data my-app:latest
+
+# 匿名ボリュームの一覧表示
+docker volume ls
+```
+
+### バインドマウント
+
+```bash
+# バインドマウントの使用
+docker run -d -v /host/path:/container/path my-app:latest
+
+# 絶対パスを使用
+docker run -d -v $(pwd)/data:/app/data my-app:latest
+```
+
+## 3. Docker Composeでのボリューム
+
+### 名前付きボリューム
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  db:
+    image: postgres:14-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+```
+
+### バインドマウント
+
+```yaml
+services:
+  app:
+    build: .
+    volumes:
+      - ./src:/app/src  # 開発環境でのホットリロード
+      - ./config:/app/config
+```
+
+### 匿名ボリューム
+
+```yaml
+services:
+  app:
+    build: .
+    volumes:
+      - /app/node_modules  # node_modulesを上書きしない
+```
+
+## 4. ボリュームの操作
+
+### ボリュームのバックアップ
+
+```bash
+# ボリュームのバックアップ
+docker run --rm -v postgres_data:/data -v $(pwd):/backup \
+  alpine tar czf /backup/postgres_backup.tar.gz -C /data .
+
+# ボリュームのリストア
+docker run --rm -v postgres_data:/data -v $(pwd):/backup \
+  alpine tar xzf /backup/postgres_backup.tar.gz -C /data
+```
+
+### ボリュームのコピー
+
+```bash
+# ボリューム間でのデータコピー
+docker run --rm -v source_volume:/source -v dest_volume:/dest \
+  alpine sh -c "cp -r /source/* /dest/"
+```
+
+## 5. 実務でのベストプラクティス
+
+### パターン1: データベースの永続化
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  db:
+    image: postgres:14-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql  # 初期化スクリプト
+
+volumes:
+  postgres_data:
+```
+
+### パターン2: 開発環境でのホットリロード
+
+```yaml
+services:
+  app:
+    build: .
+    volumes:
+      - .:/app  # ソースコードをマウント
+      - /app/node_modules  # node_modulesは上書きしない
+```
+
+### パターン3: 設定ファイルのマウント
+
+```yaml
+services:
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro  # 読み取り専用
+      - ./static:/usr/share/nginx/html:ro
+```
+
+## 6. よくある問題と解決策
+
+### 問題1: ボリュームがマウントされない
+
+**原因:**
+- パスが正しく設定されていない
+- 権限の問題
+
+**解決策:**
+```bash
+# 絶対パスを使用
+docker run -v /absolute/path:/data my-app:latest
+
+# 権限の確認
+ls -la /path/to/volume
+```
+
+### 問題2: ボリュームのサイズが大きい
+
+**原因:**
+- 不要なデータが蓄積している
+- ログファイルが大きい
+
+**解決策:**
+```bash
+# ボリュームの使用状況を確認
+docker system df -v
+
+# 未使用のボリュームを削除
+docker volume prune
+```
+
+これで、Dockerボリュームの基礎知識と実務での使い方を理解できるようになりました。

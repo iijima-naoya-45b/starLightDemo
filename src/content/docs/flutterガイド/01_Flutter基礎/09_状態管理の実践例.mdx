@@ -1,0 +1,292 @@
+---
+title: 状態管理の実践例
+sidebar:
+    label: 状態管理の実践例
+---
+
+# Flutter状態管理の実践例
+
+Flutterでの状態管理を、Provider、Riverpod、Blocの実務での使い分けと実装例を詳しく解説します。
+
+## 1. Providerを使用した実装例
+
+### 基本的なProvider
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+class CounterProvider extends ChangeNotifier {
+  int _count = 0;
+
+  int get count => _count;
+
+  void increment() {
+    _count++;
+    notifyListeners();
+  }
+
+  void decrement() {
+    _count--;
+    notifyListeners();
+  }
+}
+
+// 使用例
+class CounterScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (_) => CounterProvider(),
+      child: Scaffold(
+        appBar: AppBar(title: Text('Counter')),
+        body: Center(
+          child: Consumer<CounterProvider>(
+            builder: (context, provider, child) {
+              return Text(
+                'Count: ${provider.count}',
+                style: TextStyle(fontSize: 24),
+              );
+            },
+          ),
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () {
+            context.read<CounterProvider>().increment();
+          },
+          child: Icon(Icons.add),
+        ),
+      ),
+    );
+  }
+}
+```
+
+### 複数のProviderを使用
+
+```dart
+MultiProvider(
+  providers: [
+    ChangeNotifierProvider(create: (_) => CounterProvider()),
+    ChangeNotifierProvider(create: (_) => UserProvider()),
+  ],
+  child: MyApp(),
+)
+```
+
+## 2. Riverpodを使用した実装例
+
+### 基本的なRiverpod
+
+```dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+final counterProvider = StateNotifierProvider<CounterNotifier, int>((ref) {
+  return CounterNotifier();
+});
+
+class CounterNotifier extends StateNotifier<int> {
+  CounterNotifier() : super(0);
+
+  void increment() {
+    state++;
+  }
+
+  void decrement() {
+    state--;
+  }
+}
+
+// 使用例
+class CounterScreen extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(counterProvider);
+
+    return Scaffold(
+      appBar: AppBar(title: Text('Counter')),
+      body: Center(
+        child: Text(
+          'Count: $count',
+          style: TextStyle(fontSize: 24),
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          ref.read(counterProvider.notifier).increment();
+        },
+        child: Icon(Icons.add),
+      ),
+    );
+  }
+}
+```
+
+### FutureProviderの使用
+
+```dart
+final userProvider = FutureProvider<User>((ref) async {
+  final response = await http.get(Uri.parse('https://api.example.com/user'));
+  return User.fromJson(jsonDecode(response.body));
+});
+
+// 使用例
+class UserScreen extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final userAsync = ref.watch(userProvider);
+
+    return userAsync.when(
+      data: (user) => Text('Name: ${user.name}'),
+      loading: () => CircularProgressIndicator(),
+      error: (error, stack) => Text('Error: $error'),
+    );
+  }
+}
+```
+
+## 3. Blocを使用した実装例
+
+### 基本的なBloc
+
+```dart
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+// イベント
+abstract class CounterEvent {}
+
+class IncrementEvent extends CounterEvent {}
+
+class DecrementEvent extends CounterEvent {}
+
+// 状態
+class CounterState {
+  final int count;
+
+  CounterState(this.count);
+}
+
+// Bloc
+class CounterBloc extends Bloc<CounterEvent, CounterState> {
+  CounterBloc() : super(CounterState(0)) {
+    on<IncrementEvent>((event, emit) {
+      emit(CounterState(state.count + 1));
+    });
+    on<DecrementEvent>((event, emit) {
+      emit(CounterState(state.count - 1));
+    });
+  }
+}
+
+// 使用例
+class CounterScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => CounterBloc(),
+      child: Scaffold(
+        appBar: AppBar(title: Text('Counter')),
+        body: BlocBuilder<CounterBloc, CounterState>(
+          builder: (context, state) {
+            return Center(
+              child: Text(
+                'Count: ${state.count}',
+                style: TextStyle(fontSize: 24),
+              ),
+            );
+          },
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () {
+            context.read<CounterBloc>().add(IncrementEvent());
+          },
+          child: Icon(Icons.add),
+        ),
+      ),
+    );
+  }
+}
+```
+
+## 4. 実務での使い分け
+
+### 小規模プロジェクト: Provider
+
+- シンプルで学習コストが低い
+- 迅速な開発が可能
+- 状態管理が複雑でない場合に適している
+
+### 中規模プロジェクト: Riverpod
+
+- 型安全性が高い
+- コンパイル時にエラーを検出
+- テストが容易
+
+### 大規模プロジェクト: Bloc
+
+- 複雑な状態遷移に対応
+- イベント駆動の設計
+- 予測可能な状態管理
+
+## 5. 実践的なパターン
+
+### パターン1: API通信と状態管理
+
+```dart
+// Riverpodを使用
+final userListProvider = FutureProvider<List<User>>((ref) async {
+  final repository = ref.watch(userRepositoryProvider);
+  return await repository.getUsers();
+});
+
+class UserListScreen extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final usersAsync = ref.watch(userListProvider);
+
+    return usersAsync.when(
+      data: (users) => ListView.builder(
+        itemCount: users.length,
+        itemBuilder: (context, index) {
+          return ListTile(
+            title: Text(users[index].name),
+          );
+        },
+      ),
+      loading: () => CircularProgressIndicator(),
+      error: (error, stack) => Text('Error: $error'),
+    );
+  }
+}
+```
+
+### パターン2: フォームの状態管理
+
+```dart
+// Providerを使用
+class FormProvider extends ChangeNotifier {
+  final _formKey = GlobalKey<FormState>();
+  String _email = '';
+  String _password = '';
+
+  GlobalKey<FormState> get formKey => _formKey;
+  String get email => _email;
+  String get password => _password;
+
+  void setEmail(String value) {
+    _email = value;
+    notifyListeners();
+  }
+
+  void setPassword(String value) {
+    _password = value;
+    notifyListeners();
+  }
+
+  bool validate() {
+    return _formKey.currentState?.validate() ?? false;
+  }
+}
+```
+
+これで、Flutterでの状態管理の実践的な使い方を理解できるようになりました。

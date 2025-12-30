@@ -1,13 +1,58 @@
 ---
-title: "Redux基礎"
-label: "Redux基礎"
+title: Redux完全ガイド
+sidebar:
+    label: Redux基礎
 ---
 
-## Redux基礎
+# Redux完全ガイド
 
-Reduxは、予測可能な状態管理のためのライブラリです。
+Reduxを使用した状態管理を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
 
-### Redux Toolkitの設定
+## 1. Reduxとは
+
+### Reduxの特徴
+
+Reduxは、予測可能な状態管理のためのライブラリです。単一のストアでアプリケーション全体の状態を管理します。
+
+```
+Reduxの特徴
+   ├─ 単一の真実の源（Single Source of Truth）
+   ├─ 状態は読み取り専用（Read-only State）
+   ├─ 純粋関数による変更（Pure Functions）
+   └─ タイムトラベルデバッグ
+```
+
+### なぜReduxが必要か
+
+**問題のある構成（Reduxなし）:**
+
+```jsx
+// 問題: 状態が複数の場所に散在
+function App() {
+  const [user, setUser] = useState(null);
+  const [theme, setTheme] = useState('light');
+  // 状態が増えると管理が困難
+  return <YourApp />;
+}
+```
+
+**解決: Reduxによる一元管理**
+
+```jsx
+// 解決: Reduxによる一元管理
+import { configureStore } from '@reduxjs/toolkit';
+
+export const store = configureStore({
+  reducer: {
+    user: userReducer,
+    theme: themeReducer,
+  },
+});
+```
+
+## 2. Redux Toolkitの設定
+
+### インストール
 
 ```bash
 npm install @reduxjs/toolkit react-redux
@@ -16,19 +61,50 @@ npm install @reduxjs/toolkit react-redux
 ### Storeの作成
 
 ```jsx
+// store/index.js
 import { configureStore } from '@reduxjs/toolkit';
-import counterReducer from './counterSlice';
+import counterReducer from './slices/counterSlice';
+import userReducer from './slices/userSlice';
 
 export const store = configureStore({
   reducer: {
     counter: counterReducer,
+    user: userReducer,
   },
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware({
+      serializableCheck: {
+        ignoredActions: ['persist/PERSIST'],
+      },
+    }),
 });
+
+export type RootState = ReturnType<typeof store.getState>;
+export type AppDispatch = typeof store.dispatch;
 ```
 
-### Sliceの作成
+### Providerの設定
 
 ```jsx
+// App.jsx
+import { Provider } from 'react-redux';
+import { store } from './store';
+
+function App() {
+  return (
+    <Provider store={store}>
+      <YourApp />
+    </Provider>
+  );
+}
+```
+
+## 3. Sliceの作成
+
+### 基本的なSlice
+
+```jsx
+// store/slices/counterSlice.js
 import { createSlice } from '@reduxjs/toolkit';
 
 const counterSlice = createSlice({
@@ -41,18 +117,75 @@ const counterSlice = createSlice({
     decrement: (state) => {
       state.value -= 1;
     },
+    incrementByAmount: (state, action) => {
+      state.value += action.payload;
+    },
+    reset: (state) => {
+      state.value = 0;
+    },
   },
 });
 
-export const { increment, decrement } = counterSlice.actions;
+export const { increment, decrement, incrementByAmount, reset } = counterSlice.actions;
 export default counterSlice.reducer;
 ```
 
-### コンポーネントでの使用
+### 非同期処理（createAsyncThunk）
 
 ```jsx
+// store/slices/userSlice.js
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+
+// 非同期アクション
+export const fetchUser = createAsyncThunk(
+  'user/fetchUser',
+  async (userId) => {
+    const response = await fetch(`/api/users/${userId}`);
+    return response.json();
+  }
+);
+
+const userSlice = createSlice({
+  name: 'user',
+  initialState: {
+    user: null,
+    loading: false,
+    error: null,
+  },
+  reducers: {
+    clearUser: (state) => {
+      state.user = null;
+    },
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchUser.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchUser.fulfilled, (state, action) => {
+        state.loading = false;
+        state.user = action.payload;
+      })
+      .addCase(fetchUser.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message;
+      });
+  },
+});
+
+export const { clearUser } = userSlice.actions;
+export default userSlice.reducer;
+```
+
+## 4. コンポーネントでの使用
+
+### 基本的な使用
+
+```jsx
+// components/Counter.jsx
 import { useSelector, useDispatch } from 'react-redux';
-import { increment, decrement } from './counterSlice';
+import { increment, decrement } from '../store/slices/counterSlice';
 
 function Counter() {
   const count = useSelector((state) => state.counter.value);
@@ -67,4 +200,165 @@ function Counter() {
   );
 }
 ```
+
+### TypeScriptでの使用
+
+```typescript
+// hooks/redux.ts
+import { useDispatch, useSelector } from 'react-redux';
+import type { RootState, AppDispatch } from '../store';
+
+export const useAppDispatch = useDispatch.withTypes<AppDispatch>();
+export const useAppSelector = useSelector.withTypes<RootState>();
+
+// components/Counter.tsx
+import { useAppSelector, useAppDispatch } from '../hooks/redux';
+import { increment, decrement } from '../store/slices/counterSlice';
+
+function Counter() {
+  const count = useAppSelector((state) => state.counter.value);
+  const dispatch = useAppDispatch();
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => dispatch(increment())}>+</button>
+      <button onClick={() => dispatch(decrement())}>-</button>
+    </div>
+  );
+}
+```
+
+## 5. 実務でのベストプラクティス
+
+### パターン1: セレクターの使用
+
+```jsx
+// store/selectors/counterSelectors.js
+export const selectCount = (state) => state.counter.value;
+export const selectCountDouble = (state) => state.counter.value * 2;
+
+// コンポーネントでの使用
+import { useSelector } from 'react-redux';
+import { selectCount, selectCountDouble } from '../store/selectors/counterSelectors';
+
+function Counter() {
+  const count = useSelector(selectCount);
+  const countDouble = useSelector(selectCountDouble);
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <p>Double: {countDouble}</p>
+    </div>
+  );
+}
+```
+
+### パターン2: ミドルウェアの使用
+
+```jsx
+// store/middleware/logger.js
+const logger = (store) => (next) => (action) => {
+  console.log('dispatching', action);
+  const result = next(action);
+  console.log('next state', store.getState());
+  return result;
+};
+
+// store/index.js
+import { configureStore } from '@reduxjs/toolkit';
+import logger from './middleware/logger';
+
+export const store = configureStore({
+  reducer: {
+    // reducers
+  },
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware().concat(logger),
+});
+```
+
+### パターン3: 永続化（Redux Persist）
+
+```jsx
+// store/index.js
+import { configureStore } from '@reduxjs/toolkit';
+import { persistStore, persistReducer } from 'redux-persist';
+import storage from 'redux-persist/lib/storage';
+import userReducer from './slices/userSlice';
+
+const persistConfig = {
+  key: 'root',
+  storage,
+  whitelist: ['user'], // 永続化するスライス
+};
+
+const persistedReducer = persistReducer(persistConfig, userReducer);
+
+export const store = configureStore({
+  reducer: {
+    user: persistedReducer,
+  },
+});
+
+export const persistor = persistStore(store);
+```
+
+## 6. よくある問題と解決策
+
+### 問題1: 不要な再レンダリング
+
+**原因:**
+- セレクターが不適切
+- メモ化が不十分
+
+**解決策:**
+```jsx
+// メモ化されたセレクターを使用
+import { createSelector } from '@reduxjs/toolkit';
+
+const selectUsers = (state) => state.users.items;
+const selectFilter = (state) => state.users.filter;
+
+export const selectFilteredUsers = createSelector(
+  [selectUsers, selectFilter],
+  (users, filter) => users.filter(user => user.name.includes(filter))
+);
+```
+
+### 問題2: 非同期処理のエラーハンドリング
+
+**原因:**
+- エラーハンドリングが不十分
+- ローディング状態の管理が不適切
+
+**解決策:**
+```jsx
+// 適切なエラーハンドリング
+const userSlice = createSlice({
+  name: 'user',
+  initialState: {
+    user: null,
+    loading: false,
+    error: null,
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchUser.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchUser.fulfilled, (state, action) => {
+        state.loading = false;
+        state.user = action.payload;
+      })
+      .addCase(fetchUser.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message;
+      });
+  },
+});
+```
+
+これで、Reduxの基礎知識と実務での使い方を理解できるようになりました。
 

@@ -1,0 +1,95 @@
+---
+title: デバッグとロギング
+sidebar:
+    label: デバッグとロギング
+---
+
+# Flutterデバッグとロギング完全ガイド
+
+Flutterアプリのデバッグとロギングの実践的な方法を詳しく解説します。
+
+## 1. 基本的なデバッグ方法
+
+### print文の使用
+
+```dart
+void someFunction() {
+  print('Debug message');
+  print('Variable value: $variable');
+}
+```
+
+### debugPrintの使用
+
+```dart
+import 'package:flutter/foundation.dart';
+
+void someFunction() {
+  debugPrint('Debug message'); // 大量の出力でも問題なし
+}
+```
+
+## 2. ロギングライブラリの使用
+
+### loggerパッケージ
+
+```yaml
+dependencies:
+  logger: ^2.0.0
+```
+
+```dart
+import 'package:logger/logger.dart';
+
+final logger = Logger(
+  printer: PrettyPrinter(),
+);
+
+void someFunction() {
+  logger.d('Debug message');
+  logger.i('Info message');
+  logger.w('Warning message');
+  logger.e('Error message', error: e, stackTrace: stackTrace);
+}
+```
+
+## 3. Flutter DevToolsの活用
+
+### パフォーマンスプロファイリング
+
+```bash
+flutter run --profile
+# DevToolsを開く
+flutter pub global run devtools
+```
+
+### メモリプロファイリング
+
+- Memoryタブでメモリ使用量を監視
+- Heap Snapshotでメモリのスナップショットを取得
+
+## 4. 実務でのデバッグ手法
+
+### ブレークポイントの設定
+
+VS CodeやAndroid Studioでブレークポイントを設定し、デバッグ実行します。
+
+### ログレベルの管理
+
+```dart
+class AppLogger {
+  static final Logger _logger = Logger(
+    printer: PrettyPrinter(),
+    level: kDebugMode ? Level.debug : Level.warning,
+  );
+
+  static void d(String message) => _logger.d(message);
+  static void i(String message) => _logger.i(message);
+  static void w(String message) => _logger.w(message);
+  static void e(String message, {Object? error, StackTrace? stackTrace}) {
+    _logger.e(message, error: error, stackTrace: stackTrace);
+  }
+}
+```
+
+これで、Flutterでのデバッグとロギングの実装方法を理解できるようになりました。

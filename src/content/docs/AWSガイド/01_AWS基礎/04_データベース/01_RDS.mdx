@@ -1,22 +1,158 @@
 ---
-title: "RDS"
-label: "RDS"
+title: RDS完全ガイド
+sidebar:
+    label: RDS
 ---
 
-## RDS (Relational Database Service)
+# RDS (Relational Database Service) 完全ガイド
 
-RDSは、マネージドリレーショナルデータベースサービスです。
+RDSは、マネージドリレーショナルデータベースサービスです。実務で使える実装例とベストプラクティスを詳しく解説します。
 
-### RDSエンジン
+## 1. RDSとは
 
-- **MySQL**: オープンソースRDBMS
-- **PostgreSQL**: 高度な機能を持つRDBMS
-- **Aurora**: AWS独自の高性能データベース
-- **MariaDB**: MySQL互換
-- **Oracle**: エンタープライズ向け
-- **SQL Server**: Microsoft SQL Server
+### RDSの役割
 
-### マルチAZ配置
+RDSは、MySQL、PostgreSQL、Auroraなどのリレーショナルデータベースを管理・運用するマネージドサービスです。
+
+```
+アプリケーション
+   ↓（SQLクエリ）
+RDSインスタンス
+   ├─ データベースエンジン
+   ├─ 自動バックアップ
+   └─ モニタリング
+```
+
+### なぜRDSが必要か
+
+**問題のある構成（自己管理データベース）:**
+
+```bash
+# 問題: EC2上でデータベースを自己管理
+# 1. データベースのインストールと設定
+# 2. バックアップの手動管理
+# 3. セキュリティパッチの適用
+# 4. パフォーマンスチューニング
+# 5. 24時間の監視
+
+# 問題点:
+# 1. 運用負荷が高い
+# 2. バックアップの管理が複雑
+# 3. 可用性の確保が困難
+# 4. スケーリングが困難
+```
+
+**解決: RDSによるマネージドデータベース**
+
+```yaml
+# 解決: RDSインスタンスの作成
+Resources:
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: mysql
+      EngineVersion: '8.0'
+      DBInstanceClass: db.t3.medium
+      MultiAZ: true
+      BackupRetentionPeriod: 7
+      StorageEncrypted: true
+
+# メリット:
+# 1. 運用負荷が低い（AWSが管理）
+# 2. 自動バックアップ（設定するだけ）
+# 3. 高い可用性（マルチAZ）
+# 4. 簡単なスケーリング（設定変更のみ）
+```
+
+## 2. RDSエンジン
+
+### エンジンの種類
+
+#### MySQL
+
+```
+特徴: オープンソース、広く使われている
+用途: Webアプリケーション、CMS
+バージョン: 5.7, 8.0
+```
+
+#### PostgreSQL
+
+```
+特徴: 高度な機能、拡張性が高い
+用途: 複雑なクエリ、地理空間データ
+バージョン: 13, 14, 15
+```
+
+#### Aurora
+
+```
+特徴: AWS独自、高性能、高可用性
+用途: 高負荷アプリケーション
+バージョン: MySQL互換、PostgreSQL互換
+```
+
+#### MariaDB
+
+```
+特徴: MySQL互換、コミュニティ主導
+用途: MySQLからの移行
+バージョン: 10.3, 10.4, 10.5
+```
+
+### エンジンの選択
+
+```yaml
+# 用途別の選択例
+用途: Webアプリケーション（シンプル）
+推奨: MySQL
+
+用途: 複雑なクエリ、拡張機能が必要
+推奨: PostgreSQL
+
+用途: 高負荷、高可用性が必要
+推奨: Aurora
+
+用途: MySQL互換が必要
+推奨: MariaDB
+```
+
+## 3. インスタンスクラス
+
+### インスタンスクラスの種類
+
+```
+db.t3.micro: 開発・テスト環境
+db.t3.small: 小規模アプリケーション
+db.t3.medium: 中規模アプリケーション
+db.m5.large: 本番環境（汎用）
+db.r5.large: メモリ最適化（大規模データ）
+db.x1e.xlarge: メモリ最適化（超大規模）
+```
+
+### インスタンスクラスの選択
+
+```yaml
+# 用途別の選択例
+開発環境: db.t3.micro, db.t3.small
+小規模本番: db.t3.medium, db.m5.large
+中規模本番: db.m5.xlarge, db.r5.large
+大規模本番: db.r5.xlarge, db.x1e.xlarge
+```
+
+## 4. マルチAZ配置
+
+### マルチAZとは
+
+マルチAZは、異なるアベイラビリティゾーンにスタンバイレプリカを配置し、高可用性を実現する機能です。
+
+```
+プライマリ（us-east-1a）
+   ↓（同期レプリケーション）
+スタンバイ（us-east-1b）
+```
+
+### マルチAZの設定
 
 ```yaml
 Resources:
@@ -26,38 +162,381 @@ Resources:
       Engine: mysql
       EngineVersion: '8.0'
       DBInstanceClass: db.t3.medium
-      MultiAZ: true
+      MultiAZ: true  # マルチAZを有効化
       StorageType: gp3
       AllocatedStorage: 100
       MasterUsername: admin
       MasterUserPassword: !Ref DBPassword
       BackupRetentionPeriod: 7
       PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'mon:04:00-mon:05:00'
+      StorageEncrypted: true
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
 ```
 
-### リードレプリカ
+### マルチAZのメリット
+
+```
+1. 高可用性: プライマリが障害発生時に自動フェイルオーバー
+2. データの耐久性: 同期レプリケーションでデータ損失を防止
+3. メンテナンス: メンテナンス時に自動フェイルオーバー
+```
+
+## 5. リードレプリカ
+
+### リードレプリカとは
+
+リードレプリカは、読み取り専用のレプリカです。読み取り負荷を分散し、可用性を向上させます。
+
+```
+プライマリ（書き込み）
+   ├─→ リードレプリカ1（読み取り）
+   ├─→ リードレプリカ2（読み取り）
+   └─→ リードレプリカ3（読み取り）
+```
+
+### リードレプリカの設定
 
 ```yaml
-ReadReplica:
-  Type: AWS::RDS::DBInstance
-  Properties:
-    SourceDBInstanceIdentifier: !Ref DBInstance
-    DBInstanceClass: db.t3.medium
-    PubliclyAccessible: false
+Resources:
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: mysql
+      EngineVersion: '8.0'
+      DBInstanceClass: db.t3.medium
+      MasterUsername: admin
+      MasterUserPassword: !Ref DBPassword
+
+  ReadReplica1:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      SourceDBInstanceIdentifier: !Ref DBInstance
+      DBInstanceClass: db.t3.medium
+      PubliclyAccessible: false
+      AvailabilityZone: us-east-1b
+
+  ReadReplica2:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      SourceDBInstanceIdentifier: !Ref DBInstance
+      DBInstanceClass: db.t3.medium
+      PubliclyAccessible: false
+      AvailabilityZone: us-east-1c
 ```
 
-### 実践例: Aurora Serverless
+### リードレプリカの活用
+
+```javascript
+// アプリケーションでの読み取り分散
+const readReplicas = [
+  'read-replica-1.region.amazonaws.com',
+  'read-replica-2.region.amazonaws.com',
+  'read-replica-3.region.amazonaws.com'
+];
+
+// 読み取りクエリはリードレプリカに
+function getUsers() {
+  const replica = readReplicas[Math.floor(Math.random() * readReplicas.length)];
+  return query(replica, 'SELECT * FROM users');
+}
+
+// 書き込みクエリはプライマリに
+function createUser(user) {
+  return query(primaryDB, 'INSERT INTO users ...');
+}
+```
+
+## 6. バックアップとリストア
+
+### 自動バックアップ
 
 ```yaml
-AuroraCluster:
-  Type: AWS::RDS::DBCluster
-  Properties:
-    Engine: aurora-mysql
-    EngineMode: serverless
-    ScalingConfiguration:
-      MinCapacity: 2
-      MaxCapacity: 16
-      AutoPause: true
-      SecondsUntilAutoPause: 300
+Resources:
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      BackupRetentionPeriod: 7  # 7日間保持
+      PreferredBackupWindow: '03:00-04:00'  # バックアップ時間
+      CopyTagsToSnapshot: true  # スナップショットにタグをコピー
 ```
+
+### 手動スナップショット
+
+```bash
+# スナップショットの作成
+aws rds create-db-snapshot \
+  --db-instance-identifier my-db \
+  --db-snapshot-identifier my-db-snapshot-20240101
+
+# スナップショットの一覧表示
+aws rds describe-db-snapshots \
+  --db-instance-identifier my-db
+
+# スナップショットからリストア
+aws rds restore-db-instance-from-db-snapshot \
+  --db-instance-identifier my-db-restored \
+  --db-snapshot-identifier my-db-snapshot-20240101
+```
+
+### ポイントインタイムリカバリー（PITR）
+
+```yaml
+Resources:
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      BackupRetentionPeriod: 7
+      # PITRは自動的に有効化される（バックアップ保持期間内）
+```
+
+```bash
+# PITRでのリストア
+aws rds restore-db-instance-to-point-in-time \
+  --source-db-instance-identifier my-db \
+  --target-db-instance-identifier my-db-restored \
+  --restore-time 2024-01-01T12:00:00Z
+```
+
+## 7. Aurora
+
+### Auroraとは
+
+Auroraは、AWS独自の高性能データベースエンジンです。MySQLやPostgreSQLと互換性があります。
+
+### Auroraクラスター
+
+```yaml
+Resources:
+  AuroraCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      Engine: aurora-mysql
+      EngineVersion: '8.0.mysql_aurora.3.02.0'
+      DatabaseName: mydb
+      MasterUsername: admin
+      MasterUserPassword: !Ref DBPassword
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'mon:04:00-mon:05:00'
+      StorageEncrypted: true
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref DBSecurityGroup
+
+  AuroraInstance1:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: aurora-mysql
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceClass: db.r6g.large
+      PubliclyAccessible: false
+      AvailabilityZone: us-east-1a
+
+  AuroraInstance2:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: aurora-mysql
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceClass: db.r6g.large
+      PubliclyAccessible: false
+      AvailabilityZone: us-east-1b
+```
+
+### Aurora Serverless
+
+```yaml
+Resources:
+  AuroraServerlessCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      Engine: aurora-mysql
+      EngineMode: serverless
+      DatabaseName: mydb
+      MasterUsername: admin
+      MasterUserPassword: !Ref DBPassword
+      ScalingConfiguration:
+        MinCapacity: 2  # ACU（Aurora Capacity Units）
+        MaxCapacity: 16
+        AutoPause: true
+        SecondsUntilAutoPause: 300
+      BackupRetentionPeriod: 7
+      StorageEncrypted: true
+```
+
+### Auroraの特徴
+
+```
+1. 高性能: 最大5倍のスループット
+2. 高可用性: 6つのコピーを3つのAZに分散
+3. 自動スケーリング: ストレージが自動的に拡張
+4. 高速フェイルオーバー: 30秒以内
+```
+
+## 8. パフォーマンス最適化
+
+### パラメータグループ
+
+```yaml
+Resources:
+  DBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      DBParameterGroupName: my-custom-params
+      Family: mysql8.0
+      Description: Custom parameter group
+      Parameters:
+        max_connections: '500'
+        innodb_buffer_pool_size: '{DBInstanceClassMemory*3/4}'
+        query_cache_size: '67108864'
+```
+
+### パフォーマンスインサイト
+
+```bash
+# パフォーマンスインサイトの有効化
+aws rds modify-db-instance \
+  --db-instance-identifier my-db \
+  --enable-performance-insights \
+  --performance-insights-retention-period 7
+```
+
+### スロークエリログ
+
+```yaml
+Resources:
+  DBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Parameters:
+        slow_query_log: '1'
+        long_query_time: '2'
+        log_queries_not_using_indexes: '1'
+```
+
+## 9. セキュリティ
+
+### 暗号化
+
+```yaml
+Resources:
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      StorageEncrypted: true
+      KmsKeyId: !Ref KMSKey  # カスタムKMSキー
+```
+
+### セキュリティグループ
+
+```yaml
+Resources:
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Database security group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+          Description: MySQL access from application servers
+```
+
+## 10. 実務でのベストプラクティス
+
+### パターン1: 高可用性構成
+
+```yaml
+# マルチAZ + リードレプリカ
+Resources:
+  DBInstance:
+    Properties:
+      MultiAZ: true
+      BackupRetentionPeriod: 7
+
+  ReadReplica1:
+    Properties:
+      SourceDBInstanceIdentifier: !Ref DBInstance
+      AvailabilityZone: us-east-1b
+
+  ReadReplica2:
+    Properties:
+      SourceDBInstanceIdentifier: !Ref DBInstance
+      AvailabilityZone: us-east-1c
+```
+
+### パター2: コスト最適化
+
+```yaml
+# 開発環境: 小さいインスタンス、バックアップ短縮
+Resources:
+  DevDBInstance:
+    Properties:
+      DBInstanceClass: db.t3.micro
+      BackupRetentionPeriod: 1
+      MultiAZ: false
+
+# 本番環境: 適切なサイズ、バックアップ長期保持
+Resources:
+  ProdDBInstance:
+    Properties:
+      DBInstanceClass: db.m5.large
+      BackupRetentionPeriod: 30
+      MultiAZ: true
+```
+
+## 11. よくある問題と解決策
+
+### 問題1: パフォーマンスが低い
+
+**原因:**
+- インスタンスクラスが小さい
+- パラメータグループが最適化されていない
+- インデックスが不足している
+
+**解決策:**
+```bash
+# インスタンスクラスの確認
+aws rds describe-db-instances \
+  --db-instance-identifier my-db \
+  --query 'DBInstances[0].DBInstanceClass'
+
+# パラメータグループの確認
+aws rds describe-db-parameters \
+  --db-parameter-group-name my-params
+
+# スロークエリログの確認
+aws rds describe-db-log-files \
+  --db-instance-identifier my-db
+```
+
+### 問題2: 接続できない
+
+**原因:**
+- セキュリティグループでポートが開いていない
+- パブリックアクセスが無効になっている
+- サブネットグループが正しく設定されていない
+
+**解決策:**
+```bash
+# セキュリティグループの確認
+aws rds describe-db-instances \
+  --db-instance-identifier my-db \
+  --query 'DBInstances[0].VpcSecurityGroups'
+
+# パブリックアクセスの確認
+aws rds describe-db-instances \
+  --db-instance-identifier my-db \
+  --query 'DBInstances[0].PubliclyAccessible'
+
+# サブネットグループの確認
+aws rds describe-db-subnet-groups \
+  --db-subnet-group-name my-subnet-group
+```
+
+これで、RDSの基礎知識と実務での使い方を理解できるようになりました。
 

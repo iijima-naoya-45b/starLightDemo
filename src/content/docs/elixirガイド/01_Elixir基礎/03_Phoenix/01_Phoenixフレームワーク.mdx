@@ -1,0 +1,385 @@
+---
+title: Phoenixフレームワーク完全ガイド
+sidebar:
+    label: Phoenixフレームワーク
+---
+
+# Phoenixフレームワーク完全ガイド
+
+Phoenixフレームワークを使用したWebアプリケーション開発を、実務で使える実装例とともに詳しく解説します。
+
+## 1. Phoenixとは
+
+### Phoenixの特徴
+
+Phoenixは、Elixirで書かれた高速でリアルタイムなWebアプリケーションフレームワークです。
+
+```
+Phoenixの特徴
+   ├─ 高速なパフォーマンス
+   ├─ リアルタイム通信（WebSocket）
+   ├─ フォールトトレランス
+   └─ スケーラビリティ
+```
+
+### なぜPhoenixが必要か
+
+**問題のある構成（Phoenixなし）:**
+
+```elixir
+# 問題: 低レベルのHTTP処理を手動で実装
+defmodule SimpleServer do
+  def start do
+    # HTTPサーバーの実装が必要
+    # ルーティングの実装が必要
+    # ミドルウェアの実装が必要
+  end
+end
+```
+
+**解決: Phoenixによる高速なWebアプリケーション**
+
+```elixir
+# 解決: Phoenixがすべてを提供
+defmodule MyAppWeb.Router do
+  use Phoenix.Router
+  
+  pipeline :api do
+    plug :accepts, ["json"]
+  end
+  
+  scope "/api", MyAppWeb do
+    pipe_through :api
+    get "/users", UserController, :index
+  end
+end
+```
+
+## 2. Phoenixプロジェクトの作成
+
+### 基本的なプロジェクト作成
+
+```bash
+# Phoenixのインストール
+mix archive.install hex phx_new
+
+# プロジェクトの作成
+mix phx.new my_app
+
+# 依存関係のインストール
+cd my_app
+mix deps.get
+
+# データベースの作成
+mix ecto.create
+
+# サーバーの起動
+mix phx.server
+```
+
+### API専用プロジェクトの作成
+
+```bash
+# API専用プロジェクトの作成
+mix phx.new my_api --no-html --no-webpack
+
+# データベースなしのAPIプロジェクト
+mix phx.new my_api --no-html --no-webpack --no-ecto
+```
+
+## 3. ルーティング
+
+### 基本的なルーティング
+
+```elixir
+# lib/my_app_web/router.ex
+defmodule MyAppWeb.Router do
+  use MyAppWeb, :router
+  
+  pipeline :api do
+    plug :accepts, ["json"]
+  end
+  
+  scope "/api", MyAppWeb do
+    pipe_through :api
+    
+    get "/users", UserController, :index
+    post "/users", UserController, :create
+    get "/users/:id", UserController, :show
+    put "/users/:id", UserController, :update
+    delete "/users/:id", UserController, :delete
+  end
+end
+```
+
+### リソースルーティング
+
+```elixir
+# リソースルーティングの使用
+scope "/api", MyAppWeb do
+  pipe_through :api
+  
+  resources "/users", UserController
+  # 以下と同等:
+  # get "/users", UserController, :index
+  # get "/users/:id", UserController, :show
+  # post "/users", UserController, :create
+  # put "/users/:id", UserController, :update
+  # delete "/users/:id", UserController, :delete
+end
+```
+
+## 4. コントローラー
+
+### 基本的なコントローラー
+
+```elixir
+# lib/my_app_web/controllers/user_controller.ex
+defmodule MyAppWeb.UserController do
+  use MyAppWeb, :controller
+  
+  alias MyApp.Accounts
+  alias MyApp.Accounts.User
+  
+  def index(conn, _params) do
+    users = Accounts.list_users()
+    render(conn, "index.json", users: users)
+  end
+  
+  def show(conn, %{"id" => id}) do
+    user = Accounts.get_user!(id)
+    render(conn, "show.json", user: user)
+  end
+  
+  def create(conn, %{"user" => user_params}) do
+    case Accounts.create_user(user_params) do
+      {:ok, user} ->
+        conn
+        |> put_status(:created)
+        |> render("show.json", user: user)
+      
+      {:error, changeset} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> render("error.json", changeset: changeset)
+    end
+  end
+end
+```
+
+## 5. ビューとJSONレンダリング
+
+### JSONビューの定義
+
+```elixir
+# lib/my_app_web/views/user_view.ex
+defmodule MyAppWeb.UserView do
+  use MyAppWeb, :view
+  
+  def render("index.json", %{users: users}) do
+    %{data: render_many(users, UserView, "user.json")}
+  end
+  
+  def render("show.json", %{user: user}) do
+    %{data: render_one(user, UserView, "user.json")}
+  end
+  
+  def render("user.json", %{user: user}) do
+    %{
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      inserted_at: user.inserted_at
+    }
+  end
+end
+```
+
+## 6. Phoenix LiveView
+
+### LiveViewの基本
+
+```elixir
+# lib/my_app_web/live/counter_live.ex
+defmodule MyAppWeb.CounterLive do
+  use MyAppWeb, :live_view
+  
+  @impl true
+  def mount(_params, _session, socket) do
+    {:ok, assign(socket, count: 0)}
+  end
+  
+  @impl true
+  def handle_event("increment", _params, socket) do
+    {:noreply, update(socket, :count, &(&1 + 1))}
+  end
+  
+  @impl true
+  def handle_event("decrement", _params, socket) do
+    {:noreply, update(socket, :count, &(&1 - 1))}
+  end
+  
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <div>
+      <h1>Count: <%= @count %></h1>
+      <button phx-click="increment">+</button>
+      <button phx-click="decrement">-</button>
+    </div>
+    """
+  end
+end
+```
+
+### ルーティングでのLiveView
+
+```elixir
+# lib/my_app_web/router.ex
+defmodule MyAppWeb.Router do
+  use MyAppWeb, :router
+  
+  scope "/", MyAppWeb do
+    pipe_through :browser
+    
+    live "/counter", CounterLive
+  end
+end
+```
+
+## 7. Phoenix Channels（WebSocket）
+
+### Channelの定義
+
+```elixir
+# lib/my_app_web/channels/room_channel.ex
+defmodule MyAppWeb.RoomChannel do
+  use Phoenix.Channel
+  
+  def join("room:" <> room_id, _params, socket) do
+    {:ok, socket}
+  end
+  
+  def handle_in("new_msg", %{"body" => body}, socket) do
+    broadcast!(socket, "new_msg", %{
+      body: body,
+      user: socket.assigns.user
+    })
+    {:noreply, socket}
+  end
+  
+  def handle_out("new_msg", payload, socket) do
+    push(socket, "new_msg", payload)
+    {:noreply, socket}
+  end
+end
+```
+
+### Socketの設定
+
+```elixir
+# lib/my_app_web/channels/user_socket.ex
+defmodule MyAppWeb.UserSocket do
+  use Phoenix.Socket
+  
+  channel "room:*", MyAppWeb.RoomChannel
+  
+  @impl true
+  def connect(_params, socket, _connect_info) do
+    {:ok, socket}
+  end
+  
+  @impl true
+  def id(_socket), do: nil
+end
+```
+
+## 8. 実務でのベストプラクティス
+
+### パターン1: コンテキストの使用
+
+```elixir
+# lib/my_app/accounts.ex
+defmodule MyApp.Accounts do
+  @moduledoc """
+  Accountsコンテキスト
+  """
+  
+  alias MyApp.Accounts.User
+  alias MyApp.Repo
+  
+  def list_users do
+    Repo.all(User)
+  end
+  
+  def get_user!(id) do
+    Repo.get!(User, id)
+  end
+  
+  def create_user(attrs \\ %{}) do
+    %User{}
+    |> User.changeset(attrs)
+    |> Repo.insert()
+  end
+end
+```
+
+### パターン2: エラーハンドリング
+
+```elixir
+# lib/my_app_web/controllers/user_controller.ex
+def create(conn, %{"user" => user_params}) do
+  with {:ok, user} <- Accounts.create_user(user_params) do
+    conn
+    |> put_status(:created)
+    |> render("show.json", user: user)
+  else
+    {:error, changeset} ->
+      conn
+      |> put_status(:unprocessable_entity)
+      |> render("error.json", changeset: changeset)
+  end
+end
+```
+
+## 9. よくある問題と解決策
+
+### 問題1: ルーティングが動作しない
+
+**原因:**
+- パイプラインが正しく設定されていない
+- スコープが間違っている
+
+**解決策:**
+```elixir
+# パイプラインの確認
+pipeline :api do
+  plug :accepts, ["json"]
+end
+
+# スコープの確認
+scope "/api", MyAppWeb do
+  pipe_through :api
+  # ルート定義
+end
+```
+
+### 問題2: JSONが正しくレンダリングされない
+
+**原因:**
+- ビューが定義されていない
+- render関数が正しく実装されていない
+
+**解決策:**
+```elixir
+# ビューの確認
+defmodule MyAppWeb.UserView do
+  use MyAppWeb, :view
+  
+  def render("show.json", %{user: user}) do
+    %{data: render_one(user, UserView, "user.json")}
+  end
+end
+```
+
+これで、Phoenixフレームワークの基礎知識と実務での使い方を理解できるようになりました。

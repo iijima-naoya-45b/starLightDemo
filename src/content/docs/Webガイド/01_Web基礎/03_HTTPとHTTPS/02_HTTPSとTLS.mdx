@@ -1,0 +1,206 @@
+---
+title: HTTPSとTLS
+sidebar:
+    label: HTTPSとTLS
+---
+
+# HTTPSとTLS完全ガイド
+
+HTTPSは、HTTPを暗号化したプロトコルです。セキュアなWeb通信を実現するための仕組みを詳しく解説します。
+
+## 1. HTTPSとは
+
+### HTTPSの役割
+
+HTTPS（HTTP Secure）は、HTTP通信をTLS/SSLで暗号化したプロトコルです。データの盗聴や改ざんを防ぎます。
+
+```
+HTTP:  クライアント ←→ サーバー（暗号化なし）
+HTTPS: クライアント ←→ サーバー（TLS/SSLで暗号化）
+```
+
+### なぜHTTPSが必要か
+
+**HTTPの問題:**
+- 通信が暗号化されていない
+- データが盗聴される可能性
+- データが改ざんされる可能性
+- 中間者攻撃のリスク
+
+**HTTPSの解決:**
+- 通信が暗号化される
+- データの機密性が保証される
+- データの完全性が保証される
+- サーバーの認証が行われる
+
+## 2. TLS/SSLの仕組み
+
+### TLSハンドシェイク
+
+```
+1. クライアント → サーバー: ClientHello
+   - サポートするTLSバージョン
+   - 暗号スイート
+   - ランダム値
+
+2. サーバー → クライアント: ServerHello
+   - 選択したTLSバージョン
+   - 選択した暗号スイート
+   - サーバーの証明書
+   - ランダム値
+
+3. クライアント: 証明書の検証
+   - 証明書の有効性を確認
+   - 証明書チェーンの検証
+
+4. クライアント → サーバー: 暗号化キーの送信
+   - 事前マスターシークレットを暗号化して送信
+
+5. クライアント ↔ サーバー: 暗号化通信の開始
+   - 共通鍵でデータを暗号化
+```
+
+### 証明書の検証
+
+```
+1. 証明書の有効期限を確認
+2. 証明書チェーンの検証
+3. 証明書の署名を検証
+4. ドメイン名の一致を確認
+```
+
+## 3. 証明書の種類
+
+### 自己署名証明書
+
+```bash
+# 自己署名証明書の作成
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
+```
+
+- 開発環境で使用
+- ブラウザで警告が表示される
+- 無料
+
+### Let's Encrypt
+
+```bash
+# Certbotを使用した証明書の取得
+sudo certbot --nginx -d example.com
+```
+
+- 無料のSSL証明書
+- 自動更新が可能
+- 本番環境で使用可能
+
+### 商用証明書
+
+- 有料のSSL証明書
+- サポートが充実
+- EV証明書（Extended Validation）も利用可能
+
+## 4. 実務でのHTTPS設定
+
+### NginxでのHTTPS設定
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name example.com;
+    
+    ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
+    
+    # SSL/TLSの設定
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    
+    # HSTS（HTTP Strict Transport Security）
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    
+    location / {
+        proxy_pass http://localhost:3000;
+    }
+}
+
+# HTTPからHTTPSへのリダイレクト
+server {
+    listen 80;
+    server_name example.com;
+    return 301 https://$host$request_uri;
+}
+```
+
+### ApacheでのHTTPS設定
+
+```apache
+<VirtualHost *:443>
+    ServerName example.com
+    
+    SSLEngine on
+    SSLCertificateFile /etc/letsencrypt/live/example.com/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/example.com/privkey.pem
+    
+    # SSL/TLSの設定
+    SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1
+    SSLCipherSuite HIGH:!aNULL:!MD5
+    
+    # HSTS
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+</VirtualHost>
+```
+
+## 5. セキュリティヘッダー
+
+### Strict-Transport-Security (HSTS)
+
+```http
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+```
+
+- HTTP接続をHTTPSに強制
+- 中間者攻撃を防ぐ
+
+### Content-Security-Policy (CSP)
+
+```http
+Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'
+```
+
+- XSS攻撃を防ぐ
+- リソースの読み込み元を制限
+
+### X-Frame-Options
+
+```http
+X-Frame-Options: DENY
+```
+
+- クリックジャッキングを防ぐ
+- ページの埋め込みを制限
+
+## 6. よくある問題と解決策
+
+### 問題1: 証明書エラー
+
+**原因:**
+- 証明書の有効期限切れ
+- 証明書チェーンの問題
+- ドメイン名の不一致
+
+**解決策:**
+- 証明書の有効期限を確認
+- 証明書チェーンを確認
+- ドメイン名を確認
+
+### 問題2: 混合コンテンツ
+
+**原因:**
+- HTTPSページでHTTPリソースを読み込んでいる
+
+**解決策:**
+- すべてのリソースをHTTPSに変更
+- プロトコル相対URLの使用を避ける
+
+これで、HTTPSとTLSの仕組みと実務での設定方法を理解できるようになりました。

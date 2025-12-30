@@ -1,63 +1,97 @@
 ---
-title: "FastAPI ORM"
-label: "FastAPI ORM"
+title: FastAPIデータベース連携完全ガイド
+sidebar:
+    label: ORM
 ---
 
-## FastAPIにおけるORM（Object-Relational Mapping）
+# FastAPIデータベース連携完全ガイド
 
-FastAPI自体にはORM機能は含まれていませんが、Pythonで最も人気のあるORMライブラリであるSQLAlchemyと組み合わせることで、Pythonオブジェクトを介してデータベース操作を効率的に行うことができます。
+FastAPIとSQLAlchemyを使用したデータベース連携を、実務で使える実装例とともに詳しく解説します。
 
-### SQLAlchemyモデルの定義
+## 1. ORMとは
 
-SQLAlchemyでは、`declarative_base()`から生成されるBaseクラスを継承して、Pythonのクラスとしてデータベースのテーブルを定義します。
+### ORMの役割
 
-#### 例: ユーザーと投稿のモデル定義
+ORM（Object-Relational Mapping）は、データベースのテーブルとPythonオブジェクトをマッピングする仕組みです。
 
-`app/models.py`
-
-```python
-from sqlalchemy import Column, Integer, String, ForeignKey
-from sqlalchemy.orm import relationship, declarative_base
-
-Base = declarative_base()
-
-class User(Base):
-    __tablename__ = 'users'
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)
-    email = Column(String, unique=True, index=True)
-
-    posts = relationship("Post", back_populates="owner")
-
-class Post(Base):
-    __tablename__ = 'posts'
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, index=True)
-    content = Column(String)
-    owner_id = Column(Integer, ForeignKey("users.id"))
-
-    owner = relationship("User", back_populates="posts")
 ```
-- `declarative_base()`: ORMマッピングの基底クラスを作成します。
-- `Column`: テーブルのカラムを定義し、データ型や制約（`primary_key`, `index`, `unique`など）を指定します。
-- `relationship()`: 異なるテーブル間の**リレーション（関連付け）**を定義します。Userモデルの`posts`は、そのユーザーが持つ複数のPostにアクセスするためのリレーションです。
+ORMの利点
+   ├─ SQLインジェクション対策
+   ├─ 型安全性
+   ├─ コードの可読性向上
+   └─ データベース移植性
+```
 
-### データベースセッションの管理
+### なぜORMが必要か
 
-SQLAlchemyは**セッション（Session）を通じてデータベースとやり取りします。FastAPIでは、このセッションを依存性注入（Dependency Injection）**で管理するのが一般的です。
-
-#### 例: データベース接続のセットアップ
-
-`app/database.py`
+**問題のある構成（ORMなし）:**
 
 ```python
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+# 問題: 生のSQLを直接記述
+from sqlalchemy import create_engine, text
 
-DATABASE_URL = "sqlite:///./test.db"
-engine = create_engine(DATABASE_URL)
+engine = create_engine("postgresql://user:pass@localhost/db")
+
+@app.get("/users/{user_id}")
+def get_user(user_id: int):
+    with engine.connect() as conn:
+        result = conn.execute(
+            text(f"SELECT * FROM users WHERE id = {user_id}")  # SQLインジェクションのリスク
+        )
+        user = result.fetchone()
+    return user
+
+# 問題点:
+# 1. SQLインジェクションのリスク
+# 2. 型安全性がない
+# 3. コードの可読性が低い
+```
+
+**解決: ORMによる安全なデータベース操作**
+
+```python
+# 解決: ORMを使用
+from sqlalchemy.orm import Session
+from app import models
+
+@app.get("/users/{user_id}")
+def get_user(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    return user
+
+# メリット:
+# 1. SQLインジェクション対策
+# 2. 型安全性
+# 3. コードの可読性向上
+```
+
+## 2. SQLAlchemyの設定
+
+### データベース接続の設定
+
+```python
+# app/database.py
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+
+DATABASE_URL = "postgresql://user:password@localhost/dbname"
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,  # 接続の有効性を確認
+    pool_size=10,  # 接続プールのサイズ
+    max_overflow=20  # 最大接続数
+)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+Base = declarative_base()
+```
+
+### データベースセッションの依存性注入
+
+```python
+# app/database.py
 def get_db():
     db = SessionLocal()
     try:
@@ -65,59 +99,314 @@ def get_db():
     finally:
         db.close()
 ```
-- `get_db`関数: `yield`を使用することで、リクエストが処理される間だけデータベースセッションを保持し、処理完了後に自動で閉じるようにします。
 
-### CRUD操作の実装
+## 3. モデルの定義
 
-ORMを利用することで、SQLクエリを直接書く代わりに、Pythonのオブジェクトメソッドを使ってデータベース操作を行うことができます。
-
-#### 例: CRUD操作を抽象化する
-
-`app/crud.py`
+### 基本的なモデル
 
 ```python
+# app/models/user.py
+from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy.orm import relationship
+from app.database import Base
+from datetime import datetime
+
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # リレーションシップ
+    posts = relationship("Post", back_populates="owner")
+```
+
+### リレーションシップの定義
+
+```python
+# app/models/post.py
+from sqlalchemy import Column, Integer, String, ForeignKey, Text
+from sqlalchemy.orm import relationship
+from app.database import Base
+
+class Post(Base):
+    __tablename__ = "posts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True, nullable=False)
+    content = Column(Text, nullable=False)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    # リレーションシップ
+    owner = relationship("User", back_populates="posts")
+```
+
+## 4. Pydanticスキーマ
+
+### リクエストスキーマ
+
+```python
+# app/schemas/user.py
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+
+class UserCreate(BaseModel):
+    username: str
+    email: EmailStr
+    password: str
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+```
+
+### レスポンススキーマ
+
+```python
+# app/schemas/user.py
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    is_active: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True  # Pydantic v2
+```
+
+## 5. CRUD操作
+
+### 基本的なCRUD
+
+```python
+# app/crud/user.py
 from sqlalchemy.orm import Session
-from . import models, schemas
+from app import models, schemas
+from app.core.security import get_password_hash
 
 def get_user(db: Session, user_id: int):
     return db.query(models.User).filter(models.User.id == user_id).first()
 
+def get_user_by_email(db: Session, email: str):
+    return db.query(models.User).filter(models.User.email == email).first()
+
+def get_users(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.User).offset(skip).limit(limit).all()
+
 def create_user(db: Session, user: schemas.UserCreate):
-    db_user = models.User(name=user.name, email=user.email)
+    hashed_password = get_password_hash(user.password)
+    db_user = models.User(
+        username=user.username,
+        email=user.email,
+        hashed_password=hashed_password
+    )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
     return db_user
+
+def update_user(db: Session, user_id: int, user_update: schemas.UserUpdate):
+    db_user = get_user(db, user_id)
+    if not db_user:
+        return None
+    
+    update_data = user_update.dict(exclude_unset=True)
+    if "password" in update_data:
+        update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
+    
+    for field, value in update_data.items():
+        setattr(db_user, field, value)
+    
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+def delete_user(db: Session, user_id: int):
+    db_user = get_user(db, user_id)
+    if not db_user:
+        return None
+    db.delete(db_user)
+    db.commit()
+    return db_user
 ```
-- `db.query()`: `SELECT`文を生成します。
-- `filter()`: `WHERE`句に相当する条件を指定します。
-- `db.add()`: `INSERT`文を準備します。
-- `db.commit()`: 変更をデータベースに確定（コミット）します。
 
-### エンドポイントへの統合
+## 6. エンドポイントへの統合
 
-定義したORMモデルとCRUDロジックをFastAPIのエンドポイントに統合します。
-
-#### 例: ORMを利用したエンドポイント
-
-`app/main.py`
+### 基本的なエンドポイント
 
 ```python
-from fastapi import FastAPI, Depends, HTTPException
+# app/api/v1/endpoints/users.py
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from . import crud, models, schemas
-from .database import engine, get_db
+from typing import List
 
-models.Base.metadata.create_all(bind=engine) # テーブルを自動作成
+from app import crud, models, schemas
+from app.database import get_db
 
-app = FastAPI()
+router = APIRouter()
 
-@app.post("/users/", response_model=schemas.User)
-def create_new_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+@router.post("/users/", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = crud.get_user_by_email(db, email=user.email)
     if db_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
     return crud.create_user(db=db, user=user)
+
+@router.get("/users/", response_model=List[schemas.UserResponse])
+def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    users = crud.get_users(db, skip=skip, limit=limit)
+    return users
+
+@router.get("/users/{user_id}", response_model=schemas.UserResponse)
+def read_user(user_id: int, db: Session = Depends(get_db)):
+    db_user = crud.get_user(db, user_id=user_id)
+    if db_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    return db_user
 ```
-- `Depends(get_db)`: 依存性注入により、各リクエストにDBセッションを供給します。
-- `response_model`: ORMモデルではなく、Pydanticモデル（`schemas.User`）を指定することで、不要なデータをクライアントに返さないようにします。
+
+## 7. マイグレーション
+
+### Alembicの設定
+
+```bash
+# Alembicのインストール
+pip install alembic
+
+# Alembicの初期化
+alembic init alembic
+```
+
+```python
+# alembic/env.py
+from app.database import Base
+from app.models import user, post  # すべてのモデルをインポート
+
+target_metadata = Base.metadata
+```
+
+### マイグレーションの作成と適用
+
+```bash
+# マイグレーションファイルの作成
+alembic revision --autogenerate -m "Create users table"
+
+# マイグレーションの適用
+alembic upgrade head
+
+# マイグレーションのロールバック
+alembic downgrade -1
+```
+
+## 8. 実務でのベストプラクティス
+
+### パターン1: リポジトリパターン
+
+```python
+# app/repositories/user_repository.py
+from sqlalchemy.orm import Session
+from app import models, schemas
+
+class UserRepository:
+    def __init__(self, db: Session):
+        self.db = db
+    
+    def find_by_id(self, user_id: int) -> models.User:
+        return self.db.query(models.User).filter(models.User.id == user_id).first()
+    
+    def find_by_email(self, email: str) -> models.User:
+        return self.db.query(models.User).filter(models.User.email == email).first()
+    
+    def create(self, user_data: schemas.UserCreate) -> models.User:
+        hashed_password = get_password_hash(user_data.password)
+        db_user = models.User(
+            username=user_data.username,
+            email=user_data.email,
+            hashed_password=hashed_password
+        )
+        self.db.add(db_user)
+        self.db.commit()
+        self.db.refresh(db_user)
+        return db_user
+```
+
+### パターン2: トランザクション管理
+
+```python
+# app/database.py
+from contextlib import contextmanager
+
+@contextmanager
+def get_db_transaction():
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+# 使用例
+def create_user_with_posts(user_data: schemas.UserCreate, posts_data: List[schemas.PostCreate]):
+    with get_db_transaction() as db:
+        user = crud.create_user(db, user_data)
+        for post_data in posts_data:
+            crud.create_post(db, post_data, user_id=user.id)
+        return user
+```
+
+## 9. よくある問題と解決策
+
+### 問題1: セッションが閉じられない
+
+**原因:**
+- `finally`ブロックが実行されていない
+- 例外が発生している
+
+**解決策:**
+```python
+# 確実にセッションを閉じる
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+```
+
+### 問題2: リレーションシップが読み込まれない
+
+**原因:**
+- `lazy loading`がデフォルト
+- `eager loading`が必要
+
+**解決策:**
+```python
+# joinedloadを使用
+from sqlalchemy.orm import joinedload
+
+def get_user_with_posts(db: Session, user_id: int):
+    return db.query(models.User).options(
+        joinedload(models.User.posts)
+    ).filter(models.User.id == user_id).first()
+```
+
+これで、FastAPIのデータベース連携の基礎知識と実務での使い方を理解できるようになりました。

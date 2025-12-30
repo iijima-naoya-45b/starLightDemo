@@ -1,0 +1,428 @@
+---
+title: Docker Compose完全ガイド
+sidebar:
+    label: Docker Compose
+---
+
+# Docker Compose完全ガイド
+
+Docker Composeを使用した複数コンテナの管理を、実務で使える実装例とともに詳しく解説します。
+
+## 1. Docker Composeとは
+
+### Docker Composeの役割
+
+Docker Composeは、複数のコンテナを定義し、管理するためのツールです。YAMLファイルでサービスを定義し、一括で管理できます。
+
+```
+docker-compose.yml
+   ├─ サービス1（アプリケーション）
+   ├─ サービス2（データベース）
+   └─ サービス3（キャッシュ）
+```
+
+### なぜDocker Composeが必要か
+
+**問題のある構成（Docker Composeなし）:**
+
+```bash
+# 問題: 複数のコンテナを手動で管理
+docker run -d --name db postgres:14
+docker run -d --name app --link db my-app:latest
+docker run -d --name redis redis:alpine
+
+# 問題点:
+# 1. 起動順序の管理が困難
+# 2. ネットワーク設定が複雑
+# 3. 環境変数の管理が困難
+# 4. 一括操作ができない
+```
+
+**解決: Docker Composeによる一括管理**
+
+```yaml
+# 解決: docker-compose.ymlで一括管理
+version: '3.8'
+
+services:
+  app:
+    build: .
+    depends_on:
+      - db
+      - redis
+  
+  db:
+    image: postgres:14
+  
+  redis:
+    image: redis:alpine
+
+# メリット:
+# 1. 一括起動（docker-compose up）
+# 2. 依存関係の自動解決
+# 3. ネットワークの自動設定
+# 4. 環境変数の一元管理
+```
+
+## 2. docker-compose.ymlの基本構造
+
+### 基本的な構成
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+  
+  db:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mydb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+```
+
+## 3. サービスの定義
+
+### build
+
+```yaml
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - NODE_ENV=production
+```
+
+### image
+
+```yaml
+services:
+  db:
+    image: postgres:14-alpine
+```
+
+### ports
+
+```yaml
+services:
+  app:
+    ports:
+      - "3000:3000"  # ホスト:コンテナ
+      - "8080:80"    # 複数ポートの公開
+```
+
+### environment
+
+```yaml
+services:
+  app:
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:password@db:5432/mydb
+    # または
+    env_file:
+      - .env
+```
+
+### volumes
+
+```yaml
+services:
+  app:
+    volumes:
+      - .:/app  # バインドマウント
+      - /app/node_modules  # 匿名ボリューム
+      - app_data:/data  # 名前付きボリューム
+```
+
+### depends_on
+
+```yaml
+services:
+  app:
+    depends_on:
+      - db
+      - redis
+  
+  db:
+    image: postgres:14-alpine
+  
+  redis:
+    image: redis:alpine
+```
+
+## 4. ネットワークの設定
+
+### デフォルトネットワーク
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+  
+  db:
+    image: postgres:14-alpine
+
+# 自動的に同じネットワークに接続される
+```
+
+### カスタムネットワーク
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    networks:
+      - app-network
+  
+  db:
+    image: postgres:14-alpine
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+```
+
+## 5. ボリュームの設定
+
+### 名前付きボリューム
+
+```yaml
+services:
+  db:
+    image: postgres:14-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+```
+
+### バインドマウント
+
+```yaml
+services:
+  app:
+    build: .
+    volumes:
+      - ./src:/app/src  # 開発環境でのホットリロード
+```
+
+### 匿名ボリューム
+
+```yaml
+services:
+  app:
+    build: .
+    volumes:
+      - /app/node_modules  # node_modulesを上書きしない
+```
+
+## 6. 実務でのベストプラクティス
+
+### パターン1: フルスタックアプリケーション
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://backend:8000
+    depends_on:
+      - backend
+  
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/mydb
+    depends_on:
+      - db
+  
+  db:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mydb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  
+  redis:
+    image: redis:alpine
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
+```
+
+### パターン2: 環境別の設定
+
+```yaml
+# docker-compose.dev.yml
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - .:/app
+    environment:
+      - NODE_ENV=development
+      - DEBUG=true
+
+# docker-compose.prod.yml
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    environment:
+      - NODE_ENV=production
+    restart: always
+```
+
+### パターン3: ヘルスチェック
+
+```yaml
+services:
+  app:
+    build: .
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+  
+  db:
+    image: postgres:14-alpine
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+```
+
+## 7. Docker Composeのコマンド
+
+### 基本的なコマンド
+
+```bash
+# サービスの起動
+docker-compose up -d
+
+# サービスの停止
+docker-compose down
+
+# サービスの再ビルド
+docker-compose up -d --build
+
+# ログの確認
+docker-compose logs -f
+
+# サービスの状態確認
+docker-compose ps
+
+# サービスの再起動
+docker-compose restart
+```
+
+### 高度なコマンド
+
+```bash
+# 特定のサービスのみ起動
+docker-compose up -d app
+
+# サービスのスケール
+docker-compose up -d --scale app=3
+
+# サービスの一時停止
+docker-compose pause
+
+# サービスの再開
+docker-compose unpause
+
+# サービスの削除（ボリュームも含む）
+docker-compose down -v
+```
+
+## 8. よくある問題と解決策
+
+### 問題1: サービスが起動しない
+
+**原因:**
+- 依存関係が正しく設定されていない
+- ポートが既に使用されている
+
+**解決策:**
+```bash
+# サービスの状態確認
+docker-compose ps
+
+# ログの確認
+docker-compose logs app
+
+# サービスの再ビルド
+docker-compose up -d --build
+```
+
+### 問題2: ボリュームが正しくマウントされない
+
+**原因:**
+- パスが正しく設定されていない
+- 権限の問題
+
+**解決策:**
+```yaml
+# 絶対パスを使用
+volumes:
+  - /absolute/path:/app
+
+# 権限の設定
+user: "1000:1000"
+```
+
+これで、Docker Composeの基礎知識と実務での使い方を理解できるようになりました。

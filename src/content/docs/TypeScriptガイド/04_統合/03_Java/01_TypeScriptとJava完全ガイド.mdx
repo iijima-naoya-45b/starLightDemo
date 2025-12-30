@@ -1,0 +1,629 @@
+---
+title: TypeScriptとJava完全ガイド
+sidebar:
+    label: TypeScriptとJava
+---
+
+# TypeScriptとJava完全ガイド
+
+TypeScriptをJavaプロジェクトで使用する方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. TypeScriptとJavaの組み合わせ
+
+### TypeScriptとJavaの関係
+
+TypeScriptとJavaは、異なる言語ですが、フロントエンド（TypeScript）とバックエンド（Java）を組み合わせて使用することが一般的です。
+
+```
+TypeScript + Javaの構成
+   ├─ フロントエンド: TypeScript (React, Vue, Angular)
+   ├─ バックエンド: Java (Spring Boot, Jakarta EE)
+   ├─ API通信: REST API, GraphQL
+   └─ 型定義の共有: OpenAPI, JSON Schema
+```
+
+### なぜTypeScriptとJavaを組み合わせるのか
+
+**問題のある構成（型定義の不一致）:**
+
+```typescript
+// フロントエンド（TypeScript）
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+// バックエンド（Java）
+public class User {
+    private Long id;
+    private String name;
+    private String email;
+}
+
+// 問題: 型定義が不一致で、実行時にエラーが発生する可能性
+```
+
+**解決: 型定義の共有**
+
+```typescript
+// 共有型定義（OpenAPIから生成）
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+// バックエンド（Java）
+@Schema(description = "User entity")
+public class User {
+    @Schema(description = "User ID", example = "1")
+    private Long id;
+    
+    @Schema(description = "User name", example = "Alice")
+    private String name;
+    
+    @Schema(description = "User email", example = "alice@example.com")
+    private String email;
+}
+
+// OpenAPI仕様書からTypeScriptの型定義を自動生成
+```
+
+## 2. 環境構築
+
+### フロントエンド（TypeScript）
+
+```bash
+# React + TypeScriptプロジェクトの作成
+npx create-react-app my-app --template typescript
+
+# またはViteを使用
+npm create vite@latest my-app -- --template react-ts
+```
+
+### バックエンド（Java）
+
+```bash
+# Spring Bootプロジェクトの作成（Spring Initializrを使用）
+# https://start.spring.io/
+
+# またはMavenを使用
+mvn archetype:generate \
+  -DgroupId=com.example \
+  -DartifactId=my-api \
+  -DarchetypeArtifactId=maven-archetype-quickstart \
+  -DinteractiveMode=false
+```
+
+### 必要な依存関係
+
+#### フロントエンド（package.json）
+
+```json
+{
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.0.0",
+    "openapi-typescript-codegen": "^0.24.0"
+  }
+}
+```
+
+#### バックエンド（pom.xml）
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springdoc</groupId>
+        <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        <version>2.3.0</version>
+    </dependency>
+</dependencies>
+```
+
+## 3. API通信の型安全性
+
+### OpenAPI仕様書からの型生成
+
+#### バックエンド（Java）でのOpenAPI定義
+
+```java
+@RestController
+@RequestMapping("/api/users")
+@Tag(name = "Users", description = "User management API")
+public class UserController {
+    
+    @GetMapping("/{id}")
+    @Operation(summary = "Get user by ID")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "User found",
+            content = @Content(schema = @Schema(implementation = User.class))),
+        @ApiResponse(responseCode = "404", description = "User not found")
+    })
+    public ResponseEntity<User> getUser(@PathVariable Long id) {
+        User user = userService.findById(id);
+        return ResponseEntity.ok(user);
+    }
+    
+    @PostMapping
+    @Operation(summary = "Create new user")
+    public ResponseEntity<User> createUser(@RequestBody @Valid User user) {
+        User createdUser = userService.create(user);
+        return ResponseEntity.status(HttpStatus.CREATED).body(createdUser);
+    }
+}
+```
+
+#### OpenAPI仕様書の生成
+
+```yaml
+# openapi.yaml（自動生成される）
+openapi: 3.0.0
+info:
+  title: User API
+  version: 1.0.0
+paths:
+  /api/users/{id}:
+    get:
+      summary: Get user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+```
+
+#### フロントエンド（TypeScript）での型生成
+
+```bash
+# OpenAPI仕様書からTypeScriptの型定義を生成
+npx openapi-typescript-codegen \
+  --input http://localhost:8080/v3/api-docs \
+  --output ./src/api \
+  --client axios
+```
+
+#### 生成された型定義の使用
+
+```typescript
+// src/api/models/User.ts（自動生成）
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+// src/api/services/UserService.ts（自動生成）
+import { User } from '../models/User';
+
+export class UserService {
+  async getUser(id: number): Promise<User> {
+    // 実装は自動生成される
+  }
+  
+  async createUser(user: User): Promise<User> {
+    // 実装は自動生成される
+  }
+}
+
+// 使用例
+import { UserService } from './api/services/UserService';
+
+const userService = new UserService();
+
+async function fetchUser(id: number) {
+  try {
+    const user = await userService.getUser(id);
+    console.log(user.name); // 型安全
+  } catch (error) {
+    console.error('Error fetching user:', error);
+  }
+}
+```
+
+## 4. 実践的な使用方法
+
+### パターン1: REST API通信
+
+```typescript
+// api/client.ts
+import axios, { AxiosInstance } from 'axios';
+
+const apiClient: AxiosInstance = axios.create({
+  baseURL: 'http://localhost:8080/api',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// api/types.ts（JavaのDTOと対応）
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+  createdAt: string; // ISO 8601形式
+}
+
+export interface CreateUserRequest {
+  name: string;
+  email: string;
+}
+
+export interface UpdateUserRequest {
+  name?: string;
+  email?: string;
+}
+
+// api/userApi.ts
+import { User, CreateUserRequest, UpdateUserRequest } from './types';
+
+export const userApi = {
+  async getUser(id: number): Promise<User> {
+    const response = await apiClient.get<User>(`/users/${id}`);
+    return response.data;
+  },
+
+  async getUsers(): Promise<User[]> {
+    const response = await apiClient.get<User[]>('/users');
+    return response.data;
+  },
+
+  async createUser(request: CreateUserRequest): Promise<User> {
+    const response = await apiClient.post<User>('/users', request);
+    return response.data;
+  },
+
+  async updateUser(id: number, request: UpdateUserRequest): Promise<User> {
+    const response = await apiClient.put<User>(`/users/${id}`, request);
+    return response.data;
+  },
+
+  async deleteUser(id: number): Promise<void> {
+    await apiClient.delete(`/users/${id}`);
+  },
+};
+```
+
+### パターン2: Reactでの使用
+
+```typescript
+import { useState, useEffect } from 'react';
+import { userApi, User } from './api/userApi';
+
+function UserList() {
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const data = await userApi.getUsers();
+        setUsers(data);
+      } catch (err) {
+        setError(err instanceof Error ? err : new Error('Unknown error'));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUsers();
+  }, []);
+
+  if (loading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+
+  return (
+    <ul>
+      {users.map(user => (
+        <li key={user.id}>
+          <h3>{user.name}</h3>
+          <p>{user.email}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+### パターン3: エラーハンドリング
+
+```typescript
+// api/errors.ts
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    public message: string,
+    public details?: unknown
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+// api/client.ts（拡張）
+import axios, { AxiosError } from 'axios';
+import { ApiError } from './errors';
+
+const apiClient: AxiosInstance = axios.create({
+  baseURL: 'http://localhost:8080/api',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// レスポンスインターセプター
+apiClient.interceptors.response.use(
+  response => response,
+  (error: AxiosError) => {
+    if (error.response) {
+      throw new ApiError(
+        error.response.status,
+        error.response.statusText,
+        error.response.data
+      );
+    }
+    throw error;
+  }
+);
+
+// 使用例
+try {
+  const user = await userApi.getUser(1);
+} catch (error) {
+  if (error instanceof ApiError) {
+    if (error.status === 404) {
+      console.error('User not found');
+    } else if (error.status === 500) {
+      console.error('Server error');
+    }
+  }
+}
+```
+
+## 5. 型定義の共有
+
+### パターン1: JSON Schemaの使用
+
+```typescript
+// shared/schemas/user.schema.json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "integer"
+    },
+    "name": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string",
+      "format": "email"
+    }
+  },
+  "required": ["id", "name", "email"]
+}
+
+// TypeScript型定義の生成
+// json-schema-to-typescriptを使用
+import { User } from './shared/schemas/user';
+
+// Javaクラスの生成
+// jsonschema2pojoを使用
+```
+
+### パターン2: 共有型定義ライブラリ
+
+```typescript
+// shared-types/src/user.ts
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+// フロントエンドで使用
+import { User } from '@shared/types';
+
+// バックエンドで使用（TypeScriptでバックエンドを書く場合）
+import { User } from '@shared/types';
+```
+
+## 6. 実務でのベストプラクティス
+
+### パターン1: APIクライアントの抽象化
+
+```typescript
+// api/baseApi.ts
+export abstract class BaseApi {
+  protected abstract baseUrl: string;
+
+  protected async get<T>(endpoint: string): Promise<T> {
+    const response = await fetch(`${this.baseUrl}${endpoint}`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.json();
+  }
+
+  protected async post<T>(endpoint: string, data: unknown): Promise<T> {
+    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.json();
+  }
+}
+
+// api/userApi.ts
+import { BaseApi } from './baseApi';
+import { User, CreateUserRequest } from './types';
+
+export class UserApi extends BaseApi {
+  protected baseUrl = 'http://localhost:8080/api';
+
+  async getUser(id: number): Promise<User> {
+    return this.get<User>(`/users/${id}`);
+  }
+
+  async createUser(request: CreateUserRequest): Promise<User> {
+    return this.post<User>('/users', request);
+  }
+}
+```
+
+### パター2: バリデーション
+
+```typescript
+// utils/validation.ts
+import { User, CreateUserRequest } from './api/types';
+
+export function validateUser(user: unknown): user is User {
+  return (
+    typeof user === 'object' &&
+    user !== null &&
+    'id' in user &&
+    'name' in user &&
+    'email' in user &&
+    typeof (user as User).id === 'number' &&
+    typeof (user as User).name === 'string' &&
+    typeof (user as User).email === 'string'
+  );
+}
+
+export function validateCreateUserRequest(
+  request: unknown
+): request is CreateUserRequest {
+  return (
+    typeof request === 'object' &&
+    request !== null &&
+    'name' in request &&
+    'email' in request &&
+    typeof (request as CreateUserRequest).name === 'string' &&
+    typeof (request as CreateUserRequest).email === 'string'
+  );
+}
+
+// 使用例
+const response = await userApi.getUser(1);
+if (validateUser(response)) {
+  console.log(response.name); // 型安全
+}
+```
+
+## 7. よくある問題と解決策
+
+### 問題1: 型定義の不一致
+
+**原因:**
+- JavaとTypeScriptで型定義が不一致
+- 日付型の扱いが異なる
+
+**解決策:**
+```typescript
+// JavaのLocalDateTimeをTypeScriptのDateに変換
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  createdAt: string; // ISO 8601形式の文字列
+}
+
+// 使用時にDateオブジェクトに変換
+const user = await userApi.getUser(1);
+const createdAt = new Date(user.createdAt);
+```
+
+### 問題2: エラーハンドリングの型安全性
+
+**原因:**
+- エラーの型が不明確
+- エラーレスポンスの型が不明確
+
+**解決策:**
+```typescript
+// エラーレスポンスの型定義
+interface ErrorResponse {
+  message: string;
+  code: string;
+  details?: unknown;
+}
+
+// エラーハンドリング
+try {
+  const user = await userApi.getUser(1);
+} catch (error) {
+  if (error instanceof ApiError) {
+    const errorResponse = error.details as ErrorResponse;
+    console.error(errorResponse.message);
+  }
+}
+```
+
+### 問題3: 非同期処理の型安全性
+
+**原因:**
+- Promiseの型が不明確
+- エラーハンドリングの型が不明確
+
+**解決策:**
+```typescript
+// 正しい型指定
+async function fetchUser(id: number): Promise<User> {
+  const user = await userApi.getUser(id);
+  return user;
+}
+
+// 使用例
+useEffect(() => {
+  const loadUser = async () => {
+    try {
+      const user = await fetchUser(userId);
+      setUser(user);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setError(error.message);
+      }
+    }
+  };
+  loadUser();
+}, [userId]);
+```
+
+これで、TypeScriptとJavaの基本的な使用方法から実践的な使用方法まで理解できるようになりました。
+

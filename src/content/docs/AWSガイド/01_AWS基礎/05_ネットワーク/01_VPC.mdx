@@ -1,13 +1,78 @@
 ---
-title: "VPC"
-label: "VPC"
+title: VPC完全ガイド
+sidebar:
+    label: VPC
 ---
 
-## VPC (Virtual Private Cloud)
+# VPC (Virtual Private Cloud) 完全ガイド
 
-VPCは、AWS内の仮想ネットワークです。
+VPCは、AWS内の仮想ネットワークです。実務で使えるネットワーク設計とセキュリティ設定を詳しく解説します。
 
-### VPCの基本構成
+## 1. VPCとは
+
+### VPCの役割
+
+VPCは、AWSリソースを論理的に分離し、独自のネットワーク環境を構築するためのサービスです。
+
+```
+インターネット
+   ↓
+VPC（10.0.0.0/16）
+   ├─ パブリックサブネット（10.0.1.0/24）
+   │   └─ EC2インスタンス（Webサーバー）
+   └─ プライベートサブネット（10.0.2.0/24）
+       └─ RDSインスタンス（データベース）
+```
+
+### なぜVPCが必要か
+
+**問題のある構成（デフォルトVPC）:**
+
+```bash
+# 問題: デフォルトVPCの使用
+# 1. すべてのリソースが同じネットワーク
+# 2. セキュリティの分離が困難
+# 3. ネットワーク設計の柔軟性が低い
+# 4. 複数環境の分離が困難
+
+# 問題点:
+# 1. セキュリティリスク
+# 2. ネットワーク設計の制約
+# 3. 環境分離の困難さ
+```
+
+**解決: カスタムVPCによる分離**
+
+```yaml
+# 解決: カスタムVPCの作成
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+
+# メリット:
+# 1. セキュリティの向上（ネットワーク分離）
+# 2. 柔軟なネットワーク設計
+# 3. 環境分離（開発、ステージング、本番）
+# 4. カスタムルーティング
+```
+
+## 2. VPCの基本構成
+
+### CIDRブロック
+
+```
+VPC CIDR: 10.0.0.0/16
+   ├─ パブリックサブネット1: 10.0.1.0/24 (us-east-1a)
+   ├─ パブリックサブネット2: 10.0.2.0/24 (us-east-1b)
+   ├─ プライベートサブネット1: 10.0.3.0/24 (us-east-1a)
+   └─ プライベートサブネット2: 10.0.4.0/24 (us-east-1b)
+```
+
+### 基本的なVPC構成
 
 ```yaml
 Resources:
@@ -19,8 +84,9 @@ Resources:
       EnableDnsSupport: true
       Tags:
         - Key: Name
-          Value: MyVPC
+          Value: ProductionVPC
 
+  # パブリックサブネット
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -28,44 +94,470 @@ Resources:
       CidrBlock: 10.0.1.0/24
       AvailabilityZone: us-east-1a
       MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: PublicSubnet1
 
-  PrivateSubnet1:
+  PublicSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
       CidrBlock: 10.0.2.0/24
+      AvailabilityZone: us-east-1b
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: PublicSubnet2
+
+  # プライベートサブネット
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
       AvailabilityZone: us-east-1a
       MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet1
 
-  InternetGateway:
-    Type: AWS::EC2::InternetGateway
-
-  NatGateway:
-    Type: AWS::EC2::NatGateway
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
     Properties:
-      SubnetId: !Ref PublicSubnet1
-      AllocationId: !GetAtt ElasticIP.AllocationId
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: us-east-1b
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet2
 ```
 
-### セキュリティグループとNACL
+## 3. インターネットゲートウェイ
+
+### インターネットゲートウェイとは
+
+インターネットゲートウェイは、VPCとインターネット間の通信を可能にするゲートウェイです。
 
 ```yaml
-SecurityGroup:
-  Type: AWS::EC2::SecurityGroup
-  Properties:
-    GroupDescription: Web server security group
-    VpcId: !Ref VPC
-    SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: 80
-        ToPort: 80
-        CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
-        FromPort: 443
-        ToPort: 443
-        CidrIp: 0.0.0.0/0
-    SecurityGroupEgress:
-      - IpProtocol: -1
-        CidrIp: 0.0.0.0/0
+Resources:
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: MyInternetGateway
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  # パブリックサブネットのルートテーブル
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: PublicRouteTable
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
 ```
+
+## 4. NATゲートウェイ
+
+### NATゲートウェイとは
+
+NATゲートウェイは、プライベートサブネット内のリソースがインターネットにアクセスできるようにするゲートウェイです。
+
+```yaml
+Resources:
+  # Elastic IP（NATゲートウェイ用）
+  NatGatewayEIP1:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: NatGatewayEIP1
+
+  NatGatewayEIP2:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: NatGatewayEIP2
+
+  # NATゲートウェイ
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP1.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: NatGateway1
+
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP2.AllocationId
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: NatGateway2
+
+  # プライベートサブネットのルートテーブル
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: PrivateRouteTable1
+
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: PrivateRouteTable2
+
+  PrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable2
+```
+
+## 5. セキュリティグループとNACL
+
+### セキュリティグループ
+
+セキュリティグループは、インスタンスレベルでトラフィックを制御するステートフルなファイアウォールです。
+
+```yaml
+Resources:
+  # Webサーバー用セキュリティグループ
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for web servers
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP from internet
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS from internet
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref BastionSecurityGroup
+          Description: SSH from bastion host
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound
+      Tags:
+        - Key: Name
+          Value: WebSecurityGroup
+
+  # データベース用セキュリティグループ
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for database
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref WebSecurityGroup
+          Description: MySQL from web servers
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound
+      Tags:
+        - Key: Name
+          Value: DBSecurityGroup
+
+  # 踏み台サーバー用セキュリティグループ
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for bastion host
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+          Description: SSH from internet
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound
+      Tags:
+        - Key: Name
+          Value: BastionSecurityGroup
+```
+
+### ネットワークACL（NACL）
+
+NACLは、サブネットレベルでトラフィックを制御するステートレスなファイアウォールです。
+
+```yaml
+Resources:
+  # パブリックサブネット用NACL
+  PublicNACL:
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: PublicNACL
+
+  # インバウンドルール
+  PublicNACLInboundRule1:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PublicNACL
+      RuleNumber: 100
+      Protocol: -1
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0
+      Egress: false
+
+  # アウトバウンドルール
+  PublicNACLOutboundRule1:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PublicNACL
+      RuleNumber: 100
+      Protocol: -1
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0
+      Egress: true
+
+  # プライベートサブネット用NACL
+  PrivateNACL:
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: PrivateNACL
+
+  PrivateNACLInboundRule1:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNACL
+      RuleNumber: 100
+      Protocol: -1
+      RuleAction: allow
+      CidrBlock: 10.0.0.0/16
+      Egress: false
+
+  PrivateNACLOutboundRule1:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PrivateNACL
+      RuleNumber: 100
+      Protocol: -1
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0
+      Egress: true
+```
+
+## 6. VPCピアリング
+
+### VPCピアリングとは
+
+VPCピアリングは、異なるVPC間でプライベート接続を確立する機能です。
+
+```yaml
+Resources:
+  # VPCピアリング接続
+  VPCPeeringConnection:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties:
+      VpcId: !Ref VPC1
+      PeerVpcId: !Ref VPC2
+      Tags:
+        - Key: Name
+          Value: VPC1-to-VPC2
+
+  # ルートテーブルにルートを追加
+  VPC1RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC1
+
+  VPC1PeeringRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref VPC1RouteTable
+      DestinationCidrBlock: 10.1.0.0/16  # VPC2のCIDR
+      VpcPeeringConnectionId: !Ref VPCPeeringConnection
+```
+
+## 7. VPCエンドポイント
+
+### VPCエンドポイントとは
+
+VPCエンドポイントは、VPC内からAWSサービスにプライベート接続する機能です。
+
+```yaml
+Resources:
+  # S3エンドポイント（Gateway型）
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      RouteTableIds:
+        - !Ref PrivateRouteTable1
+        - !Ref PrivateRouteTable2
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+            Resource: '*'
+
+  # DynamoDBエンドポイント（Gateway型）
+  DynamoDBEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+      RouteTableIds:
+        - !Ref PrivateRouteTable1
+        - !Ref PrivateRouteTable2
+
+  # S3エンドポイント（Interface型）
+  S3InterfaceEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcEndpointType: Interface
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref EndpointSecurityGroup
+```
+
+## 8. 実務でのVPC設計
+
+### パターン1: 3層アーキテクチャ
+
+```
+インターネット
+   ↓
+VPC（10.0.0.0/16）
+   ├─ パブリックサブネット（10.0.1.0/24, 10.0.2.0/24）
+   │   └─ Webサーバー、ロードバランサー
+   ├─ プライベートサブネット（10.0.3.0/24, 10.0.4.0/24）
+   │   └─ アプリケーションサーバー
+   └─ データベースサブネット（10.0.5.0/24, 10.0.6.0/24）
+       └─ RDS、ElastiCache
+```
+
+### パターン2: マルチ環境構成
+
+```
+VPC（開発環境: 10.1.0.0/16）
+VPC（ステージング環境: 10.2.0.0/16）
+VPC（本番環境: 10.3.0.0/16）
+```
+
+## 9. よくある問題と解決策
+
+### 問題1: インスタンスに接続できない
+
+**原因:**
+- ルートテーブルが正しく設定されていない
+- セキュリティグループでポートが開いていない
+- NACLでブロックされている
+
+**解決策:**
+```bash
+# ルートテーブルの確認
+aws ec2 describe-route-tables --filters "Name=vpc-id,Values=vpc-12345678"
+
+# セキュリティグループの確認
+aws ec2 describe-security-groups --group-ids sg-12345678
+
+# NACLの確認
+aws ec2 describe-network-acls --filters "Name=vpc-id,Values=vpc-12345678"
+```
+
+### 問題2: プライベートサブネットからインターネットにアクセスできない
+
+**原因:**
+- NATゲートウェイが設定されていない
+- ルートテーブルにNATゲートウェイへのルートがない
+
+**解決策:**
+```bash
+# NATゲートウェイの確認
+aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=vpc-12345678"
+
+# ルートテーブルの確認
+aws ec2 describe-route-tables --filters "Name=vpc-id,Values=vpc-12345678"
+```
+
+これで、VPCの基礎知識と実務でのネットワーク設計を理解できるようになりました。
 

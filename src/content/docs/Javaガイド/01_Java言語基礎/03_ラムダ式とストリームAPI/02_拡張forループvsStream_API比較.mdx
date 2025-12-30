@@ -1,0 +1,572 @@
+---
+title: 拡張forループ vs Stream API 比較
+sidebar:
+    label: 拡張forループ vs Stream API
+---
+
+# 拡張forループ vs Stream API 完全比較
+
+Javaでのコレクション操作において、拡張forループ（Enhanced For Loop）とStream APIの使い分けと比較を詳しく解説します。
+
+## 1. 基本的な比較
+
+### 拡張forループとは
+
+拡張forループ（Enhanced For Loop）は、Java 5で導入された構文で、コレクションや配列を簡単に反復処理できます。
+
+```java
+// 拡張forループの構文
+for (要素の型 変数名 : コレクションまたは配列) {
+    // 処理
+}
+```
+
+### Stream APIとは
+
+Stream APIは、Java 8で導入された関数型プログラミングスタイルでコレクションを操作するAPIです。
+
+```java
+// Stream APIの構文
+コレクション.stream()
+    .中間操作()
+    .終端操作()
+```
+
+## 2. 基本的な操作の比較
+
+### 例1: 各要素を出力
+
+#### 拡張forループ
+
+```java
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie");
+
+for (String name : names) {
+    System.out.println(name);
+}
+```
+
+#### Stream API
+
+```java
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie");
+
+names.stream()
+    .forEach(System.out::println);
+```
+
+**比較:**
+- **拡張forループ**: シンプルで直感的、副作用を起こしやすい
+- **Stream API**: 関数型スタイル、副作用を避けやすい
+
+### 例2: 条件に合う要素を抽出
+
+#### 拡張forループ
+
+```java
+List<Integer> numbers = Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+List<Integer> evens = new ArrayList<>();
+
+for (Integer number : numbers) {
+    if (number % 2 == 0) {
+        evens.add(number);
+    }
+}
+// 結果: [2, 4, 6, 8, 10]
+```
+
+#### Stream API
+
+```java
+List<Integer> numbers = Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+
+List<Integer> evens = numbers.stream()
+    .filter(n -> n % 2 == 0)
+    .collect(Collectors.toList());
+// 結果: [2, 4, 6, 8, 10]
+```
+
+**比較:**
+- **拡張forループ**: 手続き的、中間コレクションが必要
+- **Stream API**: 宣言的、何をしたいかが明確
+
+### 例3: 要素を変換
+
+#### 拡張forループ
+
+```java
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie");
+List<String> upperNames = new ArrayList<>();
+
+for (String name : names) {
+    upperNames.add(name.toUpperCase());
+}
+// 結果: [ALICE, BOB, CHARLIE]
+```
+
+#### Stream API
+
+```java
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie");
+
+List<String> upperNames = names.stream()
+    .map(String::toUpperCase)
+    .collect(Collectors.toList());
+// 結果: [ALICE, BOB, CHARLIE]
+```
+
+**比較:**
+- **拡張forループ**: 明示的な変換処理が必要
+- **Stream API**: 関数型スタイルで簡潔
+
+## 3. 複雑な操作の比較
+
+### 例4: 複数の条件と変換を組み合わせる
+
+#### 拡張forループ
+
+```java
+List<User> users = Arrays.asList(
+    new User("Alice", 25, true),
+    new User("Bob", 17, true),
+    new User("Charlie", 30, false),
+    new User("David", 22, true)
+);
+
+List<String> activeAdultNames = new ArrayList<>();
+for (User user : users) {
+    if (user.isActive() && user.getAge() >= 18) {
+        activeAdultNames.add(user.getName().toUpperCase());
+    }
+}
+// 結果: [ALICE, DAVID]
+```
+
+#### Stream API
+
+```java
+List<User> users = Arrays.asList(
+    new User("Alice", 25, true),
+    new User("Bob", 17, true),
+    new User("Charlie", 30, false),
+    new User("David", 22, true)
+);
+
+List<String> activeAdultNames = users.stream()
+    .filter(User::isActive)
+    .filter(u -> u.getAge() >= 18)
+    .map(User::getName)
+    .map(String::toUpperCase)
+    .collect(Collectors.toList());
+// 結果: [ALICE, DAVID]
+```
+
+**比較:**
+- **拡張forループ**: ネストが深くなりやすい、可読性が低下
+- **Stream API**: パイプラインで処理が明確、可読性が高い
+
+### 例5: 集計処理
+
+#### 拡張forループ
+
+```java
+List<Integer> numbers = Arrays.asList(1, 2, 3, 4, 5);
+int sum = 0;
+
+for (Integer number : numbers) {
+    sum += number;
+}
+// 結果: 15
+```
+
+#### Stream API
+
+```java
+List<Integer> numbers = Arrays.asList(1, 2, 3, 4, 5);
+
+int sum = numbers.stream()
+    .mapToInt(Integer::intValue)
+    .sum();
+// 結果: 15
+
+// または
+int sum2 = numbers.stream()
+    .reduce(0, Integer::sum);
+// 結果: 15
+```
+
+**比較:**
+- **拡張forループ**: 変数の状態管理が必要
+- **Stream API**: 関数型スタイルで副作用がない
+
+### 例6: グループ化
+
+#### 拡張forループ
+
+```java
+List<User> users = Arrays.asList(
+    new User("Alice", 25, "Engineering"),
+    new User("Bob", 30, "Engineering"),
+    new User("Charlie", 22, "Sales"),
+    new User("David", 28, "Sales")
+);
+
+Map<String, List<User>> byDepartment = new HashMap<>();
+for (User user : users) {
+    String dept = user.getDepartment();
+    byDepartment.computeIfAbsent(dept, k -> new ArrayList<>())
+        .add(user);
+}
+// 結果: {Engineering=[Alice, Bob], Sales=[Charlie, David]}
+```
+
+#### Stream API
+
+```java
+List<User> users = Arrays.asList(
+    new User("Alice", 25, "Engineering"),
+    new User("Bob", 30, "Engineering"),
+    new User("Charlie", 22, "Sales"),
+    new User("David", 28, "Sales")
+);
+
+Map<String, List<User>> byDepartment = users.stream()
+    .collect(Collectors.groupingBy(User::getDepartment));
+// 結果: {Engineering=[Alice, Bob], Sales=[Charlie, David]}
+```
+
+**比較:**
+- **拡張forループ**: 複雑なロジックが必要、エラーが起きやすい
+- **Stream API**: 簡潔で読みやすい、エラーが起きにくい
+
+## 4. パフォーマンスの比較
+
+### 小規模データ（100件以下）
+
+```java
+// 拡張forループ: オーバーヘッドが少ない
+List<String> names = // 100件のデータ
+for (String name : names) {
+    // 処理
+}
+
+// Stream API: オーバーヘッドがあるが、実用上問題なし
+names.stream()
+    .forEach(name -> {
+        // 処理
+    });
+```
+
+**結果**: 実用上、パフォーマンス差はほとんどない
+
+### 大規模データ（10万件以上）
+
+```java
+// 拡張forループ: 順次処理のみ
+List<Integer> numbers = // 10万件のデータ
+List<Integer> evens = new ArrayList<>();
+for (Integer number : numbers) {
+    if (number % 2 == 0) {
+        evens.add(number);
+    }
+}
+
+// Stream API: 並列処理が可能
+List<Integer> evens = numbers.parallelStream()
+    .filter(n -> n % 2 == 0)
+    .collect(Collectors.toList());
+```
+
+**結果**: 大規模データでは、Stream APIの並列処理が有利
+
+## 5. 使い分けの指針
+
+### 拡張forループを使うべき場合
+
+1. **シンプルな反復処理**
+   ```java
+   // 各要素を出力するだけ
+   for (String name : names) {
+       System.out.println(name);
+   }
+   ```
+
+2. **副作用が必要な場合**
+   ```java
+   // 外部変数を変更する必要がある
+   int count = 0;
+   for (User user : users) {
+       if (user.isActive()) {
+           count++;
+           processUser(user); // 副作用
+       }
+   }
+   ```
+
+3. **早期終了が必要な場合**
+   ```java
+   // 条件を満たしたら処理を終了
+   for (User user : users) {
+       if (user.getId() == targetId) {
+           return user;
+       }
+   }
+   ```
+
+4. **パフォーマンスが極めて重要な場合**
+   ```java
+   // 非常に小さなデータセットで、オーバーヘッドを避けたい
+   for (int i = 0; i < 10; i++) {
+       // 処理
+   }
+   ```
+
+### Stream APIを使うべき場合
+
+1. **複雑な変換処理**
+   ```java
+   // フィルタリング、変換、集約を組み合わせる
+   List<String> result = users.stream()
+       .filter(User::isActive)
+       .map(User::getName)
+       .map(String::toUpperCase)
+       .sorted()
+       .collect(Collectors.toList());
+   ```
+
+2. **関数型スタイルを維持したい場合**
+   ```java
+   // 副作用を避け、不変性を保つ
+   List<Integer> doubled = numbers.stream()
+       .map(n -> n * 2)
+       .collect(Collectors.toList());
+   ```
+
+3. **並列処理が必要な場合**
+   ```java
+   // 大規模データの並列処理
+   List<ProcessedData> result = largeDataSet.parallelStream()
+       .map(this::process)
+       .collect(Collectors.toList());
+   ```
+
+4. **複雑な集約処理**
+   ```java
+   // グループ化、集計など
+   Map<String, Double> averages = users.stream()
+       .collect(Collectors.groupingBy(
+           User::getDepartment,
+           Collectors.averagingInt(User::getAge)
+       ));
+   ```
+
+## 6. 実務での比較例
+
+### シナリオ1: ユーザーリストの処理
+
+#### 要件
+- アクティブなユーザーのみを抽出
+- 18歳以上のみを抽出
+- 名前を大文字に変換
+- アルファベット順にソート
+
+#### 拡張forループ
+
+```java
+public List<String> getActiveAdultNames(List<User> users) {
+    List<User> activeUsers = new ArrayList<>();
+    for (User user : users) {
+        if (user.isActive() && user.getAge() >= 18) {
+            activeUsers.add(user);
+        }
+    }
+    
+    List<String> names = new ArrayList<>();
+    for (User user : activeUsers) {
+        names.add(user.getName().toUpperCase());
+    }
+    
+    Collections.sort(names);
+    return names;
+}
+```
+
+#### Stream API
+
+```java
+public List<String> getActiveAdultNames(List<User> users) {
+    return users.stream()
+        .filter(User::isActive)
+        .filter(u -> u.getAge() >= 18)
+        .map(User::getName)
+        .map(String::toUpperCase)
+        .sorted()
+        .collect(Collectors.toList());
+}
+```
+
+**比較:**
+- **拡張forループ**: コードが長い、中間コレクションが必要、可読性が低い
+- **Stream API**: 簡潔、パイプラインで処理が明確、可読性が高い
+
+### シナリオ2: データの集計
+
+#### 要件
+- 部門ごとにグループ化
+- 各部門の平均年齢を計算
+- 平均年齢が30以上の部門のみを抽出
+
+#### 拡張forループ
+
+```java
+public Map<String, Double> getDepartmentsWithHighAverageAge(List<User> users) {
+    Map<String, List<User>> byDepartment = new HashMap<>();
+    for (User user : users) {
+        String dept = user.getDepartment();
+        byDepartment.computeIfAbsent(dept, k -> new ArrayList<>())
+            .add(user);
+    }
+    
+    Map<String, Double> averages = new HashMap<>();
+    for (Map.Entry<String, List<User>> entry : byDepartment.entrySet()) {
+        int totalAge = 0;
+        for (User user : entry.getValue()) {
+            totalAge += user.getAge();
+        }
+        double average = (double) totalAge / entry.getValue().size();
+        if (average >= 30) {
+            averages.put(entry.getKey(), average);
+        }
+    }
+    
+    return averages;
+}
+```
+
+#### Stream API
+
+```java
+public Map<String, Double> getDepartmentsWithHighAverageAge(List<User> users) {
+    return users.stream()
+        .collect(Collectors.groupingBy(
+            User::getDepartment,
+            Collectors.averagingInt(User::getAge)
+        ))
+        .entrySet().stream()
+        .filter(entry -> entry.getValue() >= 30)
+        .collect(Collectors.toMap(
+            Map.Entry::getKey,
+            Map.Entry::getValue
+        ));
+}
+```
+
+**比較:**
+- **拡張forループ**: 複雑、エラーが起きやすい、保守が困難
+- **Stream API**: 簡潔、読みやすい、保守しやすい
+
+## 7. パフォーマンスベンチマーク
+
+### テスト環境
+- データサイズ: 100万件
+- 処理: フィルタリング + 変換 + 集約
+
+```java
+// 拡張forループ
+long start = System.currentTimeMillis();
+List<String> result1 = new ArrayList<>();
+for (User user : users) {
+    if (user.isActive() && user.getAge() >= 18) {
+        result1.add(user.getName().toUpperCase());
+    }
+}
+long time1 = System.currentTimeMillis() - start;
+
+// Stream API（順次）
+start = System.currentTimeMillis();
+List<String> result2 = users.stream()
+    .filter(User::isActive)
+    .filter(u -> u.getAge() >= 18)
+    .map(User::getName)
+    .map(String::toUpperCase)
+    .collect(Collectors.toList());
+long time2 = System.currentTimeMillis() - start;
+
+// Stream API（並列）
+start = System.currentTimeMillis();
+List<String> result3 = users.parallelStream()
+    .filter(User::isActive)
+    .filter(u -> u.getAge() >= 18)
+    .map(User::getName)
+    .map(String::toUpperCase)
+    .collect(Collectors.toList());
+long time3 = System.currentTimeMillis() - start;
+```
+
+**結果（参考値）:**
+- 拡張forループ: 約150ms
+- Stream API（順次）: 約180ms
+- Stream API（並列）: 約80ms（CPUコア数に依存）
+
+## 8. よくある質問
+
+### Q1: どちらを使うべきか？
+
+**A:** プロジェクトの方針と要件に応じて選択します。
+- **シンプルな処理**: 拡張forループ
+- **複雑な処理**: Stream API
+- **並列処理が必要**: Stream API
+
+### Q2: パフォーマンスはどちらが良いか？
+
+**A:** 
+- **小規模データ**: 実用上、差はほとんどない
+- **大規模データ**: Stream APIの並列処理が有利
+- **極小規模データ**: 拡張forループがわずかに有利
+
+### Q3: 可読性はどちらが良いか？
+
+**A:** 
+- **シンプルな処理**: 拡張forループが直感的
+- **複雑な処理**: Stream APIが宣言的で読みやすい
+
+## 9. まとめ
+
+### 拡張forループの特徴
+
+**メリット:**
+- シンプルで直感的
+- オーバーヘッドが少ない
+- 早期終了が可能
+- 副作用を起こしやすい（メリットでもある）
+
+**デメリット:**
+- 複雑な処理ではコードが長くなる
+- 中間コレクションが必要
+- 並列処理が困難
+
+### Stream APIの特徴
+
+**メリット:**
+- 宣言的で読みやすい
+- パイプライン処理が可能
+- 並列処理が容易
+- 関数型スタイルで副作用を避けやすい
+
+**デメリット:**
+- オーバーヘッドがある（実用上は問題なし）
+- 学習コストがある
+- 早期終了が難しい
+
+### 推奨される使い分け
+
+| 状況 | 推奨方法 | 理由 |
+|------|---------|------|
+| シンプルな反復処理 | 拡張forループ | 直感的で読みやすい |
+| 複雑な変換処理 | Stream API | パイプラインで処理が明確 |
+| 並列処理が必要 | Stream API | parallelStream()が利用可能 |
+| 早期終了が必要 | 拡張forループ | breakが使用可能 |
+| 副作用が必要 | 拡張forループ | 外部変数の変更が容易 |
+| 関数型スタイルを維持 | Stream API | 不変性を保てる |
+
+実務では、**複雑な処理にはStream API、シンプルな処理には拡張forループ**を使い分けることが推奨されます。

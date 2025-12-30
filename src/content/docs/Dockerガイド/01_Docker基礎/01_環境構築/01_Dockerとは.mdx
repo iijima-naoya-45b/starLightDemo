@@ -1,56 +1,330 @@
 ---
-title: "Dockerとは"
-label: "Dockerとは"
+title: Dockerとは完全ガイド
+sidebar:
+    label: Dockerとは
 ---
 
-# Dockerとは
+# Dockerとは完全ガイド
 
-Docker とは、アプリケーションとその実行環境をコンテナとしてパッケージ化し、開発から本番環境まで同じように動作させるためのプラットフォームです。これにより、「私の環境では動くのに」といった問題を解消し、開発者がアプリケーションの構築に集中できるようになります。
+Dockerは、コンテナ技術を使用してアプリケーションをパッケージ化し、どこでも同じように実行できるようにするツールです。実務で使える実装例とベストプラクティスを詳しく解説します。
 
-## 1. コンテナとは何か 📦
+## 1. Dockerとは
 
-コンテナは、アプリケーションと、そのアプリケーションが動作するために必要なすべてのもの（ライブラリ、依存関係、設定ファイルなど）を軽量で独立したパッケージにまとめたものです。仮想マシン（VM）と似ていますが、OS 全体を仮想化する VM とは異なり、コンテナはホスト OS のカーネルを共有するため、より軽量かつ高速に動作します。
+### Dockerの役割
 
-## 2. Docker の主要な構成要素
+Dockerは、アプリケーションとその依存関係をコンテナとしてパッケージ化し、どの環境でも同じように実行できるようにします。
 
-Docker は、以下の3つの主要な要素で構成されています。
+```
+開発環境
+   ↓（Dockerイメージ）
+本番環境（同じイメージで実行）
+```
+
+### なぜDockerが必要か
+
+**問題のある構成（Dockerなし）:**
+
+```bash
+# 問題: 環境依存の問題
+# 開発環境: Node.js 18, PostgreSQL 14
+# 本番環境: Node.js 16, PostgreSQL 13
+
+# 問題点:
+# 1. 環境の違いによるバグ
+# 2. セットアップの手間
+# 3. 依存関係の管理が困難
+# 4. 再現性が低い
+```
+
+**解決: Dockerによるコンテナ化**
+
+```dockerfile
+# 解決: Dockerfileで環境を定義
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+EXPOSE 3000
+CMD ["npm", "start"]
+
+# メリット:
+# 1. 環境の一貫性（どこでも同じ環境）
+# 2. 簡単なセットアップ（docker run だけで起動）
+# 3. 依存関係の管理（Dockerfileに記述）
+# 4. 高い再現性（同じイメージで同じ結果）
+```
+
+## 2. コンテナと仮想マシンの違い
+
+### 仮想マシン（VM）
+
+```
+物理サーバー
+   ├─ ハイパーバイザー
+   │   ├─ VM1（OS + アプリ）
+   │   ├─ VM2（OS + アプリ）
+   │   └─ VM3（OS + アプリ）
+```
+
+**特徴:**
+- OS全体を仮想化
+- リソース消費が大きい
+- 起動が遅い（数分）
+
+### コンテナ（Docker）
+
+```
+物理サーバー
+   ├─ OS
+   │   ├─ コンテナ1（アプリのみ）
+   │   ├─ コンテナ2（アプリのみ）
+   │   └─ コンテナ3（アプリのみ）
+```
+
+**特徴:**
+- OSのカーネルを共有
+- リソース消費が小さい
+- 起動が速い（数秒）
+
+### 比較表
+
+| 項目 | 仮想マシン | コンテナ |
+|------|-----------|---------|
+| 起動時間 | 数分 | 数秒 |
+| リソース消費 | 大きい | 小さい |
+| 分離レベル | 高い | 中程度 |
+| 移植性 | 中程度 | 高い |
+
+## 3. Dockerの基本概念
+
+### イメージ
+
+イメージは、アプリケーションとその依存関係を含む読み取り専用のテンプレートです。
+
+```bash
+# イメージのビルド
+docker build -t my-app:latest .
+
+# イメージの一覧表示
+docker images
+
+# イメージの詳細確認
+docker inspect my-app:latest
+
+# イメージの削除
+docker rmi my-app:latest
+
+# 未使用のイメージを一括削除
+docker image prune -a
+```
+
+### コンテナ
+
+コンテナは、イメージから作成された実行可能なインスタンスです。
+
+```bash
+# コンテナの起動
+docker run -d -p 3000:3000 --name my-app my-app:latest
+
+# コンテナの一覧表示
+docker ps  # 実行中
+docker ps -a  # すべて
+
+# コンテナの停止
+docker stop my-app
+
+# コンテナの再起動
+docker restart my-app
+
+# コンテナの削除
+docker rm my-app
+
+# コンテナのログ確認
+docker logs my-app
+docker logs -f my-app  # リアルタイム
+```
 
 ### Dockerfile
 
-Dockerfile は、Docker イメージを作成するための設計図です。ファイルには、ベースとなる OS、必要なソフトウェアのインストール、環境設定、そしてアプリケーションの実行コマンドなど、イメージを構築する手順がステップバイステップで記述されています。
+Dockerfileは、イメージを構築するための手順を記述したファイルです。
 
-### Docker Image
+```dockerfile
+# ベースイメージ
+FROM node:18-alpine
 
-Docker Image は、Dockerfile の内容に基づいて構築された実行可能なテンプレートです。このイメージを元に、コンテナを何度でも同じ状態で生成することができます。イメージは Docker Hub などのレジストリに保存し、共有することが可能です。
+# 作業ディレクトリの設定
+WORKDIR /app
 
-### Docker Container
+# 依存関係のインストール
+COPY package*.json ./
+RUN npm ci --only=production
 
-Docker Container は、Docker Image から生成された実行中のインスタンスです。コンテナは互いに隔離されており、それぞれが独立した環境で動作します。これにより、同じサーバー上で複数のコンテナを動かしても、互いに影響を与えることはありません。
+# アプリケーションコードのコピー
+COPY . .
 
-## 3. なぜ Docker を使うのか
+# ポートの公開
+EXPOSE 3000
 
-- **環境の統一:** 開発、テスト、本番環境で同じコンテナを使用することで、「環境の違いによるバグ」を防ぎます。
-
-- **再現性の向上:** Dockerfile を共有することで、誰でも同じ開発環境を簡単に構築できます。
-
-- **スケーラビリティ:** 複数のコンテナを簡単に複製してスケールアウトできるため、高負荷なアプリケーションにも対応しやすくなります。
-
-- **軽量性:** 仮想マシンよりも軽量で起動が速いため、リソースの効率的な利用が可能です。
+# アプリケーションの起動
+CMD ["npm", "start"]
+```
 
 ## 4. Docker Hub
 
-Docker Hub は、Docker イメージを共有・管理するためのクラウドサービスです。GitHub がソースコードのリポジトリであるように、Docker Hub は Docker イメージのリポジトリとして機能します。
+### Docker Hubとは
 
-- **共有と再利用:** 作成したイメージを Docker Hub にプッシュすることで、他の開発者と簡単に共有できます。また、公式イメージやコミュニティが公開しているイメージ（例：ubuntu、nginx、mongo など）をプルして、ベースとして利用することも可能です。
+Docker Hubは、Dockerイメージを共有・管理するためのクラウドサービスです。
 
-- **バージョン管理:** イメージにはタグを付けてバージョン管理ができます。これにより、特定のバージョンの環境を正確に再現できます。
+### イメージのプッシュ
+
+```bash
+# Docker Hubにログイン
+docker login
+
+# イメージにタグを付ける
+docker tag my-app:latest username/my-app:latest
+
+# イメージをプッシュ
+docker push username/my-app:latest
+```
+
+### イメージのプル
+
+```bash
+# 公式イメージのプル
+docker pull nginx:latest
+
+# カスタムイメージのプル
+docker pull username/my-app:latest
+```
+
+### プライベートレジストリ
+
+```bash
+# プライベートレジストリの使用
+docker pull registry.example.com/my-app:latest
+
+# プライベートレジストリへのプッシュ
+docker tag my-app:latest registry.example.com/my-app:latest
+docker push registry.example.com/my-app:latest
+```
 
 ## 5. Docker Compose
 
-Docker Compose は、複数のコンテナをまとめて管理するためのツールです。特に、データベース、バックエンド API、フロントエンドといった複数のサービスで構成されるアプリケーションを扱う際に非常に便利です。
+### Docker Composeとは
 
-- **docker-compose.yml:** この YAML ファイルに、各コンテナのイメージ、ポート、ボリューム、ネットワークなどを定義します。
+Docker Composeは、複数のコンテナを定義し、管理するためのツールです。
 
-- **一括管理:** `docker-compose up` コマンド一つで、定義されたすべてのサービスを一度に起動・停止できます。これにより、複雑な環境構築の手順を簡略化し、開発者がアプリケーションの開発に集中できるメリットがあります。
+```yaml
+# docker-compose.yml
+version: '3.8'
 
-Docker Hub と Docker Compose は、Docker のエコシステムを支える重要なツールであり、効率的な開発ワークフローに不可欠な要素です。
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/mydb
+    depends_on:
+      - db
+  
+  db:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mydb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+```
+
+### Docker Composeのコマンド
+
+```bash
+# サービスの起動
+docker-compose up -d
+
+# サービスの停止
+docker-compose down
+
+# ログの確認
+docker-compose logs -f
+
+# サービスの再ビルド
+docker-compose up -d --build
+```
+
+## 6. 実務でのベストプラクティス
+
+### パターン1: 環境の統一
+
+```dockerfile
+# 開発環境と本番環境で同じベースイメージを使用
+FROM node:18-alpine
+
+# 環境変数で動作を切り替え
+ENV NODE_ENV=production
+```
+
+### パターン2: イメージのタグ付け
+
+```bash
+# バージョンタグ
+docker build -t my-app:v1.0.0 .
+
+# 最新タグ
+docker build -t my-app:latest .
+
+# 環境別タグ
+docker build -t my-app:dev .
+docker build -t my-app:staging .
+docker build -t my-app:prod .
+```
+
+## 7. よくある問題と解決策
+
+### 問題1: コンテナが起動しない
+
+**原因:**
+- ポートが既に使用されている
+- 環境変数が設定されていない
+
+**解決策:**
+```bash
+# ポートの使用状況を確認
+lsof -i :3000
+
+# 環境変数を確認
+docker run -e DATABASE_URL=... my-app:latest
+
+# ログを確認
+docker logs my-app
+```
+
+### 問題2: イメージのビルドが遅い
+
+**原因:**
+- キャッシュが効いていない
+- 不要なファイルをコピーしている
+
+**解決策:**
+```dockerfile
+# .dockerignoreファイルを作成
+node_modules
+.git
+.env
+*.log
+
+# Dockerfileの最適化
+# 依存関係のインストールを先に行う（キャッシュを活用）
+COPY package*.json ./
+RUN npm ci
+COPY . .
+```
+
+これで、Dockerの基礎知識と実務での使い方を理解できるようになりました。

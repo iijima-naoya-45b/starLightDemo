@@ -1,46 +1,560 @@
 ---
-title: "基本要素"
-label: "基本要素"
+title: 基本要素と操作
+sidebar:
+    label: 基本要素と操作
 ---
 
-ページの基本要素 📄
-Playwrightで最も頻繁に使用する要素について解説します。
+# Playwright基本要素と操作完全ガイド
 
-pageオブジェクト: Playwrightのすべてのブラウザ操作の起点となる中心的なオブジェクトです。
+Playwrightで最も頻繁に使用する要素と操作について、実装例とともに詳しく解説します。
 
-Locator: Playwright 1.14以降で導入された推奨されるセレクタエンジンで、要素を一意に特定するための強力な機能です。page.getByRole(), page.getByLabel(), page.getByTestId()などのメソッドを通じて、より堅牢なテストを作成する方法を説明します。
+## 1. pageオブジェクト
 
-要素の操作 🖱️
-ユーザーがWebページ上の要素とどのようにインタラクションするかを説明します。
+`page`オブジェクトは、Playwrightのすべてのブラウザ操作の起点となる中心的なオブジェクトです。
 
-クリック: locator.click()やpage.click()を使用して要素をクリックする方法。
+### 基本的な使用方法
 
-入力: locator.fill()やpage.fill()を使用してテキストフィールドに入力する方法。
+```javascript
+import { test, expect } from '@playwright/test';
 
-キーボード操作: page.press()やpage.keyboardオブジェクトを使ってキーボードイベントをシミュレートする方法。
+test('pageオブジェクトの基本操作', async ({ page }) => {
+  // ページに移動
+  await page.goto('https://example.com');
+  
+  // ページのタイトルを取得
+  const title = await page.title();
+  console.log(title);
+  
+  // 現在のURLを取得
+  const url = page.url();
+  console.log(url);
+  
+  // ページをリロード
+  await page.reload();
+  
+  // ブラウザの戻るボタン
+  await page.goBack();
+  
+  // ブラウザの進むボタン
+  await page.goForward();
+});
+```
 
-その他の操作: ホバー、ドラッグ＆ドロップ、ファイルのアップロードなど、より複雑な操作を網羅します。
+## 2. Locator（推奨される要素の特定方法）
 
-アサーションと検証 ✅
-要素が期待通りの状態であることを検証するための方法を解説します。
+Locatorは、Playwright 1.14以降で導入された推奨されるセレクタエンジンです。要素を一意に特定するための強力な機能を提供します。
 
-expect: Playwrightのテストランナーに組み込まれているアサーションライブラリです。
+### getByRole() - ARIAロールに基づく検索
 
-要素の可視性: toBeVisible()を使用して要素が表示されているか確認する方法。
+```javascript
+test('getByRoleの使用例', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // ボタンを検索
+  await page.getByRole('button', { name: 'Submit' }).click();
+  
+  // リンクを検索
+  await page.getByRole('link', { name: 'Learn more' }).click();
+  
+  // テキストボックスを検索
+  await page.getByRole('textbox', { name: 'Email' }).fill('test@example.com');
+  
+  // チェックボックスを検索
+  await page.getByRole('checkbox', { name: 'I agree' }).check();
+});
+```
 
-テキストの検証: toHaveText()やtoContainText()を使用して要素のテキストコンテンツを検証する方法。
+### getByLabel() - ラベルに基づく検索
 
-属性とプロパティ: toHaveAttribute()やtoHaveClass()を使用して要素の属性を検証する方法。
+```javascript
+test('getByLabelの使用例', async ({ page }) => {
+  await page.goto('https://example.com/login');
+  
+  // ラベルに基づいてフォーム要素を検索
+  await page.getByLabel('Username').fill('testuser');
+  await page.getByLabel('Password').fill('password123');
+  
+  // より具体的な検索
+  await page.getByLabel('Email address').fill('test@example.com');
+});
+```
 
-高度なトピック 🚀
-より複雑なテストシナリオをカバーするための高度な概念を説明します。
+### getByText() - テキストに基づく検索
 
-自動ウェイト: Playwrightが要素の状態変化をどのように自動的に待機するかを詳しく解説し、テストの不安定な動作を防ぐ方法を理解させます。
+```javascript
+test('getByTextの使用例', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // 完全一致
+  await page.getByText('Welcome').click();
+  
+  // 部分一致
+  await page.getByText('Welcome', { exact: false }).click();
+  
+  // 正規表現
+  await page.getByText(/Welcome/).click();
+});
+```
 
-複数の要素の操作: locator.nth(), locator.first(), locator.last()などを使って、複数の要素を扱う方法。
+### getByTestId() - テストIDに基づく検索（推奨）
 
-フレームとタブ: frameやpageオブジェクトを使って、複数のフレームやタブを切り替えて操作する方法。
+```javascript
+// HTML側
+// <button data-testid="submit-button">Submit</button>
 
-ネットワーク操作: page.route()メソッドを使って、APIリクエストをモックしたり、ネットワークリソースを監視したりする方法。
+test('getByTestIdの使用例', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // テストIDに基づいて要素を検索（最も安定）
+  await page.getByTestId('submit-button').click();
+  await page.getByTestId('login-form').fill('username', 'testuser');
+});
+```
 
-これらのセクションを網羅することで、Playwrightの初心者から上級者まで、誰にとっても価値のあるドキュメントを作成できます。
+### getByPlaceholder() - プレースホルダーに基づく検索
+
+```javascript
+test('getByPlaceholderの使用例', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  await page.getByPlaceholder('Enter your email').fill('test@example.com');
+  await page.getByPlaceholder('Search...').fill('query');
+});
+```
+
+### getByAltText() - alt属性に基づく検索
+
+```javascript
+test('getByAltTextの使用例', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // 画像のalt属性で検索
+  await page.getByAltText('Company logo').click();
+});
+```
+
+### getByTitle() - title属性に基づく検索
+
+```javascript
+test('getByTitleの使用例', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  await page.getByTitle('Close dialog').click();
+});
+```
+
+## 3. 要素の操作
+
+### クリック操作
+
+```javascript
+test('クリック操作の例', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // 基本的なクリック
+  await page.getByRole('button', { name: 'Submit' }).click();
+  
+  // ダブルクリック
+  await page.getByText('Double click me').dblclick();
+  
+  // 右クリック
+  await page.getByText('Right click me').click({ button: 'right' });
+  
+  // 中クリック
+  await page.getByText('Middle click me').click({ button: 'middle' });
+  
+  // 強制クリック（要素が隠れている場合）
+  await page.getByRole('button').click({ force: true });
+  
+  // クリック位置の指定
+  await page.getByRole('button').click({ position: { x: 10, y: 10 } });
+});
+```
+
+### 入力操作
+
+```javascript
+test('入力操作の例', async ({ page }) => {
+  await page.goto('https://example.com/login');
+  
+  // テキストフィールドに入力（既存の値をクリア）
+  await page.getByLabel('Username').fill('testuser');
+  
+  // テキストを追加（既存の値を保持）
+  await page.getByLabel('Description').type('Hello, World!');
+  
+  // 入力のクリア
+  await page.getByLabel('Username').clear();
+  
+  // 複数行の入力
+  await page.getByLabel('Message').fill('Line 1\nLine 2\nLine 3');
+});
+```
+
+### キーボード操作
+
+```javascript
+test('キーボード操作の例', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // 単一キーの押下
+  await page.getByLabel('Search').press('Enter');
+  await page.getByLabel('Input').press('Escape');
+  
+  // キーの組み合わせ
+  await page.getByLabel('Input').press('Control+A');
+  await page.getByLabel('Input').press('Shift+Enter');
+  
+  // keyboard APIを使用
+  await page.keyboard.type('Hello, World!');
+  await page.keyboard.press('Enter');
+  await page.keyboard.down('Shift');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.up('Shift');
+});
+```
+
+### その他の操作
+
+#### ホバー
+
+```javascript
+test('ホバー操作の例', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // 要素にホバー
+  await page.getByRole('button', { name: 'Menu' }).hover();
+  
+  // ホバー後に表示される要素を確認
+  await expect(page.getByText('Submenu')).toBeVisible();
+});
+```
+
+#### ドラッグ＆ドロップ
+
+```javascript
+test('ドラッグ＆ドロップの例', async ({ page }) => {
+  await page.goto('https://example.com/drag-drop');
+  
+  const source = page.getByTestId('source-item');
+  const target = page.getByTestId('target-area');
+  
+  // ドラッグ＆ドロップ
+  await source.dragTo(target);
+  
+  // または、座標を指定
+  await source.dragTo(target, {
+    targetPosition: { x: 100, y: 100 }
+  });
+});
+```
+
+#### ファイルのアップロード
+
+```javascript
+test('ファイルアップロードの例', async ({ page }) => {
+  await page.goto('https://example.com/upload');
+  
+  // 単一ファイル
+  await page.getByLabel('Upload file').setInputFiles('path/to/file.pdf');
+  
+  // 複数ファイル
+  await page.getByLabel('Upload files').setInputFiles([
+    'path/to/file1.pdf',
+    'path/to/file2.jpg'
+  ]);
+  
+  // ファイルの削除
+  await page.getByLabel('Upload file').setInputFiles([]);
+});
+```
+
+#### セレクトボックスの操作
+
+```javascript
+test('セレクトボックスの操作例', async ({ page }) => {
+  await page.goto('https://example.com/form');
+  
+  // 単一選択
+  await page.getByLabel('Country').selectOption('Japan');
+  
+  // 値で選択
+  await page.getByLabel('Country').selectOption({ value: 'jp' });
+  
+  // ラベルで選択
+  await page.getByLabel('Country').selectOption({ label: 'Japan' });
+  
+  // インデックスで選択
+  await page.getByLabel('Country').selectOption({ index: 0 });
+  
+  // 複数選択
+  await page.getByLabel('Languages').selectOption(['Japanese', 'English']);
+});
+```
+
+#### チェックボックスとラジオボタン
+
+```javascript
+test('チェックボックスとラジオボタンの操作例', async ({ page }) => {
+  await page.goto('https://example.com/form');
+  
+  // チェックボックスをチェック
+  await page.getByLabel('I agree to the terms').check();
+  
+  // チェックボックスをアンチェック
+  await page.getByLabel('I agree to the terms').uncheck();
+  
+  // ラジオボタンを選択
+  await page.getByLabel('Option 1').check();
+  
+  // チェック状態の確認
+  await expect(page.getByLabel('I agree to the terms')).toBeChecked();
+});
+```
+
+## 4. アサーションと検証
+
+### 要素の可視性
+
+```javascript
+test('要素の可視性の検証', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // 要素が表示されているか
+  await expect(page.getByText('Welcome')).toBeVisible();
+  
+  // 要素が非表示か
+  await expect(page.getByText('Hidden')).toBeHidden();
+  
+  // 要素が存在するか（DOMに存在するが非表示でもOK）
+  await expect(page.getByText('Element')).toBeAttached();
+});
+```
+
+### テキストの検証
+
+```javascript
+test('テキストの検証', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // 完全一致
+  await expect(page.getByText('Welcome')).toHaveText('Welcome');
+  
+  // 部分一致
+  await expect(page.getByText('Welcome')).toContainText('Wel');
+  
+  // 正規表現
+  await expect(page.getByText('Welcome')).toHaveText(/Welcome/);
+  
+  // 複数行のテキスト
+  await expect(page.getByTestId('message')).toHaveText('Line 1\nLine 2');
+});
+```
+
+### 属性とプロパティの検証
+
+```javascript
+test('属性とプロパティの検証', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // 属性の存在と値
+  await expect(page.getByRole('link')).toHaveAttribute('href', '/about');
+  await expect(page.getByRole('link')).toHaveAttribute('href', /about/);
+  
+  // クラスの検証
+  await expect(page.getByRole('button')).toHaveClass('btn-primary');
+  await expect(page.getByRole('button')).toHaveClass(/btn-/);
+  
+  // CSSプロパティの検証
+  await expect(page.getByText('Title')).toHaveCSS('color', 'rgb(255, 0, 0)');
+  
+  // 値の検証（input要素など）
+  await expect(page.getByLabel('Email')).toHaveValue('test@example.com');
+});
+```
+
+### その他の検証
+
+```javascript
+test('その他の検証', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // 要素が有効か
+  await expect(page.getByRole('button')).toBeEnabled();
+  
+  // 要素が無効か
+  await expect(page.getByRole('button', { disabled: true })).toBeDisabled();
+  
+  // 要素がフォーカスされているか
+  await expect(page.getByLabel('Input')).toBeFocused();
+  
+  // 要素の数
+  await expect(page.getByRole('listitem')).toHaveCount(5);
+  
+  // 空かどうか
+  await expect(page.getByTestId('empty-list')).toBeEmpty();
+});
+```
+
+## 5. 自動ウェイト機能
+
+Playwrightは、要素の状態変化を自動的に待機する機能を提供します。これにより、テストの不安定な動作を防ぎます。
+
+### 自動ウェイトの仕組み
+
+```javascript
+test('自動ウェイトの例', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // 以下の操作は、要素が表示されるまで自動的に待機します
+  await page.getByRole('button', { name: 'Submit' }).click();
+  
+  // 要素がクリック可能になるまで待機
+  await page.getByRole('button').click();
+  
+  // 要素が表示されるまで待機してから検証
+  await expect(page.getByText('Success')).toBeVisible();
+});
+```
+
+### 明示的な待機
+
+```javascript
+test('明示的な待機の例', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // 要素が表示されるまで待機
+  await page.getByText('Loading...').waitFor({ state: 'hidden' });
+  
+  // 要素が表示されるまで待機
+  await page.getByText('Content').waitFor({ state: 'visible' });
+  
+  // ネットワークリクエストの完了を待機
+  await page.waitForLoadState('networkidle');
+  
+  // 特定のURLへの遷移を待機
+  await page.waitForURL('**/dashboard');
+  
+  // カスタム条件を待機
+  await page.waitForFunction(() => {
+    return document.querySelector('.loaded') !== null;
+  });
+});
+```
+
+## 6. 複数の要素の操作
+
+```javascript
+test('複数の要素の操作', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // 最初の要素
+  await page.getByRole('listitem').first().click();
+  
+  // 最後の要素
+  await page.getByRole('listitem').last().click();
+  
+  // n番目の要素（0ベース）
+  await page.getByRole('listitem').nth(2).click();
+  
+  // すべての要素を操作
+  const items = page.getByRole('listitem');
+  const count = await items.count();
+  for (let i = 0; i < count; i++) {
+    await items.nth(i).click();
+  }
+  
+  // フィルタリング
+  const visibleItems = page.getByRole('listitem').filter({ hasText: 'Active' });
+  await expect(visibleItems).toHaveCount(3);
+});
+```
+
+## 7. フレームとタブの操作
+
+### フレームの操作
+
+```javascript
+test('フレームの操作', async ({ page }) => {
+  await page.goto('https://example.com');
+  
+  // フレームを取得
+  const frame = page.frame({ name: 'iframe-name' });
+  // または
+  const frame = page.frameLocator('iframe').first();
+  
+  // フレーム内の要素を操作
+  await frame.getByRole('button', { name: 'Submit' }).click();
+});
+```
+
+### タブの操作
+
+```javascript
+test('タブの操作', async ({ page, context }) => {
+  await page.goto('https://example.com');
+  
+  // 新しいタブを開く
+  const [newPage] = await Promise.all([
+    context.waitForEvent('page'),
+    page.getByRole('link', { name: 'Open new tab' }).click()
+  ]);
+  
+  // 新しいタブで操作
+  await newPage.goto('https://example.com/new-page');
+  await expect(newPage.getByText('New Page')).toBeVisible();
+  
+  // 元のタブに戻る
+  await page.bringToFront();
+});
+```
+
+## 8. ネットワーク操作
+
+### リクエストのモック
+
+```javascript
+test('ネットワークのモック', async ({ page }) => {
+  // APIリクエストをモック
+  await page.route('**/api/users', route => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        { id: 1, name: 'Alice' },
+        { id: 2, name: 'Bob' }
+      ])
+    });
+  });
+  
+  await page.goto('https://example.com');
+  // モックされたデータが使用される
+});
+```
+
+### リクエストの監視
+
+```javascript
+test('ネットワークリクエストの監視', async ({ page }) => {
+  const requests = [];
+  
+  page.on('request', request => {
+    requests.push({
+      url: request.url(),
+      method: request.method()
+    });
+  });
+  
+  await page.goto('https://example.com');
+  
+  // 特定のリクエストを待機
+  const response = await page.waitForResponse(response => 
+    response.url().includes('/api/data')
+  );
+  
+  const data = await response.json();
+  expect(data).toHaveProperty('status', 'success');
+});
+```
+
+これで、Playwrightの基本要素と操作の実装方法を理解できるようになりました。

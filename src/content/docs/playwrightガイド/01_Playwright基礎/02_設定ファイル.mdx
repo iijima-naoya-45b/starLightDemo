@@ -1,0 +1,413 @@
+---
+title: 設定ファイル（playwright.config.js）
+sidebar:
+    label: 設定ファイル
+---
+
+# Playwright設定ファイル完全ガイド
+
+`playwright.config.js`は、Playwrightのテスト実行を制御するための設定ファイルです。ここでは、実務で使える詳細な設定方法を解説します。
+
+## 1. 基本的な設定ファイル
+
+### 最小構成
+
+```javascript
+// playwright.config.js
+const { defineConfig, devices } = require('@playwright/test');
+
+module.exports = defineConfig({
+  testDir: './tests',
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: 'html',
+  use: {
+    baseURL: 'http://localhost:3000',
+    trace: 'on-first-retry',
+  },
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
+});
+```
+
+## 2. 主要な設定項目
+
+### testDir - テストファイルの場所
+
+```javascript
+module.exports = defineConfig({
+  // テストファイルが格納されているディレクトリ
+  testDir: './tests',
+  
+  // または、複数のディレクトリを指定
+  testMatch: /.*\.spec\.(js|ts)/,
+});
+```
+
+### workers - 並列実行の設定
+
+```javascript
+module.exports = defineConfig({
+  // 並列実行するworkerの数
+  // undefined: CPUコア数に応じて自動決定
+  // 数値: 指定した数のworkerで実行
+  workers: process.env.CI ? 2 : 4,
+  
+  // 完全に並列実行
+  fullyParallel: true,
+  
+  // または、ファイル単位で並列実行（ファイル内は順次実行）
+  fullyParallel: false,
+});
+```
+
+### retries - リトライ設定
+
+```javascript
+module.exports = defineConfig({
+  // テストが失敗した場合のリトライ回数
+  retries: process.env.CI ? 2 : 0,
+  
+  // 特定のプロジェクトのみリトライ
+  projects: [
+    {
+      name: 'chromium',
+      retries: 2,
+    },
+    {
+      name: 'firefox',
+      retries: 0, // リトライなし
+    },
+  ],
+});
+```
+
+### timeout - タイムアウト設定
+
+```javascript
+module.exports = defineConfig({
+  // テスト全体のタイムアウト（デフォルト: 30秒）
+  timeout: 60 * 1000, // 60秒
+  
+  // 各アクションのタイムアウト（デフォルト: 30秒）
+  expect: {
+    timeout: 10 * 1000, // 10秒
+  },
+  
+  // プロジェクトごとに設定
+  projects: [
+    {
+      name: 'chromium',
+      timeout: 60 * 1000,
+    },
+  ],
+});
+```
+
+### use - グローバル設定
+
+```javascript
+module.exports = defineConfig({
+  use: {
+    // ベースURL（相対パスでアクセス可能）
+    baseURL: 'http://localhost:3000',
+    
+    // ブラウザのビューポートサイズ
+    viewport: { width: 1280, height: 720 },
+    
+    // ユーザーエージェント
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+    
+    // スクリーンショットの設定
+    screenshot: 'only-on-failure',
+    
+    // 動画の設定
+    video: 'retain-on-failure',
+    
+    // トレースの設定
+    trace: 'on-first-retry',
+    
+    // ヘッドレスモード
+    headless: true,
+    
+    // スローモーション（デバッグ用）
+    slowMo: 0,
+    
+    // 追加のHTTPヘッダー
+    extraHTTPHeaders: {
+      'Authorization': 'Bearer token',
+    },
+    
+    // ロケール設定
+    locale: 'ja-JP',
+    
+    // タイムゾーン設定
+    timezoneId: 'Asia/Tokyo',
+    
+    // カラー設定
+    colorScheme: 'dark',
+    
+    // 権限の設定
+    permissions: ['geolocation'],
+    
+    // 地理的位置の設定
+    geolocation: { longitude: 139.6917, latitude: 35.6895 },
+  },
+});
+```
+
+## 3. プロジェクトの設定
+
+### 複数ブラウザでのテスト
+
+```javascript
+module.exports = defineConfig({
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] },
+    },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
+    },
+  ],
+});
+```
+
+### モバイルデバイスのエミュレーション
+
+```javascript
+module.exports = defineConfig({
+  projects: [
+    {
+      name: 'Mobile Chrome',
+      use: { ...devices['Pixel 5'] },
+    },
+    {
+      name: 'Mobile Safari',
+      use: { ...devices['iPhone 12'] },
+    },
+  ],
+});
+```
+
+### 環境別の設定
+
+```javascript
+module.exports = defineConfig({
+  projects: [
+    {
+      name: 'development',
+      use: {
+        baseURL: 'http://localhost:3000',
+      },
+    },
+    {
+      name: 'staging',
+      use: {
+        baseURL: 'https://staging.example.com',
+      },
+    },
+    {
+      name: 'production',
+      use: {
+        baseURL: 'https://example.com',
+      },
+    },
+  ],
+});
+```
+
+## 4. レポーターの設定
+
+### HTMLレポーター
+
+```javascript
+module.exports = defineConfig({
+  reporter: [
+    ['html', { outputFolder: 'playwright-report' }],
+  ],
+});
+```
+
+### 複数のレポーター
+
+```javascript
+module.exports = defineConfig({
+  reporter: [
+    ['list'], // コンソール出力
+    ['html', { outputFolder: 'playwright-report' }], // HTMLレポート
+    ['json', { outputFile: 'test-results.json' }], // JSONレポート
+    ['junit', { outputFile: 'junit.xml' }], // JUnit形式（CI/CD用）
+  ],
+});
+```
+
+### カスタムレポーター
+
+```javascript
+module.exports = defineConfig({
+  reporter: [
+    ['html'],
+    ['./custom-reporter.js'], // カスタムレポーター
+  ],
+});
+```
+
+## 5. 実務での設定例
+
+### 開発環境向けの設定
+
+```javascript
+// playwright.config.js
+const { defineConfig, devices } = require('@playwright/test');
+
+module.exports = defineConfig({
+  testDir: './tests',
+  
+  // 開発環境では並列実行を有効化
+  fullyParallel: true,
+  workers: process.env.CI ? 1 : undefined,
+  
+  // 開発環境ではリトライなし
+  retries: 0,
+  
+  reporter: 'html',
+  
+  use: {
+    baseURL: 'http://localhost:3000',
+    trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+  },
+  
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
+  
+  // 開発サーバーの起動
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://localhost:3000',
+    reuseExistingServer: !process.env.CI,
+  },
+});
+```
+
+### CI/CD環境向けの設定
+
+```javascript
+// playwright.config.js
+const { defineConfig, devices } = require('@playwright/test');
+
+module.exports = defineConfig({
+  testDir: './tests',
+  
+  // CI環境では並列実行を制限
+  fullyParallel: true,
+  workers: process.env.CI ? 2 : undefined,
+  
+  // CI環境ではリトライを有効化
+  retries: process.env.CI ? 2 : 0,
+  
+  // CI環境ではヘッドレスモード
+  use: {
+    headless: true,
+    baseURL: process.env.BASE_URL || 'http://localhost:3000',
+  },
+  
+  reporter: process.env.CI ? [
+    ['html'],
+    ['junit', { outputFile: 'test-results/junit.xml' }],
+  ] : 'html',
+  
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
+});
+```
+
+## 6. カスタムフィクスチャの設定
+
+```javascript
+// playwright.config.js
+const { defineConfig } = require('@playwright/test');
+
+module.exports = defineConfig({
+  // カスタムフィクスチャの定義
+  use: {
+    // カスタムフィクスチャは後で説明
+  },
+});
+```
+
+## 7. よくある設定パターン
+
+### パターン1: 環境変数を使用した設定
+
+```javascript
+module.exports = defineConfig({
+  use: {
+    baseURL: process.env.BASE_URL || 'http://localhost:3000',
+  },
+  
+  projects: [
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        // 環境変数から認証トークンを取得
+        extraHTTPHeaders: {
+          'Authorization': `Bearer ${process.env.AUTH_TOKEN}`,
+        },
+      },
+    },
+  ],
+});
+```
+
+### パターン2: 認証状態の再利用
+
+```javascript
+module.exports = defineConfig({
+  use: {
+    // 認証状態を保存
+    storageState: 'playwright/.auth/user.json',
+  },
+  
+  projects: [
+    {
+      name: 'setup',
+      testMatch: /.*\.setup\.js/,
+    },
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        // setupプロジェクトで保存された認証状態を使用
+        storageState: 'playwright/.auth/user.json',
+      },
+      dependencies: ['setup'],
+    },
+  ],
+});
+```
+
+これで、Playwrightの設定ファイルの詳細な設定方法を理解できるようになりました。

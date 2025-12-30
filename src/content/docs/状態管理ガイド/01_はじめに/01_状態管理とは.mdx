@@ -1,24 +1,114 @@
 ---
-title: "状態管理とは"
-label: "状態管理とは"
+title: 状態管理完全ガイド
+sidebar:
+    label: 状態管理とは
 ---
 
-## 状態管理とは
+# 状態管理完全ガイド
 
-状態管理は、アプリケーションのデータとUIの状態を管理するための仕組みです。
+状態管理の基礎から、実務で使える実装例とベストプラクティスまで詳しく解説します。
 
-### 状態の種類
+## 1. 状態管理とは
 
-#### 1. ローカル状態
+### 状態管理の役割
+
+状態管理は、アプリケーションのデータとUIの状態を管理するための仕組みです。適切な状態管理により、アプリケーションの保守性と拡張性が向上します。
+
+```
+状態管理の目的
+   ├─ データの一元管理
+   ├─ コンポーネント間のデータ共有
+   ├─ 予測可能なデータフロー
+   └─ デバッグの容易性
+```
+
+### なぜ状態管理が必要か
+
+**問題のある構成（状態管理なし）:**
 
 ```jsx
-function Counter() {
-  const [count, setCount] = useState(0); // ローカル状態
-  return <div>{count}</div>;
+// 問題: Props Drilling
+function App() {
+  const [user, setUser] = useState(null);
+  return <Layout user={user} setUser={setUser} />;
+}
+
+function Layout({ user, setUser }) {
+  return <Header user={user} setUser={setUser} />;
+}
+
+function Header({ user, setUser }) {
+  return <UserMenu user={user} setUser={setUser} />;
+}
+
+function UserMenu({ user, setUser }) {
+  // ようやく使用できる
+  return <div>{user?.name}</div>;
+}
+
+// 問題点:
+// 1. 中間コンポーネントが不要なpropsを受け取る
+// 2. コードが冗長になる
+// 3. リファクタリングが困難
+```
+
+**解決: 状態管理ライブラリの使用**
+
+```jsx
+// 解決: Zustandを使用
+import { create } from 'zustand';
+
+const useUserStore = create((set) => ({
+  user: null,
+  setUser: (user) => set({ user }),
+}));
+
+// どのコンポーネントからでも直接アクセス可能
+function UserMenu() {
+  const user = useUserStore((state) => state.user);
+  return <div>{user?.name}</div>;
 }
 ```
 
-#### 2. グローバル状態
+## 2. 状態の種類
+
+### ローカル状態
+
+ローカル状態は、単一のコンポーネント内でのみ使用される状態です。
+
+```jsx
+// useStateを使用したローカル状態
+function Counter() {
+  const [count, setCount] = useState(0);
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(count + 1)}>+</button>
+    </div>
+  );
+}
+
+// useReducerを使用した複雑なローカル状態
+function Counter() {
+  const [state, dispatch] = useReducer(reducer, { count: 0 });
+  return (
+    <div>
+      <p>Count: {state.count}</p>
+      <button onClick={() => dispatch({ type: 'increment' })}>+</button>
+    </div>
+  );
+}
+```
+
+**使用場面:**
+- フォーム入力
+- UIの表示/非表示
+- アニメーション状態
+- コンポーネント固有の状態
+
+### グローバル状態
+
+グローバル状態は、複数のコンポーネント間で共有される状態です。
 
 ```jsx
 // Zustandを使用したグローバル状態
@@ -26,28 +116,242 @@ import { create } from 'zustand';
 
 const useStore = create((set) => ({
   count: 0,
+  user: null,
   increment: () => set((state) => ({ count: state.count + 1 })),
+  setUser: (user) => set({ user }),
 }));
+
+// 使用
+function Counter() {
+  const count = useStore((state) => state.count);
+  const increment = useStore((state) => state.increment);
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={increment}>+</button>
+    </div>
+  );
+}
 ```
 
-#### 3. サーバー状態
+**使用場面:**
+- ユーザー情報
+- テーマ設定
+- 認証状態
+- アプリケーション全体の設定
+
+### サーバー状態
+
+サーバー状態は、サーバーから取得したデータの状態です。
 
 ```jsx
-// React Queryを使用したサーバー状態
+// TanStack Queryを使用したサーバー状態
 import { useQuery } from '@tanstack/react-query';
 
 function UserProfile({ userId }) {
-  const { data } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['user', userId],
     queryFn: () => fetchUser(userId),
   });
+  
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+  
   return <div>{data?.name}</div>;
 }
 ```
 
-### 状態管理の選択基準
+**使用場面:**
+- APIから取得したデータ
+- キャッシュが必要なデータ
+- リアルタイム更新が必要なデータ
+- ページネーション
 
-- **ローカル状態**: `useState`、`useReducer`
-- **グローバル状態**: Context API、Zustand、Redux、Jotai
-- **サーバー状態**: React Query、SWR
+## 3. 状態管理の選択基準
+
+### 状態の種類による選択
+
+| 状態の種類 | 推奨ライブラリ | 理由 |
+|-----------|--------------|------|
+| **ローカル状態** | `useState`、`useReducer` | シンプルで十分 |
+| **グローバル状態（小規模）** | Context API、Zustand | 学習コストが低い |
+| **グローバル状態（中規模）** | Zustand、Recoil、Jotai | バランスが良い |
+| **グローバル状態（大規模）** | Redux、Zustand | 厳格な管理が必要 |
+| **サーバー状態（シンプル）** | SWR | 軽量でシンプル |
+| **サーバー状態（複雑）** | TanStack Query | 機能が豊富 |
+
+### プロジェクト規模による選択
+
+#### 小規模プロジェクト
+
+```jsx
+// Context API + SWR
+import { createContext, useContext } from 'react';
+import useSWR from 'swr';
+
+// グローバル状態: Context API
+const ThemeContext = createContext();
+
+// サーバー状態: SWR
+function UserList() {
+  const { data } = useSWR('/api/users', fetcher);
+  return <div>{data?.map(user => <div key={user.id}>{user.name}</div>)}</div>;
+}
+```
+
+#### 中規模プロジェクト
+
+```jsx
+// Zustand + TanStack Query
+import { create } from 'zustand';
+import { useQuery } from '@tanstack/react-query';
+
+// グローバル状態: Zustand
+const useAppStore = create((set) => ({
+  theme: 'light',
+  setTheme: (theme) => set({ theme }),
+}));
+
+// サーバー状態: TanStack Query
+function UserList() {
+  const { data } = useQuery({
+    queryKey: ['users'],
+    queryFn: fetchUsers,
+  });
+  return <div>{data?.map(user => <div key={user.id}>{user.name}</div>)}</div>;
+}
+```
+
+#### 大規模プロジェクト
+
+```jsx
+// Redux Toolkit + TanStack Query
+import { configureStore } from '@reduxjs/toolkit';
+import { useQuery } from '@tanstack/react-query';
+
+// グローバル状態: Redux Toolkit
+export const store = configureStore({
+  reducer: {
+    // reducers
+  },
+});
+
+// サーバー状態: TanStack Query
+function UserList() {
+  const { data } = useQuery({
+    queryKey: ['users'],
+    queryFn: fetchUsers,
+  });
+  return <div>{data?.map(user => <div key={user.id}>{user.name}</div>)}</div>;
+}
+```
+
+## 4. 実務でのベストプラクティス
+
+### パターン1: 状態の分離
+
+```jsx
+// 状態を適切に分離
+// グローバル状態: ユーザー情報
+const useUserStore = create((set) => ({
+  user: null,
+  setUser: (user) => set({ user }),
+}));
+
+// サーバー状態: 商品一覧
+function ProductList() {
+  const { data } = useQuery({
+    queryKey: ['products'],
+    queryFn: fetchProducts,
+  });
+  return <div>{data?.map(product => <div key={product.id}>{product.name}</div>)}</div>;
+}
+
+// ローカル状態: フォーム入力
+function ProductForm() {
+  const [name, setName] = useState('');
+  return <input value={name} onChange={(e) => setName(e.target.value)} />;
+}
+```
+
+### パター2: 状態の正規化
+
+```jsx
+// 問題: 状態が正規化されていない
+const useStore = create((set) => ({
+  users: [
+    { id: 1, name: 'John', posts: [{ id: 1, title: 'Post 1' }] },
+    { id: 2, name: 'Jane', posts: [{ id: 2, title: 'Post 2' }] },
+  ],
+}));
+
+// 解決: 状態を正規化
+const useStore = create((set) => ({
+  users: {
+    1: { id: 1, name: 'John' },
+    2: { id: 2, name: 'Jane' },
+  },
+  posts: {
+    1: { id: 1, userId: 1, title: 'Post 1' },
+    2: { id: 2, userId: 2, title: 'Post 2' },
+  },
+  userPosts: {
+    1: [1],
+    2: [2],
+  },
+}));
+```
+
+## 5. よくある問題と解決策
+
+### 問題1: 不要な再レンダリング
+
+**原因:**
+- 状態の選択が不適切
+- メモ化が不十分
+
+**解決策:**
+```jsx
+// Zustandを使用した細かい粒度での選択
+const useStore = create((set) => ({
+  count: 0,
+  name: 'John',
+  increment: () => set((state) => ({ count: state.count + 1 })),
+}));
+
+// 細かい粒度での選択
+function Counter() {
+  const count = useStore((state) => state.count);
+  // nameが変更されても再レンダリングされない
+  return <div>{count}</div>;
+}
+```
+
+### 問題2: 状態の同期が取れない
+
+**原因:**
+- 状態の管理が分散している
+- 単一の真実の源がない
+
+**解決策:**
+```jsx
+// 単一の真実の源を確保
+const useAppStore = create((set) => ({
+  user: null,
+  setUser: (user) => set({ user }),
+}));
+
+// すべてのコンポーネントで同じストアを使用
+function UserProfile() {
+  const user = useAppStore((state) => state.user);
+  return <div>{user?.name}</div>;
+}
+
+function UserMenu() {
+  const user = useAppStore((state) => state.user);
+  return <div>{user?.email}</div>;
+}
+```
+
+これで、状態管理の基礎知識と実務での使い方を理解できるようになりました。
 

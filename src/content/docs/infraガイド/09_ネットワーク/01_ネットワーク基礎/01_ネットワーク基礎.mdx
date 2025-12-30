@@ -1,21 +1,313 @@
 ---
-title: "ネットワーク基礎"
-label: "ネットワーク基礎"
+title: ネットワーク基礎
+sidebar:
+    label: ネットワーク基礎
 ---
 
-## ネットワーク基礎
+# ネットワーク基礎完全ガイド
 
-インフラを理解する上で、ネットワークの知識は不可欠です。
+インフラを理解する上で、ネットワークの知識は不可欠です。TCP/IP、DNS、ロードバランシングなど、実務で必要なネットワークの基礎知識を詳しく解説します。
 
-### TCP/IP
+## 1. TCP/IPとは
 
-TCP/IPは、インターネットの標準プロトコルです。
+### TCP/IPの役割
 
-### DNS
+TCP/IP（Transmission Control Protocol/Internet Protocol）は、インターネットの標準プロトコルです。データを送信元から宛先まで確実に届けるための仕組みを提供します。
 
-DNS（Domain Name System）は、ドメイン名をIPアドレスに変換するシステムです。
+```
+アプリケーション層（HTTP、HTTPS、FTPなど）
+        ↓
+トランスポート層（TCP、UDP）
+        ↓
+インターネット層（IP）
+        ↓
+ネットワークインターフェース層（Ethernet、Wi-Fi）
+```
 
-### ロードバランシング
+### TCPとUDPの違い
 
-ロードバランサーは、複数のサーバーにトラフィックを分散します。
+#### TCP（Transmission Control Protocol）
+
+```bash
+# TCPの特徴
+- 信頼性: データの順序と完全性を保証
+- 接続指向: 通信前に接続を確立（3ウェイハンドシェイク）
+- フロー制御: 送信速度を調整
+- 使用例: HTTP、HTTPS、FTP、SSH
+```
+
+**3ウェイハンドシェイク:**
+
+```
+1. クライアント → サーバー: SYN（接続要求）
+2. サーバー → クライアント: SYN-ACK（接続確認）
+3. クライアント → サーバー: ACK（確認応答）
+```
+
+#### UDP（User Datagram Protocol）
+
+```bash
+# UDPの特徴
+- 高速: オーバーヘッドが少ない
+- 非接続: 接続を確立しない
+- 信頼性なし: データの順序と完全性を保証しない
+- 使用例: DNS、動画ストリーミング、ゲーム
+```
+
+### ポート番号
+
+```
+よく使われるポート番号:
+- 20, 21: FTP
+- 22: SSH
+- 25: SMTP
+- 53: DNS
+- 80: HTTP
+- 443: HTTPS
+- 3306: MySQL
+- 5432: PostgreSQL
+```
+
+## 2. DNS（Domain Name System）
+
+### DNSの役割
+
+DNSは、ドメイン名（例: `example.com`）をIPアドレス（例: `93.184.216.34`）に変換するシステムです。
+
+### DNS解決の流れ
+
+```
+1. ブラウザが「example.com」にアクセス
+   ↓
+2. OSがリゾルバー（DNSサーバー）に問い合わせ
+   ↓
+3. リゾルバーがルートサーバーに問い合わせ
+   ↓
+4. ルートサーバーが「.com」のTLDサーバーを返す
+   ↓
+5. リゾルバーが「.com」のTLDサーバーに問い合わせ
+   ↓
+6. TLDサーバーが「example.com」の権威DNSサーバーを返す
+   ↓
+7. リゾルバーが権威DNSサーバーに問い合わせ
+   ↓
+8. 権威DNSサーバーがIPアドレスを返す
+   ↓
+9. ブラウザがIPアドレスに接続
+```
+
+### DNSレコードの種類
+
+#### Aレコード
+
+```dns
+example.com.    IN    A    93.184.216.34
+```
+
+- ドメイン名をIPv4アドレスにマッピング
+
+#### AAAAレコード
+
+```dns
+example.com.    IN    AAAA    2606:2800:220:1:248:1893:25c8:1946
+```
+
+- ドメイン名をIPv6アドレスにマッピング
+
+#### CNAMEレコード
+
+```dns
+www.example.com.    IN    CNAME    example.com.
+```
+
+- ドメイン名の別名を定義
+
+#### MXレコード
+
+```dns
+example.com.    IN    MX    10    mail.example.com.
+```
+
+- メールサーバーのホスト名を指定
+
+### DNSコマンドでの確認
+
+```bash
+# digコマンドでDNSレコードを確認
+dig example.com
+
+# nslookupでIPアドレスを確認
+nslookup example.com
+
+# hostコマンドでドメイン情報を確認
+host example.com
+```
+
+## 3. ロードバランシング
+
+### ロードバランシングとは
+
+ロードバランサーは、複数のサーバーにトラフィックを分散し、システム全体の可用性とパフォーマンスを向上させます。
+
+```
+ユーザー
+   ↓
+ロードバランサー
+   ├─→ サーバー1
+   ├─→ サーバー2
+   └─→ サーバー3
+```
+
+### ロードバランシングアルゴリズム
+
+#### ラウンドロビン
+
+```nginx
+# Nginxでのラウンドロビン設定
+upstream backend {
+    server backend1.example.com;
+    server backend2.example.com;
+    server backend3.example.com;
+}
+```
+
+- リクエストを順番に各サーバーに振り分け
+
+#### 重み付けラウンドロビン
+
+```nginx
+# 重み付けラウンドロビン
+upstream backend {
+    server backend1.example.com weight=3;
+    server backend2.example.com weight=2;
+    server backend3.example.com weight=1;
+}
+```
+
+- サーバーの性能に応じて重みを設定
+
+#### IPハッシュ
+
+```nginx
+# IPハッシュ
+upstream backend {
+    ip_hash;
+    server backend1.example.com;
+    server backend2.example.com;
+    server backend3.example.com;
+}
+```
+
+- クライアントのIPアドレスに基づいてサーバーを選択
+- セッションの維持に有効
+
+#### 最小接続数
+
+```nginx
+# 最小接続数
+upstream backend {
+    least_conn;
+    server backend1.example.com;
+    server backend2.example.com;
+    server backend3.example.com;
+}
+```
+
+- 現在の接続数が最も少ないサーバーを選択
+
+### ヘルスチェック
+
+```nginx
+# Nginxでのヘルスチェック設定
+upstream backend {
+    server backend1.example.com;
+    server backend2.example.com;
+    server backend3.example.com;
+    
+    # ヘルスチェック
+    health_check;
+}
+```
+
+- サーバーの状態を定期的に確認
+- 障害が発生したサーバーを自動的に除外
+
+## 4. 実務でのネットワーク設定
+
+### ファイアウォールの設定
+
+```bash
+# UFW（Ubuntu Firewall）での設定例
+sudo ufw allow 22/tcp    # SSH
+sudo ufw allow 80/tcp    # HTTP
+sudo ufw allow 443/tcp   # HTTPS
+sudo ufw enable
+```
+
+### ネットワーク接続の確認
+
+```bash
+# ネットワーク接続の確認
+netstat -an | grep LISTEN
+
+# ポートの使用状況を確認
+lsof -i :80
+
+# ネットワークインターフェースの確認
+ifconfig  # Linux/macOS
+ipconfig  # Windows
+```
+
+### トラブルシューティング
+
+```bash
+# 接続の確認
+ping 8.8.8.8  # GoogleのDNSサーバー
+ping example.com
+
+# ルーティングの確認
+traceroute example.com  # Linux/macOS
+tracert example.com     # Windows
+
+# DNS解決の確認
+dig example.com
+nslookup example.com
+```
+
+## 5. よくある問題と解決策
+
+### 問題1: 接続できない
+
+**原因:**
+- ファイアウォールでブロックされている
+- ポートが開いていない
+- ネットワーク設定が間違っている
+
+**解決策:**
+```bash
+# ファイアウォールの確認
+sudo ufw status
+
+# ポートの確認
+sudo netstat -tulpn | grep :80
+
+# ネットワーク設定の確認
+ip addr show
+```
+
+### 問題2: DNS解決が遅い
+
+**原因:**
+- DNSサーバーが遠い
+- DNSキャッシュが効いていない
+
+**解決策:**
+```bash
+# 高速なDNSサーバーに変更
+# /etc/resolv.conf
+nameserver 1.1.1.1  # Cloudflare
+nameserver 8.8.8.8  # Google
+```
+
+これで、ネットワークの基礎知識と実務での使い方を理解できるようになりました。
 

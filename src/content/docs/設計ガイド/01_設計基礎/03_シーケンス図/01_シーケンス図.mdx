@@ -1,0 +1,493 @@
+---
+title: シーケンス図完全ガイド
+sidebar:
+    label: シーケンス図
+---
+
+# シーケンス図完全ガイド
+
+シーケンス図を使用したシステム設計を、実務で使える実装例とともに詳しく解説します。
+
+## 1. シーケンス図とは
+
+### シーケンス図の役割
+
+シーケンス図は、システムの動的な動作を時系列で表現するUML図の一つです。オブジェクト間のメッセージのやり取りを視覚的に表現します。
+
+```
+シーケンス図の要素
+   ├─ ライフライン（Lifeline）
+   ├─ メッセージ（Message）
+   ├─ アクティベーション（Activation）
+   └─ フレーム（Frame）
+```
+
+### なぜシーケンス図が必要か
+
+**問題のある構成（シーケンス図なし）:**
+
+```python
+# 問題: 処理の流れが不明確
+def create_order(user_id, items):
+    user = get_user(user_id)
+    order = create_order(user)
+    for item in items:
+        add_item_to_order(order, item)
+    process_payment(order)
+    send_confirmation_email(user)
+
+# 問題点:
+# 1. 処理の順序が不明確
+# 2. エラーハンドリングが不明確
+# 3. 非同期処理が不明確
+```
+
+**解決: シーケンス図による明確な設計**
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Controller
+    participant Service
+    participant Repository
+    participant Payment
+    
+    User->>Controller: POST /orders
+    Controller->>Service: createOrder(userId, items)
+    Service->>Repository: getUser(userId)
+    Repository-->>Service: User
+    Service->>Repository: createOrder(user)
+    Repository-->>Service: Order
+    Service->>Payment: processPayment(order)
+    Payment-->>Service: Success
+    Service-->>Controller: Order
+    Controller-->>User: 201 Created
+```
+
+## 2. 基本的なシーケンス図
+
+### ライフライン
+
+```mermaid
+sequenceDiagram
+    participant A as Actor
+    participant C as Controller
+    participant S as Service
+    
+    A->>C: Request
+    C->>S: Method Call
+    S-->>C: Response
+    C-->>A: Response
+```
+
+### メッセージの種類
+
+```mermaid
+sequenceDiagram
+    participant A
+    participant B
+    
+    A->>B: 同期メッセージ（実線矢印）
+    A-->>B: 非同期メッセージ（破線矢印）
+    A-xB: 非同期メッセージ（破線矢印、×付き）
+    A->>+B: メッセージ（アクティベーション開始）
+    B-->>-A: レスポンス（アクティベーション終了）
+```
+
+### アクティベーション
+
+```mermaid
+sequenceDiagram
+    participant A
+    participant B
+    participant C
+    
+    A->>+B: Method1()
+    B->>+C: Method2()
+    C-->>-B: Response
+    B-->>-A: Response
+```
+
+## 3. 実務でのベストプラクティス
+
+### パターン1: ユーザー認証のシーケンス図
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant AuthController
+    participant AuthService
+    participant UserRepository
+    participant TokenService
+    
+    User->>Frontend: ログイン情報入力
+    Frontend->>AuthController: POST /auth/login
+    AuthController->>AuthService: login(email, password)
+    AuthService->>UserRepository: findByEmail(email)
+    UserRepository-->>AuthService: User
+    AuthService->>AuthService: verifyPassword(password)
+    alt パスワードが正しい場合
+        AuthService->>TokenService: generateToken(user)
+        TokenService-->>AuthService: Token
+        AuthService-->>AuthController: {user, token}
+        AuthController-->>Frontend: 200 OK
+        Frontend-->>User: ログイン成功
+    else パスワードが間違っている場合
+        AuthService-->>AuthController: Error
+        AuthController-->>Frontend: 401 Unauthorized
+        Frontend-->>User: ログイン失敗
+    end
+```
+
+### パターン2: 注文作成のシーケンス図
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant OrderController
+    participant OrderService
+    participant CartService
+    participant PaymentService
+    participant InventoryService
+    participant EmailService
+    
+    User->>OrderController: POST /orders
+    OrderController->>OrderService: createOrder(userId, cartId)
+    
+    OrderService->>CartService: getCart(cartId)
+    CartService-->>OrderService: Cart
+    
+    loop 各商品について
+        OrderService->>InventoryService: checkStock(productId, quantity)
+        InventoryService-->>OrderService: Stock Available
+    end
+    
+    OrderService->>OrderService: createOrder(cart)
+    OrderService->>PaymentService: processPayment(order)
+    PaymentService-->>OrderService: Payment Success
+    
+    OrderService->>InventoryService: reserveStock(order)
+    InventoryService-->>OrderService: Stock Reserved
+    
+    OrderService->>EmailService: sendOrderConfirmation(user, order)
+    EmailService-->>OrderService: Email Sent
+    
+    OrderService-->>OrderController: Order
+    OrderController-->>User: 201 Created
+```
+
+### パターン3: エラーハンドリングのシーケンス図
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Controller
+    participant Service
+    participant Repository
+    participant Logger
+    
+    User->>Controller: Request
+    Controller->>Service: process()
+    
+    alt 正常処理
+        Service->>Repository: getData()
+        Repository-->>Service: Data
+        Service-->>Controller: Success
+        Controller-->>User: 200 OK
+    else データが見つからない場合
+        Repository-->>Service: NotFound
+        Service->>Logger: logError("Data not found")
+        Service-->>Controller: NotFoundError
+        Controller-->>User: 404 Not Found
+    else データベースエラー
+        Repository-->>Service: DatabaseError
+        Service->>Logger: logError("Database error")
+        Service-->>Controller: DatabaseError
+        Controller-->>User: 500 Internal Server Error
+    end
+```
+
+### パターン4: 非同期処理のシーケンス図
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Controller
+    participant Service
+    participant Queue
+    participant Worker
+    participant EmailService
+    
+    User->>Controller: POST /orders
+    Controller->>Service: createOrder(data)
+    Service->>Service: saveOrder()
+    Service->>Queue: enqueue(orderId)
+    Service-->>Controller: Order Created
+    Controller-->>User: 202 Accepted
+    
+    par 非同期処理
+        Queue->>Worker: processOrder(orderId)
+        Worker->>EmailService: sendConfirmation(orderId)
+        EmailService-->>Worker: Email Sent
+        Worker->>Worker: updateOrderStatus(orderId, "completed")
+    end
+```
+
+## 4. ループと条件分岐
+
+### ループ
+
+```mermaid
+sequenceDiagram
+    participant A
+    participant B
+    
+    loop 各アイテムについて
+        A->>B: processItem(item)
+        B-->>A: Result
+    end
+```
+
+### 条件分岐（alt）
+
+```mermaid
+sequenceDiagram
+    participant A
+    participant B
+    
+    alt 条件1
+        A->>B: Method1()
+        B-->>A: Response1
+    else 条件2
+        A->>B: Method2()
+        B-->>A: Response2
+    else その他
+        A->>B: Method3()
+        B-->>A: Response3
+    end
+```
+
+### オプション（opt）
+
+```mermaid
+sequenceDiagram
+    participant A
+    participant B
+    
+    A->>B: Request
+    opt 条件が満たされた場合
+        B->>B: Additional Processing
+    end
+    B-->>A: Response
+```
+
+### 並列処理（par）
+
+```mermaid
+sequenceDiagram
+    participant A
+    participant B
+    participant C
+    
+    A->>B: Request1
+    A->>C: Request2
+    
+    par 並列処理
+        B-->>A: Response1
+    and
+        C-->>A: Response2
+    end
+```
+
+## 5. フレームの使用
+
+### フレームの種類
+
+```mermaid
+sequenceDiagram
+    participant A
+    participant B
+    
+    rect rgb(200, 220, 255)
+        Note over A,B: 認証処理
+        A->>B: authenticate()
+        B-->>A: token
+    end
+    
+    rect rgb(255, 220, 200)
+        Note over A,B: データ取得処理
+        A->>B: getData()
+        B-->>A: data
+    end
+```
+
+## 6. 実装例
+
+### Pythonでの実装
+
+```python
+# 注文作成の実装
+class OrderController:
+    def __init__(self, order_service: OrderService):
+        self.order_service = order_service
+    
+    def create_order(self, user_id: int, cart_id: int):
+        try:
+            order = self.order_service.create_order(user_id, cart_id)
+            return {"status": "success", "order": order}, 201
+        except Exception as e:
+            return {"status": "error", "message": str(e)}, 500
+
+class OrderService:
+    def __init__(self, cart_service, payment_service, inventory_service):
+        self.cart_service = cart_service
+        self.payment_service = payment_service
+        self.inventory_service = inventory_service
+    
+    def create_order(self, user_id: int, cart_id: int):
+        # カートの取得
+        cart = self.cart_service.get_cart(cart_id)
+        
+        # 在庫確認
+        for item in cart.items:
+            if not self.inventory_service.check_stock(item.product_id, item.quantity):
+                raise ValueError("Insufficient stock")
+        
+        # 注文の作成
+        order = Order(user_id=user_id, items=cart.items)
+        
+        # 支払い処理
+        payment_result = self.payment_service.process_payment(order)
+        if not payment_result:
+            raise ValueError("Payment failed")
+        
+        # 在庫の確保
+        self.inventory_service.reserve_stock(order)
+        
+        return order
+```
+
+### Javaでの実装
+
+```java
+// 注文作成の実装
+@RestController
+public class OrderController {
+    private final OrderService orderService;
+    
+    public OrderController(OrderService orderService) {
+        this.orderService = orderService;
+    }
+    
+    @PostMapping("/orders")
+    public ResponseEntity<OrderResponse> createOrder(
+            @RequestBody CreateOrderRequest request) {
+        try {
+            Order order = orderService.createOrder(
+                request.getUserId(), 
+                request.getCartId()
+            );
+            return ResponseEntity.status(201).body(
+                new OrderResponse(order)
+            );
+        } catch (Exception e) {
+            return ResponseEntity.status(500).build();
+        }
+    }
+}
+
+@Service
+public class OrderService {
+    private final CartService cartService;
+    private final PaymentService paymentService;
+    private final InventoryService inventoryService;
+    
+    public Order createOrder(int userId, int cartId) {
+        // カートの取得
+        Cart cart = cartService.getCart(cartId);
+        
+        // 在庫確認
+        for (CartItem item : cart.getItems()) {
+            if (!inventoryService.checkStock(
+                    item.getProductId(), 
+                    item.getQuantity())) {
+                throw new InsufficientStockException();
+            }
+        }
+        
+        // 注文の作成
+        Order order = new Order(userId, cart.getItems());
+        
+        // 支払い処理
+        boolean paymentResult = paymentService.processPayment(order);
+        if (!paymentResult) {
+            throw new PaymentFailedException();
+        }
+        
+        // 在庫の確保
+        inventoryService.reserveStock(order);
+        
+        return order;
+    }
+}
+```
+
+## 7. よくある問題と解決策
+
+### 問題1: シーケンス図が複雑になりすぎる
+
+**原因:**
+- すべての処理を1つの図に含めている
+- 詳細すぎる
+
+**解決策:**
+```mermaid
+# 高レベルなシーケンス図
+sequenceDiagram
+    participant User
+    participant System
+    
+    User->>System: Request
+    System->>System: Process
+    System-->>User: Response
+
+# 詳細なシーケンス図（別の図として作成）
+sequenceDiagram
+    participant System
+    participant Component1
+    participant Component2
+    
+    System->>Component1: Method1()
+    Component1->>Component2: Method2()
+    Component2-->>Component1: Response
+    Component1-->>System: Response
+```
+
+### 問題2: 非同期処理の表現が不明確
+
+**原因:**
+- 同期と非同期の区別が不明確
+- コールバックの表現が不明確
+
+**解決策:**
+```mermaid
+sequenceDiagram
+    participant A
+    participant B
+    participant C
+    
+    A->>B: asyncMethod()
+    activate B
+    B-->>A: 即座に返す
+    deactivate B
+    
+    par 非同期処理
+        B->>C: process()
+        C-->>B: callback()
+        B->>A: notify()
+    end
+```
+
+これで、シーケンス図の基礎知識と実務での使い方を理解できるようになりました。
+

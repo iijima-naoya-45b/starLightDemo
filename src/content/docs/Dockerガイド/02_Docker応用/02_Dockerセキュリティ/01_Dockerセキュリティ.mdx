@@ -1,0 +1,238 @@
+---
+title: Dockerセキュリティ完全ガイド
+sidebar:
+    label: Dockerセキュリティ
+---
+
+# Dockerセキュリティ完全ガイド
+
+Dockerコンテナのセキュリティ対策を、実務で使える実装例とともに詳しく解説します。
+
+## 1. Dockerセキュリティとは
+
+### セキュリティの重要性
+
+コンテナのセキュリティは、アプリケーション全体のセキュリティに直接影響します。適切な対策により、脆弱性から保護できます。
+
+```
+セキュリティ対策
+   ├─ 非rootユーザーでの実行
+   ├─ イメージのスキャン
+   ├─ ネットワークの分離
+   └─ シークレットの管理
+```
+
+## 2. 非rootユーザーでの実行
+
+### 非rootユーザーの作成
+
+```dockerfile
+# Dockerfile
+FROM node:18-alpine
+
+# 非rootユーザーを作成
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nextjs -u 1001
+
+WORKDIR /app
+
+# ファイルの所有権を変更
+COPY --chown=nextjs:nodejs . .
+
+# 非rootユーザーに切り替え
+USER nextjs
+
+CMD ["node", "index.js"]
+```
+
+### 権限の最小化
+
+```dockerfile
+FROM node:18-alpine
+
+# 必要な権限のみ付与
+RUN chmod 755 /app && \
+    chown -R nextjs:nodejs /app
+
+USER nextjs
+```
+
+## 3. イメージのスキャン
+
+### Trivyを使用したスキャン
+
+```bash
+# Trivyのインストール
+brew install trivy  # macOS
+# または
+sudo apt-get install trivy  # Linux
+
+# イメージのスキャン
+trivy image my-app:latest
+
+# 特定の深刻度のみ表示
+trivy image --severity HIGH,CRITICAL my-app:latest
+```
+
+### Docker Scoutの使用
+
+```bash
+# Docker Scoutでスキャン
+docker scout quickview my-app:latest
+
+# 詳細なレポート
+docker scout cves my-app:latest
+```
+
+## 4. シークレットの管理
+
+### 環境変数での管理
+
+```yaml
+# docker-compose.yml
+services:
+  app:
+    build: .
+    environment:
+      - DATABASE_PASSWORD=${DB_PASSWORD}  # 環境変数から取得
+    env_file:
+      - .env
+```
+
+### Docker Secretsの使用
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    secrets:
+      - db_password
+    environment:
+      - DB_PASSWORD_FILE=/run/secrets/db_password
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+```
+
+## 5. ネットワークの分離
+
+### プライベートネットワーク
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    networks:
+      - public-network
+  
+  db:
+    image: postgres:14-alpine
+    networks:
+      - private-network  # 外部からアクセス不可
+
+networks:
+  public-network:
+    driver: bridge
+  private-network:
+    driver: bridge
+    internal: true  # 外部アクセスを無効化
+```
+
+## 6. リソース制限
+
+### CPUとメモリの制限
+
+```yaml
+# docker-compose.yml
+services:
+  app:
+    build: .
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+```
+
+### コンテナのリソース制限
+
+```bash
+# CPU制限
+docker run --cpus="0.5" my-app:latest
+
+# メモリ制限
+docker run --memory="512m" my-app:latest
+
+# 両方の制限
+docker run --cpus="0.5" --memory="512m" my-app:latest
+```
+
+## 7. 実務でのベストプラクティス
+
+### パターン1: 最小権限の原則
+
+```dockerfile
+FROM node:18-alpine
+
+# 必要なパッケージのみインストール
+RUN apk add --no-cache \
+    curl \
+    && rm -rf /var/cache/apk/*
+
+# 不要なパッケージを削除
+RUN apk del curl
+```
+
+### パターン2: イメージの署名
+
+```bash
+# イメージの署名
+docker trust sign my-app:latest
+
+# 署名の検証
+docker trust inspect my-app:latest
+```
+
+## 8. よくある問題と解決策
+
+### 問題1: コンテナがrootで実行されている
+
+**原因:**
+- USERディレクティブが設定されていない
+
+**解決策:**
+```dockerfile
+# 非rootユーザーを作成して使用
+RUN adduser -S appuser
+USER appuser
+```
+
+### 問題2: 脆弱性が検出される
+
+**原因:**
+- 古いベースイメージを使用している
+- 依存関係に脆弱性がある
+
+**解決策:**
+```bash
+# イメージをスキャン
+trivy image my-app:latest
+
+# ベースイメージを更新
+FROM node:18-alpine  # 最新版を使用
+
+# 依存関係を更新
+npm audit fix
+```
+
+これで、Dockerセキュリティの基礎知識と実務での使い方を理解できるようになりました。

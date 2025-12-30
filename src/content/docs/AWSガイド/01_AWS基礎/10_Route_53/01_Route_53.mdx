@@ -1,0 +1,429 @@
+---
+title: Route 53完全ガイド
+sidebar:
+    label: Route 53
+---
+
+# Route 53完全ガイド
+
+Route 53は、AWSのDNSサービスです。実務で使えるDNS設定とトラフィックルーティングを詳しく解説します。
+
+## 1. Route 53とは
+
+### Route 53の役割
+
+Route 53は、ドメイン名をIPアドレスに変換するDNSサービスです。また、トラフィックルーティング機能も提供します。
+
+```
+ユーザー
+   ↓（ドメイン名でアクセス）
+Route 53（DNS解決）
+   ↓（IPアドレスを返す）
+EC2インスタンス、ALBなど
+```
+
+### なぜRoute 53が必要か
+
+**問題のある構成（外部DNSプロバイダー）:**
+
+```bash
+# 問題: 外部DNSプロバイダーの使用
+# 1. AWSサービスとの統合が弱い
+# 2. ヘルスチェック機能がない
+# 3. トラフィックルーティングが困難
+# 4. コストが高い
+
+# 問題点:
+# 1. AWSサービスとの統合不足
+# 2. 機能の制限
+# 3. コストの問題
+```
+
+**解決: Route 53による統合**
+
+```yaml
+# 解決: Route 53の使用
+Resources:
+  HostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: example.com
+
+# メリット:
+# 1. AWSサービスとの深い統合
+# 2. ヘルスチェック機能
+# 3. 高度なトラフィックルーティング
+# 4. コスト効率
+```
+
+## 2. ホストゾーン
+
+### ホストゾーンとは
+
+ホストゾーンは、ドメインのDNSレコードを管理するコンテナです。
+
+```bash
+# ホストゾーンの作成
+aws route53 create-hosted-zone \
+  --name example.com \
+  --caller-reference $(date +%s)
+
+# ホストゾーンの一覧表示
+aws route53 list-hosted-zones
+
+# ネームサーバーの確認
+aws route53 get-hosted-zone --id Z1234567890ABC
+```
+
+## 3. DNSレコードタイプ
+
+### Aレコード
+
+```yaml
+Resources:
+  ARecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: www.example.com
+      Type: A
+      TTL: 300
+      ResourceRecords:
+        - 93.184.216.34
+```
+
+### AAAAレコード（IPv6）
+
+```yaml
+Resources:
+  AAAARecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: www.example.com
+      Type: AAAA
+      TTL: 300
+      ResourceRecords:
+        - 2606:2800:220:1:248:1893:25c8:1946
+```
+
+### CNAMEレコード
+
+```yaml
+Resources:
+  CNAMERecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: blog.example.com
+      Type: CNAME
+      TTL: 300
+      ResourceRecords:
+        - example-blog.com
+```
+
+### ALIASレコード
+
+```yaml
+Resources:
+  AliasRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: www.example.com
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ApplicationLoadBalancer.DNSName
+        HostedZoneId: !GetAtt ApplicationLoadBalancer.CanonicalHostedZoneID
+        EvaluateTargetHealth: true
+```
+
+## 4. トラフィックルーティング
+
+### シンプルルーティング
+
+```yaml
+Resources:
+  SimpleRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: www.example.com
+      Type: A
+      TTL: 300
+      ResourceRecords:
+        - 93.184.216.34
+```
+
+### 加重ルーティング
+
+```yaml
+Resources:
+  WeightedRecord1:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: www.example.com
+      Type: A
+      TTL: 300
+      SetIdentifier: "server1"
+      Weight: 70
+      ResourceRecords:
+        - 93.184.216.34
+
+  WeightedRecord2:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: www.example.com
+      Type: A
+      TTL: 300
+      SetIdentifier: "server2"
+      Weight: 30
+      ResourceRecords:
+        - 203.0.113.1
+```
+
+### レイテンシールーティング
+
+```yaml
+Resources:
+  LatencyRecord1:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: www.example.com
+      Type: A
+      TTL: 300
+      SetIdentifier: "us-east-1"
+      Region: us-east-1
+      ResourceRecords:
+        - 93.184.216.34
+
+  LatencyRecord2:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: www.example.com
+      Type: A
+      TTL: 300
+      SetIdentifier: "ap-northeast-1"
+      Region: ap-northeast-1
+      ResourceRecords:
+        - 203.0.113.1
+```
+
+### フェイルオーバールーティング
+
+```yaml
+Resources:
+  PrimaryRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: www.example.com
+      Type: A
+      TTL: 300
+      SetIdentifier: "primary"
+      Failover: PRIMARY
+      HealthCheckId: !Ref HealthCheck
+      ResourceRecords:
+        - 93.184.216.34
+
+  SecondaryRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: www.example.com
+      Type: A
+      TTL: 300
+      SetIdentifier: "secondary"
+      Failover: SECONDARY
+      ResourceRecords:
+        - 203.0.113.1
+
+  HealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        Type: HTTP
+        ResourcePath: /health
+        FullyQualifiedDomainName: www.example.com
+        RequestInterval: 30
+        FailureThreshold: 3
+```
+
+### 地理的位置ルーティング
+
+```yaml
+Resources:
+  GeoRecord1:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: www.example.com
+      Type: A
+      TTL: 300
+      SetIdentifier: "japan"
+      GeoLocation:
+        CountryCode: JP
+      ResourceRecords:
+        - 203.0.113.1
+
+  GeoRecord2:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: www.example.com
+      Type: A
+      TTL: 300
+      SetIdentifier: "us"
+      GeoLocation:
+        CountryCode: US
+      ResourceRecords:
+        - 93.184.216.34
+```
+
+## 5. ヘルスチェック
+
+### ヘルスチェックの設定
+
+```yaml
+Resources:
+  HealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        Type: HTTP
+        ResourcePath: /health
+        FullyQualifiedDomainName: www.example.com
+        Port: 80
+        RequestInterval: 30
+        FailureThreshold: 3
+        MeasureLatency: true
+        Regions:
+          - us-east-1
+          - us-west-2
+          - ap-northeast-1
+```
+
+### プライベートホストゾーンのヘルスチェック
+
+```yaml
+Resources:
+  PrivateHealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        Type: HTTPS
+        ResourcePath: /health
+        FullyQualifiedDomainName: internal.example.com
+        Port: 443
+        RequestInterval: 30
+        FailureThreshold: 3
+        Inverted: false
+        EnableSNI: true
+```
+
+## 6. 実務でのベストプラクティス
+
+### パターン1: ブルー/グリーンデプロイメント
+
+```yaml
+Resources:
+  BlueRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: www.example.com
+      Type: A
+      TTL: 60
+      SetIdentifier: "blue"
+      Weight: 100
+      ResourceRecords:
+        - 93.184.216.34
+
+  GreenRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: www.example.com
+      Type: A
+      TTL: 60
+      SetIdentifier: "green"
+      Weight: 0  # 最初は0、段階的に増やす
+      ResourceRecords:
+        - 203.0.113.1
+```
+
+### パターン2: カナリアデプロイメント
+
+```yaml
+Resources:
+  ProductionRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: www.example.com
+      Type: A
+      TTL: 60
+      SetIdentifier: "production"
+      Weight: 90
+      ResourceRecords:
+        - 93.184.216.34
+
+  CanaryRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: www.example.com
+      Type: A
+      TTL: 60
+      SetIdentifier: "canary"
+      Weight: 10  # 10%のトラフィック
+      ResourceRecords:
+        - 203.0.113.1
+```
+
+## 7. よくある問題と解決策
+
+### 問題1: DNS解決が遅い
+
+**原因:**
+- TTLが長すぎる
+- キャッシュサーバーの問題
+
+**解決策:**
+```bash
+# TTLを短く設定
+aws route53 change-resource-record-sets \
+  --hosted-zone-id Z1234567890ABC \
+  --change-batch '{
+    "Changes": [{
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "www.example.com",
+        "Type": "A",
+        "TTL": 60,
+        "ResourceRecords": [{"Value": "93.184.216.34"}]
+      }
+    }]
+  }'
+```
+
+### 問題2: フェイルオーバーが動作しない
+
+**原因:**
+- ヘルスチェックが正しく設定されていない
+- ヘルスチェックの閾値が適切でない
+
+**解決策:**
+```bash
+# ヘルスチェックの状態を確認
+aws route53 get-health-check --health-check-id abc123
+
+# ヘルスチェックの統計を確認
+aws route53 get-health-check-status --health-check-id abc123
+```
+
+これで、Route 53の基礎知識と実務での使い方を理解できるようになりました。

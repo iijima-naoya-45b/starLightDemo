@@ -1,0 +1,174 @@
+---
+title: URLとURI
+sidebar:
+    label: URLとURI
+---
+
+# URLとURI完全ガイド
+
+URLとURIは、Web上のリソースの場所を表す方法です。Web開発において重要な概念を詳しく解説します。
+
+## 1. URLとURIとは
+
+### URI（Uniform Resource Identifier）
+
+リソースを一意に識別するための識別子です。
+
+```
+URI = URL + URN
+```
+
+### URL（Uniform Resource Locator）
+
+リソースの場所を表すURIの一種です。
+
+```
+https://example.com:443/path/to/resource?query=value#fragment
+```
+
+### URN（Uniform Resource Name）
+
+リソースの名前を表すURIの一種です（あまり使われない）。
+
+```
+urn:isbn:978-4-123456-78-9
+```
+
+## 2. URLの構造
+
+### URLの各部分
+
+```
+https://example.com:443/path/to/resource?query=value#fragment
+^^^^^   ^^^^^^^^^^^^ ^^^ ^^^^^^^^^^^^^^^^^ ^^^^^^^^^^^ ^^^^^^^^
+スキーム   ホスト    ポート      パス           クエリ    フラグメント
+```
+
+### スキーム（プロトコル）
+
+```
+http://    - HTTPプロトコル
+https://   - HTTPSプロトコル
+ftp://     - FTPプロトコル
+mailto:    - メールアドレス
+file://    - ローカルファイル
+```
+
+### ホスト
+
+```
+example.com        - ドメイン名
+93.184.216.34      - IPアドレス
+localhost          - ローカルホスト
+```
+
+### ポート
+
+```
+:80    - HTTP（デフォルト、省略可能）
+:443   - HTTPS（デフォルト、省略可能）
+:3000  - カスタムポート
+:8080  - 開発サーバーなど
+```
+
+### パス
+
+```
+/path/to/resource
+/index.html
+/api/users
+```
+
+### クエリパラメータ
+
+```
+?key=value&key2=value2
+?search=query&page=1
+```
+
+### フラグメント
+
+```
+#section1
+#top
+```
+
+## 3. URLエンコーディング
+
+### パーセントエンコーディング
+
+```
+スペース: %20
+日本語: %E6%97%A5%E6%9C%AC%E8%AA%9E
+&: %26
+=: %3D
+```
+
+### 実務での使用例
+
+```javascript
+// JavaScriptでのエンコーディング
+encodeURIComponent('Hello World')  // 'Hello%20World'
+decodeURIComponent('Hello%20World')  // 'Hello World'
+
+// URLの構築
+const baseURL = 'https://api.example.com';
+const endpoint = '/users';
+const params = { name: 'John Doe', age: 30 };
+const queryString = new URLSearchParams(params).toString();
+const url = `${baseURL}${endpoint}?${queryString}`;
+// https://api.example.com/users?name=John+Doe&age=30
+```
+
+## 4. 相対URLと絶対URL
+
+### 絶対URL
+
+```
+https://example.com/path/to/resource
+```
+
+- 完全なURL
+- どこからでも同じリソースを指す
+
+### 相対URL
+
+```
+/path/to/resource        - ルート相対
+../parent/resource       - 親ディレクトリ
+./sibling/resource       - 現在のディレクトリ
+resource                 - 現在のディレクトリ（省略形）
+```
+
+## 5. 実務でのURL操作
+
+### URLの解析
+
+```javascript
+// JavaScriptでのURL解析
+const url = new URL('https://example.com:443/path?query=value#fragment');
+
+console.log(url.protocol);  // 'https:'
+console.log(url.host);     // 'example.com:443'
+console.log(url.hostname); // 'example.com'
+console.log(url.port);     // '443'
+console.log(url.pathname); // '/path'
+console.log(url.search);    // '?query=value'
+console.log(url.hash);     // '#fragment'
+```
+
+### クエリパラメータの操作
+
+```javascript
+const url = new URL('https://example.com/search');
+url.searchParams.set('q', 'search query');
+url.searchParams.set('page', '1');
+console.log(url.toString());
+// https://example.com/search?q=search+query&page=1
+
+// クエリパラメータの取得
+const q = url.searchParams.get('q');
+const page = url.searchParams.get('page');
+```
+
+これで、URLとURIの仕組みと実務での使い方を理解できるようになりました。

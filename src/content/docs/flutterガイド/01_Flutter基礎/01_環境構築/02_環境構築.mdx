@@ -1,0 +1,307 @@
+---
+title: Flutter環境構築
+sidebar:
+    label: 環境構築
+---
+
+# Flutter環境構築ガイド
+
+Flutterでのアプリ開発を始めるための環境構築手順を、初心者にも分かりやすく解説します。
+
+## 1. Flutter SDKのインストール
+
+### macOSでのインストール
+
+#### Homebrewを使用する方法（推奨）
+
+```bash
+# Homebrewがインストールされていない場合
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Flutter SDKのインストール
+brew install --cask flutter
+```
+
+#### 手動インストール
+
+1. **Flutter SDKのダウンロード**
+   - [Flutter公式サイト](https://flutter.dev/docs/get-started/install/macos)から最新のSDKをダウンロード
+   - または、GitHubからクローン:
+   ```bash
+   git clone https://github.com/flutter/flutter.git -b stable
+   ```
+
+2. **PATHの設定**
+   - `~/.zshrc`または`~/.bash_profile`に以下を追加:
+   ```bash
+   export PATH="$PATH:[PATH_TO_FLUTTER_GIT_DIRECTORY]/flutter/bin"
+   ```
+   - 設定を反映:
+   ```bash
+   source ~/.zshrc
+   ```
+
+### Windowsでのインストール
+
+1. **Flutter SDKのダウンロード**
+   - [Flutter公式サイト](https://flutter.dev/docs/get-started/install/windows)からZIPファイルをダウンロード
+   - 適切な場所（例: `C:\src\flutter`）に展開
+
+2. **PATHの設定**
+   - システムの環境変数に`C:\src\flutter\bin`を追加
+   - コマンドプロンプトを再起動
+
+### Linuxでのインストール
+
+```bash
+# Flutter SDKのダウンロード
+git clone https://github.com/flutter/flutter.git -b stable
+
+# PATHの設定（~/.bashrcに追加）
+export PATH="$PATH:[PATH_TO_FLUTTER_GIT_DIRECTORY]/flutter/bin"
+
+# 設定を反映
+source ~/.bashrc
+```
+
+## 2. インストールの確認
+
+Flutter SDKが正しくインストールされたか確認します。
+
+```bash
+flutter doctor
+```
+
+このコマンドで、開発環境の状態を確認できます。不足しているツールや設定があれば、指示に従ってインストール・設定を行います。
+
+### flutter doctorの出力例
+
+```
+Doctor summary (to see all details, run flutter doctor -v):
+[✓] Flutter (Channel stable, 3.x.x, on macOS, locale ja-JP)
+[✓] Android toolchain - develop for Android devices (Android SDK version 33.0.0)
+[✓] Xcode - develop for iOS and macOS (Xcode 14.x)
+[✓] Chrome - develop for the web
+[✓] Android Studio (version 2022.x)
+[✓] VS Code (version 1.x)
+[✓] Connected device (2 available)
+[✓] Network resources
+```
+
+## 3. IDEのセットアップ
+
+### VS Codeのセットアップ（推奨）
+
+1. **VS Codeのインストール**
+   - [VS Code公式サイト](https://code.visualstudio.com/)からダウンロード・インストール
+
+2. **Flutter拡張機能のインストール**
+   - VS Codeを起動
+   - 拡張機能タブ（Cmd+Shift+X / Ctrl+Shift+X）を開く
+   - 「Flutter」を検索してインストール
+   - 「Dart」拡張機能も自動的にインストールされます
+
+3. **設定の確認**
+   - `Cmd+Shift+P`（macOS）または`Ctrl+Shift+P`（Windows/Linux）でコマンドパレットを開く
+   - 「Flutter: New Project」を選択してプロジェクトを作成できるか確認
+
+### Android Studioのセットアップ
+
+1. **Android Studioのインストール**
+   - [Android Studio公式サイト](https://developer.android.com/studio)からダウンロード・インストール
+
+2. **Flutterプラグインのインストール**
+   - Android Studioを起動
+   - `Preferences` → `Plugins` → `Marketplace`で「Flutter」を検索してインストール
+   - 「Dart」プラグインも自動的にインストールされます
+
+3. **Android SDKの設定**
+   - `Preferences` → `Appearance & Behavior` → `System Settings` → `Android SDK`
+   - SDK Platformsタブで必要なAndroidバージョンをインストール
+   - SDK Toolsタブで必要なツールをインストール
+
+## 4. プラットフォーム固有の設定
+
+### Android開発環境のセットアップ
+
+#### Android SDKのインストール
+
+1. **Android Studioを使用する場合**
+   - Android StudioのSDK ManagerからAndroid SDKをインストール
+   - 環境変数`ANDROID_HOME`を設定:
+   ```bash
+   # macOS/Linux
+   export ANDROID_HOME=$HOME/Library/Android/sdk
+   export PATH=$PATH:$ANDROID_HOME/tools
+   export PATH=$PATH:$ANDROID_HOME/platform-tools
+   ```
+
+2. **コマンドラインツールを使用する場合**
+   ```bash
+   # Android SDK Command-line Toolsをダウンロード
+   # https://developer.android.com/studio#command-tools
+   
+   # 環境変数の設定
+   export ANDROID_HOME=$HOME/Android/Sdk
+   export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
+   export PATH=$PATH:$ANDROID_HOME/platform-tools
+   ```
+
+#### ライセンスの承認
+
+```bash
+flutter doctor --android-licenses
+```
+
+すべてのライセンスに「y」で承認します。
+
+### iOS開発環境のセットアップ（macOSのみ）
+
+1. **Xcodeのインストール**
+   - App StoreからXcodeをインストール（約10GB以上必要）
+
+2. **Xcode Command Line Toolsのインストール**
+   ```bash
+   xcode-select --install
+   ```
+
+3. **CocoaPodsのインストール**
+   ```bash
+   sudo gem install cocoapods
+   ```
+
+4. **iOSシミュレーターの確認**
+   ```bash
+   open -a Simulator
+   ```
+
+## 5. エミュレーター/シミュレーターの設定
+
+### Androidエミュレーターの作成
+
+1. **Android Studioでエミュレーターを作成**
+   - Android Studioを起動
+   - `Tools` → `Device Manager` → `Create Device`
+   - デバイス定義を選択（例: Pixel 5）
+   - システムイメージを選択（例: Android 13）
+   - エミュレーター名を設定して完了
+
+2. **コマンドラインからエミュレーターを起動**
+   ```bash
+   flutter emulators --launch <emulator_id>
+   ```
+
+### iOSシミュレーターの起動
+
+```bash
+# 利用可能なシミュレーターを確認
+xcrun simctl list devices
+
+# シミュレーターを起動
+open -a Simulator
+```
+
+## 6. 初回プロジェクトの作成と実行
+
+### プロジェクトの作成
+
+```bash
+# 新しいFlutterプロジェクトを作成
+flutter create my_app
+
+# プロジェクトディレクトリに移動
+cd my_app
+```
+
+### アプリの実行
+
+```bash
+# 接続されているデバイスを確認
+flutter devices
+
+# アプリを実行
+flutter run
+```
+
+### ホットリロードの確認
+
+アプリが起動した状態で、コードを変更して保存すると、自動的に変更が反映されます（ホットリロード）。
+
+- `r`: ホットリロード
+- `R`: ホットリスタート
+- `q`: アプリを終了
+
+## 7. 実務での環境構築のベストプラクティス
+
+### バージョン管理
+
+```bash
+# Flutterのバージョンを確認
+flutter --version
+
+# 特定のバージョンに切り替え（FVMを使用）
+# FVM (Flutter Version Management) のインストール
+dart pub global activate fvm
+
+# プロジェクトでFlutterバージョンを固定
+fvm install 3.16.0
+fvm use 3.16.0
+```
+
+### プロジェクト設定の統一
+
+`.fvm`フォルダをプロジェクトに含めることで、チーム全体で同じFlutterバージョンを使用できます。
+
+```bash
+# .fvm/fvm_config.json
+{
+  "flutterSdkVersion": "3.16.0"
+}
+```
+
+### よくある問題と解決策
+
+#### 問題1: `flutter doctor`でAndroidライセンスが承認されない
+
+```bash
+# 解決方法
+flutter doctor --android-licenses
+# すべてのライセンスに「y」で承認
+```
+
+#### 問題2: Xcodeのバージョンが古い
+
+```bash
+# 解決方法
+# App StoreからXcodeを最新版に更新
+# または、特定のバージョンが必要な場合は、Xcodeのバージョン管理ツールを使用
+```
+
+#### 問題3: エミュレーターが起動しない
+
+```bash
+# 解決方法
+# Android StudioのSDK Managerで、エミュレーター用のシステムイメージがインストールされているか確認
+# 必要に応じて再インストール
+```
+
+#### 問題4: パッケージの依存関係エラー
+
+```bash
+# 解決方法
+flutter clean
+flutter pub get
+```
+
+## 8. 開発環境の確認チェックリスト
+
+環境構築が完了したら、以下を確認します:
+
+- [ ] `flutter doctor`でエラーがない
+- [ ] VS CodeまたはAndroid StudioでFlutterプロジェクトを作成できる
+- [ ] エミュレーター/シミュレーターが起動できる
+- [ ] `flutter run`でアプリが実行できる
+- [ ] ホットリロードが動作する
+- [ ] Android/iOSのビルドが成功する
+
+これで、Flutterでの開発を始める準備が整いました。

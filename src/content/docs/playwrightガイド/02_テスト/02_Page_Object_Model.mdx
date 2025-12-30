@@ -1,0 +1,402 @@
+---
+title: Page Object Model（POM）
+sidebar:
+    label: Page Object Model
+---
+
+# Page Object Model（POM）パターン
+
+Page Object Modelは、テストコードの保守性と再利用性を向上させるためのデザインパターンです。各ページをクラスとして定義し、ページの要素と操作をカプセル化します。
+
+## 1. Page Object Modelとは
+
+### なぜPOMが必要か
+
+**問題のあるコード（POMなし）:**
+
+```javascript
+// テストコードが直接要素を操作
+test('ログインテスト', async ({ page }) => {
+  await page.goto('https://example.com/login');
+  await page.getByLabel('Username').fill('testuser');
+  await page.getByLabel('Password').fill('password123');
+  await page.getByRole('button', { name: 'Log in' }).click();
+  await expect(page).toHaveURL(/dashboard/);
+});
+
+test('別のログインテスト', async ({ page }) => {
+  await page.goto('https://example.com/login');
+  await page.getByLabel('Username').fill('admin');
+  await page.getByLabel('Password').fill('admin123');
+  await page.getByRole('button', { name: 'Log in' }).click();
+  // 同じコードの重複...
+});
+```
+
+**問題点:**
+- コードの重複
+- 要素のセレクタが変更されると、すべてのテストを修正する必要がある
+- 保守性が低い
+
+**解決: Page Object Model**
+
+```javascript
+// Page Objectクラス
+class LoginPage {
+  constructor(page) {
+    this.page = page;
+    this.usernameInput = page.getByLabel('Username');
+    this.passwordInput = page.getByLabel('Password');
+    this.loginButton = page.getByRole('button', { name: 'Log in' });
+  }
+  
+  async goto() {
+    await this.page.goto('https://example.com/login');
+  }
+  
+  async login(username, password) {
+    await this.usernameInput.fill(username);
+    await this.passwordInput.fill(password);
+    await this.loginButton.click();
+  }
+}
+
+// テストコード
+test('ログインテスト', async ({ page }) => {
+  const loginPage = new LoginPage(page);
+  await loginPage.goto();
+  await loginPage.login('testuser', 'password123');
+  await expect(page).toHaveURL(/dashboard/);
+});
+```
+
+## 2. 基本的なPage Objectの実装
+
+### ログインページのPage Object
+
+```javascript
+// pages/LoginPage.js
+class LoginPage {
+  constructor(page) {
+    this.page = page;
+    // Locatorの定義
+    this.usernameInput = page.getByLabel('Username');
+    this.passwordInput = page.getByLabel('Password');
+    this.loginButton = page.getByRole('button', { name: 'Log in' });
+    this.errorMessage = page.getByText('Invalid credentials');
+  }
+  
+  // ページに移動
+  async goto() {
+    await this.page.goto('https://example.com/login');
+  }
+  
+  // ログイン操作
+  async login(username, password) {
+    await this.usernameInput.fill(username);
+    await this.passwordInput.fill(password);
+    await this.loginButton.click();
+  }
+  
+  // エラーメッセージの確認
+  async expectErrorMessage() {
+    await expect(this.errorMessage).toBeVisible();
+  }
+}
+
+module.exports = { LoginPage };
+```
+
+### ダッシュボードページのPage Object
+
+```javascript
+// pages/DashboardPage.js
+class DashboardPage {
+  constructor(page) {
+    this.page = page;
+    this.welcomeMessage = page.getByText('Welcome');
+    this.userMenu = page.getByRole('button', { name: 'User menu' });
+    this.logoutButton = page.getByRole('button', { name: 'Log out' });
+  }
+  
+  async goto() {
+    await this.page.goto('https://example.com/dashboard');
+  }
+  
+  async expectWelcomeMessage(username) {
+    await expect(this.welcomeMessage).toContainText(username);
+  }
+  
+  async logout() {
+    await this.userMenu.click();
+    await this.logoutButton.click();
+  }
+}
+
+module.exports = { DashboardPage };
+```
+
+### テストでの使用
+
+```javascript
+// tests/login.spec.js
+import { test, expect } from '@playwright/test';
+import { LoginPage } from '../pages/LoginPage';
+import { DashboardPage } from '../pages/DashboardPage';
+
+test('正常なログイン', async ({ page }) => {
+  const loginPage = new LoginPage(page);
+  const dashboardPage = new DashboardPage(page);
+  
+  await loginPage.goto();
+  await loginPage.login('testuser', 'password123');
+  
+  await expect(page).toHaveURL(/dashboard/);
+  await dashboardPage.expectWelcomeMessage('testuser');
+});
+
+test('不正な認証情報でのログイン', async ({ page }) => {
+  const loginPage = new LoginPage(page);
+  
+  await loginPage.goto();
+  await loginPage.login('invaliduser', 'wrongpassword');
+  
+  await loginPage.expectErrorMessage();
+});
+```
+
+## 3. 高度なPage Objectパターン
+
+### 継承を使用したPage Object
+
+```javascript
+// pages/BasePage.js
+class BasePage {
+  constructor(page) {
+    this.page = page;
+    this.header = page.locator('header');
+    this.footer = page.locator('footer');
+  }
+  
+  async goto(url) {
+    await this.page.goto(url);
+  }
+  
+  async getTitle() {
+    return await this.page.title();
+  }
+}
+
+// pages/LoginPage.js
+class LoginPage extends BasePage {
+  constructor(page) {
+    super(page);
+    this.usernameInput = page.getByLabel('Username');
+    this.passwordInput = page.getByLabel('Password');
+    this.loginButton = page.getByRole('button', { name: 'Log in' });
+  }
+  
+  async login(username, password) {
+    await this.usernameInput.fill(username);
+    await this.passwordInput.fill(password);
+    await this.loginButton.click();
+  }
+}
+```
+
+### コンポーネントベースのPage Object
+
+```javascript
+// components/Header.js
+class Header {
+  constructor(page) {
+    this.page = page;
+    this.userMenu = page.getByRole('button', { name: 'User menu' });
+    this.logoutButton = page.getByRole('button', { name: 'Log out' });
+  }
+  
+  async logout() {
+    await this.userMenu.click();
+    await this.logoutButton.click();
+  }
+}
+
+// pages/DashboardPage.js
+class DashboardPage {
+  constructor(page) {
+    this.page = page;
+    this.header = new Header(page);
+    this.welcomeMessage = page.getByText('Welcome');
+  }
+  
+  async logout() {
+    await this.header.logout();
+  }
+}
+```
+
+## 4. TypeScriptでのPage Object
+
+```typescript
+// pages/LoginPage.ts
+import { Page, Locator, expect } from '@playwright/test';
+
+export class LoginPage {
+  readonly page: Page;
+  readonly usernameInput: Locator;
+  readonly passwordInput: Locator;
+  readonly loginButton: Locator;
+  readonly errorMessage: Locator;
+  
+  constructor(page: Page) {
+    this.page = page;
+    this.usernameInput = page.getByLabel('Username');
+    this.passwordInput = page.getByLabel('Password');
+    this.loginButton = page.getByRole('button', { name: 'Log in' });
+    this.errorMessage = page.getByText('Invalid credentials');
+  }
+  
+  async goto(): Promise<void> {
+    await this.page.goto('https://example.com/login');
+  }
+  
+  async login(username: string, password: string): Promise<void> {
+    await this.usernameInput.fill(username);
+    await this.passwordInput.fill(password);
+    await this.loginButton.click();
+  }
+  
+  async expectErrorMessage(): Promise<void> {
+    await expect(this.errorMessage).toBeVisible();
+  }
+}
+```
+
+## 5. 実務でのベストプラクティス
+
+### パターン1: ページの要素を遅延初期化
+
+```javascript
+class LoginPage {
+  constructor(page) {
+    this.page = page;
+  }
+  
+  // プロパティとして定義（遅延初期化）
+  get usernameInput() {
+    return this.page.getByLabel('Username');
+  }
+  
+  get passwordInput() {
+    return this.page.getByLabel('Password');
+  }
+  
+  async login(username, password) {
+    await this.usernameInput.fill(username);
+    await this.passwordInput.fill(password);
+    await this.loginButton.click();
+  }
+}
+```
+
+### パターン2: ヘルパーメソッドの追加
+
+```javascript
+class LoginPage {
+  constructor(page) {
+    this.page = page;
+    this.usernameInput = page.getByLabel('Username');
+    this.passwordInput = page.getByLabel('Password');
+    this.loginButton = page.getByRole('button', { name: 'Log in' });
+  }
+  
+  async login(username, password) {
+    await this.fillForm(username, password);
+    await this.submit();
+  }
+  
+  async fillForm(username, password) {
+    await this.usernameInput.fill(username);
+    await this.passwordInput.fill(password);
+  }
+  
+  async submit() {
+    await this.loginButton.click();
+  }
+  
+  async isLoggedIn() {
+    return await this.page.url().includes('/dashboard');
+  }
+}
+```
+
+### パターン3: 複数のPage Objectを組み合わせ
+
+```javascript
+test('複数ページにまたがるテスト', async ({ page }) => {
+  const loginPage = new LoginPage(page);
+  const dashboardPage = new DashboardPage(page);
+  const settingsPage = new SettingsPage(page);
+  
+  // ログイン
+  await loginPage.goto();
+  await loginPage.login('testuser', 'password123');
+  
+  // ダッシュボードで確認
+  await dashboardPage.expectWelcomeMessage('testuser');
+  
+  // 設定ページに移動
+  await settingsPage.goto();
+  await settingsPage.updateProfile('New Name');
+  
+  // ダッシュボードに戻って確認
+  await dashboardPage.goto();
+  await dashboardPage.expectWelcomeMessage('New Name');
+});
+```
+
+## 6. よくある問題と解決策
+
+### 問題1: Page Objectが肥大化する
+
+**解決策**: コンポーネントに分割
+
+```javascript
+// 悪い例: すべてを1つのクラスに
+class DashboardPage {
+  // 100以上のメソッド...
+}
+
+// 良い例: コンポーネントに分割
+class DashboardPage {
+  constructor(page) {
+    this.page = page;
+    this.sidebar = new Sidebar(page);
+    this.content = new Content(page);
+    this.header = new Header(page);
+  }
+}
+```
+
+### 問題2: 要素のセレクタが変更される
+
+**解決策**: セレクタを定数として定義
+
+```javascript
+class LoginPage {
+  static SELECTORS = {
+    username: 'label:has-text("Username")',
+    password: 'label:has-text("Password")',
+    loginButton: 'button:has-text("Log in")'
+  };
+  
+  constructor(page) {
+    this.page = page;
+    this.usernameInput = page.locator(LoginPage.SELECTORS.username);
+    this.passwordInput = page.locator(LoginPage.SELECTORS.password);
+    this.loginButton = page.locator(LoginPage.SELECTORS.loginButton);
+  }
+}
+```
+
+これで、Page Object Modelパターンの実装方法を理解できるようになりました。

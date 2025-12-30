@@ -1,26 +1,371 @@
 ---
-title: "Prometheus & Grafana"
-label: "Prometheus & Grafana"
+title: Prometheus & Grafana
+sidebar:
+    label: Prometheus & Grafana
 ---
 
-## Prometheus & Grafana
+# Prometheus & Grafana完全ガイド
 
-Prometheusは、メトリクス収集と監視のためのシステムです。Grafanaは、可視化ツールです。
+PrometheusとGrafanaを使用した監視システムの構築方法を、実務で使える実装例とともに詳しく解説します。
 
-### Prometheusの設定
+## 1. Prometheusとは
+
+### Prometheusの役割
+
+Prometheusは、時系列データベースを使用したメトリクス収集と監視のためのオープンソースシステムです。
+
+```
+アプリケーション
+   ↓（メトリクスをエクスポート）
+Prometheus（メトリクスを収集・保存）
+   ↓
+Grafana（可視化）
+```
+
+### なぜPrometheusが必要か
+
+**問題のある監視（Prometheusなし）:**
+
+```bash
+# 問題: 手動での監視
+# 1. サーバーにSSH接続
+ssh user@server
+
+# 2. ログを確認
+tail -f /var/log/app.log
+
+# 3. リソース使用状況を確認
+top
+df -h
+
+# 問題点:
+# 1. リアルタイム監視が困難
+# 2. 履歴データの保存が困難
+# 3. アラートの自動化が困難
+# 4. 複数サーバーの監視が困難
+```
+
+**解決: Prometheusによる自動監視**
 
 ```yaml
+# 解決: Prometheusによる自動監視
 # prometheus.yml
 global:
   scrape_interval: 15s
+  evaluation_interval: 15s
 
 scrape_configs:
   - job_name: 'my-app'
     static_configs:
       - targets: ['localhost:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+# メリット:
+# 1. リアルタイム監視（自動的にメトリクスを収集）
+# 2. 履歴データの保存（時系列データベースに保存）
+# 3. アラートの自動化（Alertmanagerで自動通知）
+# 4. 複数サーバーの監視（複数のターゲットを監視）
 ```
 
-### Grafanaのダッシュボード
+## 2. Prometheusの設定
 
-Grafanaを使用して、Prometheusのメトリクスを可視化できます。
+### 基本的な設定
+
+```yaml
+# prometheus.yml
+global:
+  scrape_interval: 15s      # メトリクス収集の間隔
+  evaluation_interval: 15s   # ルール評価の間隔
+  external_labels:
+    cluster: 'production'
+    environment: 'prod'
+
+# アラートルール
+rule_files:
+  - "alerts.yml"
+
+# メトリクス収集の設定
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+  
+  - job_name: 'my-app'
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+    scrape_timeout: 5s
+```
+
+### アラートルール
+
+```yaml
+# alerts.yml
+groups:
+  - name: app_alerts
+    interval: 30s
+    rules:
+      - alert: HighCPUUsage
+        expr: cpu_usage > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is above 80% for 5 minutes"
+      
+      - alert: HighMemoryUsage
+        expr: memory_usage > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is above 90% for 5 minutes"
+```
+
+## 3. アプリケーションでのメトリクスエクスポート
+
+### Node.jsでの実装例
+
+```javascript
+// app.js
+const express = require('express');
+const client = require('prom-client');
+
+const app = express();
+
+// Prometheusクライアントの初期化
+const register = new client.Registry();
+client.collectDefaultMetrics({ register });
+
+// カスタムメトリクス
+const httpRequestDuration = new client.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests in seconds',
+  labelNames: ['method', 'route', 'status_code'],
+  buckets: [0.1, 0.5, 1, 2, 5]
+});
+
+const httpRequestTotal = new client.Counter({
+  name: 'http_requests_total',
+  help: 'Total number of HTTP requests',
+  labelNames: ['method', 'route', 'status_code']
+});
+
+register.registerMetric(httpRequestDuration);
+register.registerMetric(httpRequestTotal);
+
+// ミドルウェア
+app.use((req, res, next) => {
+  const start = Date.now();
+  
+  res.on('finish', () => {
+    const duration = (Date.now() - start) / 1000;
+    httpRequestDuration.observe({
+      method: req.method,
+      route: req.route?.path || req.path,
+      status_code: res.statusCode
+    }, duration);
+    
+    httpRequestTotal.inc({
+      method: req.method,
+      route: req.route?.path || req.path,
+      status_code: res.statusCode
+    });
+  });
+  
+  next();
+});
+
+// メトリクスエンドポイント
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
+});
+
+app.listen(8080);
+```
+
+## 4. Grafanaの設定
+
+### データソースの追加
+
+```yaml
+# Grafanaのデータソース設定（API経由）
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+```
+
+### ダッシュボードの作成
+
+```json
+{
+  "dashboard": {
+    "title": "Application Metrics",
+    "panels": [
+      {
+        "title": "HTTP Request Rate",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "{{method}} {{route}}"
+          }
+        ]
+      },
+      {
+        "title": "HTTP Request Duration",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile"
+          }
+        ]
+      },
+      {
+        "title": "CPU Usage",
+        "targets": [
+          {
+            "expr": "cpu_usage",
+            "legendFormat": "CPU Usage"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+## 5. Alertmanagerの設定
+
+### Alertmanagerの設定
+
+```yaml
+# alertmanager.yml
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'web.hook'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'pagerduty'
+    - match:
+        severity: warning
+      receiver: 'slack'
+
+receivers:
+  - name: 'web.hook'
+    webhook_configs:
+      - url: 'http://localhost:5001/'
+  
+  - name: 'pagerduty'
+    pagerduty_configs:
+      - service_key: '<pagerduty-service-key>'
+  
+  - name: 'slack'
+    slack_configs:
+      - api_url: '<slack-webhook-url>'
+        channel: '#alerts'
+        title: 'Alert: {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+```
+
+## 6. 実務での監視戦略
+
+### 監視すべきメトリクス
+
+```yaml
+# アプリケーションメトリクス
+- HTTPリクエスト数（rate）
+- HTTPリクエストのレイテンシ（p95, p99）
+- エラー率（4xx, 5xx）
+- アクティブユーザー数
+
+# インフラメトリクス
+- CPU使用率
+- メモリ使用率
+- ディスク使用率
+- ネットワークトラフィック
+
+# ビジネスメトリクス
+- 注文数
+- 売上
+- コンバージョン率
+```
+
+### アラートのベストプラクティス
+
+```yaml
+# アラートの設定例
+- alert: HighErrorRate
+  expr: rate(http_requests_total{status_code=~"5.."}[5m]) > 0.1
+  for: 5m
+  labels:
+    severity: critical
+  annotations:
+    summary: "High error rate detected"
+    description: "Error rate is above 10% for 5 minutes"
+
+- alert: HighLatency
+  expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+  for: 10m
+  labels:
+    severity: warning
+  annotations:
+    summary: "High latency detected"
+    description: "95th percentile latency is above 1 second for 10 minutes"
+```
+
+## 7. よくある問題と解決策
+
+### 問題1: メトリクスが収集されない
+
+**原因:**
+- ターゲットが到達できない
+- メトリクスエンドポイントが正しく設定されていない
+
+**解決策:**
+```bash
+# Prometheusのターゲットを確認
+curl http://localhost:9090/api/v1/targets
+
+# メトリクスエンドポイントを確認
+curl http://localhost:8080/metrics
+```
+
+### 問題2: アラートが発火しない
+
+**原因:**
+- アラートルールの式が間違っている
+- Alertmanagerが正しく設定されていない
+
+**解決策:**
+```bash
+# アラートルールをテスト
+promtool test rules alerts.yml
+
+# Alertmanagerの状態を確認
+curl http://localhost:9093/api/v1/alerts
+```
+
+これで、PrometheusとGrafanaを使った監視システムの構築方法を理解できるようになりました。
 

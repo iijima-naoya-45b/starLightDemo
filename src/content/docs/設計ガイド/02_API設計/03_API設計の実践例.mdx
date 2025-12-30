@@ -589,6 +589,218 @@ Headers:
 Response (204 No Content)
 ```
 
+### ユースケース1のクラス図とシーケンス図
+
+#### クラス図
+
+```mermaid
+classDiagram
+    class AuthController {
+        -authService: AuthService
+        +register(request: RegisterRequest): Response
+        +login(request: LoginRequest): Response
+        +logout(token: string): Response
+        +refreshToken(request: RefreshTokenRequest): Response
+    }
+    
+    class AuthService {
+        -userRepository: UserRepository
+        -tokenService: TokenService
+        -passwordService: PasswordService
+        +register(data: UserData): User
+        +login(email: string, password: string): Token
+        +logout(token: string): void
+        +refreshToken(refreshToken: string): Token
+    }
+    
+    class UserRepository {
+        +findByEmail(email: string): User
+        +save(user: User): User
+        +update(user: User): User
+    }
+    
+    class TokenService {
+        +generateAccessToken(user: User): string
+        +generateRefreshToken(user: User): string
+        +validateToken(token: string): boolean
+        +decodeToken(token: string): Payload
+    }
+    
+    class PasswordService {
+        +hashPassword(password: string): string
+        +verifyPassword(password: string, hash: string): boolean
+    }
+    
+    class User {
+        -id: int
+        -email: string
+        -passwordHash: string
+        -createdAt: DateTime
+    }
+    
+    AuthController --> AuthService
+    AuthService --> UserRepository
+    AuthService --> TokenService
+    AuthService --> PasswordService
+    UserRepository --> User
+```
+
+#### シーケンス図（ログイン処理）
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant AuthController
+    participant AuthService
+    participant UserRepository
+    participant PasswordService
+    participant TokenService
+    
+    Client->>AuthController: POST /api/v1/auth/login
+    AuthController->>AuthService: login(email, password)
+    AuthService->>UserRepository: findByEmail(email)
+    UserRepository-->>AuthService: User
+    
+    alt ユーザーが見つかった場合
+        AuthService->>PasswordService: verifyPassword(password, hash)
+        PasswordService-->>AuthService: true/false
+        
+        alt パスワードが正しい場合
+            AuthService->>TokenService: generateAccessToken(user)
+            TokenService-->>AuthService: accessToken
+            AuthService->>TokenService: generateRefreshToken(user)
+            TokenService-->>AuthService: refreshToken
+            AuthService-->>AuthController: {user, tokens}
+            AuthController-->>Client: 200 OK
+        else パスワードが間違っている場合
+            AuthService-->>AuthController: AuthenticationError
+            AuthController-->>Client: 401 Unauthorized
+        end
+    else ユーザーが見つからない場合
+        AuthService-->>AuthController: UserNotFoundError
+        AuthController-->>Client: 401 Unauthorized
+    end
+```
+
+### ユースケース3のクラス図とシーケンス図
+
+#### クラス図
+
+```mermaid
+classDiagram
+    class OrderController {
+        -orderService: OrderService
+        +createOrder(request: CreateOrderRequest): Response
+        +getOrders(userId: int): Response
+        +cancelOrder(orderId: int): Response
+    }
+    
+    class OrderService {
+        -cartService: CartService
+        -paymentService: PaymentService
+        -inventoryService: InventoryService
+        -orderRepository: OrderRepository
+        +createOrder(userId: int, cartId: int): Order
+        +getOrders(userId: int): List~Order~
+        +cancelOrder(orderId: int): Order
+    }
+    
+    class CartService {
+        -cartRepository: CartRepository
+        +getCart(cartId: int): Cart
+        +clearCart(cartId: int): void
+    }
+    
+    class PaymentService {
+        +processPayment(order: Order): boolean
+        +refundPayment(order: Order): boolean
+    }
+    
+    class InventoryService {
+        -inventoryRepository: InventoryRepository
+        +checkStock(productId: int, quantity: int): boolean
+        +reserveStock(order: Order): void
+        +releaseStock(order: Order): void
+    }
+    
+    class OrderRepository {
+        +save(order: Order): Order
+        +findByUserId(userId: int): List~Order~
+        +findById(orderId: int): Order
+    }
+    
+    class Order {
+        -id: int
+        -userId: int
+        -status: OrderStatus
+        -total: float
+        -items: List~OrderItem~
+        +calculateTotal(): float
+        +cancel(): void
+    }
+    
+    class OrderItem {
+        -id: int
+        -productId: int
+        -quantity: int
+        -price: float
+        +getSubtotal(): float
+    }
+    
+    OrderController --> OrderService
+    OrderService --> CartService
+    OrderService --> PaymentService
+    OrderService --> InventoryService
+    OrderService --> OrderRepository
+    OrderRepository --> Order
+    Order "1" --> "*" OrderItem
+```
+
+#### シーケンス図（注文作成処理）
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant OrderController
+    participant OrderService
+    participant CartService
+    participant InventoryService
+    participant PaymentService
+    participant OrderRepository
+    participant EmailService
+    
+    Client->>OrderController: POST /api/v1/orders
+    OrderController->>OrderService: createOrder(userId, cartId)
+    
+    OrderService->>CartService: getCart(cartId)
+    CartService-->>OrderService: Cart
+    
+    loop 各商品について
+        OrderService->>InventoryService: checkStock(productId, quantity)
+        InventoryService-->>OrderService: Stock Available
+    end
+    
+    OrderService->>OrderService: createOrder(cart)
+    OrderService->>PaymentService: processPayment(order)
+    
+    alt 支払い成功
+        PaymentService-->>OrderService: Payment Success
+        OrderService->>InventoryService: reserveStock(order)
+        InventoryService-->>OrderService: Stock Reserved
+        OrderService->>OrderRepository: save(order)
+        OrderRepository-->>OrderService: Order
+        OrderService->>EmailService: sendOrderConfirmation(user, order)
+        EmailService-->>OrderService: Email Sent
+        OrderService->>CartService: clearCart(cartId)
+        OrderService-->>OrderController: Order
+        OrderController-->>Client: 201 Created
+    else 支払い失敗
+        PaymentService-->>OrderService: Payment Failed
+        OrderService-->>OrderController: PaymentError
+        OrderController-->>Client: 402 Payment Required
+    end
+```
+
 ### まとめ
 
 API設計の実践例：
@@ -598,5 +810,5 @@ API設計の実践例：
 3. **注文管理システム**: カート、注文作成、注文履歴、キャンセル
 4. **ファイルアップロードシステム**: アップロード、進捗確認、一覧取得、削除
 
-これらの実践例を参考に、実際のAPIを設計できます。
+これらの実践例を参考に、実際のAPIを設計できます。クラス図とシーケンス図を使用することで、システムの静的構造と動的な動作を明確に表現できます。
 

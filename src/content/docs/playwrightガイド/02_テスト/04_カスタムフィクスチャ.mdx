@@ -1,0 +1,342 @@
+---
+title: カスタムフィクスチャ
+sidebar:
+    label: カスタムフィクスチャ
+---
+
+# Playwrightカスタムフィクスチャ完全ガイド
+
+カスタムフィクスチャを使用して、テストコードの重複を減らし、保守性を向上させる方法を詳しく解説します。
+
+## 1. カスタムフィクスチャとは
+
+### なぜカスタムフィクスチャが必要か
+
+**問題のあるコード（フィクスチャなし）:**
+
+```javascript
+test('テスト1', async ({ page }) => {
+  // 毎回ログイン処理を書く必要がある
+  await page.goto('https://example.com/login');
+  await page.getByLabel('Username').fill('testuser');
+  await page.getByLabel('Password').fill('password123');
+  await page.getByRole('button', { name: 'Log in' }).click();
+  // テスト処理...
+});
+
+test('テスト2', async ({ page }) => {
+  // 同じログイン処理を繰り返す
+  await page.goto('https://example.com/login');
+  await page.getByLabel('Username').fill('testuser');
+  await page.getByLabel('Password').fill('password123');
+  await page.getByRole('button', { name: 'Log in' }).click();
+  // テスト処理...
+});
+```
+
+**解決: カスタムフィクスチャ**
+
+```javascript
+// fixtures.js
+const { test as base } = require('@playwright/test');
+
+const test = base.extend({
+  loggedInPage: async ({ page }, use) => {
+    await page.goto('https://example.com/login');
+    await page.getByLabel('Username').fill('testuser');
+    await page.getByLabel('Password').fill('password123');
+    await page.getByRole('button', { name: 'Log in' }).click();
+    await use(page);
+  },
+});
+
+// テストコード
+test('テスト1', async ({ loggedInPage }) => {
+  // ログイン済みのページが使用可能
+  await loggedInPage.goto('https://example.com/dashboard');
+  // テスト処理...
+});
+```
+
+## 2. 基本的なカスタムフィクスチャ
+
+### フィクスチャの定義
+
+```javascript
+// fixtures.js
+const { test as base } = require('@playwright/test');
+
+const test = base.extend({
+  // カスタムフィクスチャの定義
+  customPage: async ({ page }, use) => {
+    // セットアップ処理
+    await page.goto('https://example.com');
+    await page.getByRole('button', { name: 'Accept cookies' }).click();
+    
+    // フィクスチャを使用
+    await use(page);
+    
+    // クリーンアップ処理（オプション）
+    await page.close();
+  },
+});
+
+module.exports = { test };
+```
+
+### テストでの使用
+
+```javascript
+// test.spec.js
+const { test, expect } = require('./fixtures');
+
+test('カスタムフィクスチャの使用', async ({ customPage }) => {
+  // customPageは既にセットアップ済み
+  await expect(customPage.getByText('Welcome')).toBeVisible();
+});
+```
+
+## 3. 実務でのフィクスチャパターン
+
+### パターン1: ログイン済みページのフィクスチャ
+
+```javascript
+// fixtures.js
+const { test as base } = require('@playwright/test');
+
+const test = base.extend({
+  loggedInPage: async ({ page }, use) => {
+    await page.goto('https://example.com/login');
+    await page.getByLabel('Username').fill('testuser');
+    await page.getByLabel('Password').fill('password123');
+    await page.getByRole('button', { name: 'Log in' }).click();
+    
+    // ログイン完了を待機
+    await page.waitForURL('**/dashboard');
+    
+    await use(page);
+  },
+});
+
+module.exports = { test };
+```
+
+### パターン2: 認証状態を再利用するフィクスチャ
+
+```javascript
+// fixtures.js
+const { test as base } = require('@playwright/test');
+
+const test = base.extend({
+  authenticatedContext: async ({ browser }, use) => {
+    // 認証状態を保存したコンテキストを作成
+    const context = await browser.newContext({
+      storageState: 'playwright/.auth/user.json',
+    });
+    
+    await use(context);
+    await context.close();
+  },
+  
+  authenticatedPage: async ({ authenticatedContext }, use) => {
+    const page = await authenticatedContext.newPage();
+    await use(page);
+    await page.close();
+  },
+});
+
+module.exports = { test };
+```
+
+### パターン3: APIクライアントのフィクスチャ
+
+```javascript
+// fixtures.js
+const { test as base } = require('@playwright/test');
+
+class ApiClient {
+  constructor(request) {
+    this.request = request;
+    this.baseURL = 'https://api.example.com';
+  }
+  
+  async get(endpoint) {
+    return await this.request.get(`${this.baseURL}${endpoint}`);
+  }
+  
+  async post(endpoint, data) {
+    return await this.request.post(`${this.baseURL}${endpoint}`, { data });
+  }
+}
+
+const test = base.extend({
+  apiClient: async ({ request }, use) => {
+    const apiClient = new ApiClient(request);
+    await use(apiClient);
+  },
+});
+
+module.exports = { test };
+```
+
+### パターン4: テストデータのフィクスチャ
+
+```javascript
+// fixtures.js
+const { test as base } = require('@playwright/test');
+
+const test = base.extend({
+  testUser: async ({ page }, use) => {
+    // テストユーザーを作成
+    const user = {
+      username: `testuser_${Date.now()}`,
+      email: `test_${Date.now()}@example.com`,
+      password: 'password123',
+    };
+    
+    // APIでユーザーを作成
+    const response = await page.request.post('https://api.example.com/users', {
+      data: user,
+    });
+    const createdUser = await response.json();
+    
+    await use(createdUser);
+    
+    // クリーンアップ: ユーザーを削除
+    await page.request.delete(`https://api.example.com/users/${createdUser.id}`);
+  },
+});
+
+module.exports = { test };
+```
+
+## 4. 複数のフィクスチャを組み合わせる
+
+```javascript
+// fixtures.js
+const { test as base } = require('@playwright/test');
+
+const test = base.extend({
+  // ベースフィクスチャ
+  basePage: async ({ page }, use) => {
+    await page.goto('https://example.com');
+    await use(page);
+  },
+  
+  // ログイン済みページ（basePageを使用）
+  loggedInPage: async ({ basePage }, use) => {
+    await basePage.getByRole('link', { name: 'Log in' }).click();
+    await basePage.getByLabel('Username').fill('testuser');
+    await basePage.getByLabel('Password').fill('password123');
+    await basePage.getByRole('button', { name: 'Log in' }).click();
+    await use(basePage);
+  },
+  
+  // 管理者ページ（loggedInPageを使用）
+  adminPage: async ({ loggedInPage }, use) => {
+    await loggedInPage.getByRole('link', { name: 'Admin' }).click();
+    await use(loggedInPage);
+  },
+});
+
+module.exports = { test };
+```
+
+## 5. 設定ファイルでのフィクスチャ定義
+
+```javascript
+// playwright.config.js
+const { defineConfig } = require('@playwright/test');
+
+module.exports = defineConfig({
+  // カスタムフィクスチャを定義
+  use: {
+    // グローバルフィクスチャ
+  },
+  
+  // プロジェクトごとにフィクスチャを定義
+  projects: [
+    {
+      name: 'chromium',
+      use: {
+        // プロジェクト固有のフィクスチャ
+      },
+    },
+  ],
+});
+```
+
+## 6. TypeScriptでのフィクスチャ
+
+```typescript
+// fixtures.ts
+import { test as base } from '@playwright/test';
+
+interface CustomFixtures {
+  loggedInPage: Page;
+  apiClient: ApiClient;
+}
+
+export const test = base.extend<CustomFixtures>({
+  loggedInPage: async ({ page }, use) => {
+    await page.goto('https://example.com/login');
+    await page.getByLabel('Username').fill('testuser');
+    await page.getByLabel('Password').fill('password123');
+    await page.getByRole('button', { name: 'Log in' }).click();
+    await use(page);
+  },
+  
+  apiClient: async ({ request }, use) => {
+    const apiClient = new ApiClient(request);
+    await use(apiClient);
+  },
+});
+
+export { expect } from '@playwright/test';
+```
+
+## 7. 実務でのベストプラクティス
+
+### パターン1: 認証状態の管理
+
+```javascript
+// fixtures.js
+const { test as base } = require('@playwright/test');
+
+const test = base.extend({
+  // 認証状態を保存するフィクスチャ
+  authenticatedUser: async ({ page, context }, use) => {
+    // ログイン処理
+    await page.goto('https://example.com/login');
+    await page.getByLabel('Username').fill('testuser');
+    await page.getByLabel('Password').fill('password123');
+    await page.getByRole('button', { name: 'Log in' }).click();
+    
+    // 認証状態を保存
+    await context.storageState({ path: 'playwright/.auth/user.json' });
+    
+    await use({ page, context });
+  },
+});
+```
+
+### パターン2: テストデータの準備とクリーンアップ
+
+```javascript
+// fixtures.js
+const { test as base } = require('@playwright/test');
+
+const test = base.extend({
+  testData: async ({ page }, use) => {
+    // セットアップ: テストデータを作成
+    const testData = await createTestData(page);
+    
+    await use(testData);
+    
+    // クリーンアップ: テストデータを削除
+    await cleanupTestData(page, testData);
+  },
+});
+```
+
+これで、Playwrightでのカスタムフィクスチャの実装方法を理解できるようになりました。

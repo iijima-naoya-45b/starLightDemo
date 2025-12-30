@@ -1,20 +1,129 @@
 ---
-title: "Kubernetesとは"
-label: "Kubernetesとは"
+title: Kubernetesとは
+sidebar:
+    label: Kubernetesとは
 ---
 
-## Kubernetesとは
+# Kubernetes完全ガイド
 
-Kubernetesは、コンテナオーケストレーションプラットフォームです。コンテナのデプロイ、スケーリング、管理を自動化します。
+Kubernetesは、コンテナオーケストレーションプラットフォームです。コンテナのデプロイ、スケーリング、管理を自動化します。実務で使える実装例とベストプラクティスを詳しく解説します。
 
-### 基本概念
+## 1. Kubernetesとは
 
-- **Pod**: コンテナの実行単位
-- **Deployment**: Podのレプリカ管理
-- **Service**: Podへのアクセスを提供
-- **Namespace**: リソースの論理的分割
+### Kubernetesの役割
 
-### 基本的なDeployment
+Kubernetes（K8s）は、コンテナ化されたアプリケーションのデプロイ、スケーリング、管理を自動化するオープンソースのプラットフォームです。
+
+```
+開発者
+   ↓
+コンテナイメージ（Docker）
+   ↓
+Kubernetesクラスター
+   ├─ Pod（コンテナの実行単位）
+   ├─ Deployment（Podの管理）
+   ├─ Service（ネットワーク）
+   └─ Ingress（外部アクセス）
+```
+
+### なぜKubernetesが必要か
+
+**問題のある構成（Kubernetesなし）:**
+
+```bash
+# 問題: 手動でのコンテナ管理
+# 1. コンテナを手動で起動
+docker run -d my-app:latest
+
+# 2. トラフィック増加時に手動でスケール
+docker run -d my-app:latest
+docker run -d my-app:latest
+
+# 3. 障害発生時に手動で復旧
+docker ps  # 停止したコンテナを確認
+docker start container-id  # 手動で再起動
+
+# 問題点:
+# 1. 手動管理が必要（時間がかかる）
+# 2. スケーリングが困難（手動でコンテナを追加）
+# 3. 障害復旧が遅い（手動で対応）
+# 4. ロードバランシングが困難
+```
+
+**解決: Kubernetesによる自動化**
+
+```yaml
+# 解決: Kubernetesによる自動管理
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  replicas: 3  # 3つのPodを自動的に維持
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+      - name: my-app
+        image: my-app:latest
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+
+# メリット:
+# 1. 自動管理（Podの起動、停止、再起動）
+# 2. 自動スケーリング（トラフィックに応じて自動スケール）
+# 3. 自動障害復旧（Podが停止したら自動で再起動）
+# 4. ロードバランシング（Serviceが自動で負荷分散）
+```
+
+## 2. 基本概念
+
+### Pod
+
+Podは、Kubernetesの最小実行単位です。1つ以上のコンテナを含むことができます。
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-pod
+spec:
+  containers:
+  - name: app
+    image: my-app:latest
+    ports:
+    - containerPort: 8080
+  - name: sidecar
+    image: sidecar:latest
+```
+
+### Deployment
+
+Deploymentは、Podのレプリカを管理し、ローリングアップデートやロールバックを提供します。
 
 ```yaml
 apiVersion: apps/v1
@@ -36,5 +145,242 @@ spec:
         image: my-app:latest
         ports:
         - containerPort: 8080
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
 ```
+
+### Service
+
+Serviceは、Podへのアクセスを提供し、ロードバランシングを行います。
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app-service
+spec:
+  selector:
+    app: my-app
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+  type: LoadBalancer
+```
+
+### Namespace
+
+Namespaceは、リソースを論理的に分割します。
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+```
+
+## 3. 実務でのKubernetes設定
+
+### ヘルスチェック
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  template:
+    spec:
+      containers:
+      - name: my-app
+        image: my-app:latest
+        # 生存確認（Liveness Probe）
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        # 準備完了確認（Readiness Probe）
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+```
+
+### リソース制限
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  template:
+    spec:
+      containers:
+      - name: my-app
+        image: my-app:latest
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+```
+
+### 自動スケーリング
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: my-app-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-app
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+```
+
+## 4. Ingress
+
+### Ingressとは
+
+Ingressは、クラスター外部からのHTTP/HTTPSトラフィックをServiceにルーティングします。
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-app-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+  - hosts:
+    - example.com
+    secretName: example-com-tls
+  rules:
+  - host: example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: my-app-service
+            port:
+              number: 80
+```
+
+## 5. ConfigMapとSecret
+
+### ConfigMap
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-app-config
+data:
+  database_url: "postgresql://localhost:5432/mydb"
+  log_level: "info"
+```
+
+### Secret
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-app-secret
+type: Opaque
+data:
+  password: cGFzc3dvcmQxMjM=  # base64エンコード
+```
+
+### 使用例
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  template:
+    spec:
+      containers:
+      - name: my-app
+        image: my-app:latest
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: my-app-config
+              key: database_url
+        - name: PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: my-app-secret
+              key: password
+```
+
+## 6. よくある問題と解決策
+
+### 問題1: Podが起動しない
+
+**原因:**
+- イメージが存在しない
+- リソースが不足している
+- ヘルスチェックが失敗している
+
+**解決策:**
+```bash
+# Podの状態を確認
+kubectl get pods
+
+# Podのログを確認
+kubectl logs <pod-name>
+
+# Podの詳細を確認
+kubectl describe pod <pod-name>
+```
+
+### 問題2: サービスに接続できない
+
+**原因:**
+- Serviceのセレクタが間違っている
+- Podのラベルが一致していない
+
+**解決策:**
+```bash
+# Serviceの詳細を確認
+kubectl describe service <service-name>
+
+# Podのラベルを確認
+kubectl get pods --show-labels
+```
+
+これで、Kubernetesの基礎知識と実務での使い方を理解できるようになりました。
 

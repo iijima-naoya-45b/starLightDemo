@@ -1,0 +1,100 @@
+---
+title: ブラウザの仕組み
+sidebar:
+    label: ブラウザの仕組み
+---
+
+# ブラウザの仕組み完全ガイド
+
+ブラウザがWebページを表示するまでの処理を詳しく解説します。
+
+## 1. ブラウザの主要コンポーネント
+
+### レンダリングエンジン
+
+- **Chromium系**: Blink（Chrome、Edge、Opera）
+- **Firefox**: Gecko
+- **Safari**: WebKit
+
+### JavaScriptエンジン
+
+- **Chrome**: V8
+- **Firefox**: SpiderMonkey
+- **Safari**: JavaScriptCore
+
+## 2. ページ読み込みの流れ
+
+```
+1. DNS解決
+   ↓
+2. TCP接続の確立
+   ↓
+3. TLSハンドシェイク（HTTPSの場合）
+   ↓
+4. HTTPリクエストの送信
+   ↓
+5. HTTPレスポンスの受信
+   ↓
+6. HTMLのパース
+   ↓
+7. DOMツリーの構築
+   ↓
+8. CSSのパース
+   ↓
+9. CSSOMツリーの構築
+   ↓
+10. レンダリングツリーの構築
+    ↓
+11. レイアウト（リフロー）
+    ↓
+12. ペイント
+    ↓
+13. コンポジット
+```
+
+## 3. DOM（Document Object Model）
+
+### DOMとは
+
+HTMLを解析して構築される、ドキュメントの構造を表すツリー構造です。
+
+```html
+<html>
+  <head>
+    <title>Example</title>
+  </head>
+  <body>
+    <h1>Hello</h1>
+    <p>World</p>
+  </body>
+</html>
+```
+
+```
+Document
+  └── html
+      ├── head
+      │   └── title
+      │       └── "Example"
+      └── body
+          ├── h1
+          │   └── "Hello"
+          └── p
+              └── "World"
+```
+
+## 4. レンダリングの最適化
+
+### クリティカルレンダリングパス
+
+```
+HTML → DOM → CSS → CSSOM → レンダリングツリー → レイアウト → ペイント
+```
+
+### 最適化のポイント
+
+1. **HTMLの最適化**: 不要なタグを削減
+2. **CSSの最適化**: クリティカルCSSをインライン化
+3. **JavaScriptの最適化**: 非同期読み込み、遅延読み込み
+
+これで、ブラウザの仕組みとページ読み込みの流れを理解できるようになりました。

@@ -1,0 +1,292 @@
+---
+title: SSHとサーバー管理
+sidebar:
+    label: SSHとサーバー管理
+---
+
+# SSHとサーバー管理完全ガイド
+
+SSHを使用したサーバーへの接続と、基本的なサーバー管理の方法を詳しく解説します。
+
+## 1. SSHとは
+
+### SSHの役割
+
+SSH（Secure Shell）は、暗号化された通信でリモートサーバーに接続するためのプロトコルです。
+
+```
+ローカルマシン
+   ↓（SSH接続）
+リモートサーバー
+```
+
+### なぜSSHが必要か
+
+**問題のある接続（SSHなし）:**
+
+```bash
+# 問題: 平文での接続（Telnetなど）
+# 1. パスワードが平文で送信される
+# 2. 通信が傍受される可能性
+# 3. 認証情報が漏洩するリスク
+
+# 問題点:
+# 1. セキュリティリスクが高い
+# 2. 認証情報が漏洩する可能性
+# 3. 通信が傍受される可能性
+```
+
+**解決: SSHによる暗号化接続**
+
+```bash
+# 解決: SSHによる暗号化接続
+ssh user@example.com
+
+# メリット:
+# 1. 通信が暗号化される
+# 2. 公開鍵認証による安全な認証
+# 3. ポートフォワーディングなどの機能
+```
+
+## 2. SSH接続の基本
+
+### 基本的な接続
+
+```bash
+# パスワード認証での接続
+ssh user@example.com
+
+# ポートを指定して接続
+ssh -p 2222 user@example.com
+
+# 詳細な情報を表示
+ssh -v user@example.com
+```
+
+### 公開鍵認証の設定
+
+```bash
+# 公開鍵の生成
+ssh-keygen -t ed25519 -C "your_email@example.com"
+
+# 公開鍵をサーバーにコピー
+ssh-copy-id user@example.com
+
+# または手動でコピー
+cat ~/.ssh/id_ed25519.pub | ssh user@example.com "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+```
+
+### SSH設定ファイル
+
+```bash
+# ~/.ssh/config
+Host example
+    HostName example.com
+    User user
+    Port 22
+    IdentityFile ~/.ssh/id_ed25519
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+
+# 使用例
+ssh example
+```
+
+## 3. 基本的なLinuxコマンド
+
+### ファイル操作
+
+```bash
+# ファイルの一覧表示
+ls -la
+
+# ディレクトリの移動
+cd /path/to/directory
+
+# ファイルのコピー
+cp source.txt destination.txt
+
+# ファイルの移動
+mv source.txt destination.txt
+
+# ファイルの削除
+rm file.txt
+
+# ディレクトリの作成
+mkdir new_directory
+
+# ディレクトリの削除
+rm -r directory
+```
+
+### ファイルの編集
+
+```bash
+# vi/vimエディタ
+vi file.txt
+
+# nanoエディタ
+nano file.txt
+
+# ファイルの内容を表示
+cat file.txt
+
+# ファイルの内容をページ単位で表示
+less file.txt
+
+# ファイルの末尾を表示
+tail -f file.txt
+```
+
+### プロセス管理
+
+```bash
+# 実行中のプロセスを表示
+ps aux
+
+# プロセスの検索
+ps aux | grep nginx
+
+# プロセスの終了
+kill <pid>
+
+# 強制終了
+kill -9 <pid>
+
+# システムリソースの確認
+top
+htop
+```
+
+### システム情報
+
+```bash
+# ディスク使用量の確認
+df -h
+
+# ディレクトリのサイズ確認
+du -sh /path/to/directory
+
+# メモリ使用量の確認
+free -h
+
+# CPU情報の確認
+lscpu
+
+# システム情報の確認
+uname -a
+```
+
+## 4. システムサービスの管理
+
+### systemdの使用
+
+```bash
+# サービスの起動
+sudo systemctl start nginx
+
+# サービスの停止
+sudo systemctl stop nginx
+
+# サービスの再起動
+sudo systemctl restart nginx
+
+# サービスの状態確認
+sudo systemctl status nginx
+
+# サービスの自動起動設定
+sudo systemctl enable nginx
+
+# サービスの自動起動解除
+sudo systemctl disable nginx
+```
+
+### ログの確認
+
+```bash
+# システムログの確認
+sudo journalctl -u nginx
+
+# リアルタイムでログを表示
+sudo journalctl -u nginx -f
+
+# 最近のログを表示
+sudo journalctl -u nginx --since "1 hour ago"
+
+# ログファイルの確認
+sudo tail -f /var/log/nginx/access.log
+sudo tail -f /var/log/nginx/error.log
+```
+
+## 5. セキュリティのベストプラクティス
+
+### ファイアウォールの設定
+
+```bash
+# UFW（Ubuntu Firewall）の設定
+sudo ufw allow 22/tcp    # SSH
+sudo ufw allow 80/tcp    # HTTP
+sudo ufw allow 443/tcp   # HTTPS
+sudo ufw enable
+
+# ファイアウォールの状態確認
+sudo ufw status
+```
+
+### SSHのセキュリティ設定
+
+```bash
+# /etc/ssh/sshd_config
+# パスワード認証を無効化（公開鍵認証のみ）
+PasswordAuthentication no
+
+# rootログインを無効化
+PermitRootLogin no
+
+# ポートの変更（オプション）
+Port 2222
+
+# 設定の再読み込み
+sudo systemctl reload sshd
+```
+
+## 6. よくある問題と解決策
+
+### 問題1: SSH接続できない
+
+**原因:**
+- ファイアウォールでブロックされている
+- SSHサービスが起動していない
+- 認証情報が間違っている
+
+**解決策:**
+```bash
+# SSHサービスの状態確認
+sudo systemctl status sshd
+
+# ファイアウォールの確認
+sudo ufw status
+
+# SSH接続のテスト
+ssh -v user@example.com
+```
+
+### 問題2: ディスク容量が不足
+
+**原因:**
+- ログファイルが大きくなっている
+- 一時ファイルが蓄積している
+
+**解決策:**
+```bash
+# ディスク使用量の確認
+df -h
+
+# 大きなファイルの検索
+find / -type f -size +100M
+
+# ログファイルのクリーンアップ
+sudo journalctl --vacuum-time=7d
+```
+
+これで、SSHとサーバー管理の基礎知識と実務での使い方を理解できるようになりました。

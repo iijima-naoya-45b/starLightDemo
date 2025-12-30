@@ -1,31 +1,455 @@
 ---
-title: "セキュリティ"
-label: "セキュリティ"
+title: Djangoセキュリティ完全ガイド
+sidebar:
+    label: セキュリティ
 ---
 
-## セキュリティ
+# Djangoセキュリティ完全ガイド
 
-Djangoのセキュリティ機能について解説します。
+Djangoアプリケーションのセキュリティ対策を、実務で使える実装例とともに詳しく解説します。
 
-### CSRF対策
+## 1. セキュリティとは
+
+### Djangoのセキュリティ機能
+
+Djangoは、多くのセキュリティ機能を標準で提供しています。適切に設定することで、一般的なWebアプリケーションの脆弱性から保護できます。
+
+```
+セキュリティ対策
+   ├─ CSRF対策
+   ├─ XSS対策
+   ├─ SQLインジェクション対策
+   ├─ 認証・認可
+   └─ セキュリティヘッダー
+```
+
+## 2. CSRF対策
+
+### CSRFとは
+
+CSRF（Cross-Site Request Forgery）は、ユーザーが意図しないリクエストを送信させられる攻撃です。
+
+### DjangoのCSRF対策
+
+Djangoは、デフォルトでCSRF保護を提供しています。
 
 ```python
 # settings.py
-CSRF_COOKIE_SECURE = True
-CSRF_COOKIE_HTTPONLY = True
+MIDDLEWARE = [
+    # ...
+    'django.middleware.csrf.CsrfViewMiddleware',  # CSRF保護
+    # ...
+]
 ```
 
-### XSS対策
+### フォームでのCSRFトークン
+
+```html
+<!-- テンプレート -->
+<form method="post">
+    {% csrf_token %}
+    <input type="text" name="username">
+    <button type="submit">送信</button>
+</form>
+```
+
+### APIでのCSRF対策
 
 ```python
-# テンプレートで自動エスケープ
+# views.py
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from rest_framework.views import APIView
+
+# CSRF保護を無効化（APIの場合）
+@method_decorator(csrf_exempt, name='dispatch')
+class MyAPIView(APIView):
+    def post(self, request):
+        # 処理
+        pass
+```
+
+### 本番環境での設定
+
+```python
+# settings/production.py
+# CSRF Cookieの設定
+CSRF_COOKIE_SECURE = True  # HTTPSのみで送信
+CSRF_COOKIE_HTTPONLY = True  # JavaScriptからアクセス不可
+CSRF_COOKIE_SAMESITE = 'Strict'  # 同一サイトからのみ送信
+
+# 信頼できるオリジンの設定
+CSRF_TRUSTED_ORIGINS = [
+    'https://example.com',
+    'https://www.example.com',
+]
+```
+
+## 3. XSS対策
+
+### XSSとは
+
+XSS（Cross-Site Scripting）は、悪意のあるスクリプトを注入する攻撃です。
+
+### Djangoの自動エスケープ
+
+Djangoのテンプレートは、デフォルトで自動エスケープを行います。
+
+```html
+<!-- 自動的にエスケープされる -->
+{{ user_input }}
+
+<!-- エスケープを無効化（注意が必要） -->
+{{ user_input|safe }}
+
+<!-- 手動でエスケープ -->
 {{ user_input|escape }}
 ```
 
-### SQLインジェクション対策
+### マークセーフの使用
 
 ```python
-# ORMを使用（自動的にエスケープ）
-User.objects.filter(name=user_input)
+# views.py
+from django.utils.safestring import mark_safe
+
+def my_view(request):
+    # 信頼できるHTMLのみマークセーフにする
+    safe_html = mark_safe('<p>Trusted HTML</p>')
+    return render(request, 'template.html', {'html': safe_html})
 ```
+
+### Content Security Policy（CSP）
+
+```python
+# settings.py
+MIDDLEWARE = [
+    # ...
+    'django.middleware.security.SecurityMiddleware',
+    # ...
+]
+
+# CSPヘッダーの設定
+SECURE_CONTENT_SECURITY_POLICY = {
+    'default-src': "'self'",
+    'script-src': "'self' 'unsafe-inline'",
+    'style-src': "'self' 'unsafe-inline'",
+}
+```
+
+## 4. SQLインジェクション対策
+
+### ORMの使用
+
+DjangoのORMは、自動的にSQLインジェクションを防ぎます。
+
+```python
+# 安全な方法（ORMを使用）
+User.objects.filter(name=user_input)
+
+# 危険な方法（生のSQL、非推奨）
+from django.db import connection
+cursor = connection.cursor()
+cursor.execute(f"SELECT * FROM users WHERE name = '{user_input}'")  # 危険！
+```
+
+### 生のSQLを使用する場合
+
+```python
+# 安全な方法（パラメータ化クエリ）
+from django.db import connection
+
+cursor = connection.cursor()
+cursor.execute("SELECT * FROM users WHERE name = %s", [user_input])
+```
+
+## 5. 認証・認可
+
+### 認証の設定
+
+```python
+# settings.py
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+]
+
+# パスワードの検証
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {
+            'min_length': 8,
+        }
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+    },
+]
+```
+
+### 認可の実装
+
+```python
+# views.py
+from django.contrib.auth.decorators import login_required, permission_required
+from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.views.generic import ListView
+
+# 関数ベースビュー
+@login_required
+@permission_required('blog.add_post', raise_exception=True)
+def create_post(request):
+    # 処理
+    pass
+
+# クラスベースビュー
+class PostCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+    permission_required = 'blog.add_post'
+    model = Post
+    fields = ['title', 'content']
+```
+
+## 6. セキュリティヘッダー
+
+### セキュリティヘッダーの設定
+
+```python
+# settings/production.py
+# HTTPSの強制
+SECURE_SSL_REDIRECT = True
+
+# セキュリティヘッダー
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'  # クリックジャッキング対策
+
+# Cookieの設定
+SESSION_COOKIE_SECURE = True  # HTTPSのみで送信
+SESSION_COOKIE_HTTPONLY = True  # JavaScriptからアクセス不可
+SESSION_COOKIE_SAMESITE = 'Strict'  # 同一サイトからのみ送信
+
+# HSTS（HTTP Strict Transport Security）
+SECURE_HSTS_SECONDS = 31536000  # 1年間
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+```
+
+## 7. セキュリティミドルウェア
+
+### SecurityMiddleware
+
+```python
+# settings.py
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',  # セキュリティヘッダー
+    # ...
+]
+```
+
+### カスタムセキュリティミドルウェア
+
+```python
+# middleware.py
+class SecurityHeadersMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        response['X-Content-Type-Options'] = 'nosniff'
+        response['X-Frame-Options'] = 'DENY'
+        response['X-XSS-Protection'] = '1; mode=block'
+        return response
+```
+
+## 8. パスワードの管理
+
+### パスワードのハッシュ化
+
+```python
+# Djangoは自動的にパスワードをハッシュ化
+from django.contrib.auth.models import User
+
+user = User.objects.create_user(
+    username='john',
+    password='secure_password'  # 自動的にハッシュ化される
+)
+```
+
+### パスワードの検証
+
+```python
+# views.py
+from django.contrib.auth import authenticate
+
+def login_view(request):
+    if request.method == 'POST':
+        username = request.POST['username']
+        password = request.POST['password']
+        user = authenticate(request, username=username, password=password)
+        if user is not None:
+            login(request, user)
+            return redirect('home')
+        else:
+            # エラーメッセージ
+            pass
+```
+
+## 9. セッション管理
+
+### セッションの設定
+
+```python
+# settings.py
+# セッションの設定
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # データベース
+# または
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'  # キャッシュ
+
+SESSION_COOKIE_AGE = 3600  # 1時間
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # ブラウザを閉じたらセッション終了
+SESSION_SAVE_EVERY_REQUEST = True  # 毎リクエストでセッションを保存
+```
+
+### セッションの使用
+
+```python
+# views.py
+def my_view(request):
+    # セッションに値を保存
+    request.session['user_id'] = 123
+    
+    # セッションから値を取得
+    user_id = request.session.get('user_id')
+    
+    # セッションの削除
+    del request.session['user_id']
+```
+
+## 10. ファイルアップロードのセキュリティ
+
+### ファイルアップロードの検証
+
+```python
+# models.py
+from django.core.validators import FileExtensionValidator
+
+class Document(models.Model):
+    file = models.FileField(
+        upload_to='documents/',
+        validators=[
+            FileExtensionValidator(allowed_extensions=['pdf', 'doc', 'docx'])
+        ]
+    )
+```
+
+### ファイルサイズの制限
+
+```python
+# settings.py
+FILE_UPLOAD_MAX_MEMORY_SIZE = 2621440  # 2.5MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 2621440  # 2.5MB
+```
+
+### ファイルタイプの検証
+
+```python
+# forms.py
+from django import forms
+import magic
+
+class DocumentForm(forms.ModelForm):
+    class Meta:
+        model = Document
+        fields = ['file']
+    
+    def clean_file(self):
+        file = self.cleaned_data['file']
+        # ファイルタイプの検証
+        file_type = magic.from_buffer(file.read(), mime=True)
+        allowed_types = ['application/pdf', 'application/msword']
+        if file_type not in allowed_types:
+            raise forms.ValidationError('Invalid file type.')
+        return file
+```
+
+## 11. レート制限
+
+### django-ratelimitの使用
+
+```bash
+pip install django-ratelimit
+```
+
+```python
+# views.py
+from django_ratelimit.decorators import ratelimit
+
+@ratelimit(key='ip', rate='5/m', method='POST')
+def login_view(request):
+    # 1分間に5回まで
+    pass
+```
+
+## 12. 実務でのベストプラクティス
+
+### パターン1: 環境変数の使用
+
+```python
+# settings.py
+from decouple import config
+
+SECRET_KEY = config('SECRET_KEY')
+DEBUG = config('DEBUG', default=False, cast=bool)
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=lambda v: [s.strip() for s in v.split(',')])
+```
+
+### パターン2: セキュリティチェックリスト
+
+```bash
+# Djangoのセキュリティチェック
+python manage.py check --deploy
+
+# セキュリティの問題を確認
+python manage.py check
+```
+
+## 13. よくある問題と解決策
+
+### 問題1: CSRFエラー
+
+**原因:**
+- CSRFトークンが送信されていない
+- セッションが無効
+
+**解決策:**
+```html
+<!-- テンプレートにCSRFトークンを追加 -->
+<form method="post">
+    {% csrf_token %}
+    <!-- フォームフィールド -->
+</form>
+```
+
+### 問題2: セッションが保持されない
+
+**原因:**
+- `SESSION_COOKIE_SECURE`が`True`でHTTPを使用している
+- セッションの設定が間違っている
+
+**解決策:**
+```python
+# settings.py
+# 開発環境ではFalse
+SESSION_COOKIE_SECURE = False  # 開発環境
+# 本番環境ではTrue
+SESSION_COOKIE_SECURE = True  # 本番環境（HTTPS必須）
+```
+
+これで、Djangoのセキュリティ対策の基礎知識と実務での使い方を理解できるようになりました。
 
