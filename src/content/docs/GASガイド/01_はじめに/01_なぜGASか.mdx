@@ -1,0 +1,195 @@
+---
+title: "なぜGASか"
+label: "なぜGASか"
+---
+
+## なぜGoogle Apps Script（GAS）か
+
+Google Apps Script（GAS）は、Googleの各種サービス（スプレッドシート、Gmail、Drive、カレンダーなど）を自動化するためのサーバーレス実行環境です。実務での使い方を詳しく解説します。
+
+### GASとは
+
+Google Apps Scriptは、JavaScriptベースのスクリプト実行環境で、Googleの各種サービスと統合して自動化を実現します。
+
+**主な特徴:**
+
+- **サーバーレス**: サーバーの管理が不要
+- **無料**: 個人利用は無料（制限あり）
+- **Googleサービス統合**: スプレッドシート、Gmail、Driveなどと直接連携
+- **トリガー実行**: 時間ベース、イベントベースの自動実行
+- **Webアプリケーション**: HTMLサービスでWebアプリを作成可能
+
+### GASが適しているケース
+
+#### 1. Google Workspaceの自動化
+
+```javascript
+// スプレッドシートの自動更新
+function updateSpreadsheet() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const data = fetchDataFromAPI();
+  sheet.getRange(1, 1, data.length, data[0].length).setValues(data);
+}
+
+// トリガーで毎日自動実行
+function createDailyTrigger() {
+  ScriptApp.newTrigger('updateSpreadsheet')
+    .timeBased()
+    .everyDays(1)
+    .atHour(9)
+    .create();
+}
+```
+
+#### 2. データ連携とETL処理
+
+```javascript
+// 外部APIからデータを取得してスプレッドシートに保存
+function syncDataFromAPI() {
+  const response = UrlFetchApp.fetch('https://api.example.com/data');
+  const data = JSON.parse(response.getContentText());
+  
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Data');
+  const values = data.map(item => [item.id, item.name, item.value]);
+  sheet.getRange(1, 1, values.length, values[0].length).setValues(values);
+}
+```
+
+#### 3. 通知とレポート自動送信
+
+```javascript
+// 毎日のレポートをメールで送信
+function sendDailyReport() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet();
+  const data = sheet.getDataRange().getValues();
+  
+  const htmlBody = `
+    <h2>日次レポート</h2>
+    <p>本日のデータ件数: ${data.length - 1}件</p>
+    <table>
+      ${data.slice(1, 6).map(row => 
+        `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`
+      ).join('')}
+    </table>
+  `;
+  
+  MailApp.sendEmail({
+    to: 'team@example.com',
+    subject: '日次レポート',
+    htmlBody: htmlBody,
+  });
+}
+```
+
+### GASの制限事項
+
+#### 実行時間制限
+
+- **通常のスクリプト**: 6分
+- **G Suite Business/Enterprise**: 30分（有料プラン）
+
+```javascript
+// ❌ 悪い例: 長時間実行される処理
+function processLargeData() {
+  const data = fetchLargeData(); // 10分かかる
+  processData(data); // タイムアウトエラー
+}
+
+// ✅ 良い例: バッチ処理に分割
+function processLargeData() {
+  const batchSize = 100;
+  let offset = 0;
+  
+  while (true) {
+    const batch = fetchDataBatch(offset, batchSize);
+    if (batch.length === 0) break;
+    
+    processBatch(batch);
+    offset += batchSize;
+    
+    // 実行時間をチェック（5分で停止）
+    if (getElapsedTime() > 5 * 60 * 1000) {
+      // 次回実行用に状態を保存
+      PropertiesService.getScriptProperties().setProperty('offset', offset);
+      break;
+    }
+  }
+}
+```
+
+#### クォータ制限
+
+- **1日の実行時間**: 6時間（無料プラン）
+- **同時実行数**: 30（無料プラン）
+- **URLフェッチ**: 20,000回/日
+- **メール送信**: 100通/日（無料プラン）
+
+```javascript
+// ✅ 良い例: クォータを考慮した実装
+function sendBulkEmails(recipients) {
+  const dailyLimit = 100;
+  const sentToday = getSentCountToday();
+  
+  if (sentToday >= dailyLimit) {
+    Logger.log('Daily email limit reached');
+    return;
+  }
+  
+  const remaining = dailyLimit - sentToday;
+  const toSend = recipients.slice(0, remaining);
+  
+  toSend.forEach(recipient => {
+    MailApp.sendEmail({
+      to: recipient.email,
+      subject: recipient.subject,
+      body: recipient.body,
+    });
+  });
+}
+```
+
+### GASの実行環境
+
+#### Serverless環境
+
+GASは、Google Cloud Platform上で実行されるサーバーレス環境です。
+
+**特徴:**
+
+- **コールドスタート**: 初回実行時に起動時間がかかる（数秒）
+- **自動スケーリング**: リクエスト数に応じて自動的にスケール
+- **ステートレス**: 実行間で状態を保持しない（PropertiesServiceを使用）
+
+```javascript
+// ✅ 良い例: 状態をPropertiesServiceに保存
+function saveState(key, value) {
+  PropertiesService.getScriptProperties().setProperty(key, JSON.stringify(value));
+}
+
+function loadState(key) {
+  const value = PropertiesService.getScriptProperties().getProperty(key);
+  return value ? JSON.parse(value) : null;
+}
+
+// 実行間で状態を保持
+function processData() {
+  let offset = loadState('offset') || 0;
+  const batch = fetchDataBatch(offset, 100);
+  processBatch(batch);
+  saveState('offset', offset + batch.length);
+}
+```
+
+### まとめ
+
+GASは、Google Workspaceの自動化やデータ連携に最適なサーバーレス実行環境です。
+
+**重要なポイント:**
+
+- **実行時間制限**: 6分（無料プラン）または30分（有料プラン）
+- **クォータ制限**: 1日の実行時間、同時実行数、URLフェッチ回数など
+- **Serverless環境**: コールドスタート、自動スケーリング、ステートレス
+- **Googleサービス統合**: スプレッドシート、Gmail、Driveなどと直接連携
+
+これらの特徴を理解し、適切に設計することで、堅牢で効率的なGASアプリケーションを構築できます。
+

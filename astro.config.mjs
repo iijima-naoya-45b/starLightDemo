@@ -67,6 +67,12 @@ export default defineConfig({
                     badge: { text: '整備中', variant: 'danger' },
                 },
                 {
+                    label: 'GASガイド',
+                    collapsed: true,
+                    autogenerate: { directory: 'GASガイド' },
+                    badge: { text: 'サーバーレス', variant: 'success' },
+                },
+                {
                     label: 'Gitガイド',
                     collapsed: true,
                     autogenerate: { directory: 'Gitガイド' },
@@ -269,6 +275,12 @@ export default defineConfig({
                     collapsed: true,
                     autogenerate: { directory: '状態管理ガイド' },
                     badge: { text: '重要', variant: 'note' },
+                },
+                {
+                    label: '技術記事執筆ガイド',
+                    collapsed: true,
+                    autogenerate: { directory: '技術記事執筆ガイド' },
+                    badge: { text: '重要', variant: 'success' },
                 },
             ],
         }),

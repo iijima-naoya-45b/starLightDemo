@@ -1,0 +1,354 @@
+---
+title: "ベストプラクティス"
+label: "ベストプラクティス"
+---
+
+## ベストプラクティス
+
+BIシステムでの正しい構造とベストプラクティスを詳しく解説します。
+
+### 1. 接続プールの適切な管理
+
+#### 正しい構造
+
+```python
+# ✅ 正しい: contextmanagerで接続を管理
+from contextlib import contextmanager
+import logging
+
+logger = logging.getLogger(__name__)
+
+@contextmanager
+def get_connection():
+    """データベース接続を取得し、確実に解放する"""
+    conn = connection_pool.get_connection()
+    try:
+        yield conn
+    finally:
+        connection_pool.return_connection(conn)
+        logger.debug("Connection returned to pool")
+
+def etl_process():
+    """ETLプロセスのメイン処理"""
+    try:
+        with get_connection() as conn:
+            data = extract_data(conn)
+            transformed_data = transform_data(data)
+            load_data(conn, transformed_data)
+    except Exception as e:
+        logger.error(f"ETL process failed: {e}", exc_info=True)
+        raise
+    # 接続が確実に解放される
+```
+
+**なぜ正しいか:**
+
+- **確実な解放**: contextmanagerにより、例外時でも接続が確実に解放される
+- **接続プールの保護**: 接続プールが枯渇しない
+- **リソースリークの防止**: リソースリークが発生しない
+
+### 2. バッチ処理によるメモリ管理
+
+#### 正しい構造
+
+```python
+# ✅ 正しい: バッチ処理でデータを分割
+def etl_process():
+    """ETLプロセスのメイン処理（バッチ処理）"""
+    batch_size = 10000
+    offset = 0
+    
+    try:
+        with get_connection() as conn:
+            while True:
+                # バッチでデータを取得
+                batch = extract_data_batch(conn, offset, batch_size)
+                if len(batch) == 0:
+                    break
+                
+                # バッチを変換
+                transformed_batch = transform_data(batch)
+                
+                # バッチを読み込み
+                with conn.transaction():
+                    load_data_batch(conn, transformed_batch)
+                
+                offset += batch_size
+                
+                # メモリを解放
+                del batch
+                del transformed_batch
+                
+                logger.info(f"Processed {offset} records")
+                
+    except Exception as e:
+        logger.error(f"ETL process failed at offset {offset}: {e}", exc_info=True)
+        raise
+```
+
+**なぜ正しいか:**
+
+- **メモリ使用量の制限**: バッチサイズを制限し、メモリ使用量を制御
+- **メモリの解放**: バッチ処理後にメモリを解放
+- **スケーラビリティ**: 大量のデータを処理可能
+
+### 3. トランザクション境界の適切な管理
+
+#### 正しい構造
+
+```python
+# ✅ 正しい: バッチ単位でトランザクションを管理
+def etl_process():
+    """ETLプロセスのメイン処理（トランザクション管理）"""
+    batch_size = 1000
+    
+    try:
+        with get_connection() as conn:
+            # データを抽出
+            data = extract_data(conn)
+            
+            # データを変換
+            transformed_data = transform_data(data)
+            
+            # バッチ単位でトランザクションを管理
+            for i in range(0, len(transformed_data), batch_size):
+                batch = transformed_data[i:i + batch_size]
+                
+                with conn.transaction():
+                    # 既存のデータを削除
+                    delete_existing_data(conn, batch)
+                    
+                    # 新しいデータを読み込み
+                    load_data_batch(conn, batch)
+                    # すべて成功するか、すべてロールバック
+                
+                logger.info(f"Loaded batch {i // batch_size + 1}")
+                
+    except Exception as e:
+        logger.error(f"ETL process failed: {e}", exc_info=True)
+        raise
+```
+
+**なぜ正しいか:**
+
+- **アトミックな処理**: バッチ単位でアトミックに処理
+- **データ整合性**: データの整合性が保たれる
+- **ロールバックの容易さ**: エラー時にロールバックが容易
+
+### 4. エラーハンドリングとログ出力
+
+#### 正しい構造
+
+```python
+# ✅ 正しい: エラーハンドリングとログ出力を含む
+def etl_process():
+    """ETLプロセスのメイン処理（エラーハンドリング）"""
+    start_time = datetime.now()
+    
+    try:
+        logger.info("ETL process started")
+        
+        # データを抽出
+        data = extract_data()
+        logger.info(f"Extracted {len(data)} records")
+        
+        # データを変換
+        transformed_data = transform_data(data)
+        logger.info(f"Transformed {len(transformed_data)} records")
+        
+        # データを読み込み
+        load_data(transformed_data)
+        logger.info(f"Loaded {len(transformed_data)} records")
+        
+        elapsed_time = datetime.now() - start_time
+        logger.info(f"ETL process completed in {elapsed_time}")
+        
+    except Exception as e:
+        elapsed_time = datetime.now() - start_time
+        logger.error(f"ETL process failed after {elapsed_time}: {e}", exc_info=True)
+        
+        # エラー通知を送信
+        send_error_notification(e)
+        raise
+
+def extract_data():
+    """データを抽出（エラーハンドリングを含む）"""
+    data = []
+    for source in data_sources:
+        try:
+            source_data = extract_from_source(source)
+            data.extend(source_data)
+            logger.info(f"Extracted {len(source_data)} records from {source}")
+        except Exception as e:
+            logger.error(f"Failed to extract from {source}: {e}", exc_info=True)
+            # 個別のエラーは記録するが、処理は続行
+            continue
+    return data
+```
+
+**なぜ正しいか:**
+
+- **エラーハンドリング**: try-catchでエラーを捕捉
+- **ログ出力**: 処理状況とエラーをログに記録
+- **エラー通知**: エラー時に通知を送信
+- **処理の継続**: 個別のエラーが全体に影響しない
+
+### 5. データ品質チェックの実装
+
+#### 正しい構造
+
+```python
+# ✅ 正しい: データ品質チェックを含む
+def etl_process():
+    """ETLプロセスのメイン処理（データ品質チェック）"""
+    try:
+        # データを抽出
+        data = extract_data()
+        
+        # データ品質チェック
+        quality_result = data_quality_check(data)
+        
+        if quality_result['errors']:
+            logger.error(f"Data quality check failed: {len(quality_result['errors'])} errors")
+            raise DataQualityError(f"Data quality check failed: {len(quality_result['errors'])} errors")
+        
+        if quality_result['warnings']:
+            logger.warning(f"Data quality check found {len(quality_result['warnings'])} warnings")
+        
+        # データを変換
+        transformed_data = transform_data(data)
+        
+        # データを読み込み
+        load_data(transformed_data)
+        
+    except DataQualityError as e:
+        logger.error(f"Data quality error: {e}")
+        send_error_notification(e)
+        raise
+    except Exception as e:
+        logger.error(f"ETL process failed: {e}", exc_info=True)
+        send_error_notification(e)
+        raise
+
+def data_quality_check(data):
+    """データ品質チェック"""
+    errors = []
+    warnings = []
+    
+    for record in data:
+        # 必須フィールドのチェック
+        if not record.get('id'):
+            errors.append({
+                'record': record,
+                'field': 'id',
+                'error': 'Missing required field',
+            })
+            continue
+        
+        # データ型のチェック
+        if not isinstance(record.get('value'), (int, float)):
+            errors.append({
+                'record': record,
+                'field': 'value',
+                'error': 'Invalid data type',
+            })
+            continue
+        
+        # 値の範囲チェック
+        if record.get('value') < 0:
+            warnings.append({
+                'record': record,
+                'field': 'value',
+                'warning': 'Negative value',
+            })
+    
+    return {
+        'errors': errors,
+        'warnings': warnings,
+    }
+```
+
+**なぜ正しいか:**
+
+- **データ品質の保証**: データの品質をチェックし、不正なデータを検出
+- **エラー検出**: 問題があるデータを検出
+- **警告**: 警告レベルの問題を記録
+- **処理の中断**: エラーがある場合は処理を中断
+
+### 6. 並列処理の実装
+
+#### 正しい構造
+
+```python
+# ✅ 正しい: 並列処理でパフォーマンスを向上
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+async def parallel_etl_process():
+    """並列ETL処理"""
+    try:
+        logger.info("Parallel ETL process started")
+        
+        # すべてのデータソースを並列に処理
+        tasks = [process_source_async(source) for source in data_sources]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # エラーをチェック
+        errors = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"Source {data_sources[i]} processing failed: {result}")
+                errors.append((data_sources[i], result))
+        
+        if errors:
+            # エラー通知を送信
+            send_error_notification(errors)
+        
+        logger.info("Parallel ETL process completed")
+        
+    except Exception as e:
+        logger.error(f"Parallel ETL process failed: {e}", exc_info=True)
+        send_error_notification(e)
+        raise
+
+async def process_source_async(source):
+    """データソースを非同期に処理"""
+    try:
+        # データを抽出
+        data = await extract_data_async(source)
+        
+        # データを変換
+        transformed_data = transform_data(data)
+        
+        # データを読み込み
+        await load_data_async(transformed_data)
+        
+        logger.info(f"Source {source} processed successfully")
+        
+    except Exception as e:
+        logger.error(f"Failed to process source {source}: {e}", exc_info=True)
+        raise
+```
+
+**なぜ正しいか:**
+
+- **パフォーマンス向上**: 並列処理により、処理時間を大幅に短縮
+- **エラーの分離**: 個別のエラーが全体に影響しない
+- **リソース管理**: スレッドプールでリソースを管理
+- **スケーラビリティ**: 複数のデータソースを効率的に処理
+
+### まとめ
+
+BIシステムでのベストプラクティスは、接続管理、メモリ管理、トランザクション管理、エラーハンドリング、データ品質チェック、並列処理を適切に実装することが重要です。
+
+**重要なポイント:**
+
+- **接続管理**: contextmanagerで確実に接続を解放
+- **メモリ管理**: バッチ処理でメモリ使用量を制限
+- **トランザクション管理**: バッチ単位でトランザクションを管理
+- **エラーハンドリング**: try-catchでエラーを捕捉し、ログに記録
+- **データ品質チェック**: データの品質をチェックし、不正なデータを検出
+- **並列処理**: 並列処理でパフォーマンスを向上
+
+これらのベストプラクティスを守ることで、堅牢で効率的なBIシステムを構築できます。
+

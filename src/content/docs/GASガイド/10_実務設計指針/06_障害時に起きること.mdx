@@ -1,0 +1,289 @@
+---
+title: "障害時に起きること"
+label: "障害時に起きること"
+---
+
+## 障害時に起きること
+
+GASアプリケーションで障害が発生した際のシナリオを詳しく解説します。
+
+### シナリオ1: 実行時間制限による強制終了
+
+#### 障害のシナリオ
+
+```
+時刻: 2024-01-01 10:00:00
+状況: 大量のデータ処理中
+
+10:00:00.000 - スクリプト開始（実行時間: 0秒）
+10:00:01.000 - データ取得開始（10,000件のデータ）
+10:05:30.000 - データ処理中（実行時間: 5分30秒、3,000件処理済み）
+10:06:00.000 - 実行時間制限に達する（6分）
+10:06:00.100 - スクリプトが強制終了
+10:06:00.200 - エラー: "Maximum execution time exceeded"
+10:06:00.300 - 3,000件だけ処理され、残り7,000件は未処理
+```
+
+**実際のコード:**
+
+```javascript
+// ❌ 問題のあるコード
+function processLargeDataset() {
+  const data = fetchLargeDataset(); // 10,000件のデータ
+  data.forEach(item => {
+    processItem(item); // 各アイテムの処理に1秒かかる
+    // 合計: 10,000秒 = 約2.8時間 → タイムアウト
+  });
+}
+```
+
+**障害の影響:**
+
+1. **中途半端な状態**: 3,000件だけ処理され、残り7,000件は未処理
+2. **データ不整合**: 処理済みと未処理のデータが混在
+3. **再実行の困難**: どこまで処理したか分からず、再実行が困難
+4. **重複処理のリスク**: 再実行時に、既に処理したデータを再度処理する可能性がある
+
+**解決策:**
+
+```javascript
+// ✅ 解決策: バッチ処理と実行時間チェック
+function processLargeDataset() {
+  const startTime = new Date().getTime();
+  const maxExecutionTime = 5 * 60 * 1000; // 5分（安全マージン）
+  
+  const properties = PropertiesService.getScriptProperties();
+  let offset = parseInt(properties.getProperty('offset') || '0');
+  
+  try {
+    while (true) {
+      // 実行時間をチェック
+      const elapsed = new Date().getTime() - startTime;
+      if (elapsed > maxExecutionTime) {
+        // 次回実行用に状態を保存
+        properties.setProperty('offset', offset.toString());
+        Logger.log(`Stopped at offset: ${offset} (elapsed: ${elapsed}ms)`);
+        break;
+      }
+      
+      // バッチでデータを取得
+      const batch = fetchDataBatch(offset, 100);
+      if (batch.length === 0) {
+        // 処理完了
+        properties.deleteProperty('offset');
+        Logger.log('Processing completed');
+        break;
+      }
+      
+      // バッチを処理
+      processBatch(batch);
+      offset += batch.length;
+    }
+    
+  } catch (error) {
+    Logger.log(`Error processing dataset: ${error.message}`);
+    // エラー時も状態を保存（次回再試行）
+    properties.setProperty('offset', offset.toString());
+    throw error;
+  }
+}
+```
+
+### シナリオ2: クォータ制限によるエラー
+
+#### 障害のシナリオ
+
+```
+時刻: 2024-01-01 10:00:00
+状況: 大量のメール送信中
+
+10:00:00.000 - メール送信開始（200通のメール）
+10:00:01.000 - 1通目送信成功
+10:00:02.000 - 2通目送信成功
+...
+10:00:50.000 - 100通目送信成功
+10:00:51.000 - 101通目送信失敗: "Daily email limit exceeded"
+10:00:52.000 - エラーが発生し、残り100通は送信されない
+10:00:53.000 - エラーログが残らない
+10:00:54.000 - 管理者がエラーに気づかない
+```
+
+**実際のコード:**
+
+```javascript
+// ❌ 問題のあるコード
+function sendBulkEmails(recipients) {
+  recipients.forEach(recipient => {
+    MailApp.sendEmail({
+      to: recipient.email,
+      subject: recipient.subject,
+      body: recipient.body,
+    });
+    // 問題: 100通を超えるとエラー
+    // 問題: エラーハンドリングがない
+  });
+}
+```
+
+**障害の影響:**
+
+1. **部分的な送信**: 100通だけ送信され、残り100通は送信されない
+2. **エラーの伝播**: エラーが発生すると、スクリプト全体が停止する
+3. **再実行の困難**: どのメールが送信されたか分からず、再実行が困難
+4. **重複送信のリスク**: 再実行時に、既に送信したメールを再度送信する可能性がある
+
+**解決策:**
+
+```javascript
+// ✅ 解決策: クォータチェックとキュー管理
+function sendBulkEmails(recipients) {
+  const dailyLimit = 100;
+  const properties = PropertiesService.getScriptProperties();
+  
+  // 今日の送信数を取得
+  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const sentTodayKey = `sent_count_${today}`;
+  const sentToday = parseInt(properties.getProperty(sentTodayKey) || '0');
+  
+  if (sentToday >= dailyLimit) {
+    Logger.log(`Daily email limit reached: ${sentToday}/${dailyLimit}`);
+    // 残りのメールをキューに保存
+    saveEmailQueue(recipients);
+    return;
+  }
+  
+  const remaining = dailyLimit - sentToday;
+  const toSend = recipients.slice(0, remaining);
+  const failed = [];
+  
+  toSend.forEach(recipient => {
+    try {
+      MailApp.sendEmail({
+        to: recipient.email,
+        subject: recipient.subject,
+        body: recipient.body,
+      });
+      
+      // 送信数をインクリメント
+      const newCount = sentToday + 1;
+      properties.setProperty(sentTodayKey, newCount.toString());
+      Logger.log(`Sent email to ${recipient.email} (${newCount}/${dailyLimit})`);
+      
+    } catch (error) {
+      Logger.log(`Failed to send email to ${recipient.email}: ${error.message}`);
+      failed.push(recipient);
+    }
+  });
+  
+  // 失敗したメールをキューに戻す
+  if (failed.length > 0) {
+    saveEmailQueue(failed);
+  }
+  
+  // 残りのメールをキューに保存
+  if (recipients.length > remaining) {
+    saveEmailQueue(recipients.slice(remaining));
+  }
+}
+```
+
+### シナリオ3: 外部API呼び出しのタイムアウト
+
+#### 障害のシナリオ
+
+```
+時刻: 2024-01-01 10:00:00
+状況: 外部API呼び出し中
+
+10:00:00.000 - スクリプト開始（実行時間: 0秒）
+10:00:01.000 - 外部API呼び出し開始
+10:00:30.000 - 外部APIが応答しない（30秒経過）
+10:01:00.000 - タイムアウト（60秒経過）
+10:01:00.100 - エラーが発生し、スクリプトが停止
+10:01:00.200 - エラーログが残らない
+10:01:00.300 - 管理者がエラーに気づかない
+```
+
+**実際のコード:**
+
+```javascript
+// ❌ 問題のあるコード
+function fetchData() {
+  const response = UrlFetchApp.fetch('https://api.example.com/data');
+  // 問題: タイムアウト設定がない（デフォルト60秒）
+  // 問題: エラーハンドリングがない
+  return JSON.parse(response.getContentText());
+}
+```
+
+**障害の影響:**
+
+1. **実行時間の浪費**: 60秒まで待機し、実行時間制限に近づく
+2. **エラーの伝播**: タイムアウトエラーが発生すると、スクリプト全体が停止する
+3. **データ取得の失敗**: データが取得できず、後続の処理が実行されない
+4. **再実行の困難**: エラーの原因が分からず、再実行が困難
+
+**解決策:**
+
+```javascript
+// ✅ 解決策: タイムアウト設定とリトライ、フォールバック
+function fetchDataWithRetry(url, options = {}) {
+  const maxRetries = 3;
+  const retryDelay = 1000; // 1秒
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      Logger.log(`Fetching ${url} (attempt ${attempt}/${maxRetries})`);
+      
+      const response = UrlFetchApp.fetch(url, {
+        muteHttpExceptions: true,
+        timeout: options.timeout || 30000, // 30秒でタイムアウト
+        ...options,
+      });
+      
+      if (response.getResponseCode() === 200) {
+        const data = JSON.parse(response.getContentText());
+        Logger.log(`Successfully fetched data (${data.length} items)`);
+        
+        // 成功時にキャッシュに保存
+        setCachedData(url, data);
+        return data;
+      }
+      
+      // リトライ可能なエラー（5xx）
+      if (response.getResponseCode() >= 500 && attempt < maxRetries) {
+        Logger.log(`Retry ${attempt}/${maxRetries} for ${url} (HTTP ${response.getResponseCode()})`);
+        Utilities.sleep(retryDelay * attempt); // 指数バックオフ
+        continue;
+      }
+      
+      throw new Error(`HTTP ${response.getResponseCode()}: ${response.getContentText()}`);
+      
+    } catch (error) {
+      if (attempt === maxRetries) {
+        Logger.log(`Failed to fetch ${url} after ${maxRetries} attempts: ${error.message}`);
+        // フォールバック: キャッシュから取得
+        return getCachedData(url);
+      }
+      
+      Logger.log(`Retry ${attempt}/${maxRetries} for ${url}: ${error.message}`);
+      Utilities.sleep(retryDelay * attempt);
+    }
+  }
+}
+```
+
+### まとめ
+
+GASアプリケーションで障害が発生した際は、実行時間制限、クォータ制限、外部API呼び出しのタイムアウトが主な原因です。
+
+**重要なポイント:**
+
+- **実行時間制限**: 5分で停止し、6分の制限を超えない
+- **クォータ制限**: 1日の制限をチェックし、キューに保存する
+- **エラーハンドリング**: try-catchでエラーを捕捉し、ログに記録する
+- **状態管理**: PropertiesServiceに状態を保存し、再実行可能にする
+- **リトライとフォールバック**: 外部API呼び出しにリトライとフォールバックを実装する
+
+これらの対策を実装することで、障害に強いGASアプリケーションを構築できます。
+

@@ -1,0 +1,263 @@
+---
+title: "BIシステムの実行モデルと前提"
+label: "BIシステムの実行モデルと前提"
+---
+
+## BIシステムの実行モデルと前提
+
+BI（Business Intelligence）システムの実行モデルと、実務で事故を防ぐための前提条件を詳しく解説します。
+
+### 実行モデルとリソースの物理的制約
+
+コンピュータ資源は有限であり、**性能ではなく制約を前提に設計する**ことが基本です。BIシステムは特に大量のデータを扱うため、これらの制約を理解することが重要です。
+
+#### 主な物理的制約
+
+**CPU・メモリよりも先に枯渇するリソース:**
+
+1. **データベース接続数**
+   - ETLプロセスが複数同時実行される場合、接続プールが枯渇する
+   - 接続リークは数時間後にシステム全体を停止させる
+
+2. **ディスクI/O**
+   - 大量のデータの読み書きにより、ディスクI/Oがボトルネックになる
+   - ストレージの容量と速度が制約になる
+
+3. **ネットワーク帯域**
+   - 外部データソースからのデータ取得時に、ネットワーク帯域が制約になる
+   - データ転送の遅延が処理時間に影響する
+
+4. **メモリ使用量**
+   - 大量のデータをメモリに読み込むと、メモリ不足が発生する
+   - ガベージコレクションの頻発により、パフォーマンスが低下する
+
+**実際の事故例:**
+
+```
+10:00:00 - ETLプロセス開始（データソース: 10個）
+10:00:01 - データベース接続プール: 10/10（すべて使用中）
+10:00:02 - 新しいETLプロセスが開始（接続取得待機）
+10:00:03 - 接続が解放されず、すべてのプロセスが待機状態
+10:30:00 - 接続が解放されず、すべてのプロセスがタイムアウト
+10:30:01 - エラーが大量発生
+10:30:02 - システム全体が応答不能
+```
+
+### BIシステムの実行モデル
+
+#### ETLパイプラインの特徴
+
+**実行モデル:**
+
+```
+データソース（複数）
+    ↓ Extract（抽出）
+一時ストレージ
+    ↓ Transform（変換）
+変換済みデータ
+    ↓ Load（読み込み）
+データウェアハウス
+    ↓
+BIツール（可視化）
+```
+
+**重要な特徴:**
+
+1. **バッチ処理**: 定期的に大量のデータを処理
+2. **非同期処理**: 複数のデータソースから並列にデータを取得
+3. **データ整合性**: データの整合性を保証する必要がある
+4. **障害復旧**: 処理が失敗した場合、再実行可能にする必要がある
+
+#### トランザクション境界
+
+**BIシステムのトランザクション管理:**
+
+```python
+# ❌ 悪い例: トランザクション境界がない
+def etl_process():
+    # 1. データを抽出
+    data = extract_data()
+    
+    # 2. データを変換
+    transformed_data = transform_data(data)
+    
+    # 3. データを読み込み
+    load_data(transformed_data)
+    # 問題: 途中でエラーが発生すると、一部だけ読み込まれる
+```
+
+```python
+# ✅ 良い例: トランザクション境界を明確に
+def etl_process():
+    try:
+        # 1. データを抽出
+        data = extract_data()
+        
+        # 2. データを変換
+        transformed_data = transform_data(data)
+        
+        # 3. トランザクション内でデータを読み込み
+        with transaction():
+            # 既存のデータを削除
+            delete_existing_data()
+            
+            # 新しいデータを読み込み
+            load_data(transformed_data)
+            # すべて成功するか、すべてロールバック
+        
+    except Exception as e:
+        logger.error(f"ETL process failed: {e}")
+        # エラー通知を送信
+        send_error_notification(e)
+        raise
+```
+
+**特徴:**
+
+- **明示的なトランザクション境界**: トランザクション内でデータを読み込み
+- **冪等性**: 再実行時に重複データが作成されない
+- **エラーハンドリング**: エラー時にロールバックし、再実行可能にする
+
+#### 非同期処理
+
+**BIシステムの非同期処理:**
+
+```python
+# ❌ 悪い例: 同期処理で順次実行
+def etl_process():
+    for source in data_sources:
+        data = extract_data(source)  # 各ソースを順次処理
+        transformed_data = transform_data(data)
+        load_data(transformed_data)
+    # 問題: 処理時間が長くなる
+```
+
+```python
+# ✅ 良い例: 非同期処理で並列実行
+import asyncio
+
+async def etl_process():
+    tasks = []
+    for source in data_sources:
+        task = process_source(source)
+        tasks.append(task)
+    
+    # すべてのソースを並列に処理
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # エラーをチェック
+    for result in results:
+        if isinstance(result, Exception):
+            logger.error(f"Source processing failed: {result}")
+            # エラー通知を送信
+            send_error_notification(result)
+
+async def process_source(source):
+    data = await extract_data_async(source)
+    transformed_data = transform_data(data)
+    await load_data_async(transformed_data)
+```
+
+**特徴:**
+
+- **並列処理**: 複数のデータソースを並列に処理
+- **エラーハンドリング**: 個別のエラーが全体に影響しない
+- **パフォーマンス**: 処理時間を大幅に短縮
+
+### 実行環境による特性
+
+| 環境 | 特徴 | 主なリスク |
+|------|------|------------|
+| **バッチ処理** | 定期的に大量のデータを処理 | 実行時間の長期化、メモリ不足、ディスクI/Oのボトルネック |
+| **ストリーム処理** | リアルタイムでデータを処理 | データの遅延、バックプレッシャー、データの欠損 |
+| **ハイブリッド** | バッチとストリームを組み合わせ | 複雑性の増加、データの整合性 |
+
+**BIシステム特有のリスク:**
+
+1. **データの整合性**: 複数のデータソースからデータを取得する際、整合性を保証する必要がある
+2. **処理時間の長期化**: 大量のデータを処理するため、処理時間が長くなる
+3. **リソースの枯渇**: メモリ、ディスク、ネットワークなどのリソースが枯渇する
+
+### リソース制約の実例
+
+#### データベース接続数の制約
+
+```python
+# ❌ 悪い例: 接続プールを考慮していない
+def etl_process():
+    for source in data_sources:
+        # 各ソースごとに新しい接続を作成
+        conn = create_connection()
+        data = extract_data(conn, source)
+        # 問題: 接続が閉じられない場合、接続プールが枯渇する
+```
+
+```python
+# ✅ 良い例: 接続プールを使用
+from contextlib import contextmanager
+
+@contextmanager
+def get_connection():
+    conn = connection_pool.get_connection()
+    try:
+        yield conn
+    finally:
+        connection_pool.return_connection(conn)
+
+def etl_process():
+    for source in data_sources:
+        with get_connection() as conn:
+            data = extract_data(conn, source)
+            transformed_data = transform_data(data)
+            load_data(transformed_data)
+        # 接続が確実に解放される
+```
+
+#### メモリ使用量の制約
+
+```python
+# ❌ 悪い例: すべてのデータをメモリに読み込む
+def etl_process():
+    # 10GBのデータを一度にメモリに読み込む
+    data = extract_all_data()  # メモリ不足
+    transformed_data = transform_data(data)
+    load_data(transformed_data)
+```
+
+```python
+# ✅ 良い例: バッチ処理でデータを分割
+def etl_process():
+    batch_size = 10000
+    offset = 0
+    
+    while True:
+        # バッチでデータを取得
+        batch = extract_data_batch(offset, batch_size)
+        if len(batch) == 0:
+            break
+        
+        # バッチを処理
+        transformed_batch = transform_data(batch)
+        load_data(transformed_batch)
+        
+        offset += batch_size
+        # メモリを解放
+        del batch
+        del transformed_batch
+```
+
+### まとめ
+
+BIシステムの実行モデルは、大量のデータを扱うため、リソース制約が重要です。
+
+**重要なポイント:**
+
+- **データベース接続数**: 接続プールを適切に管理する
+- **メモリ使用量**: バッチ処理でデータを分割する
+- **ディスクI/O**: ディスクI/Oを最適化する
+- **ネットワーク帯域**: データ転送を最適化する
+- **トランザクション境界**: データの整合性を保証する
+- **非同期処理**: 並列処理でパフォーマンスを向上させる
+
+これらの制約を理解し、適切に設計することで、堅牢で効率的なBIシステムを構築できます。
+
