@@ -1,0 +1,378 @@
+---
+title: "ファイル操作コマンド"
+label: "ファイル操作コマンド"
+---
+
+## ファイル操作コマンド
+
+Linuxでのファイル操作に使用する基本的なコマンドを詳しく解説します。
+
+### ls（リスト表示）
+
+#### 基本的な使い方
+
+```bash
+# 現在のディレクトリのファイル一覧
+ls
+
+# 詳細情報を表示（-l: ロングフォーマット）
+ls -l
+
+# すべてのファイルを表示（-a: 隠しファイルも含む）
+ls -a
+
+# 人間が読みやすい形式でサイズを表示（-h: human-readable）
+ls -lh
+
+# 更新日時でソート（-t: 時間順）
+ls -lt
+
+# サイズでソート（-S: サイズ順）
+ls -lS
+
+# 再帰的に表示（-R: 再帰的）
+ls -R
+```
+
+#### 実践例
+
+```bash
+# 最近更新されたファイルを確認
+ls -lt | head -10
+
+# 大きなファイルを確認
+ls -lhS | head -10
+
+# 特定の拡張子のファイルのみ表示
+ls *.txt
+ls *.{txt,md}
+```
+
+### cd（ディレクトリ移動）
+
+#### 基本的な使い方
+
+```bash
+# ホームディレクトリに移動
+cd ~
+# または
+cd
+
+# 親ディレクトリに移動
+cd ..
+
+# 前のディレクトリに戻る
+cd -
+
+# 絶対パスで移動
+cd /var/log
+
+# 相対パスで移動
+cd ../logs
+```
+
+#### 実践例
+
+```bash
+# よく使うディレクトリへのショートカット（エイリアス設定）
+alias ll='ls -lah'
+alias ..='cd ..'
+alias ...='cd ../..'
+
+# プロジェクトディレクトリに素早く移動
+cd ~/projects/my-project
+```
+
+### cp（コピー）
+
+#### 基本的な使い方
+
+```bash
+# ファイルをコピー
+cp source.txt dest.txt
+
+# ディレクトリを再帰的にコピー（-r: 再帰的）
+cp -r source_dir dest_dir
+
+# 詳細を表示しながらコピー（-v: verbose）
+cp -v source.txt dest.txt
+
+# 上書き前に確認（-i: interactive）
+cp -i source.txt dest.txt
+
+# タイムスタンプとパーミッションを保持（-p: preserve）
+cp -p source.txt dest.txt
+```
+
+#### 実践例
+
+```bash
+# バックアップを作成
+cp important.txt important.txt.bak
+
+# 複数のファイルをコピー
+cp file1.txt file2.txt file3.txt /backup/
+
+# ワイルドカードを使用
+cp *.txt /backup/
+```
+
+### mv（移動・リネーム）
+
+#### 基本的な使い方
+
+```bash
+# ファイルを移動
+mv source.txt /tmp/
+
+# ファイルをリネーム
+mv old_name.txt new_name.txt
+
+# ディレクトリを移動
+mv source_dir /tmp/
+
+# 複数のファイルを移動
+mv file1.txt file2.txt /tmp/
+```
+
+#### 実践例
+
+```bash
+# ファイル名を変更
+mv log.txt log_$(date +%Y%m%d).txt
+
+# バックアップディレクトリに移動
+mv *.log /backup/logs/
+```
+
+### rm（削除）
+
+#### 基本的な使い方
+
+```bash
+# ファイルを削除
+rm file.txt
+
+# 複数のファイルを削除
+rm file1.txt file2.txt file3.txt
+
+# ディレクトリを削除（-r: 再帰的）
+rm -r directory
+
+# 確認なしで削除（-f: force）
+rm -f file.txt
+
+# 確認しながら削除（-i: interactive）
+rm -i file.txt
+
+# ディレクトリを強制削除
+rm -rf directory
+```
+
+#### 注意事項
+
+```bash
+# 危険なコマンド（絶対に実行しない）
+rm -rf /  # システム全体を削除してしまう
+
+# 安全な削除方法
+rm -i *.txt  # 確認しながら削除
+```
+
+### cat（ファイル内容表示）
+
+#### 基本的な使い方
+
+```bash
+# ファイルの内容を表示
+cat file.txt
+
+# 複数のファイルを連結して表示
+cat file1.txt file2.txt
+
+# 行番号を表示（-n: number）
+cat -n file.txt
+
+# 空白行に番号を付けない（-b: number-nonblank）
+cat -b file.txt
+```
+
+#### 実践例
+
+```bash
+# ファイルの内容を確認
+cat /etc/hosts
+
+# ファイルの内容を別のファイルに書き込む
+cat file.txt > output.txt
+
+# 複数のファイルを結合
+cat file1.txt file2.txt > combined.txt
+```
+
+### less / more（ページャー）
+
+#### lessの使い方
+
+```bash
+# ファイルをページ単位で表示
+less file.txt
+
+# 操作方法:
+# - スペース: 次のページ
+# - b: 前のページ
+# - /検索語: 検索
+# - q: 終了
+```
+
+#### moreの使い方
+
+```bash
+# ファイルをページ単位で表示（lessより機能が少ない）
+more file.txt
+
+# 操作方法:
+# - スペース: 次のページ
+# - Enter: 次の行
+# - q: 終了
+```
+
+### head / tail（ファイルの先頭・末尾表示）
+
+#### headの使い方
+
+```bash
+# ファイルの最初の10行を表示
+head file.txt
+
+# 最初の20行を表示
+head -n 20 file.txt
+
+# 最初の100バイトを表示
+head -c 100 file.txt
+```
+
+#### tailの使い方
+
+```bash
+# ファイルの最後の10行を表示
+tail file.txt
+
+# 最後の20行を表示
+tail -n 20 file.txt
+
+# リアルタイムでログを監視（-f: follow）
+tail -f /var/log/app.log
+
+# 複数のファイルを監視
+tail -f /var/log/app.log /var/log/error.log
+```
+
+#### 実践例
+
+```bash
+# ログファイルの最新エラーを確認
+tail -n 100 /var/log/app.log | grep ERROR
+
+# ログファイルをリアルタイムで監視
+tail -f /var/log/nginx/access.log
+```
+
+### find（ファイル検索）
+
+#### 基本的な使い方
+
+```bash
+# ファイル名で検索
+find /home -name "*.txt"
+
+# タイプで検索（-type f: ファイル、-type d: ディレクトリ）
+find /home -type f -name "*.txt"
+
+# サイズで検索
+find /home -size +100M  # 100MB以上のファイル
+find /home -size -1M    # 1MB未満のファイル
+
+# 更新日時で検索
+find /home -mtime -7    # 7日以内に更新されたファイル
+find /home -mtime +30   # 30日以上前に更新されたファイル
+
+# パーミッションで検索
+find /home -perm 644    # パーミッションが644のファイル
+```
+
+#### 実践例
+
+```bash
+# 大きなファイルを検索
+find /home -type f -size +100M
+
+# 古いファイルを検索して削除（注意が必要）
+find /tmp -type f -mtime +7 -delete
+
+# 検索結果に対してコマンドを実行
+find /home -name "*.log" -exec rm {} \;
+
+# 検索結果をファイルに保存
+find /home -name "*.txt" > found_files.txt
+```
+
+### grep（テキスト検索）
+
+#### 基本的な使い方
+
+```bash
+# ファイル内で文字列を検索
+grep "search_term" file.txt
+
+# 大文字小文字を区別しない（-i: ignore-case）
+grep -i "search_term" file.txt
+
+# 行番号を表示（-n: line-number）
+grep -n "search_term" file.txt
+
+# 一致する行の前後を表示（-A: after、-B: before、-C: context）
+grep -A 5 "search_term" file.txt  # 一致行の後5行
+grep -B 5 "search_term" file.txt  # 一致行の前5行
+grep -C 5 "search_term" file.txt  # 一致行の前後5行
+
+# 一致しない行を表示（-v: invert-match）
+grep -v "search_term" file.txt
+
+# 正規表現を使用（-E: extended-regexp）
+grep -E "pattern1|pattern2" file.txt
+```
+
+#### 実践例
+
+```bash
+# ログファイルからエラーを検索
+grep -i error /var/log/app.log
+
+# 複数のファイルから検索
+grep "search_term" *.txt
+
+# 再帰的に検索（-r: recursive）
+grep -r "search_term" /home/user/
+
+# エラーログを確認
+grep -E "ERROR|FATAL" /var/log/app.log | tail -20
+```
+
+### まとめ
+
+ファイル操作コマンドのポイント：
+
+- **ls**: ファイル一覧の表示、詳細情報、ソート
+- **cd**: ディレクトリ移動、ショートカット
+- **cp**: ファイル・ディレクトリのコピー、バックアップ
+- **mv**: ファイルの移動・リネーム
+- **rm**: ファイル・ディレクトリの削除（注意が必要）
+- **cat**: ファイル内容の表示
+- **less/more**: ページ単位での表示
+- **head/tail**: ファイルの先頭・末尾表示、ログ監視
+- **find**: ファイル検索、条件指定
+- **grep**: テキスト検索、ログ分析
+
+適切にファイル操作コマンドを使用することで、効率的にファイル管理ができます。
+

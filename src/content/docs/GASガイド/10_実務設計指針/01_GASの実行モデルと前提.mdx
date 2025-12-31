@@ -1,0 +1,277 @@
+---
+title: "GASの実行モデルと前提"
+label: "GASの実行モデルと前提"
+---
+
+## GASの実行モデルと前提
+
+Google Apps Script（GAS）の実行モデルと、実務で事故を防ぐための前提条件を詳しく解説します。
+
+### 実行モデルとリソースの物理的制約
+
+コンピュータ資源は有限であり、**性能ではなく制約を前提に設計する**ことが基本です。GASは特に厳しい制限があるため、これらの制約を理解することが重要です。
+
+#### 主な物理的制約
+
+**CPU・メモリよりも先に枯渇するリソース:**
+
+1. **実行時間制限**
+   - 通常のスクリプト: **6分**（無料プラン）
+   - G Suite Business/Enterprise: **30分**（有料プラン）
+   - 実行時間を超えると強制終了される
+
+2. **クォータ制限**
+   - **1日の実行時間**: 6時間（無料プラン）
+   - **同時実行数**: 30（無料プラン）
+   - **URLフェッチ**: 20,000回/日
+   - **メール送信**: 100通/日（無料プラン）
+
+3. **メモリ制限**
+   - 実行中のメモリ使用量に制限がある
+   - 大量のデータを一度に処理するとメモリ不足になる
+
+4. **外部API呼び出しの制限**
+   - URLフェッチのタイムアウト: 60秒
+   - 同時接続数の制限
+
+**実際の事故例:**
+
+```
+10:00:00 - スクリプト開始（実行時間: 0秒）
+10:00:01 - データ取得開始（10,000件のデータ）
+10:05:30 - データ処理中（実行時間: 5分30秒）
+10:06:00 - 実行時間制限に達する（6分）
+10:06:01 - スクリプトが強制終了
+10:06:02 - エラー: "Maximum execution time exceeded"
+10:06:03 - 処理が中途半端な状態で終了
+```
+
+### GASの実行モデル
+
+#### Serverless環境の特徴
+
+**実行モデル:**
+
+```
+リクエスト/トリガー
+    ↓
+GAS実行環境（Google Cloud Platform）
+    ├─ コールドスタート（初回実行時: 数秒）
+    ├─ スクリプト実行（最大6分または30分）
+    └─ 実行終了（ステートレス）
+```
+
+**重要な特徴:**
+
+1. **Serverless**: サーバーの管理が不要
+2. **コールドスタート**: 初回実行時に起動時間がかかる（数秒）
+3. **自動スケーリング**: リクエスト数に応じて自動的にスケール
+4. **ステートレス**: 実行間で状態を保持しない（PropertiesServiceを使用）
+5. **実行時間制限**: 6分または30分で強制終了
+
+#### トランザクション境界
+
+**GASのトランザクション管理:**
+
+```javascript
+// ❌ 悪い例: トランザクションがない
+function updateSpreadsheet() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  
+  // 問題: 途中でエラーが発生すると、一部だけ更新される
+  sheet.getRange('A1').setValue('Value 1');
+  sheet.getRange('A2').setValue('Value 2');
+  sheet.getRange('A3').setValue('Value 3'); // ここでエラー
+  // A1とA2だけ更新され、A3は更新されない
+}
+```
+
+```javascript
+// ✅ 良い例: トランザクションを使用
+function updateSpreadsheet() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  
+  // すべての更新を一度に実行（アトミック）
+  const values = [
+    ['Value 1'],
+    ['Value 2'],
+    ['Value 3'],
+  ];
+  
+  sheet.getRange('A1:A3').setValues(values);
+  // すべて成功するか、すべて失敗する
+}
+```
+
+**特徴:**
+
+- **明示的なトランザクション境界**: スプレッドシートの更新は範囲単位でアトミック
+- **自動ロールバック**: エラー時に自動的にロールバック（範囲単位）
+- **外部API呼び出し**: トランザクション外で実行（失敗時復旧不可）
+
+#### 非同期処理
+
+**GASの非同期処理:**
+
+```javascript
+// ❌ 悪い例: 非同期処理がない（ブロッキング）
+function fetchData() {
+  const response = UrlFetchApp.fetch('https://api.example.com/data');
+  const data = JSON.parse(response.getContentText());
+  return data; // 60秒のタイムアウトまで待機
+}
+```
+
+```javascript
+// ✅ 良い例: タイムアウトとエラーハンドリング
+function fetchData() {
+  try {
+    const response = UrlFetchApp.fetch('https://api.example.com/data', {
+      muteHttpExceptions: true,
+      timeout: 30000, // 30秒でタイムアウト
+    });
+    
+    if (response.getResponseCode() !== 200) {
+      throw new Error(`HTTP ${response.getResponseCode()}`);
+    }
+    
+    return JSON.parse(response.getContentText());
+  } catch (error) {
+    Logger.log(`Error fetching data: ${error.message}`);
+    // フォールバック処理
+    return getCachedData();
+  }
+}
+```
+
+**特徴:**
+
+- **非ブロッキングI/O**: `UrlFetchApp.fetch`は非同期だが、待機する
+- **タイムアウト**: 60秒のタイムアウト（設定可能）
+- **エラーハンドリング**: 適切なエラーハンドリングが必要
+
+### 実行環境による特性
+
+| 環境 | 特徴 | 主なリスク |
+|------|------|------------|
+| **GAS（Serverless）** | 短寿命・自動スケール・実行時間制限 | コールドスタート、実行時間制限、クォータ制限 |
+| **常駐プロセス** | 長寿命・安定動作 | メモリリーク、プール断片化、デッドロック |
+
+**GAS特有のリスク:**
+
+1. **実行時間制限**: 6分または30分で強制終了
+2. **クォータ制限**: 1日の実行時間、同時実行数など
+3. **コールドスタート**: 初回実行時に起動時間がかかる
+4. **ステートレス**: 実行間で状態を保持しない
+
+### リソース制約の実例
+
+#### 実行時間制限の影響
+
+```javascript
+// ❌ 悪い例: 実行時間制限を考慮していない
+function processLargeDataset() {
+  const data = fetchLargeDataset(); // 10,000件のデータ
+  data.forEach(item => {
+    processItem(item); // 各アイテムの処理に1秒かかる
+    // 合計: 10,000秒 = 約2.8時間 → タイムアウト
+  });
+}
+```
+
+```javascript
+// ✅ 良い例: バッチ処理と実行時間チェック
+function processLargeDataset() {
+  const startTime = new Date().getTime();
+  const maxExecutionTime = 5 * 60 * 1000; // 5分（安全マージン）
+  
+  let offset = PropertiesService.getScriptProperties().getProperty('offset') || 0;
+  offset = parseInt(offset);
+  
+  while (true) {
+    // 実行時間をチェック
+    const elapsed = new Date().getTime() - startTime;
+    if (elapsed > maxExecutionTime) {
+      // 次回実行用に状態を保存
+      PropertiesService.getScriptProperties().setProperty('offset', offset);
+      Logger.log(`Stopped at offset: ${offset}`);
+      break;
+    }
+    
+    // バッチでデータを取得
+    const batch = fetchDataBatch(offset, 100);
+    if (batch.length === 0) {
+      // 処理完了
+      PropertiesService.getScriptProperties().deleteProperty('offset');
+      break;
+    }
+    
+    // バッチを処理
+    processBatch(batch);
+    offset += batch.length;
+  }
+}
+```
+
+#### クォータ制限の影響
+
+```javascript
+// ❌ 悪い例: クォータを考慮していない
+function sendBulkEmails(recipients) {
+  recipients.forEach(recipient => {
+    MailApp.sendEmail({
+      to: recipient.email,
+      subject: recipient.subject,
+      body: recipient.body,
+    });
+    // 問題: 100通を超えるとエラー
+  });
+}
+```
+
+```javascript
+// ✅ 良い例: クォータを考慮した実装
+function sendBulkEmails(recipients) {
+  const dailyLimit = 100;
+  const sentToday = getSentCountToday();
+  
+  if (sentToday >= dailyLimit) {
+    Logger.log(`Daily email limit reached: ${sentToday}/${dailyLimit}`);
+    // 次回実行用にキューに保存
+    saveEmailQueue(recipients);
+    return;
+  }
+  
+  const remaining = dailyLimit - sentToday;
+  const toSend = recipients.slice(0, remaining);
+  
+  toSend.forEach(recipient => {
+    try {
+      MailApp.sendEmail({
+        to: recipient.email,
+        subject: recipient.subject,
+        body: recipient.body,
+      });
+      incrementSentCount();
+    } catch (error) {
+      Logger.log(`Failed to send email to ${recipient.email}: ${error.message}`);
+      // 失敗したメールをキューに戻す
+      saveEmailQueue([recipient]);
+    }
+  });
+}
+```
+
+### まとめ
+
+GASの実行モデルは、Serverless環境特有の制約があります。
+
+**重要なポイント:**
+
+- **実行時間制限**: 6分（無料プラン）または30分（有料プラン）
+- **クォータ制限**: 1日の実行時間、同時実行数、URLフェッチ回数など
+- **ステートレス**: 実行間で状態を保持しない（PropertiesServiceを使用）
+- **コールドスタート**: 初回実行時に起動時間がかかる
+
+これらの制約を理解し、適切に設計することで、堅牢で効率的なGASアプリケーションを構築できます。
+

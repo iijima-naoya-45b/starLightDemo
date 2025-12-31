@@ -1,0 +1,258 @@
+---
+title: "コンテナ実行環境の比較"
+label: "コンテナ実行環境の比較"
+---
+
+## コンテナ実行環境の比較
+
+Cloud Run、ECS、Fargate、Kubernetesの比較評価を行います。
+
+### 結論
+
+**Cloud Runは、シンプルなデプロイと自動スケーリングが必要な場合に適しています。ECSは、AWS環境でより細かい制御が必要な場合に適しています。Fargateは、インフラ管理を最小限にしたい場合に適しています。Kubernetesは、大規模で複雑なワークロードに適しています。**
+
+### 判断フローチャート
+
+```
+1. AWS環境を使用しているか？
+   → YES: ECS/Fargateを検討
+   → NO: 次のステップへ
+
+2. GCP環境を使用しているか？
+   → YES: Cloud Runを検討
+   → NO: 次のステップへ
+
+3. インフラ管理を最小限にしたいか？
+   → YES: Cloud Run / Fargateを検討
+   → NO: 次のステップへ
+
+4. 細かい制御が必要か？
+   → YES: ECS / Kubernetesを検討
+   → NO: Cloud Run / Fargateを検討
+
+5. 大規模で複雑なワークロードか？
+   → YES: Kubernetesを検討
+   → NO: Cloud Run / ECS / Fargateを検討
+```
+
+### Cloud Run
+
+#### 特徴
+
+**メリット:**
+
+- サーバーレス: インフラ管理が不要
+- 自動スケーリング: 0から自動的にスケール
+- シンプル: 設定が簡単
+- コスト効率: 使用した分だけ課金
+
+**デメリット:**
+
+- 制約: 実行時間の制限（最大60分）
+- カスタマイズ性: 制限がある
+- GCP依存: GCP環境でのみ利用可能
+
+#### 適用基準
+
+**Cloud Runを選ぶべき場合:**
+
+- GCP環境を使用している
+- シンプルなデプロイが必要
+- 自動スケーリングが必要
+- インフラ管理を最小限にしたい
+
+**実践例:**
+
+```yaml
+# cloud-run.yaml
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: my-service
+spec:
+  template:
+    spec:
+      containers:
+      - image: gcr.io/my-project/my-service
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            cpu: "1"
+            memory: "512Mi"
+```
+
+### ECS（Elastic Container Service）
+
+#### 特徴
+
+**メリット:**
+
+- AWS統合: AWSサービスと統合しやすい
+- 柔軟性: 細かい制御が可能
+- スケーラビリティ: 高いスケーラビリティ
+- コスト: 使用した分だけ課金
+
+**デメリット:**
+
+- 複雑性: 設定が複雑
+- インフラ管理: EC2インスタンスの管理が必要（EC2起動タイプの場合）
+- AWS依存: AWS環境でのみ利用可能
+
+#### 適用基準
+
+**ECSを選ぶべき場合:**
+
+- AWS環境を使用している
+- 細かい制御が必要
+- AWSサービスと統合したい
+- 複雑なワークロードがある
+
+**実践例:**
+
+```json
+{
+  "family": "my-service",
+  "containerDefinitions": [
+    {
+      "name": "my-service",
+      "image": "my-registry/my-service:latest",
+      "cpu": 256,
+      "memory": 512,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ]
+    }
+  ],
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc"
+}
+```
+
+### Fargate
+
+#### 特徴
+
+**メリット:**
+
+- サーバーレス: インフラ管理が不要
+- 自動スケーリング: 自動的にスケール
+- シンプル: 設定が簡単
+- セキュリティ: より高いセキュリティ
+
+**デメリット:**
+
+- コスト: 比較的高い
+- 制約: 一部の制約がある
+- AWS依存: AWS環境でのみ利用可能
+
+#### 適用基準
+
+**Fargateを選ぶべき場合:**
+
+- AWS環境を使用している
+- インフラ管理を最小限にしたい
+- サーバーレスが必要
+- セキュリティが重要
+
+**実践例:**
+
+```json
+{
+  "family": "my-service",
+  "containerDefinitions": [
+    {
+      "name": "my-service",
+      "image": "my-registry/my-service:latest",
+      "cpu": 256,
+      "memory": 512
+    }
+  ],
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc"
+}
+```
+
+### Kubernetes
+
+#### 特徴
+
+**メリット:**
+
+- 柔軟性: 非常に高い柔軟性
+- スケーラビリティ: 高いスケーラビリティ
+- エコシステム: 豊富なエコシステム
+- ポータビリティ: クラウド非依存
+
+**デメリット:**
+
+- 複雑性: 非常に複雑
+- 運用コスト: 高い運用コスト
+- 学習コスト: 高い学習コスト
+
+#### 適用基準
+
+**Kubernetesを選ぶべき場合:**
+
+- 大規模で複雑なワークロード
+- マルチクラウドが必要
+- 高い柔軟性が必要
+- 運用チームが充実している
+
+**実践例:**
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-service
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-service
+  template:
+    metadata:
+      labels:
+        app: my-service
+    spec:
+      containers:
+      - name: my-service
+        image: my-registry/my-service:latest
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+```
+
+### 比較表
+
+| 項目 | Cloud Run | ECS | Fargate | Kubernetes |
+|------|-----------|-----|---------|-------------|
+| インフラ管理 | 不要 | 必要（EC2起動タイプ） | 不要 | 必要 |
+| 複雑性 | 低 | 中 | 低 | 高 |
+| スケーラビリティ | 高 | 高 | 高 | 非常に高 |
+| コスト | 低 | 中 | 中〜高 | 高 |
+| 柔軟性 | 中 | 高 | 中 | 非常に高 |
+| クラウド依存 | GCP | AWS | AWS | 非依存 |
+| 学習コスト | 低 | 中 | 低 | 高 |
+
+### まとめ
+
+コンテナ実行環境の比較のポイント：
+
+- **Cloud Run**: GCP環境、シンプル、自動スケーリング
+- **ECS**: AWS環境、細かい制御、高い柔軟性
+- **Fargate**: AWS環境、サーバーレス、インフラ管理不要
+- **Kubernetes**: 大規模、複雑、高い柔軟性
+
+適切なコンテナ実行環境の選択により、効率的でスケーラブルなシステムを構築できます。
+

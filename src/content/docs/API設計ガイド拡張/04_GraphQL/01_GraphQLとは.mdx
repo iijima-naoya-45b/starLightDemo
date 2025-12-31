@@ -1,0 +1,290 @@
+---
+title: "GraphQLとは"
+label: "GraphQLとは"
+---
+
+## GraphQLとは
+
+GraphQLは、Facebookが開発したクエリ言語とランタイムです。クライアントが必要なデータを正確に指定でき、効率的なデータ取得が可能です。
+
+### なぜGraphQLが必要なのか
+
+#### RESTful APIの課題
+
+**問題のある実装:**
+
+```http
+# ユーザー情報を取得
+GET /api/users/1
+
+# ユーザーの注文を取得
+GET /api/users/1/orders
+
+# ユーザーのレビューを取得
+GET /api/users/1/reviews
+
+# 問題点:
+# - 複数のリクエストが必要
+# - 不要なデータも取得される（オーバーフェッチング）
+# - 必要なデータが取得できない（アンダーフェッチング）
+```
+
+**影響:**
+- ネットワークリクエストの増加
+- データ転送量の増加
+- パフォーマンスの低下
+
+#### GraphQLによる解決
+
+**改善された実装:**
+
+```graphql
+# 1回のリクエストで必要なデータを取得
+query {
+  user(id: 1) {
+    id
+    name
+    email
+    orders {
+      id
+      amount
+      products {
+        name
+        price
+      }
+    }
+    reviews {
+      rating
+      comment
+    }
+  }
+}
+```
+
+**メリット:**
+- 1回のリクエストで必要なデータを取得
+- オーバーフェッチングの削減
+- アンダーフェッチングの解消
+- 柔軟なデータ取得
+
+### GraphQLの基本概念
+
+#### 1. クエリ（Query）
+
+**定義:**
+データの取得に使用します。
+
+```graphql
+query {
+  users {
+    id
+    name
+    email
+  }
+}
+```
+
+#### 2. ミューテーション（Mutation）
+
+**定義:**
+データの変更に使用します。
+
+```graphql
+mutation {
+  createUser(input: {
+    name: "Alice"
+    email: "alice@example.com"
+  }) {
+    id
+    name
+    email
+  }
+}
+```
+
+#### 3. サブスクリプション（Subscription）
+
+**定義:**
+リアルタイムデータの取得に使用します。
+
+```graphql
+subscription {
+  userCreated {
+    id
+    name
+    email
+  }
+}
+```
+
+### GraphQLの実装例
+
+#### Apollo Server（Node.js）
+
+**スキーマ定義:**
+
+```typescript
+import { ApolloServer, gql } from 'apollo-server';
+
+const typeDefs = gql`
+  type User {
+    id: ID!
+    name: String!
+    email: String!
+    orders: [Order!]!
+  }
+  
+  type Order {
+    id: ID!
+    amount: Float!
+    user: User!
+    products: [Product!]!
+  }
+  
+  type Product {
+    id: ID!
+    name: String!
+    price: Float!
+  }
+  
+  type Query {
+    users: [User!]!
+    user(id: ID!): User
+  }
+  
+  type Mutation {
+    createUser(input: CreateUserInput!): User!
+  }
+  
+  input CreateUserInput {
+    name: String!
+    email: String!
+  }
+`;
+
+const resolvers = {
+  Query: {
+    users: () => getUsers(),
+    user: (_: any, { id }: { id: string }) => getUserById(id),
+  },
+  Mutation: {
+    createUser: (_: any, { input }: { input: any }) => createUser(input),
+  },
+  User: {
+    orders: (user: any) => getOrdersByUserId(user.id),
+  },
+};
+
+const server = new ApolloServer({
+  typeDefs,
+  resolvers,
+});
+
+server.listen().then(({ url }) => {
+  console.log(`Server ready at ${url}`);
+});
+```
+
+**クライアント実装:**
+
+```typescript
+import { ApolloClient, InMemoryCache, gql } from '@apollo/client';
+
+const client = new ApolloClient({
+  uri: 'http://localhost:4000/graphql',
+  cache: new InMemoryCache(),
+});
+
+// クエリの実行
+const GET_USERS = gql`
+  query GetUsers {
+    users {
+      id
+      name
+      email
+      orders {
+        id
+        amount
+      }
+    }
+  }
+`;
+
+const { data } = await client.query({ query: GET_USERS });
+console.log(data.users);
+```
+
+### GraphQLのベストプラクティス
+
+#### 1. N+1問題の回避
+
+**問題のある実装:**
+
+```typescript
+const resolvers = {
+  User: {
+    orders: async (user: any) => {
+      // 各ユーザーごとにクエリが実行される（N+1問題）
+      return await getOrdersByUserId(user.id);
+    },
+  },
+};
+```
+
+**改善された実装:**
+
+```typescript
+import DataLoader from 'dataloader';
+
+// DataLoaderを使用してバッチ読み込み
+const orderLoader = new DataLoader(async (userIds: string[]) => {
+  const orders = await getOrdersByUserIds(userIds);
+  return userIds.map(id => orders.filter(o => o.userId === id));
+});
+
+const resolvers = {
+  User: {
+    orders: async (user: any) => {
+      return await orderLoader.load(user.id);
+    },
+  },
+};
+```
+
+#### 2. クエリの複雑さの制限
+
+```typescript
+import { createComplexityLimitRule } from 'graphql-query-complexity';
+
+const server = new ApolloServer({
+  typeDefs,
+  resolvers,
+  validationRules: [
+    createComplexityLimitRule(1000), // クエリの複雑さを制限
+  ],
+});
+```
+
+### GraphQL vs RESTful API
+
+#### 比較表
+
+| 項目 | GraphQL | RESTful API |
+|------|---------|-------------|
+| データ取得 | 柔軟（必要なデータのみ） | 固定（エンドポイントごと） |
+| リクエスト数 | 1回 | 複数回（必要な場合） |
+| オーバーフェッチング | なし | あり |
+| 学習コスト | 高い | 低い |
+| キャッシング | 複雑 | 簡単 |
+
+### まとめ
+
+GraphQLのポイント：
+
+- **柔軟なデータ取得**: 必要なデータのみを取得
+- **1回のリクエスト**: 複数のリソースを1回で取得
+- **型安全**: スキーマにより型が保証される
+- **リアルタイム**: サブスクリプションでリアルタイム更新
+
+適切にGraphQLを使用することで、効率的なデータ取得ができます。
+

@@ -1,0 +1,161 @@
+---
+title: "Django特有の落とし穴"
+label: "Django特有の落とし穴"
+---
+
+## Django特有の落とし穴
+
+Django特有の落とし穴と、他言語との違いを詳しく解説します。
+
+### 1. トランザクション境界は明示的か？
+
+#### Djangoのトランザクション管理
+
+**特徴:**
+
+```python
+# Django: 宣言的トランザクション管理
+from django.db import transaction
+
+@transaction.atomic
+def create_order(order_data):
+    # トランザクション内の処理
+    order = Order.objects.create(**order_data)
+    return order
+```
+
+**他言語との比較:**
+
+```java
+// Java: 宣言的トランザクション管理
+@Transactional
+public Order createOrder(OrderData orderData) {
+    Order order = orderRepository.save(new Order(orderData));
+    return order;
+}
+```
+
+**落とし穴:**
+
+- **トランザクションの見落とし**: デコレータを忘れると、データの整合性が保たれない
+- **ネストしたトランザクション**: ネストしたトランザクションの動作を理解する必要がある
+
+### 2. 非同期は信頼できるか？
+
+#### Djangoの非同期処理
+
+**特徴:**
+
+```python
+# Django: Celeryによる非同期処理
+from celery import Celery
+
+celery_app = Celery('tasks', broker='redis://localhost:6379')
+
+@celery_app.task
+def process_order(order_id):
+    # 非同期処理
+    order = Order.objects.get(id=order_id)
+    payment_service.charge_payment(order.id, order.amount)
+```
+
+**他言語との比較:**
+
+```typescript
+// Node.js: Promise/async-await
+async function processOrder(orderId: number) {
+  await paymentService.chargePayment(orderId);
+}
+```
+
+**落とし穴:**
+
+- **Celeryの設定**: Celeryの設定が適切でないと、非同期処理が動作しない
+- **エラーハンドリング**: Celeryのエラーハンドリングを適切に実装する必要がある
+
+### 3. 再実行される前提か？
+
+#### Djangoの再実行
+
+**特徴:**
+
+```python
+# Django: Celeryのリトライ機能を使用
+from celery import Celery
+from celery.exceptions import Retry
+
+celery_app = Celery('tasks', broker='redis://localhost:6379')
+
+@celery_app.task(bind=True, max_retries=3)
+def process_order(self, order_id):
+    try:
+        order = Order.objects.get(id=order_id)
+        payment_service.charge_payment(order.id, order.amount)
+    except Exception as exc:
+        raise self.retry(exc=exc, countdown=60)
+```
+
+**他言語との比較:**
+
+```java
+// Java: @Retryableアノテーションで自動リトライ
+@Retryable(maxAttempts = 3)
+public PaymentResult chargePayment(Long orderId) {
+    return paymentApiClient.chargePayment(orderId);
+}
+```
+
+**落とし穴:**
+
+- **リトライの設定**: リトライの設定が適切でないと、再実行が動作しない
+- **冪等性の確保**: 再実行時に冪等性を確保する必要がある
+
+### 4. after_commit的な逃げ道があるか？
+
+#### Djangoのトランザクションコミット後処理
+
+**特徴:**
+
+```python
+# Django: transaction.on_commitを使用
+from django.db import transaction
+
+@transaction.atomic
+def create_order(order_data):
+    order = Order.objects.create(**order_data)
+    
+    # トランザクションコミット後に外部APIを呼ぶ
+    transaction.on_commit(lambda: payment_service.charge_payment(order.id, order_data['amount']))
+    
+    return order
+```
+
+**他言語との比較:**
+
+```ruby
+# Ruby (Rails): after_commitコールバック
+class Order < ApplicationRecord
+  after_commit :call_external_api
+  
+  def call_external_api
+    ExternalApi.call(self.id)
+  end
+end
+```
+
+**落とし穴:**
+
+- **transaction.on_commitの失敗**: `transaction.on_commit`内でエラーが発生しても、トランザクションは既にコミットされている
+- **再実行の困難**: `transaction.on_commit`内の処理が失敗した場合、再実行が困難
+
+### まとめ
+
+Django特有の落とし穴のポイント：
+
+- **トランザクション境界**: 宣言的トランザクション管理、見落としに注意
+- **非同期処理**: Celeryによる制御、設定が必要
+- **再実行**: Celeryのリトライ機能を使用、冪等性の確保が必要
+- **after_commit的な逃げ道**: `transaction.on_commit`により、トランザクションコミット後に処理を実行可能
+
+これらの落とし穴を理解することで、より安全なDjangoアプリケーションを構築できます。
+

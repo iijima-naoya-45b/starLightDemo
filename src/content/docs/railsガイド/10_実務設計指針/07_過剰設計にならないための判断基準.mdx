@@ -1,0 +1,77 @@
+---
+title: "過剰設計にならないための判断基準"
+label: "過剰設計にならないための判断基準"
+---
+
+## 過剰設計にならないための判断基準
+
+過剰設計を避け、適切な設計を行うための判断基準を詳しく解説します。
+
+### 判断基準1: after_commit vs Active Job
+
+#### after_commitで十分なケース
+
+**条件:**
+
+- 処理時間が短い（1秒以内）
+- エラーが発生する可能性が低い
+- 再実行が不要
+
+**実装:**
+
+```ruby
+# ✅ after_commitで十分
+class Order < ApplicationRecord
+  after_commit :send_notification_email, on: :create
+  
+  def send_notification_email
+    UserMailer.order_confirmation(self).deliver_now
+  end
+end
+```
+
+**判断基準:**
+
+- **after_commitで十分**: 処理時間が短い、エラーが発生する可能性が低い
+
+#### Active Jobが必要なケース
+
+**条件:**
+
+- 処理時間が長い（5秒以上）
+- エラーが発生する可能性が高い
+- 再実行が必要
+
+**実装:**
+
+```ruby
+# ✅ Active Jobが必要
+class Order < ApplicationRecord
+  after_commit :enqueue_payment_job, on: :create
+  
+  def enqueue_payment_job
+    PaymentJob.perform_later(id, amount)
+  end
+end
+
+class PaymentJob < ApplicationJob
+  retry_on StandardError, wait: :exponentially_longer, attempts: 3
+  
+  def perform(order_id, amount)
+    PaymentService.new.charge_payment(order_id, amount)
+  end
+end
+```
+
+**判断基準:**
+
+- **Active Jobが必要**: 処理時間が長い、エラーが発生する可能性が高い、再実行が必要
+
+### まとめ
+
+過剰設計にならないための判断基準のポイント：
+
+- **after_commit vs Active Job**: 処理時間とエラーの可能性に応じて判断
+
+適切な判断基準により、過剰設計を避け、効率的なシステムを構築できます。
+

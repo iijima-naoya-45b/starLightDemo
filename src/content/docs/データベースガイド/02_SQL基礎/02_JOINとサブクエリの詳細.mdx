@@ -1,0 +1,310 @@
+---
+title: "JOINとサブクエリの詳細"
+label: "JOINとサブクエリの詳細"
+---
+
+## JOINとサブクエリの詳細
+
+JOINとサブクエリは、複数のテーブルからデータを取得する際に重要な技術です。適切に使用することで、効率的なクエリを書けます。
+
+### JOINの種類と使い分け
+
+#### INNER JOIN（内部結合）
+
+**定義:**
+両方のテーブルに一致する行のみを取得します。
+
+```sql
+-- ユーザーと注文を結合（注文があるユーザーのみ）
+SELECT u.name, o.amount, o.created_at
+FROM users u
+INNER JOIN orders o ON u.id = o.user_id;
+```
+
+**使用例:**
+
+```sql
+-- 商品とカテゴリを結合
+SELECT p.name, c.category_name, p.price
+FROM products p
+INNER JOIN categories c ON p.category_id = c.id;
+```
+
+#### LEFT JOIN（左外部結合）
+
+**定義:**
+左側のテーブルのすべての行を取得し、右側のテーブルに一致する行があれば結合します。
+
+```sql
+-- すべてのユーザーを取得（注文がないユーザーも含む）
+SELECT u.name, o.amount
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id;
+```
+
+**NULLの扱い:**
+
+```sql
+-- 注文がないユーザーを特定
+SELECT u.name, o.amount
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id
+WHERE o.id IS NULL;  -- 注文がないユーザー
+```
+
+#### RIGHT JOIN（右外部結合）
+
+**定義:**
+右側のテーブルのすべての行を取得し、左側のテーブルに一致する行があれば結合します。
+
+```sql
+-- すべての注文を取得（ユーザーが存在しない注文も含む）
+SELECT u.name, o.amount
+FROM users u
+RIGHT JOIN orders o ON u.id = o.user_id;
+```
+
+#### FULL OUTER JOIN（完全外部結合）
+
+**定義:**
+両方のテーブルのすべての行を取得します。
+
+```sql
+-- PostgreSQLの場合
+SELECT u.name, o.amount
+FROM users u
+FULL OUTER JOIN orders o ON u.id = o.user_id;
+```
+
+**注意:** MySQLではFULL OUTER JOINをサポートしていません。UNIONを使用して実現します。
+
+```sql
+-- MySQLでの実装
+SELECT u.name, o.amount
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id
+UNION
+SELECT u.name, o.amount
+FROM users u
+RIGHT JOIN orders o ON u.id = o.user_id;
+```
+
+### 複数のJOIN
+
+#### 3つ以上のテーブルの結合
+
+```sql
+-- ユーザー、注文、商品を結合
+SELECT 
+  u.name AS user_name,
+  o.id AS order_id,
+  p.name AS product_name,
+  oi.quantity,
+  oi.price
+FROM users u
+INNER JOIN orders o ON u.id = o.user_id
+INNER JOIN order_items oi ON o.id = oi.order_id
+INNER JOIN products p ON oi.product_id = p.id;
+```
+
+#### 自己結合（Self JOIN）
+
+```sql
+-- 従業員とマネージャーの関係を取得
+SELECT 
+  e.name AS employee_name,
+  m.name AS manager_name
+FROM employees e
+LEFT JOIN employees m ON e.manager_id = m.id;
+```
+
+### サブクエリの種類
+
+#### スカラーサブクエリ
+
+**定義:**
+単一の値を返すサブクエリです。
+
+```sql
+-- 各ユーザーの注文数を取得
+SELECT 
+  id,
+  name,
+  (SELECT COUNT(*) FROM orders WHERE user_id = users.id) AS order_count
+FROM users;
+```
+
+#### 行サブクエリ
+
+**定義:**
+1行を返すサブクエリです。
+
+```sql
+-- 最新の注文情報を取得
+SELECT *
+FROM orders
+WHERE (user_id, created_at) = (
+  SELECT user_id, MAX(created_at)
+  FROM orders
+  GROUP BY user_id
+);
+```
+
+#### 列サブクエリ
+
+**定義:**
+1列を返すサブクエリです。
+
+```sql
+-- アクティブなユーザーの注文を取得
+SELECT *
+FROM orders
+WHERE user_id IN (
+  SELECT id FROM users WHERE status = 'active'
+);
+```
+
+#### テーブルサブクエリ
+
+**定義:**
+複数行・複数列を返すサブクエリです。
+
+```sql
+-- サブクエリの結果をテーブルとして使用
+SELECT u.name, o.order_count
+FROM users u
+INNER JOIN (
+  SELECT user_id, COUNT(*) AS order_count
+  FROM orders
+  GROUP BY user_id
+) o ON u.id = o.user_id;
+```
+
+### 相関サブクエリ
+
+#### 相関サブクエリの基本
+
+**定義:**
+外側のクエリの値を参照するサブクエリです。
+
+```sql
+-- 各ユーザーの平均以上の金額の注文を取得
+SELECT *
+FROM orders o1
+WHERE amount > (
+  SELECT AVG(amount)
+  FROM orders o2
+  WHERE o2.user_id = o1.user_id
+);
+```
+
+#### EXISTS句との組み合わせ
+
+```sql
+-- 注文があるユーザーのみを取得
+SELECT *
+FROM users u
+WHERE EXISTS (
+  SELECT 1
+  FROM orders o
+  WHERE o.user_id = u.id
+);
+```
+
+#### NOT EXISTS句との組み合わせ
+
+```sql
+-- 注文がないユーザーを取得
+SELECT *
+FROM users u
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM orders o
+  WHERE o.user_id = u.id
+);
+```
+
+### JOIN vs サブクエリ
+
+#### JOINを使うべき場合
+
+```sql
+-- 複数のテーブルからデータを取得する場合
+SELECT u.name, o.amount, p.name
+FROM users u
+INNER JOIN orders o ON u.id = o.user_id
+INNER JOIN products p ON o.product_id = p.id;
+```
+
+**メリット:**
+- パフォーマンスが良い（多くの場合）
+- 読みやすい
+- オプティマイザーが最適化しやすい
+
+#### サブクエリを使うべき場合
+
+```sql
+-- 集約結果を条件として使用する場合
+SELECT *
+FROM orders
+WHERE amount > (
+  SELECT AVG(amount) FROM orders
+);
+```
+
+**メリット:**
+- 複雑な条件を表現しやすい
+- 論理的に分離できる
+
+### パフォーマンスの考慮
+
+#### JOINの最適化
+
+```sql
+-- インデックスが使用されるようにする
+CREATE INDEX idx_user_id ON orders(user_id);
+
+-- JOINの順序を考慮
+-- 小さなテーブルを先にJOINする方が効率的な場合がある
+SELECT *
+FROM small_table s
+INNER JOIN large_table l ON s.id = l.small_id;
+```
+
+#### サブクエリの最適化
+
+```sql
+-- 相関サブクエリは非効率な場合がある
+-- JOINに書き換えることを検討
+-- 悪い例（相関サブクエリ）
+SELECT *
+FROM orders o1
+WHERE amount > (
+  SELECT AVG(amount)
+  FROM orders o2
+  WHERE o2.user_id = o1.user_id
+);
+
+-- 良い例（JOIN）
+SELECT o1.*
+FROM orders o1
+INNER JOIN (
+  SELECT user_id, AVG(amount) AS avg_amount
+  FROM orders
+  GROUP BY user_id
+) avg_orders ON o1.user_id = avg_orders.user_id
+WHERE o1.amount > avg_orders.avg_amount;
+```
+
+### まとめ
+
+JOINとサブクエリのポイント：
+
+- **JOINの種類**: INNER、LEFT、RIGHT、FULL OUTER
+- **サブクエリの種類**: スカラー、行、列、テーブル
+- **相関サブクエリ**: 外側のクエリを参照
+- **使い分け**: JOINはパフォーマンス重視、サブクエリは複雑な条件
+- **最適化**: インデックスの使用、JOINへの書き換えを検討
+
+適切にJOINとサブクエリを使用することで、効率的なクエリを書けます。
+

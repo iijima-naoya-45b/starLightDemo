@@ -1,0 +1,283 @@
+---
+title: "ブランチ戦略の詳細"
+label: "ブランチ戦略の詳細"
+---
+
+## ブランチ戦略の詳細
+
+各ブランチ戦略の詳細な実践方法とベストプラクティスを解説します。
+
+### Git Flowの詳細
+
+#### ブランチの役割
+
+**mainブランチ:**
+- 本番環境のコード
+- 常にデプロイ可能な状態
+- タグでバージョン管理
+
+**developブランチ:**
+- 開発環境のコード
+- 次のリリースに向けた統合ブランチ
+- featureブランチのマージ先
+
+**featureブランチ:**
+- 機能開発用
+- developブランチから分岐
+- developブランチにマージ
+
+**releaseブランチ:**
+- リリース準備用
+- developブランチから分岐
+- mainブランチとdevelopブランチにマージ
+
+**hotfixブランチ:**
+- 緊急修正用
+- mainブランチから分岐
+- mainブランチとdevelopブランチにマージ
+
+#### 実践的なワークフロー
+
+**機能開発の流れ:**
+
+```bash
+# 1. developブランチを最新化
+git checkout develop
+git pull origin develop
+
+# 2. featureブランチを作成
+git checkout -b feature/user-authentication develop
+
+# 3. 開発作業
+git add .
+git commit -m "ユーザー認証機能を実装"
+git push -u origin feature/user-authentication
+
+# 4. プルリクエストを作成（developブランチへのマージ）
+
+# 5. レビューと承認
+
+# 6. developブランチにマージ
+git checkout develop
+git merge --no-ff feature/user-authentication
+git push origin develop
+
+# 7. featureブランチを削除
+git branch -d feature/user-authentication
+git push origin --delete feature/user-authentication
+```
+
+**リリースの流れ:**
+
+```bash
+# 1. releaseブランチを作成
+git checkout -b release/v1.0.0 develop
+
+# 2. バージョン番号を更新
+# package.json、CHANGELOG.mdなどを更新
+git add .
+git commit -m "バージョン1.0.0の準備"
+git push -u origin release/v1.0.0
+
+# 3. バグ修正など
+git add .
+git commit -m "リリース前のバグ修正"
+git push origin release/v1.0.0
+
+# 4. mainブランチにマージ
+git checkout main
+git merge --no-ff release/v1.0.0
+git tag -a v1.0.0 -m "リリース v1.0.0"
+git push origin main --tags
+
+# 5. developブランチにもマージ
+git checkout develop
+git merge --no-ff release/v1.0.0
+git push origin develop
+
+# 6. releaseブランチを削除
+git branch -d release/v1.0.0
+git push origin --delete release/v1.0.0
+```
+
+**ホットフィックスの流れ:**
+
+```bash
+# 1. hotfixブランチを作成
+git checkout -b hotfix/security-patch main
+
+# 2. 緊急修正
+git add .
+git commit -m "セキュリティパッチを適用"
+git push -u origin hotfix/security-patch
+
+# 3. mainブランチにマージ
+git checkout main
+git merge --no-ff hotfix/security-patch
+git tag -a v1.0.1 -m "ホットフィックス v1.0.1"
+git push origin main --tags
+
+# 4. developブランチにもマージ
+git checkout develop
+git merge --no-ff hotfix/security-patch
+git push origin develop
+
+# 5. hotfixブランチを削除
+git branch -d hotfix/security-patch
+git push origin --delete hotfix/security-patch
+```
+
+### GitHub Flowの詳細
+
+#### 実践的なワークフロー
+
+**機能開発の流れ:**
+
+```bash
+# 1. mainブランチを最新化
+git checkout main
+git pull origin main
+
+# 2. featureブランチを作成
+git checkout -b feature/new-feature
+
+# 3. 開発作業
+git add .
+git commit -m "新機能を実装"
+git push -u origin feature/new-feature
+
+# 4. プルリクエストを作成（GitHubのWebインターフェース）
+# - タイトルと説明を記入
+# - レビュアーを指定
+# - ラベルを設定
+
+# 5. CI/CDの実行を確認
+
+# 6. レビューと承認
+
+# 7. mainブランチにマージ（GitHubのWebインターフェース）
+
+# 8. mainブランチを更新
+git checkout main
+git pull origin main
+
+# 9. featureブランチを削除
+git branch -d feature/new-feature
+git push origin --delete feature/new-feature
+```
+
+**プルリクエストのベストプラクティス:**
+
+```markdown
+## プルリクエストのテンプレート
+
+### 変更内容
+- ユーザー認証機能を実装
+- ログイン・ログアウト機能を追加
+
+### 関連Issue
+Closes #123
+
+### チェックリスト
+- [ ] コードレビューを依頼した
+- [ ] テストを追加した
+- [ ] ドキュメントを更新した
+- [ ] CIが成功している
+```
+
+### GitLab Flowの詳細
+
+#### 環境ごとのブランチ
+
+**ブランチ構成:**
+
+```
+production (本番環境)
+  └─ pre-production (ステージング環境)
+      └─ main (開発環境)
+          └─ feature/* (機能開発)
+```
+
+**実践的なワークフロー:**
+
+```bash
+# 1. featureブランチで開発
+git checkout -b feature/new-feature main
+# 開発作業...
+git push -u origin feature/new-feature
+
+# 2. mainブランチにマージ（プルリクエスト経由）
+
+# 3. pre-productionブランチにマージ（ステージング環境へのデプロイ）
+git checkout pre-production
+git merge main
+git push origin pre-production
+
+# 4. ステージング環境でテスト
+
+# 5. productionブランチにマージ（本番環境へのデプロイ）
+git checkout production
+git merge pre-production
+git push origin production
+```
+
+### Trunk-based Developmentの詳細
+
+#### 実践的なワークフロー
+
+**短命なブランチでの開発:**
+
+```bash
+# 1. featureブランチを作成
+git checkout -b feature/small-change main
+
+# 2. 迅速に開発（1-2日以内）
+git add .
+git commit -m "小さな変更"
+git push -u origin feature/small-change
+
+# 3. すぐにプルリクエストを作成
+
+# 4. レビューと承認
+
+# 5. mainブランチにマージ
+git checkout main
+git merge feature/small-change
+git push origin main
+
+# 6. featureブランチを削除
+git branch -d feature/small-change
+git push origin --delete feature/small-change
+```
+
+**大規模な機能開発:**
+
+```bash
+# 1. featureブランチを作成
+git checkout -b feature/large-feature main
+
+# 2. 小さなコミットを頻繁に作成
+git add .
+git commit -m "機能の一部を実装"
+git push origin feature/large-feature
+
+# 3. 定期的にmainブランチを取り込む
+git checkout main
+git pull origin main
+git checkout feature/large-feature
+git merge main  # または rebase main
+
+# 4. 完了したらプルリクエストを作成
+```
+
+### まとめ
+
+ブランチ戦略の詳細のポイント：
+
+- **Git Flow**: 複数のブランチタイプ、明確な役割分担
+- **GitHub Flow**: シンプルなワークフロー、プルリクエスト中心
+- **GitLab Flow**: 環境ごとのブランチ、デプロイの制御
+- **Trunk-based Development**: 短命なブランチ、迅速な開発
+
+適切にブランチ戦略を実践することで、効率的で安全な開発ができます。
+

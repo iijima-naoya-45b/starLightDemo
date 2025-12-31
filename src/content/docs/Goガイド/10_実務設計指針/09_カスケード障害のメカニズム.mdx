@@ -1,0 +1,222 @@
+---
+title: "カスケード障害のメカニズム"
+label: "カスケード障害のメカニズム"
+---
+
+## カスケード障害のメカニズム
+
+1つの遅延が全体を死滅させるメカニズムと、その対策を詳しく解説します。
+
+### カスケード障害の発生フロー
+
+#### 典型的なシナリオ
+
+```
+1. 外部APIが遅延（通常100ms → 5s）
+   ↓
+2. Goroutineが解放されず、Goroutineプールが飽和
+   ↓
+3. 全エンドポイントが応答不能に陥る
+   ↓
+4. 不完全なDBトランザクションを残して全プロセスダウン
+   
+→ 1つの遅延が全体を死滅させる
+```
+
+#### 実際のタイムライン
+
+```
+時刻: 2024-01-01 10:00:00
+状況: 外部決済APIが遅延
+
+10:00:00.000 - 外部決済APIが通常の100msから5秒に遅延開始
+10:00:00.100 - リクエスト1受信（Goroutine1を開始、外部API呼び出し開始）
+10:00:00.200 - リクエスト2受信（Goroutine2を開始、外部API呼び出し開始）
+10:00:00.300 - リクエスト3受信（Goroutine3を開始、外部API呼び出し開始）
+...
+10:00:01.000 - Goroutineプールが飽和（1000/1000 Goroutineが外部API待ち）
+10:00:01.100 - リクエスト1001受信（Goroutineプールが満杯、待機）
+10:00:01.200 - リクエスト1002受信（Goroutineプールが満杯、待機）
+...
+10:00:05.000 - 外部APIが応答（5秒経過）
+10:00:05.100 - Goroutine1が解放されるが、すぐに次のリクエストで使用される
+10:00:05.200 - Goroutine2が解放されるが、すぐに次のリクエストで使用される
+10:00:05.300 - 外部APIが再び遅延（負荷が高い）
+10:00:10.000 - すべてのGoroutineが再び外部API待ちで飽和
+10:00:10.100 - 新しいリクエストが処理できず、タイムアウトエラーが発生
+10:00:10.200 - エラーログが大量に出力され、ログシステムも負荷が高い
+10:00:15.000 - システム全体が応答不能に陥る
+```
+
+### 問題のあるコード
+
+```go
+// ❌ 問題のあるコード: タイムアウトなし、サーキットブレーカーなし
+func createOrder(w http.ResponseWriter, r *http.Request) {
+    var orderData OrderData
+    json.NewDecoder(r.Body).Decode(&orderData)
+    
+    // 問題: タイムアウトが設定されていない
+    // 問題: サーキットブレーカーがない
+    resp, err := http.Post(
+        "https://payment-api.example.com/charge",
+        "application/json",
+        bytes.NewBuffer(orderJSON),
+    )
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+    
+    json.NewEncoder(w).Encode(resp)
+}
+```
+
+**なぜ事故るか:**
+
+1. **タイムアウトなし**: 外部APIが遅延すると、Goroutineが長時間占有される
+2. **サーキットブレーカーなし**: 外部APIが障害状態でも呼び出し続ける
+3. **Goroutineプールの飽和**: すべてのGoroutineが外部API待ちで、他のリクエストが処理できない
+
+### 解決策
+
+#### 1. タイムアウトの設定
+
+```go
+// ✅ 良い例: タイムアウトを設定
+func createOrder(w http.ResponseWriter, r *http.Request) {
+    var orderData OrderData
+    json.NewDecoder(r.Body).Decode(&orderData)
+    
+    // HTTPクライアントにタイムアウトを設定
+    client := &http.Client{
+        Timeout: 3 * time.Second, // 3秒でタイムアウト
+    }
+    
+    resp, err := client.Post(
+        "https://payment-api.example.com/charge",
+        "application/json",
+        bytes.NewBuffer(orderJSON),
+    )
+    if err != nil {
+        if err, ok := err.(net.Error); ok && err.Timeout() {
+            http.Error(w, "Payment API timeout", http.StatusGatewayTimeout)
+            return
+        }
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+    
+    json.NewEncoder(w).Encode(resp)
+}
+```
+
+#### 2. サーキットブレーカーの実装
+
+```go
+// ✅ 良い例: go-circuitbreakerを使用したサーキットブレーカー
+import "github.com/sony/gobreaker"
+
+var cb *gobreaker.CircuitBreaker
+
+func init() {
+    cb = gobreaker.NewCircuitBreaker(gobreaker.Settings{
+        Name:        "payment-api",
+        MaxRequests: 3,
+        Interval:    60 * time.Second,
+        Timeout:     30 * time.Second,
+        ReadyToTrip: func(counts gobreaker.Counts) bool {
+            return counts.ConsecutiveFailures > 5
+        },
+    })
+}
+
+func createOrder(w http.ResponseWriter, r *http.Request) {
+    var orderData OrderData
+    json.NewDecoder(r.Body).Decode(&orderData)
+    
+    result, err := cb.Execute(func() (interface{}, error) {
+        client := &http.Client{Timeout: 3 * time.Second}
+        resp, err := client.Post(
+            "https://payment-api.example.com/charge",
+            "application/json",
+            bytes.NewBuffer(orderJSON),
+        )
+        return resp, err
+    })
+    
+    if err != nil {
+        if err == gobreaker.ErrOpenState {
+            http.Error(w, "Payment service is temporarily unavailable", http.StatusServiceUnavailable)
+            return
+        }
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+    
+    json.NewEncoder(w).Encode(result)
+}
+```
+
+#### 3. Goroutineプールの制限
+
+```go
+// ✅ 良い例: Worker PoolパターンでGoroutine数を制限
+type WorkerPool struct {
+    workers    int
+    jobQueue   chan Job
+    workerPool chan chan Job
+}
+
+func NewWorkerPool(workers int, jobQueue chan Job) *WorkerPool {
+    return &WorkerPool{
+        workers:    workers,
+        jobQueue:   jobQueue,
+        workerPool: make(chan chan Job, workers),
+    }
+}
+
+func (wp *WorkerPool) Start() {
+    for i := 0; i < wp.workers; i++ {
+        worker := NewWorker(wp.workerPool)
+        worker.Start()
+    }
+    
+    go wp.dispatch()
+}
+
+func (wp *WorkerPool) dispatch() {
+    for job := range wp.jobQueue {
+        workerJobQueue := <-wp.workerPool
+        workerJobQueue <- job
+    }
+}
+
+func createOrder(w http.ResponseWriter, r *http.Request) {
+    var orderData OrderData
+    json.NewDecoder(r.Body).Decode(&orderData)
+    
+    // ジョブをキューに投入（Goroutine数を制限）
+    job := Job{
+        OrderData: orderData,
+        Response:   make(chan *Order, 1),
+    }
+    
+    jobQueue <- job
+    
+    // レスポンスを待つ
+    order := <-job.Response
+    json.NewEncoder(w).Encode(order)
+}
+```
+
+### まとめ
+
+カスケード障害のメカニズムのポイント：
+
+- **発生フロー**: 外部APIの遅延 → Goroutineプールの飽和 → 全エンドポイントの応答不能 → システム全体のダウン
+- **対策**: タイムアウト設定、サーキットブレーカー、Goroutineプールの制限
+- **原則**: すべての設計はこのフローを想定して、「時間とリソース」で守る
+
+適切な対策により、1つの遅延が全体を死滅させることを防げます。
+

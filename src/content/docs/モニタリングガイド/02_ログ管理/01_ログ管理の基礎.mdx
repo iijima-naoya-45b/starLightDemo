@@ -1,0 +1,246 @@
+---
+title: "ログ管理の基礎"
+label: "ログ管理の基礎"
+---
+
+## ログ管理の基礎
+
+ログ管理は、アプリケーションの動作を追跡し、問題を特定するための重要な仕組みです。適切なログ管理により、効率的にデバッグと監視ができます。
+
+### なぜログ管理が重要なのか
+
+#### ログ管理なしの問題
+
+**問題のある実装:**
+
+```javascript
+// ログがない、または不十分なログ
+function processOrder(orderId) {
+  // ログがないため、エラーが発生した原因が分からない
+  const order = getOrder(orderId);
+  processPayment(order);
+  updateInventory(order);
+}
+```
+
+**影響:**
+- エラーの原因が分からない
+- デバッグに時間がかかる
+- 問題の再現が困難
+
+#### 適切なログ管理による解決
+
+**改善された実装:**
+
+```javascript
+// 適切なログ
+const logger = require('winston');
+
+function processOrder(orderId) {
+  logger.info('Processing order', { orderId });
+  
+  try {
+    const order = getOrder(orderId);
+    logger.debug('Order retrieved', { orderId, order });
+    
+    processPayment(order);
+    logger.info('Payment processed', { orderId, amount: order.amount });
+    
+    updateInventory(order);
+    logger.info('Inventory updated', { orderId });
+    
+    logger.info('Order processed successfully', { orderId });
+  } catch (error) {
+    logger.error('Order processing failed', { 
+      orderId, 
+      error: error.message,
+      stack: error.stack 
+    });
+    throw error;
+  }
+}
+```
+
+**メリット:**
+- エラーの原因が明確
+- デバッグが容易
+- 問題の再現が可能
+
+### ログレベルの使い分け
+
+#### ログレベルの定義
+
+**一般的なログレベル:**
+
+```
+DEBUG < INFO < WARN < ERROR < FATAL
+```
+
+**使用例:**
+
+```javascript
+// DEBUG: 詳細なデバッグ情報
+logger.debug('User data retrieved', { userId, data });
+
+// INFO: 一般的な情報
+logger.info('User logged in', { userId });
+
+// WARN: 警告（処理は続行可能）
+logger.warn('Rate limit approaching', { userId, requests: 95 });
+
+// ERROR: エラー（処理は続行可能だが問題がある）
+logger.error('Failed to send email', { userId, error });
+
+// FATAL: 致命的なエラー（処理を続行できない）
+logger.fatal('Database connection lost', { error });
+```
+
+### 構造化ログ
+
+#### 構造化ログの重要性
+
+**非構造化ログの問題:**
+
+```javascript
+// 非構造化ログ
+console.log('User logged in: ' + userId + ' at ' + new Date());
+// 問題: パースが困難、検索が非効率
+```
+
+**構造化ログのメリット:**
+
+```javascript
+// 構造化ログ
+logger.info({
+  event: 'user_login',
+  user_id: userId,
+  timestamp: new Date().toISOString(),
+  ip_address: req.ip,
+  user_agent: req.headers['user-agent']
+});
+
+// メリット:
+// - パースが容易
+// - 検索が効率的
+// - 分析が容易
+```
+
+### ログの集約と分析
+
+#### ELK Stack（Elasticsearch、Logstash、Kibana）
+
+**構成:**
+
+```
+アプリケーション → Logstash → Elasticsearch → Kibana
+```
+
+**設定例:**
+
+```yaml
+# Logstash設定
+input {
+  file {
+    path => "/var/log/app/*.log"
+    codec => json
+  }
+}
+
+filter {
+  if [level] == "ERROR" {
+    mutate {
+      add_tag => [ "error" ]
+    }
+  }
+}
+
+output {
+  elasticsearch {
+    hosts => ["localhost:9200"]
+    index => "app-logs-%{+YYYY.MM.dd}"
+  }
+}
+```
+
+#### Loki（Grafana Labs）
+
+**構成:**
+
+```
+アプリケーション → Promtail → Loki → Grafana
+```
+
+**設定例:**
+
+```yaml
+# Promtail設定
+server:
+  http_listen_port: 9080
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: app
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: app
+          __path__: /var/log/app/*.log
+```
+
+### ログのベストプラクティス
+
+#### 1. 適切なログレベルの使用
+
+```javascript
+// 良い例
+logger.debug('Detailed debug info', { data });
+logger.info('Important event', { event });
+logger.error('Error occurred', { error });
+
+// 悪い例
+logger.info('Debug info');  // DEBUGレベルを使うべき
+logger.error('Normal operation');  // INFOレベルを使うべき
+```
+
+#### 2. 機密情報の除外
+
+```javascript
+// 悪い例
+logger.info('User data', { 
+  password: user.password,  // 機密情報をログに出力
+  credit_card: user.creditCard
+});
+
+// 良い例
+logger.info('User data', { 
+  user_id: user.id,
+  email: user.email  // 機密情報は除外
+});
+```
+
+#### 3. コンテキストの追加
+
+```javascript
+// 良い例
+logger.info('Order created', {
+  order_id: order.id,
+  user_id: order.userId,
+  amount: order.amount,
+  timestamp: new Date().toISOString()
+});
+```
+
+### まとめ
+
+ログ管理の基礎のポイント：
+
+- **ログレベルの使い分け**: DEBUG、INFO、WARN、ERROR、FATAL
+- **構造化ログ**: JSON形式で構造化
+- **ログの集約**: ELK Stack、Lokiなどのツールを使用
+- **ベストプラクティス**: 適切なレベル、機密情報の除外、コンテキストの追加
+
+適切なログ管理により、効率的にデバッグと監視ができます。
+

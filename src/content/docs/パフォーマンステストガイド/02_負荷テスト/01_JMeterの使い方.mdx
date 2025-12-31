@@ -1,0 +1,65 @@
+---
+title: "JMeterの使い方"
+label: "JMeterの使い方"
+---
+
+## JMeterの使い方
+
+JMeterは、Apacheが開発したオープンソースの負荷テストツールです。Webアプリケーションのパフォーマンステストに広く使用されています。
+
+### JMeterの基本
+
+#### テスト計画の作成
+
+**基本的なテスト計画:**
+
+1. **Thread Group（スレッドグループ）**: ユーザー数を設定
+2. **HTTP Request**: リクエストを設定
+3. **Listener**: 結果を表示
+
+**設定例:**
+
+```
+Thread Group
+  - Number of Threads: 100（同時ユーザー数）
+  - Ramp-up Period: 10（10秒で100ユーザーに増加）
+  - Loop Count: 10（各ユーザーが10回実行）
+
+HTTP Request
+  - Server Name: api.example.com
+  - Path: /api/users
+  - Method: GET
+
+View Results Tree
+  - 結果を表示
+```
+
+### 負荷テストの実行
+
+#### 基本的な実行
+
+1. テスト計画を作成
+2. スレッドグループを設定
+3. HTTPリクエストを追加
+4. リスナーを追加
+5. テストを実行
+
+### 結果の分析
+
+#### 重要なメトリクス
+
+- **Response Time**: レスポンスタイム
+- **Throughput**: スループット
+- **Error Rate**: エラー率
+- **Latency**: レイテンシ
+
+### まとめ
+
+JMeterの使い方のポイント：
+
+- **テスト計画**: Thread Group、HTTP Request、Listener
+- **負荷テスト**: 同時ユーザー数、Ramp-up Period、Loop Count
+- **結果分析**: Response Time、Throughput、Error Rate
+
+JMeterにより、効果的な負荷テストができます。
+

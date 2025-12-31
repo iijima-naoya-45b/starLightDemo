@@ -1,0 +1,228 @@
+---
+title: "IBM COBOLの特徴"
+label: "IBM COBOLの特徴"
+---
+
+## IBM COBOLの特徴
+
+IBM COBOLの特徴と機能を詳しく解説します。
+
+### IBM COBOLの特徴
+
+#### 1. メインフレーム環境との統合
+
+**特徴:**
+
+- IBM z/OS環境で最適化されている
+- VSAMファイルとの統合
+- DB2データベースとの統合
+- CICSトランザクション処理との統合
+
+#### 2. 高性能
+
+**特徴:**
+
+- コンパイラの最適化が高度
+- メインフレームのハードウェアを最大限に活用
+- 大量のデータ処理に適している
+
+#### 3. エンタープライズ機能
+
+**特徴:**
+
+- トランザクション処理
+- バッチ処理
+- オンライン処理
+- レポート生成
+
+### IBM COBOLの拡張機能
+
+#### 1. 構造化プログラミング
+
+**PERFORM文の拡張:**
+
+```cobol
+       *> PERFORM文の拡張
+       PERFORM VARYING WS-INDEX FROM 1 BY 1
+           UNTIL WS-INDEX > 10
+           DISPLAY "Index: " WS-INDEX
+       END-PERFORM
+       
+       *> PERFORM文の条件付き
+       PERFORM UNTIL WS-FILE-EOF
+           READ INPUT-FILE
+               AT END SET WS-FILE-EOF TO TRUE
+               NOT AT END
+                   DISPLAY INPUT-RECORD
+           END-READ
+       END-PERFORM
+```
+
+#### 2. 文字列操作
+
+**STRING文:**
+
+```cobol
+       STRING CUSTOMER-NAME DELIMITED BY SIZE
+              " - "
+              CUSTOMER-ID DELIMITED BY SIZE
+              INTO WS-FULL-NAME
+              WITH POINTER WS-POINTER
+       END-STRING
+```
+
+**UNSTRING文:**
+
+```cobol
+       UNSTRING INPUT-LINE DELIMITED BY ","
+           INTO CUSTOMER-NAME
+                CUSTOMER-ID
+                CUSTOMER-BALANCE
+           WITH POINTER WS-POINTER
+       END-UNSTRING
+```
+
+#### 3. 数値操作
+
+**COMPUTE文:**
+
+```cobol
+       COMPUTE WS-TOTAL = WS-AMOUNT * WS-QUANTITY
+       COMPUTE WS-AVERAGE = (WS-SUM / WS-COUNT) ROUNDED
+```
+
+**算術演算:**
+
+```cobol
+       ADD WS-AMOUNT TO WS-TOTAL
+       SUBTRACT WS-DISCOUNT FROM WS-TOTAL
+       MULTIPLY WS-RATE BY WS-AMOUNT
+       DIVIDE WS-TOTAL BY WS-COUNT GIVING WS-AVERAGE
+```
+
+### DB2との統合
+
+#### DB2への接続
+
+**実装例:**
+
+```cobol
+       EXEC SQL
+           CONNECT TO DBNAME
+       END-EXEC
+       
+       EXEC SQL
+           SELECT CUSTOMER_NAME, CUSTOMER_BALANCE
+           INTO :WS-CUSTOMER-NAME, :WS-CUSTOMER-BALANCE
+           FROM CUSTOMER_TABLE
+           WHERE CUSTOMER_ID = :WS-CUSTOMER-ID
+       END-EXEC
+       
+       IF SQLCODE = 0
+           DISPLAY "Customer: " WS-CUSTOMER-NAME
+           DISPLAY "Balance: " WS-CUSTOMER-BALANCE
+       ELSE
+           DISPLAY "SQL Error: " SQLCODE
+       END-IF
+       
+       EXEC SQL
+           COMMIT
+       END-EXEC
+       
+       EXEC SQL
+           DISCONNECT CURRENT
+       END-EXEC
+```
+
+### CICSとの統合
+
+#### CICSトランザクション処理
+
+**実装例:**
+
+```cobol
+       EXEC CICS
+           SEND MAP('CUSTMAP')
+                MAPSET('CUSTSET')
+                FROM(CUSTOMER-MAP)
+                ERASE
+       END-EXEC
+       
+       EXEC CICS
+           RECEIVE MAP('CUSTMAP')
+                   MAPSET('CUSTSET')
+                   INTO(CUSTOMER-MAP)
+       END-EXEC
+       
+       EXEC CICS
+           READ FILE('CUSTOMER')
+                INTO(CUSTOMER-RECORD)
+                RIDFLD(CUSTOMER-KEY)
+                RESP(WS-RESPONSE)
+       END-EXEC
+       
+       IF WS-RESPONSE = DFHRESP(NORMAL)
+           DISPLAY "Customer found"
+       ELSE
+           DISPLAY "Customer not found"
+       END-IF
+```
+
+### デバッグ機能
+
+#### デバッグツール
+
+**IBM Debug Tool:**
+
+- ブレークポイントの設定
+- 変数の監視
+- ステップ実行
+- トレース機能
+
+**実装例:**
+
+```cobol
+       *> デバッグ用のDISPLAY文
+       DISPLAY "DEBUG: WS-COUNTER = " WS-COUNTER
+       DISPLAY "DEBUG: WS-TOTAL = " WS-TOTAL
+```
+
+### パフォーマンス最適化
+
+#### コンパイラオプション
+
+**最適化オプション:**
+
+```cobol
+       *> コンパイラオプション
+       PROCESS OPTIMIZE(2)
+       PROCESS NODYNAM
+       PROCESS NOSSRANGE
+```
+
+#### データアクセスの最適化
+
+**バッファリング:**
+
+```cobol
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT INPUT-FILE ASSIGN TO INPUT-DAT
+               ORGANIZATION IS SEQUENTIAL
+               ACCESS MODE IS SEQUENTIAL
+               FILE STATUS IS WS-FILE-STATUS.
+```
+
+### まとめ
+
+IBM COBOLの特徴のポイント：
+
+- **メインフレーム統合**: VSAM、DB2、CICSとの統合
+- **高性能**: コンパイラの最適化、ハードウェアの活用
+- **エンタープライズ機能**: トランザクション処理、バッチ処理
+- **拡張機能**: 構造化プログラミング、文字列操作、数値操作
+- **デバッグ機能**: IBM Debug Tool、トレース機能
+
+IBM COBOLの機能を活用することで、効率的で信頼性の高いエンタープライズアプリケーションを構築できます。
+

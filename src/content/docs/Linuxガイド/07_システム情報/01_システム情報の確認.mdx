@@ -1,0 +1,141 @@
+---
+title: "システム情報の確認"
+label: "システム情報の確認"
+---
+
+## システム情報の確認
+
+Linuxシステムの情報を確認するコマンドを詳しく解説します。
+
+### システム情報
+
+#### uname（システム情報）
+
+```bash
+# システム情報を表示
+uname -a
+
+# カーネル名
+uname -s
+
+# ホスト名
+uname -n
+
+# カーネルリリース
+uname -r
+
+# マシンタイプ
+uname -m
+```
+
+#### hostname（ホスト名）
+
+```bash
+# ホスト名を表示
+hostname
+
+# 完全修飾ドメイン名
+hostname -f
+```
+
+### CPU情報
+
+#### lscpu（CPU情報）
+
+```bash
+# CPU情報を表示
+lscpu
+
+# 出力例:
+# Architecture: x86_64
+# CPU(s): 4
+# Thread(s) per core: 2
+# Core(s) per socket: 2
+```
+
+#### /proc/cpuinfo
+
+```bash
+# CPU情報を確認
+cat /proc/cpuinfo
+
+# CPUコア数を確認
+grep -c processor /proc/cpuinfo
+```
+
+### メモリ情報
+
+#### free（メモリ使用状況）
+
+```bash
+# メモリ使用状況を表示
+free
+
+# 人間が読みやすい形式
+free -h
+
+# 定期的に更新（-s: seconds）
+free -h -s 5
+```
+
+#### /proc/meminfo
+
+```bash
+# メモリ情報を確認
+cat /proc/meminfo
+
+# 利用可能なメモリを確認
+grep MemAvailable /proc/meminfo
+```
+
+### ディスク情報
+
+#### df（ディスク使用状況）
+
+```bash
+# ディスク使用状況を表示
+df
+
+# 人間が読みやすい形式
+df -h
+
+# 特定のファイルシステムのみ
+df -h /dev/sda1
+```
+
+#### du（ディレクトリサイズ）
+
+```bash
+# ディレクトリのサイズを表示
+du -sh /var/log
+
+# 再帰的に表示
+du -h /var/log
+
+# サイズでソート
+du -h /var/log | sort -h
+```
+
+#### 実践例
+
+```bash
+# 大きなディレクトリを確認
+du -h / | sort -h | tail -10
+
+# ディスク使用率が高いパーティションを確認
+df -h | awk '$5 > 80 {print $0}'
+```
+
+### まとめ
+
+システム情報の確認のポイント：
+
+- **uname**: システム情報、カーネル情報
+- **hostname**: ホスト名
+- **lscpu**: CPU情報
+- **free**: メモリ使用状況
+- **df**: ディスク使用状況
+- **du**: ディレクトリサイズ
+
+適切にシステム情報を確認することで、システムの状態を把握できます。
+

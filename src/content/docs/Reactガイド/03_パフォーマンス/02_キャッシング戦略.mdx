@@ -1,0 +1,557 @@
+---
+title: "Reactのキャッシング戦略"
+label: "Reactのキャッシング戦略"
+---
+
+## Reactのキャッシング戦略
+
+Reactアプリケーションでのキャッシング戦略を詳しく解説します。コンポーネントレベルのキャッシングから、データフェッチングライブラリのキャッシングまで、包括的にカバーします。
+
+### なぜReactでキャッシング戦略が重要なのか
+
+#### キャッシングなしの問題
+
+**問題のある実装:**
+
+```typescript
+// キャッシングなし: 毎回再計算・再レンダリング
+function ProductList({ products }: { products: Product[] }) {
+  const [filter, setFilter] = useState('all');
+  
+  // 問題: 毎回再計算される
+  const filteredProducts = products.filter(product => {
+    if (filter === 'all') return true;
+    return product.category === filter;
+  });
+  
+  // 問題: 毎回新しい関数が作成される
+  const handleClick = (product: Product) => {
+    console.log('Clicked:', product);
+  };
+  
+  return (
+    <div>
+      {filteredProducts.map(product => (
+        <ProductItem 
+          key={product.id} 
+          product={product} 
+          onClick={handleClick} 
+        />
+      ))}
+    </div>
+  );
+}
+
+// 問題点:
+// - 不要な再計算
+// - 不要な再レンダリング
+// - パフォーマンスの低下
+```
+
+**影響:**
+- パフォーマンスの低下
+- メモリの無駄
+- ユーザー体験の低下
+
+#### キャッシングによる解決
+
+**改善された実装:**
+
+```typescript
+// キャッシングあり: 効率的な処理
+function ProductList({ products }: { products: Product[] }) {
+  const [filter, setFilter] = useState('all');
+  
+  // useMemoで計算結果をメモ化
+  const filteredProducts = useMemo(() => {
+    return products.filter(product => {
+      if (filter === 'all') return true;
+      return product.category === filter;
+    });
+  }, [products, filter]);
+  
+  // useCallbackで関数をメモ化
+  const handleClick = useCallback((product: Product) => {
+    console.log('Clicked:', product);
+  }, []);
+  
+  return (
+    <div>
+      {filteredProducts.map(product => (
+        <ProductItem 
+          key={product.id} 
+          product={product} 
+          onClick={handleClick} 
+        />
+      ))}
+    </div>
+  );
+}
+
+// メリット:
+// - 不要な再計算を防止
+// - 不要な再レンダリングを防止
+// - パフォーマンスの向上
+```
+
+### Reactのキャッシング手法
+
+#### 1. useMemo（計算結果のメモ化）
+
+**定義:**
+高価な計算結果をメモ化し、依存配列が変更された場合のみ再計算します。
+
+**実装例:**
+
+```typescript
+import { useMemo } from 'react';
+
+function ExpensiveComponent({ items }: { items: Item[] }) {
+  // 高価な計算をメモ化
+  const total = useMemo(() => {
+    return items.reduce((sum, item) => sum + item.price, 0);
+  }, [items]);
+  
+  // フィルタリング結果をメモ化
+  const expensiveItems = useMemo(() => {
+    return items.filter(item => item.price > 1000);
+  }, [items]);
+  
+  return (
+    <div>
+      <p>Total: {total}</p>
+      <p>Expensive items: {expensiveItems.length}</p>
+    </div>
+  );
+}
+```
+
+**実践例:**
+
+```typescript
+// ソート結果をメモ化
+function SortedList({ items }: { items: Item[] }) {
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => a.name.localeCompare(b.name));
+  }, [items]);
+  
+  return (
+    <ul>
+      {sortedItems.map(item => (
+        <li key={item.id}>{item.name}</li>
+      ))}
+    </ul>
+  );
+}
+
+// 複雑な計算をメモ化
+function Statistics({ data }: { data: number[] }) {
+  const stats = useMemo(() => {
+    const sum = data.reduce((a, b) => a + b, 0);
+    const avg = sum / data.length;
+    const max = Math.max(...data);
+    const min = Math.min(...data);
+    return { sum, avg, max, min };
+  }, [data]);
+  
+  return (
+    <div>
+      <p>Sum: {stats.sum}</p>
+      <p>Average: {stats.avg.toFixed(2)}</p>
+      <p>Max: {stats.max}</p>
+      <p>Min: {stats.min}</p>
+    </div>
+  );
+}
+```
+
+#### 2. useCallback（関数のメモ化）
+
+**定義:**
+関数をメモ化し、依存配列が変更された場合のみ新しい関数を作成します。
+
+**実装例:**
+
+```typescript
+import { useCallback, useState } from 'react';
+
+function Parent() {
+  const [count, setCount] = useState(0);
+  
+  // 関数をメモ化
+  const handleClick = useCallback(() => {
+    setCount(c => c + 1);
+  }, []);
+  
+  // 依存関係がある場合
+  const handleSubmit = useCallback((data: FormData) => {
+    console.log('Submit:', data, count);
+  }, [count]);
+  
+  return <Child onClick={handleClick} onSubmit={handleSubmit} />;
+}
+
+function Child({ onClick, onSubmit }: { 
+  onClick: () => void;
+  onSubmit: (data: FormData) => void;
+}) {
+  return (
+    <div>
+      <button onClick={onClick}>Increment</button>
+      <button onClick={() => onSubmit(new FormData())}>Submit</button>
+    </div>
+  );
+}
+```
+
+**実践例:**
+
+```typescript
+// イベントハンドラーをメモ化
+function ProductList({ products }: { products: Product[] }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  
+  // 選択ハンドラーをメモ化
+  const handleSelect = useCallback((id: string) => {
+    setSelectedId(id);
+  }, []);
+  
+  // 削除ハンドラーをメモ化
+  const handleDelete = useCallback((id: string) => {
+    // 削除処理
+    console.log('Delete:', id);
+  }, []);
+  
+  return (
+    <div>
+      {products.map(product => (
+        <ProductItem
+          key={product.id}
+          product={product}
+          isSelected={selectedId === product.id}
+          onSelect={handleSelect}
+          onDelete={handleDelete}
+        />
+      ))}
+    </div>
+  );
+}
+```
+
+#### 3. React.memo（コンポーネントのメモ化）
+
+**定義:**
+コンポーネントの再レンダリングを防ぎ、propsが変更された場合のみ再レンダリングします。
+
+**実装例:**
+
+```typescript
+import { memo } from 'react';
+
+// 基本的なメモ化
+const ProductItem = memo(function ProductItem({ 
+  product, 
+  onClick 
+}: { 
+  product: Product;
+  onClick: (product: Product) => void;
+}) {
+  return (
+    <div onClick={() => onClick(product)}>
+      <h3>{product.name}</h3>
+      <p>{product.price}円</p>
+    </div>
+  );
+});
+
+// カスタム比較関数を使用
+const ProductItemWithCustomCompare = memo(
+  function ProductItem({ product, onClick }: { 
+    product: Product;
+    onClick: (product: Product) => void;
+  }) {
+    return (
+      <div onClick={() => onClick(product)}>
+        <h3>{product.name}</h3>
+        <p>{product.price}円</p>
+      </div>
+    );
+  },
+  (prevProps, nextProps) => {
+    // カスタム比較: idとpriceが同じなら再レンダリングをスキップ
+    return (
+      prevProps.product.id === nextProps.product.id &&
+      prevProps.product.price === nextProps.product.price
+    );
+  }
+);
+```
+
+**実践例:**
+
+```typescript
+// 高価なレンダリングをメモ化
+const ExpensiveChart = memo(function ExpensiveChart({ 
+  data 
+}: { 
+  data: ChartData[];
+}) {
+  // 高価な計算
+  const processedData = useMemo(() => {
+    return data.map(item => ({
+      ...item,
+      value: item.value * 1.1, // 複雑な計算
+    }));
+  }, [data]);
+  
+  return <Chart data={processedData} />;
+});
+
+// リストアイテムをメモ化
+const ListItem = memo(function ListItem({ 
+  item, 
+  onSelect 
+}: { 
+  item: Item;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div onClick={() => onSelect(item.id)}>
+      <h4>{item.title}</h4>
+      <p>{item.description}</p>
+    </div>
+  );
+});
+```
+
+### データフェッチングライブラリのキャッシング
+
+#### React Query / TanStack Query
+
+**定義:**
+サーバー状態のキャッシングと同期を管理するライブラリです。
+
+**実装例:**
+
+```typescript
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+function ProductList() {
+  // クエリのキャッシング
+  const { data: products, isLoading } = useQuery({
+    queryKey: ['products'],
+    queryFn: async () => {
+      const res = await fetch('/api/products');
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000, // 5分間は新鮮とみなす
+    cacheTime: 10 * 60 * 1000, // 10分間キャッシュを保持
+  });
+  
+  if (isLoading) return <div>Loading...</div>;
+  
+  return (
+    <div>
+      {products.map(product => (
+        <ProductItem key={product.id} product={product} />
+      ))}
+    </div>
+  );
+}
+
+// ミューテーション後のキャッシュ更新
+function CreateProduct() {
+  const queryClient = useQueryClient();
+  
+  const mutation = useMutation({
+    mutationFn: async (newProduct: Product) => {
+      const res = await fetch('/api/products', {
+        method: 'POST',
+        body: JSON.stringify(newProduct),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      // キャッシュを無効化して再取得
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+  
+  return (
+    <button onClick={() => mutation.mutate({ name: 'New Product' })}>
+      Create Product
+    </button>
+  );
+}
+```
+
+**キャッシング戦略:**
+
+```typescript
+// 1. 時間ベースのキャッシング
+const { data } = useQuery({
+  queryKey: ['products'],
+  queryFn: fetchProducts,
+  staleTime: 5 * 60 * 1000, // 5分間は新鮮
+  cacheTime: 10 * 60 * 1000, // 10分間キャッシュを保持
+});
+
+// 2. バックグラウンドでの再取得
+const { data } = useQuery({
+  queryKey: ['products'],
+  queryFn: fetchProducts,
+  refetchOnWindowFocus: true, // ウィンドウフォーカス時に再取得
+  refetchInterval: 60000, // 60秒ごとに再取得
+});
+
+// 3. 依存クエリ
+const { data: user } = useQuery({
+  queryKey: ['user', userId],
+  queryFn: () => fetchUser(userId),
+});
+
+const { data: posts } = useQuery({
+  queryKey: ['posts', userId],
+  queryFn: () => fetchPosts(userId),
+  enabled: !!user, // userが取得できた場合のみ実行
+});
+```
+
+#### SWR
+
+**定義:**
+データフェッチングのためのReact Hooksライブラリです。
+
+**実装例:**
+
+```typescript
+import useSWR from 'swr';
+
+function ProductList() {
+  // SWRのキャッシング
+  const { data: products, error, isLoading } = useSWR(
+    '/api/products',
+    async (url) => {
+      const res = await fetch(url);
+      return res.json();
+    },
+    {
+      revalidateOnFocus: true, // フォーカス時に再検証
+      revalidateOnReconnect: true, // 再接続時に再検証
+      refreshInterval: 60000, // 60秒ごとに再検証
+      dedupingInterval: 2000, // 2秒間は重複リクエストを防ぐ
+    }
+  );
+  
+  if (error) return <div>Error</div>;
+  if (isLoading) return <div>Loading...</div>;
+  
+  return (
+    <div>
+      {products.map(product => (
+        <ProductItem key={product.id} product={product} />
+      ))}
+    </div>
+  );
+}
+
+// グローバルなキャッシュ設定
+import { SWRConfig } from 'swr';
+
+function App() {
+  return (
+    <SWRConfig
+      value={{
+        revalidateOnFocus: false,
+        revalidateOnReconnect: true,
+        refreshInterval: 0,
+        dedupingInterval: 2000,
+      }}
+    >
+      <ProductList />
+    </SWRConfig>
+  );
+}
+```
+
+### 実践的なキャッシング戦略
+
+#### 1. コンポーネントレベルのキャッシング
+
+```typescript
+// 高価な計算をメモ化
+const ExpensiveComponent = memo(function ExpensiveComponent({ 
+  data 
+}: { 
+  data: Data[];
+}) {
+  const processedData = useMemo(() => {
+    return data.map(item => expensiveCalculation(item));
+  }, [data]);
+  
+  return <div>{/* レンダリング */}</div>;
+});
+
+// イベントハンドラーをメモ化
+function Parent() {
+  const handleClick = useCallback(() => {
+    // 処理
+  }, []);
+  
+  return <Child onClick={handleClick} />;
+}
+```
+
+#### 2. データフェッチングのキャッシング
+
+```typescript
+// React Queryを使用
+const { data } = useQuery({
+  queryKey: ['products'],
+  queryFn: fetchProducts,
+  staleTime: 5 * 60 * 1000, // 5分間は新鮮
+  cacheTime: 10 * 60 * 1000, // 10分間キャッシュを保持
+});
+
+// SWRを使用
+const { data } = useSWR('/api/products', fetcher, {
+  revalidateOnFocus: true,
+  refreshInterval: 60000,
+});
+```
+
+#### 3. キャッシュの無効化と更新
+
+```typescript
+// React Query: キャッシュの無効化
+const queryClient = useQueryClient();
+
+// 特定のクエリを無効化
+queryClient.invalidateQueries({ queryKey: ['products'] });
+
+// キャッシュを直接更新
+queryClient.setQueryData(['products'], newProducts);
+
+// SWR: キャッシュの無効化
+import { mutate } from 'swr';
+
+// 特定のキーを無効化
+mutate('/api/products');
+
+// キャッシュを直接更新
+mutate('/api/products', newProducts, false);
+```
+
+### まとめ
+
+Reactのキャッシング戦略のポイント：
+
+- **useMemo**: 計算結果のメモ化、高価な計算の最適化
+- **useCallback**: 関数のメモ化、イベントハンドラーの最適化
+- **React.memo**: コンポーネントのメモ化、不要な再レンダリングの防止
+- **React Query / TanStack Query**: サーバー状態のキャッシングと同期
+- **SWR**: データフェッチングのキャッシングと再検証
+- **実践的な戦略**: コンポーネントレベル、データフェッチング、キャッシュの無効化と更新
+
+適切にキャッシング戦略を使用することで、Reactアプリケーションのパフォーマンスを大幅に向上させることができます。
+

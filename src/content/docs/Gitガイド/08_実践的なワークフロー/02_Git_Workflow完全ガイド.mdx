@@ -1,0 +1,444 @@
+---
+title: "Git Workflow完全ガイド"
+label: "Git Workflow完全ガイド"
+---
+
+## Git Workflow完全ガイド
+
+実践的なGit Workflowを、シナリオ別に詳しく解説します。
+
+### なぜGit Workflowを理解する必要があるのか
+
+#### Workflowなしの問題
+
+**問題のある状況:**
+
+```
+開発者A: 「どのブランチで作業すればいいの？」
+開発者B: 「リリースはどうやって管理するの？」
+開発者C: 「緊急修正はどうすればいいの？」
+
+// 問題点:
+// - ブランチの使い方が統一されていない
+// - リリース管理が困難
+// - 緊急対応が困難
+// - チーム間の混乱
+```
+
+**影響:**
+- 開発効率の低下
+- リリース管理の困難
+- 緊急対応の困難
+- チーム間の混乱
+
+#### Git Workflowによる解決
+
+**改善された状況:**
+
+```
+統一されたWorkflow:
+- ブランチの使い方が明確
+- リリース管理が容易
+- 緊急対応が明確
+- チーム間の協力が向上
+```
+
+**メリット:**
+- 開発効率の向上
+- リリース管理の容易化
+- 緊急対応の明確化
+- チーム間の協力向上
+
+### Git Flowの詳細なワークフロー
+
+#### 初期設定
+
+```bash
+# 1. リポジトリをクローン
+git clone https://github.com/example/project.git
+cd project
+
+# 2. developブランチを作成
+git checkout -b develop main
+git push -u origin develop
+
+# 3. ブランチの保護設定（GitHub/GitLab）
+# - mainブランチ: 直接プッシュを禁止、プルリクエスト必須
+# - developブランチ: 直接プッシュを禁止、プルリクエスト必須
+```
+
+#### 機能開発のワークフロー
+
+**完全な流れ:**
+
+```bash
+# 1. 最新のdevelopブランチを取得
+git checkout develop
+git pull origin develop
+
+# 2. featureブランチを作成
+git checkout -b feature/user-authentication develop
+
+# 3. 開発作業
+git add src/auth/login.ts
+git commit -m "feat: ログイン機能を実装"
+
+git add src/auth/logout.ts
+git commit -m "feat: ログアウト機能を実装"
+
+git add tests/auth.test.ts
+git commit -m "test: 認証機能のテストを追加"
+
+# 4. 定期的にdevelopブランチの変更を取り込む
+git checkout develop
+git pull origin develop
+git checkout feature/user-authentication
+git merge develop
+# または
+git rebase develop
+
+# 5. リモートにプッシュ
+git push -u origin feature/user-authentication
+
+# 6. プルリクエストを作成（developブランチへのマージ）
+# - タイトル: feat: ユーザー認証機能を実装
+# - 説明: 実装内容、テスト方法、関連Issue
+# - レビュアーを指定
+
+# 7. レビューと承認
+
+# 8. developブランチにマージ（プルリクエスト経由）
+
+# 9. ローカルのdevelopブランチを更新
+git checkout develop
+git pull origin develop
+
+# 10. featureブランチを削除
+git branch -d feature/user-authentication
+git push origin --delete feature/user-authentication
+```
+
+#### リリースのワークフロー
+
+**完全な流れ:**
+
+```bash
+# 1. リリース準備の開始
+git checkout develop
+git pull origin develop
+
+# 2. releaseブランチを作成
+git checkout -b release/v1.0.0 develop
+
+# 3. バージョン番号を更新
+# package.json、CHANGELOG.mdなどを更新
+git add package.json CHANGELOG.md
+git commit -m "chore: バージョン1.0.0の準備"
+git push -u origin release/v1.0.0
+
+# 4. リリース前のバグ修正
+git add .
+git commit -m "fix: リリース前のバグ修正"
+git push origin release/v1.0.0
+
+# 5. ステージング環境でテスト
+
+# 6. mainブランチにマージ
+git checkout main
+git pull origin main
+git merge --no-ff release/v1.0.0
+git tag -a v1.0.0 -m "リリース v1.0.0"
+git push origin main --tags
+
+# 7. developブランチにもマージ
+git checkout develop
+git pull origin develop
+git merge --no-ff release/v1.0.0
+git push origin develop
+
+# 8. releaseブランチを削除
+git branch -d release/v1.0.0
+git push origin --delete release/v1.0.0
+
+# 9. 本番環境にデプロイ
+```
+
+#### ホットフィックスのワークフロー
+
+**完全な流れ:**
+
+```bash
+# 1. 緊急バグが報告された
+# バグ: セキュリティ脆弱性
+
+# 2. mainブランチからhotfixブランチを作成
+git checkout main
+git pull origin main
+git checkout -b hotfix/security-patch main
+
+# 3. 緊急修正
+git add .
+git commit -m "hotfix: セキュリティパッチを適用"
+git push -u origin hotfix/security-patch
+
+# 4. テストを実行
+npm test
+
+# 5. mainブランチにマージ
+git checkout main
+git merge --no-ff hotfix/security-patch
+git tag -a v1.0.1 -m "ホットフィックス v1.0.1"
+git push origin main --tags
+
+# 6. developブランチにもマージ
+git checkout develop
+git pull origin develop
+git merge --no-ff hotfix/security-patch
+git push origin develop
+
+# 7. hotfixブランチを削除
+git branch -d hotfix/security-patch
+git push origin --delete hotfix/security-patch
+
+# 8. 本番環境にデプロイ
+```
+
+### GitHub Flowの詳細なワークフロー
+
+#### 基本的なワークフロー
+
+**完全な流れ:**
+
+```bash
+# 1. mainブランチを最新化
+git checkout main
+git pull origin main
+
+# 2. featureブランチを作成
+git checkout -b feature/new-feature
+
+# 3. 開発作業
+git add .
+git commit -m "feat: 新機能を実装"
+git push -u origin feature/new-feature
+
+# 4. プルリクエストを作成（GitHubのWebインターフェース）
+# - タイトル: feat: 新機能を実装
+# - 説明: 実装内容、テスト方法
+# - レビュアーを指定
+# - ラベルを設定
+
+# 5. CI/CDの実行を確認
+
+# 6. レビューと承認
+
+# 7. mainブランチにマージ（GitHubのWebインターフェース）
+# - "Squash and merge" または "Rebase and merge" を選択
+
+# 8. mainブランチを更新
+git checkout main
+git pull origin main
+
+# 9. featureブランチを削除
+git branch -d feature/new-feature
+git push origin --delete feature/new-feature
+```
+
+#### プルリクエストのベストプラクティス
+
+**プルリクエストのテンプレート:**
+
+```markdown
+## 変更内容
+- ユーザー認証機能を実装
+- ログイン・ログアウト機能を追加
+
+## 関連Issue
+Closes #123
+
+## チェックリスト
+- [ ] コードレビューを依頼した
+- [ ] テストを追加した
+- [ ] ドキュメントを更新した
+- [ ] CIが成功している
+- [ ] 破壊的変更がない（あれば説明を追加）
+
+## スクリーンショット（UI変更の場合）
+[スクリーンショットを添付]
+
+## テスト方法
+1. ログイン画面にアクセス
+2. ユーザー名とパスワードを入力
+3. 「ログイン」ボタンをクリック
+4. ダッシュボードに遷移することを確認
+```
+
+### GitLab Flowの詳細なワークフロー
+
+#### 環境ごとのブランチ
+
+**完全な流れ:**
+
+```bash
+# 1. featureブランチで開発
+git checkout -b feature/new-feature main
+git add .
+git commit -m "feat: 新機能を実装"
+git push -u origin feature/new-feature
+
+# 2. mainブランチにマージ（プルリクエスト経由）
+
+# 3. pre-productionブランチにマージ（ステージング環境）
+git checkout pre-production
+git pull origin pre-production
+git merge main
+git push origin pre-production
+
+# 4. ステージング環境でテスト
+
+# 5. productionブランチにマージ（本番環境）
+git checkout production
+git pull origin production
+git merge pre-production
+git push origin production
+
+# 6. 本番環境にデプロイ
+```
+
+### Trunk-based Developmentの詳細なワークフロー
+
+#### 基本的なワークフロー
+
+**完全な流れ:**
+
+```bash
+# 1. mainブランチを最新化
+git checkout main
+git pull origin main
+
+# 2. 短命なfeatureブランチを作成
+git checkout -b feature/small-change
+
+# 3. 迅速に開発（1-2日以内）
+git add .
+git commit -m "feat: 小さな変更"
+git push -u origin feature/small-change
+
+# 4. すぐにプルリクエストを作成
+
+# 5. レビューと承認
+
+# 6. mainブランチにマージ
+git checkout main
+git pull origin main
+
+# 7. featureブランチを削除
+git branch -d feature/small-change
+git push origin --delete feature/small-change
+```
+
+#### 大規模な機能開発
+
+**完全な流れ:**
+
+```bash
+# 1. featureブランチを作成
+git checkout -b feature/large-feature main
+
+# 2. 小さなコミットを頻繁に作成
+git add src/feature/part1.ts
+git commit -m "feat: 機能の一部を実装"
+git push origin feature/large-feature
+
+git add src/feature/part2.ts
+git commit -m "feat: 機能の別の部分を実装"
+git push origin feature/large-feature
+
+# 3. 定期的にmainブランチを取り込む
+git checkout main
+git pull origin main
+git checkout feature/large-feature
+git merge main
+# または
+git rebase main
+
+# 4. 完了したらプルリクエストを作成
+
+# 5. レビューと承認
+
+# 6. mainブランチにマージ
+```
+
+### 実践的なシナリオ
+
+#### シナリオ1: 新機能の開発
+
+```bash
+# 1. 要件を確認
+# 2. featureブランチを作成
+git checkout -b feature/payment-integration develop
+
+# 3. 開発作業
+git add .
+git commit -m "feat: 決済機能を実装"
+
+# 4. テストを追加
+git add tests/payment.test.ts
+git commit -m "test: 決済機能のテストを追加"
+
+# 5. developブランチにマージ（プルリクエスト経由）
+```
+
+#### シナリオ2: バグ修正
+
+```bash
+# 1. バグを報告された
+# 2. bugfixブランチを作成
+git checkout -b bugfix/login-error develop
+
+# 3. バグを修正
+git add .
+git commit -m "fix: ログインエラーを修正"
+
+# 4. テストを追加
+git add tests/login.test.ts
+git commit -m "test: ログインエラーのテストを追加"
+
+# 5. developブランチにマージ（プルリクエスト経由）
+```
+
+#### シナリオ3: 緊急修正
+
+```bash
+# 1. 緊急バグが報告された
+# 2. hotfixブランチを作成
+git checkout -b hotfix/critical-bug main
+
+# 3. 緊急修正
+git add .
+git commit -m "hotfix: 緊急バグを修正"
+
+# 4. mainブランチにマージ
+git checkout main
+git merge --no-ff hotfix/critical-bug
+git tag -a v1.0.1 -m "ホットフィックス v1.0.1"
+git push origin main --tags
+
+# 5. developブランチにもマージ
+git checkout develop
+git merge --no-ff hotfix/critical-bug
+git push origin develop
+```
+
+### まとめ
+
+Git Workflow完全ガイドのポイント：
+
+- **Git Flow**: 複数のブランチタイプ、明確な役割分担、リリース管理
+- **GitHub Flow**: シンプルなワークフロー、プルリクエスト中心
+- **GitLab Flow**: 環境ごとのブランチ、デプロイの制御
+- **Trunk-based Development**: 短命なブランチ、迅速な開発
+- **実践的なシナリオ**: 新機能の開発、バグ修正、緊急修正
+
+適切なGit Workflowを実践することで、効率的で安全な開発ができます。
+

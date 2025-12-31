@@ -1,0 +1,291 @@
+---
+title: "tRPCとは"
+label: "tRPCとは"
+---
+
+## tRPCとは
+
+tRPCは、TypeScriptファーストのRPCフレームワークです。エンドツーエンドの型安全性を提供し、TypeScriptの型システムを活用してAPIを構築できます。
+
+### なぜtRPCが必要なのか
+
+#### 従来のAPI開発の問題
+
+**問題のある実装:**
+
+```typescript
+// フロントエンド: APIの型が不明確
+const response = await fetch('/api/users/1');
+const user = await response.json();
+// 問題: userの型が不明確、実行時エラーのリスク
+
+// バックエンド: 型の定義が重複
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+app.get('/api/users/:id', (req, res) => {
+  const user: User = getUserById(req.params.id);
+  res.json(user);
+});
+```
+
+**影響:**
+- 型の不一致
+- 実行時エラー
+- 開発効率の低下
+
+#### tRPCによる解決
+
+**改善された実装:**
+
+```typescript
+// バックエンド: 型安全なAPI定義
+import { initTRPC } from '@trpc/server';
+import { z } from 'zod';
+
+const t = initTRPC.context().create();
+
+export const appRouter = t.router({
+  getUser: t.procedure
+    .input(z.object({ id: z.number() }))
+    .query(({ input }) => {
+      return getUserById(input.id);
+    }),
+  
+  createUser: t.procedure
+    .input(z.object({
+      name: z.string(),
+      email: z.string().email(),
+    }))
+    .mutation(({ input }) => {
+      return createUser(input);
+    }),
+});
+
+export type AppRouter = typeof appRouter;
+```
+
+```typescript
+// フロントエンド: 型安全なAPI呼び出し
+import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
+import type { AppRouter } from './server';
+
+const trpc = createTRPCProxyClient<AppRouter>({
+  links: [
+    httpBatchLink({
+      url: 'http://localhost:3000/trpc',
+    }),
+  ],
+});
+
+// 型安全なAPI呼び出し
+const user = await trpc.getUser.query({ id: 1 });
+// userの型が自動的に推論される
+```
+
+**メリット:**
+- エンドツーエンドの型安全性
+- 型の自動推論
+- 実行時エラーの削減
+- 開発効率の向上
+
+### tRPCの特徴
+
+#### 1. エンドツーエンドの型安全性
+
+**定義:**
+バックエンドで定義した型が、フロントエンドでも自動的に利用できます。
+
+```typescript
+// バックエンドで定義
+export const appRouter = t.router({
+  getUser: t.procedure
+    .input(z.object({ id: z.number() }))
+    .query(({ input }) => {
+      // input.idはnumber型として推論される
+      return getUserById(input.id);
+    }),
+});
+
+// フロントエンドで使用
+const user = await trpc.getUser.query({ id: 1 });
+// userの型が自動的に推論される
+```
+
+#### 2. Zodによるバリデーション
+
+**定義:**
+Zodスキーマを使用して、入力のバリデーションと型定義を同時に行います。
+
+```typescript
+import { z } from 'zod';
+
+const createUserSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  age: z.number().min(0).max(150),
+});
+
+export const appRouter = t.router({
+  createUser: t.procedure
+    .input(createUserSchema)
+    .mutation(({ input }) => {
+      // inputはcreateUserSchemaの型として推論される
+      // バリデーションも自動的に実行される
+      return createUser(input);
+    }),
+});
+```
+
+#### 3. プロシージャの種類
+
+**Query（読み取り）:**
+
+```typescript
+getUser: t.procedure
+  .input(z.object({ id: z.number() }))
+  .query(({ input }) => {
+    return getUserById(input.id);
+  }),
+```
+
+**Mutation（書き込み）:**
+
+```typescript
+createUser: t.procedure
+  .input(z.object({ name: z.string(), email: z.string() }))
+  .mutation(({ input }) => {
+    return createUser(input);
+  }),
+```
+
+### tRPCの実装例
+
+#### Next.jsでの実装
+
+**バックエンド（API Route）:**
+
+```typescript
+// pages/api/trpc/[trpc].ts
+import { createNextApiHandler } from '@trpc/server/adapters/next';
+import { appRouter } from '../../../server/routers/_app';
+
+export default createNextApiHandler({
+  router: appRouter,
+  createContext: () => ({}),
+});
+```
+
+**フロントエンド:**
+
+```typescript
+// utils/trpc.ts
+import { createTRPCNext } from '@trpc/next';
+import type { AppRouter } from '../server/routers/_app';
+
+export const trpc = createTRPCNext<AppRouter>({
+  config() {
+    return {
+      url: '/api/trpc',
+    };
+  },
+});
+
+// コンポーネントでの使用
+function UserProfile({ userId }: { userId: number }) {
+  const { data: user, isLoading } = trpc.getUser.useQuery({ id: userId });
+  
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
+  
+  return <div>{user.name}</div>;
+}
+```
+
+#### Expressでの実装
+
+**バックエンド:**
+
+```typescript
+// server.ts
+import express from 'express';
+import { createExpressMiddleware } from '@trpc/server/adapters/express';
+import { appRouter } from './routers/_app';
+
+const app = express();
+
+app.use(
+  '/trpc',
+  createExpressMiddleware({
+    router: appRouter,
+    createContext: () => ({}),
+  })
+);
+
+app.listen(3000);
+```
+
+**フロントエンド:**
+
+```typescript
+// client.ts
+import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
+import type { AppRouter } from './server/routers/_app';
+
+const trpc = createTRPCProxyClient<AppRouter>({
+  links: [
+    httpBatchLink({
+      url: 'http://localhost:3000/trpc',
+    }),
+  ],
+});
+
+// 使用
+const user = await trpc.getUser.query({ id: 1 });
+```
+
+### tRPC vs GraphQL vs RESTful API
+
+#### 比較表
+
+| 項目 | tRPC | GraphQL | RESTful API |
+|------|------|---------|-------------|
+| 型安全性 | エンドツーエンド | 限定的 | なし |
+| 学習コスト | 中 | 高 | 低 |
+| パフォーマンス | 高い | 中程度 | 中程度 |
+| フレームワーク | TypeScript必須 | 言語非依存 | 言語非依存 |
+| バリデーション | Zod統合 | スキーマ定義 | 手動 |
+
+#### 使い分け
+
+**tRPCを使うべき場合:**
+- TypeScriptプロジェクト
+- エンドツーエンドの型安全性が必要
+- フロントエンドとバックエンドが同じコードベース
+- 開発効率を重視
+
+**GraphQLを使うべき場合:**
+- 複雑なデータ取得が必要
+- クライアントが多様なデータを要求
+- 言語非依存が必要
+
+**RESTful APIを使うべき場合:**
+- シンプルなAPI
+- 広くサポートされている形式が必要
+- 言語非依存が必要
+
+### まとめ
+
+tRPCのポイント：
+
+- **エンドツーエンドの型安全性**: バックエンドとフロントエンドで型を共有
+- **Zod統合**: バリデーションと型定義を同時に
+- **開発効率**: 型の自動推論により開発効率が向上
+- **TypeScriptファースト**: TypeScriptの型システムを最大限に活用
+
+適切にtRPCを使用することで、型安全で効率的なAPI開発ができます。
+

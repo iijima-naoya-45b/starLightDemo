@@ -1,0 +1,360 @@
+---
+title: "Cache-Asideパターン"
+label: "Cache-Asideパターン"
+---
+
+## Cache-Asideパターン（Lazy Loading）
+
+Cache-Asideパターンは、最も一般的に使用されるキャッシング戦略です。アプリケーションがキャッシュを直接管理し、必要に応じてデータをキャッシュに読み込みます。
+
+### Cache-Asideパターンとは
+
+Cache-Asideパターンでは、アプリケーションがキャッシュとデータベースの両方にアクセスし、キャッシュの読み込みと書き込みを明示的に制御します。
+
+**動作フロー:**
+
+```
+読み取り:
+1. アプリケーションがキャッシュからデータを取得を試みる
+2. キャッシュにデータがある場合: キャッシュから返す（高速）
+3. キャッシュにデータがない場合:
+   a. データベースからデータを取得
+   b. データをキャッシュに保存
+   c. データを返す
+
+書き込み:
+1. アプリケーションがデータベースに書き込み
+2. キャッシュを無効化（または更新）
+```
+
+### 基本的な実装
+
+```typescript
+// Node.js + Redisの実装例
+import Redis from 'ioredis';
+
+const redis = new Redis({
+  host: 'localhost',
+  port: 6379,
+});
+
+class UserService {
+  // 読み取り: Cache-Asideパターン
+  async getUser(userId: string) {
+    // 1. キャッシュから取得を試みる
+    const cacheKey = `user:${userId}`;
+    const cached = await redis.get(cacheKey);
+    
+    if (cached) {
+      console.log('Cache hit');
+      return JSON.parse(cached);
+    }
+    
+    console.log('Cache miss');
+    
+    // 2. データベースから取得
+    const user = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+    
+    if (!user) {
+      throw new Error('User not found');
+    }
+    
+    // 3. キャッシュに保存
+    await redis.setex(cacheKey, 3600, JSON.stringify(user)); // 1時間
+    
+    return user;
+  }
+  
+  // 書き込み: キャッシュを無効化
+  async updateUser(userId: string, data: UserData) {
+    // 1. データベースを更新
+    const user = await db.query(
+      'UPDATE users SET ? WHERE id = ?',
+      [data, userId]
+    );
+    
+    // 2. キャッシュを無効化
+    await redis.del(`user:${userId}`);
+    
+    return user;
+  }
+  
+  // 書き込み: キャッシュを更新
+  async updateUserWithCache(userId: string, data: UserData) {
+    // 1. データベースを更新
+    const user = await db.query(
+      'UPDATE users SET ? WHERE id = ?',
+      [data, userId]
+    );
+    
+    // 2. キャッシュを更新
+    await redis.setex(`user:${userId}`, 3600, JSON.stringify(user));
+    
+    return user;
+  }
+}
+```
+
+### 利点と欠点
+
+**利点:**
+
+- **シンプル**: 実装が簡単で理解しやすい
+- **柔軟性**: アプリケーションがキャッシュを完全に制御できる
+- **データ一貫性**: データベースが唯一の真実の源（Single Source of Truth）
+- **障害耐性**: キャッシュが失敗しても、データベースから取得可能
+
+**欠点:**
+
+- **キャッシュミス**: 初回アクセス時やキャッシュ期限切れ時にデータベースアクセスが発生
+- **実装の複雑さ**: すべての読み取り箇所でキャッシュロジックを実装する必要がある
+- **キャッシュ無効化**: 更新時にキャッシュを無効化する処理が必要
+
+### 実践的な実装パターン
+
+#### 1. エラーハンドリング
+
+```typescript
+// ✅ 良い例: エラーハンドリングを含む
+async function getUser(userId: string) {
+  const cacheKey = `user:${userId}`;
+  
+  try {
+    // キャッシュから取得を試みる
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (error) {
+    // キャッシュエラーは無視してデータベースから取得
+    console.error('Cache error:', error);
+  }
+  
+  try {
+    // データベースから取得
+    const user = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+    
+    if (!user) {
+      throw new Error('User not found');
+    }
+    
+    // キャッシュに保存（エラーは無視）
+    try {
+      await redis.setex(cacheKey, 3600, JSON.stringify(user));
+    } catch (error) {
+      console.error('Cache set error:', error);
+      // キャッシュエラーは無視して続行
+    }
+    
+    return user;
+  } catch (error) {
+    // データベースエラーは再スロー
+    throw error;
+  }
+}
+```
+
+#### 2. キャッシュスラムの防止
+
+```typescript
+// ✅ 良い例: ロックを使用してキャッシュスラムを防止
+import Redlock from 'redlock';
+
+const redlock = new Redlock([redis], {
+  retryCount: 3,
+  retryDelay: 200,
+});
+
+async function getProduct(productId: string) {
+  const cacheKey = `product:${productId}`;
+  
+  // キャッシュから取得を試みる
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+  
+  // ロックを取得（他のプロセスがデータを取得中かチェック）
+  const lockKey = `lock:product:${productId}`;
+  let lock;
+  
+  try {
+    lock = await redlock.acquire([lockKey], 5000);
+    
+    // 再度キャッシュを確認（ロック取得中に他のプロセスがキャッシュした可能性がある）
+    const cachedAgain = await redis.get(cacheKey);
+    if (cachedAgain) {
+      return JSON.parse(cachedAgain);
+    }
+    
+    // データベースから取得
+    const product = await db.query('SELECT * FROM products WHERE id = ?', [productId]);
+    
+    if (!product) {
+      throw new Error('Product not found');
+    }
+    
+    // キャッシュに保存
+    await redis.setex(cacheKey, 3600, JSON.stringify(product));
+    
+    return product;
+  } catch (error) {
+    if (error.name === 'LockError') {
+      // ロック取得に失敗した場合、短時間待ってからキャッシュを再確認
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    }
+    throw error;
+  } finally {
+    if (lock) {
+      await lock.release();
+    }
+  }
+}
+```
+
+#### 3. バッチ読み取り
+
+```typescript
+// ✅ 良い例: 複数のキーを一度に取得
+async function getUsers(userIds: string[]) {
+  const cacheKeys = userIds.map(id => `user:${id}`);
+  
+  // キャッシュから一括取得
+  const cachedUsers = await Promise.all(
+    cacheKeys.map(key => redis.get(key))
+  );
+  
+  const result: User[] = [];
+  const missingIds: string[] = [];
+  
+  // キャッシュヒットしたものとミスしたものを分類
+  cachedUsers.forEach((cached, index) => {
+    if (cached) {
+      result[index] = JSON.parse(cached);
+    } else {
+      missingIds.push(userIds[index]);
+    }
+  });
+  
+  // キャッシュミスしたものだけデータベースから取得
+  if (missingIds.length > 0) {
+    const users = await db.query(
+      'SELECT * FROM users WHERE id IN (?)',
+      [missingIds]
+    );
+    
+    // 取得したデータをキャッシュに保存
+    const pipeline = redis.pipeline();
+    users.forEach(user => {
+      result[userIds.indexOf(user.id)] = user;
+      pipeline.setex(`user:${user.id}`, 3600, JSON.stringify(user));
+    });
+    await pipeline.exec();
+  }
+  
+  return result;
+}
+```
+
+### よくある問題と解決方法
+
+#### 1. キャッシュスラム（Cache Stampede）
+
+**問題:**
+
+複数のリクエストが同時にキャッシュミスを起こし、データベースに大量のリクエストが送信される。
+
+**解決:**
+
+```typescript
+// ロックを使用して同時アクセスを制御
+// 上記の「キャッシュスラムの防止」を参照
+```
+
+#### 2. スノーボール効果
+
+**問題:**
+
+キャッシュが一斉に期限切れになり、大量のリクエストがデータベースに送信される。
+
+**解決:**
+
+```typescript
+// ✅ 良い例: TTLにランダムな値を追加
+function getTTL(baseTTL: number, jitter: number = 0.1) {
+  const randomJitter = Math.random() * jitter * baseTTL;
+  return baseTTL + randomJitter;
+}
+
+async function getUser(userId: string) {
+  const cached = await redis.get(`user:${userId}`);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+  
+  const user = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+  
+  // TTLにランダムな値を追加（3600秒 ± 10%）
+  const ttl = getTTL(3600, 0.1); // 3240秒〜3960秒
+  await redis.setex(`user:${userId}`, ttl, JSON.stringify(user));
+  
+  return user;
+}
+```
+
+#### 3. キャッシュの無効化漏れ
+
+**問題:**
+
+データを更新したが、キャッシュを無効化し忘れたため、古いデータが表示される。
+
+**解決:**
+
+```typescript
+// ✅ 良い例: デコレーターパターンで自動的に無効化
+function withCacheInvalidation(
+  cacheKeys: (args: any[]) => string[]
+) {
+  return function (target: any, propertyName: string, descriptor: PropertyDescriptor) {
+    const method = descriptor.value;
+    
+    descriptor.value = async function (...args: any[]) {
+      const result = await method.apply(this, args);
+      
+      // キャッシュを無効化
+      const keys = cacheKeys(args);
+      await Promise.all(keys.map(key => redis.del(key)));
+      
+      return result;
+    };
+    
+    return descriptor;
+  };
+}
+
+class UserService {
+  @withCacheInvalidation(([userId]) => [`user:${userId}`, `user:${userId}:orders`])
+  async updateUser(userId: string, data: UserData) {
+    return await db.query('UPDATE users SET ? WHERE id = ?', [data, userId]);
+  }
+}
+```
+
+### まとめ
+
+Cache-Asideパターンは、最も一般的で柔軟なキャッシング戦略です。
+
+**重要なポイント:**
+
+- **シンプルさ**: 実装が簡単で理解しやすい
+- **柔軟性**: アプリケーションがキャッシュを完全に制御できる
+- **エラーハンドリング**: キャッシュエラーは無視し、データベースエラーは処理する
+- **キャッシュスラムの防止**: ロックを使用して同時アクセスを制御
+- **スノーボール効果の防止**: TTLにランダムな値を追加
+
+これらのベストプラクティスを守ることで、パフォーマンスが高く、障害に強いアプリケーションを構築できます。
+

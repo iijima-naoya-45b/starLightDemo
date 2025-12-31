@@ -1,0 +1,273 @@
+---
+title: "Write-Throughパターン"
+label: "Write-Throughパターン"
+---
+
+## Write-Throughパターン
+
+Write-Throughパターンは、データの書き込み時にキャッシュとデータベースの両方に書き込むキャッシング戦略です。これにより、書き込み後の読み取りでキャッシュヒット率が高くなります。
+
+### Write-Throughパターンとは
+
+Write-Throughパターンでは、データの書き込み時に、まずキャッシュに書き込み、その後データベースに書き込みます。これにより、キャッシュとデータベースの一貫性が保たれます。
+
+**動作フロー:**
+
+```
+書き込み:
+1. アプリケーションがデータを書き込む
+2. キャッシュに書き込み
+3. データベースに書き込み
+4. 両方が成功した場合: 成功を返す
+   どちらかが失敗した場合: ロールバック
+
+読み取り:
+1. キャッシュから取得を試みる
+2. キャッシュにデータがある場合: キャッシュから返す（高速）
+3. キャッシュにデータがない場合: データベースから取得してキャッシュに保存
+```
+
+### 基本的な実装
+
+```typescript
+// Node.js + Redisの実装例
+import Redis from 'ioredis';
+
+const redis = new Redis({
+  host: 'localhost',
+  port: 6379,
+});
+
+class UserService {
+  // Write-Throughパターン: 書き込み時にキャッシュとDBの両方に書き込む
+  async createUser(userData: UserData) {
+    const userId = generateUserId();
+    const user = { id: userId, ...userData };
+    
+    try {
+      // 1. キャッシュに書き込み
+      await redis.setex(`user:${userId}`, 3600, JSON.stringify(user));
+      
+      // 2. データベースに書き込み
+      await db.query('INSERT INTO users SET ?', [user]);
+      
+      return user;
+    } catch (error) {
+      // エラーが発生した場合、キャッシュを無効化
+      await redis.del(`user:${userId}`).catch(() => {});
+      throw error;
+    }
+  }
+  
+  async updateUser(userId: string, userData: UserData) {
+    // 1. データベースから現在のデータを取得
+    const currentUser = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+    
+    if (!currentUser) {
+      throw new Error('User not found');
+    }
+    
+    // 2. データベースを更新
+    const updatedUser = { ...currentUser, ...userData };
+    await db.query('UPDATE users SET ? WHERE id = ?', [updatedUser, userId]);
+    
+    // 3. キャッシュを更新
+    await redis.setex(`user:${userId}`, 3600, JSON.stringify(updatedUser));
+    
+    return updatedUser;
+  }
+  
+  // 読み取り: Cache-Asideパターンと同様
+  async getUser(userId: string) {
+    const cached = await redis.get(`user:${userId}`);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+    
+    const user = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+    
+    if (!user) {
+      throw new Error('User not found');
+    }
+    
+    await redis.setex(`user:${userId}`, 3600, JSON.stringify(user));
+    return user;
+  }
+}
+```
+
+### トランザクション対応の実装
+
+```typescript
+// ✅ 良い例: トランザクションを使用して一貫性を保証
+async function updateUserWithTransaction(userId: string, userData: UserData) {
+  // データベーストランザクションを開始
+  const transaction = await db.beginTransaction();
+  
+  try {
+    // 1. データベースを更新
+    const updatedUser = await transaction.query(
+      'UPDATE users SET ? WHERE id = ?',
+      [userData, userId]
+    );
+    
+    // 2. キャッシュを更新
+    await redis.setex(`user:${userId}`, 3600, JSON.stringify(updatedUser));
+    
+    // 3. トランザクションをコミット
+    await transaction.commit();
+    
+    return updatedUser;
+  } catch (error) {
+    // エラーが発生した場合、ロールバック
+    await transaction.rollback();
+    
+    // キャッシュを無効化（データベースと不整合を防ぐ）
+    await redis.del(`user:${userId}`).catch(() => {});
+    
+    throw error;
+  }
+}
+```
+
+### 利点と欠点
+
+**利点:**
+
+- **高いキャッシュヒット率**: 書き込み後に読み取る場合、常にキャッシュから取得できる
+- **データ一貫性**: キャッシュとデータベースが常に一致している
+- **読み取り性能**: 書き込み後の読み取りが非常に高速
+
+**欠点:**
+
+- **書き込み性能**: キャッシュとデータベースの両方に書き込むため、書き込みが遅い
+- **実装の複雑さ**: トランザクション管理が必要になる場合がある
+- **障害処理**: キャッシュとデータベースの両方が成功する必要がある
+
+### 実践的な実装パターン
+
+#### 1. 非同期書き込み（オプション）
+
+```typescript
+// ✅ 良い例: キャッシュへの書き込みを非同期で実行（パフォーマンス向上）
+async function updateUser(userId: string, userData: UserData) {
+  // 1. データベースを更新（同期）
+  const updatedUser = await db.query(
+    'UPDATE users SET ? WHERE id = ?',
+    [userData, userId]
+  );
+  
+  // 2. キャッシュを更新（非同期、エラーは無視）
+  redis.setex(`user:${userId}`, 3600, JSON.stringify(updatedUser))
+    .catch(error => {
+      console.error('Cache update error:', error);
+      // エラーは無視（データベースは更新済み）
+    });
+  
+  return updatedUser;
+}
+```
+
+**注意点:**
+
+- キャッシュの更新が失敗しても、データベースは更新されている
+- 次回の読み取り時にキャッシュミスが発生し、データベースから取得される
+- 一貫性は保たれるが、一時的にキャッシュとデータベースが不整合になる可能性がある
+
+#### 2. バッチ書き込み
+
+```typescript
+// ✅ 良い例: 複数のユーザーを一度に更新
+async function updateUsers(updates: Array<{ userId: string; data: UserData }>) {
+  // 1. データベースを一括更新
+  const transaction = await db.beginTransaction();
+  
+  try {
+    const updatedUsers = [];
+    for (const { userId, data } of updates) {
+      const user = await transaction.query(
+        'UPDATE users SET ? WHERE id = ?',
+        [data, userId]
+      );
+      updatedUsers.push(user);
+    }
+    
+    await transaction.commit();
+    
+    // 2. キャッシュを一括更新（パイプラインを使用）
+    const pipeline = redis.pipeline();
+    updatedUsers.forEach(user => {
+      pipeline.setex(`user:${user.id}`, 3600, JSON.stringify(user));
+    });
+    await pipeline.exec();
+    
+    return updatedUsers;
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+}
+```
+
+### Write-Throughが適しているケース
+
+```typescript
+// ✅ Write-Throughが適しているケース
+
+// 1. 読み取りが圧倒的に多い場合
+// 書き込み後に頻繁に読み取られるデータ
+async function createProduct(productData: ProductData) {
+  const product = await createProductInDB(productData);
+  await redis.setex(`product:${product.id}`, 3600, JSON.stringify(product));
+  return product;
+  // その後、この商品は頻繁に読み取られる
+}
+
+// 2. データの一貫性が最重要の場合
+// 金融取引など、データの一貫性が絶対に必要な場合
+async function updateBalance(userId: string, amount: number) {
+  const balance = await db.query(
+    'UPDATE accounts SET balance = balance + ? WHERE user_id = ?',
+    [amount, userId]
+  );
+  await redis.setex(`balance:${userId}`, 3600, JSON.stringify(balance));
+  return balance;
+}
+
+// 3. キャッシュヒット率を最大化したい場合
+// 書き込み後に即座に読み取られることが多いデータ
+```
+
+### Write-Throughが適さないケース
+
+```typescript
+// ❌ Write-Throughが適さないケース
+
+// 1. 書き込みが非常に多い場合
+// 書き込み性能が重要な場合、Write-Behindパターンの方が適している
+async function logEvent(event: Event) {
+  // ログは書き込みが多く、読み取りが少ない
+  // Write-Throughは書き込みを遅くするため、適さない
+}
+
+// 2. 一時的なデータ
+// すぐに期限切れになるデータは、Write-Throughのメリットが少ない
+async function createSession(sessionData: SessionData) {
+  // セッションは短時間で期限切れになる
+  // Write-Throughのオーバーヘッドが大きい
+}
+```
+
+### まとめ
+
+Write-Throughパターンは、読み取りが多く、データの一貫性が重要な場合に適したキャッシング戦略です。
+
+**重要なポイント:**
+
+- **高いキャッシュヒット率**: 書き込み後の読み取りが高速
+- **データ一貫性**: キャッシュとデータベースが常に一致
+- **書き込み性能**: キャッシュとデータベースの両方に書き込むため、書き込みが遅い
+- **トランザクション管理**: 一貫性を保つためにトランザクションが必要な場合がある
+
+これらの特徴を理解し、適切なユースケースで使用することで、パフォーマンスと一貫性を両立できます。
+

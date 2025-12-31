@@ -1,0 +1,149 @@
+---
+title: "カスケード障害のメカニズム"
+label: "カスケード障害のメカニズム"
+---
+
+## カスケード障害のメカニズム
+
+1つの遅延が全体を死滅させるメカニズムと、その対策を詳しく解説します。
+
+### カスケード障害の発生フロー
+
+#### 典型的なシナリオ
+
+```
+1. 外部APIが遅延（通常100ms → 5s）
+   ↓
+2. イベントループがブロックされ、すべてのリクエストが処理できなくなる
+   ↓
+3. 全エンドポイントが応答不能に陥る
+   ↓
+4. 不完全なDBトランザクションを残して全プロセスダウン
+   
+→ 1つの遅延が全体を死滅させる
+```
+
+#### 実際のタイムライン
+
+```
+時刻: 2024-01-01 10:00:00
+状況: 外部決済APIが遅延
+
+10:00:00.000 - 外部決済APIが通常の100msから5秒に遅延開始
+10:00:00.100 - リクエスト1受信（外部API呼び出し開始、イベントループがブロック）
+10:00:00.200 - リクエスト2受信（イベントループがブロックされているため待機）
+10:00:00.300 - リクエスト3受信（イベントループがブロックされているため待機）
+...
+10:00:05.000 - 外部APIが応答（5秒経過）
+10:00:05.100 - イベントループが解放されるが、すぐに次のリクエストで使用される
+10:00:05.200 - 外部APIが再び遅延（負荷が高い）
+10:00:10.000 - イベントループが再びブロック
+10:00:10.100 - 新しいリクエストが処理できず、タイムアウトエラーが発生
+10:00:10.200 - エラーログが大量に出力され、ログシステムも負荷が高い
+10:00:15.000 - システム全体が応答不能に陥る
+```
+
+### 問題のあるコード
+
+```python
+# ❌ 問題のあるコード: タイムアウトなし、同期I/O操作
+import requests
+
+@app.post("/orders")
+async def create_order(order_data: OrderData):
+    # 問題: 同期I/O操作によりイベントループがブロック
+    config = open('config.json').read()
+    
+    # 問題: タイムアウトが設定されていない
+    response = requests.post(
+        'https://payment-api.example.com/charge',
+        json=order_data.dict(),
+    )
+    
+    return response.json()
+```
+
+**なぜ事故るか:**
+
+1. **イベントループのブロック**: 同期I/O操作により、イベントループがブロックされる
+2. **タイムアウトなし**: 外部APIが遅延すると、すべてのリクエストが待機する
+3. **全エンドポイントの停止**: イベントループがブロックされている間、すべてのリクエストが処理できない
+
+### 解決策
+
+#### 1. タイムアウトの設定
+
+```python
+# ✅ 良い例: タイムアウトを設定
+import httpx
+
+@app.post("/orders")
+async def create_order(order_data: OrderData):
+    async with httpx.AsyncClient(timeout=3.0) as client:
+        try:
+            response = await client.post(
+                'https://payment-api.example.com/charge',
+                json=order_data.dict(),
+            )
+            return response.json()
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="Payment API timeout")
+```
+
+#### 2. 非同期I/O操作の使用
+
+```python
+# ✅ 良い例: 非同期I/O操作を使用
+import aiofiles
+
+@app.post("/orders")
+async def create_order(order_data: OrderData):
+    # 非同期I/O操作（イベントループをブロックしない）
+    async with aiofiles.open('config.json', 'r') as f:
+        config = await f.read()
+    
+    async with httpx.AsyncClient(timeout=3.0) as client:
+        response = await client.post(
+            'https://payment-api.example.com/charge',
+            json=order_data.dict(),
+        )
+        return response.json()
+```
+
+#### 3. サーキットブレーカーの実装
+
+```python
+# ✅ 良い例: circuitbreakerを使用したサーキットブレーカー
+from circuitbreaker import circuit
+
+@circuit(failure_threshold=5, recovery_timeout=30)
+async def charge_payment(order_id: int, amount: float):
+    async with httpx.AsyncClient(timeout=3.0) as client:
+        response = await client.post(
+            'https://payment-api.example.com/charge',
+            json={'order_id': order_id, 'amount': amount},
+        )
+        return response.json()
+
+@app.post("/orders")
+async def create_order(order_data: OrderData):
+    try:
+        result = await charge_payment(order_data.order_id, order_data.amount)
+        return result
+    except CircuitBreakerError:
+        raise HTTPException(
+            status_code=503,
+            detail="Payment service is temporarily unavailable"
+        )
+```
+
+### まとめ
+
+カスケード障害のメカニズムのポイント：
+
+- **発生フロー**: 外部APIの遅延 → イベントループのブロック → 全エンドポイントの応答不能 → システム全体のダウン
+- **対策**: タイムアウト設定、非同期I/O操作、サーキットブレーカー
+- **原則**: すべての設計はこのフローを想定して、「時間とリソース」で守る
+
+適切な対策により、1つの遅延が全体を死滅させることを防げます。
+

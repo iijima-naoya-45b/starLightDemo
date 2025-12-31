@@ -1,0 +1,267 @@
+---
+title: "stashとcherry-pick"
+label: "stashとcherry-pick"
+---
+
+## stashとcherry-pick
+
+作業中の変更を一時的に保存する`stash`と、特定のコミットを選択的に適用する`cherry-pick`について詳しく解説します。
+
+### stash（スタッシュ）
+
+#### stashとは
+
+**定義:**
+`stash`は、作業中の変更を一時的に保存し、作業ディレクトリをクリーンな状態にするコマンドです。
+
+**基本的な使い方:**
+
+```bash
+# 変更を一時的に保存
+git stash
+
+# メッセージを付けて保存
+git stash save "作業中の変更を保存"
+
+# 変更を復元
+git stash pop
+
+# 変更を復元（stashを削除しない）
+git stash apply
+```
+
+#### stashの一覧表示
+
+```bash
+# stashの一覧を表示
+git stash list
+
+# 出力例:
+# stash@{0}: WIP on main: abc1234 最新のコミット
+# stash@{1}: WIP on feature: def5678 前のコミット
+
+# 詳細情報を表示
+git stash show
+
+# 特定のstashの詳細を表示
+git stash show stash@{0}
+
+# 差分を表示
+git stash show -p stash@{0}
+```
+
+#### stashの適用と削除
+
+```bash
+# 最新のstashを適用して削除
+git stash pop
+
+# 特定のstashを適用して削除
+git stash pop stash@{1}
+
+# 最新のstashを適用（削除しない）
+git stash apply
+
+# 特定のstashを適用（削除しない）
+git stash apply stash@{1}
+
+# stashを削除
+git stash drop stash@{0}
+
+# すべてのstashを削除
+git stash clear
+```
+
+#### stashの実践例
+
+**基本的な使用:**
+
+```bash
+# 1. 作業中の変更を保存
+git stash
+# Saved working directory and index state WIP on main: abc1234
+
+# 2. ブランチを切り替え
+git checkout feature/other-feature
+
+# 3. 作業を完了
+
+# 4. 元のブランチに戻る
+git checkout main
+
+# 5. 保存した変更を復元
+git stash pop
+```
+
+**複数のstashの管理:**
+
+```bash
+# 1. 最初の変更を保存
+git stash save "ユーザー認証の実装"
+
+# 2. 別の変更を保存
+git stash save "商品一覧の実装"
+
+# 3. stashの一覧を確認
+git stash list
+# stash@{0}: On main: 商品一覧の実装
+# stash@{1}: On main: ユーザー認証の実装
+
+# 4. 特定のstashを適用
+git stash apply stash@{1}
+```
+
+**未追跡ファイルも含めて保存:**
+
+```bash
+# 未追跡ファイルも含めて保存
+git stash -u
+# または
+git stash --include-untracked
+
+# すべての変更を保存（未追跡ファイル、無視されたファイルも含む）
+git stash -a
+# または
+git stash --all
+```
+
+### cherry-pick（チェリーピック）
+
+#### cherry-pickとは
+
+**定義:**
+`cherry-pick`は、別のブランチの特定のコミットを現在のブランチに適用するコマンドです。
+
+**基本的な使い方:**
+
+```bash
+# 特定のコミットを適用
+git cherry-pick <コミットハッシュ>
+
+# 複数のコミットを適用
+git cherry-pick <コミット1> <コミット2>
+
+# 範囲でコミットを適用
+git cherry-pick <開始コミット>..<終了コミット>
+```
+
+#### cherry-pickの実践例
+
+**基本的な使用:**
+
+```bash
+# 1. コミットハッシュを確認
+git log --oneline
+# abc1234 ユーザー認証機能を実装
+# def5678 商品一覧機能を実装
+# ghi9012 バグ修正
+
+# 2. 特定のコミットを適用
+git checkout main
+git cherry-pick abc1234
+
+# 3. 複数のコミットを適用
+git cherry-pick abc1234 def5678
+
+# 4. 範囲でコミットを適用
+git cherry-pick abc1234..ghi9012
+```
+
+**コンフリクトの解決:**
+
+```bash
+# cherry-pick時にコンフリクトが発生
+git cherry-pick abc1234
+# error: could not apply abc1234
+# hint: after resolving the conflicts, mark the corrected paths
+
+# コンフリクトファイルを確認
+git status
+
+# コンフリクトを解決
+# ファイルを編集してコンフリクトマーカーを削除
+
+# 解決後、ステージングと続行
+git add .
+git cherry-pick --continue
+
+# cherry-pickを中止する場合
+git cherry-pick --abort
+```
+
+**コミットメッセージを変更:**
+
+```bash
+# コミットメッセージを編集して適用
+git cherry-pick -e abc1234
+# または
+git cherry-pick --edit abc1234
+
+# コミットメッセージを使用せずに適用
+git cherry-pick -n abc1234
+# または
+git cherry-pick --no-commit abc1234
+```
+
+### 実践的な使用例
+
+#### 1. 緊急修正を別ブランチに適用
+
+```bash
+# 1. mainブランチで緊急修正
+git checkout main
+git commit -m "緊急バグ修正"
+# コミットハッシュ: abc1234
+
+# 2. developブランチにも同じ修正を適用
+git checkout develop
+git cherry-pick abc1234
+```
+
+#### 2. 特定の機能だけを別ブランチに適用
+
+```bash
+# 1. featureブランチの特定のコミットを確認
+git checkout feature/user-auth
+git log --oneline
+# abc1234 ユーザー認証機能を実装
+# def5678 ログイン機能を実装
+# ghi9012 パスワードリセット機能を実装
+
+# 2. ログイン機能だけをmainブランチに適用
+git checkout main
+git cherry-pick def5678
+```
+
+#### 3. 作業中の変更を一時保存してブランチを切り替え
+
+```bash
+# 1. 作業中の変更を保存
+git stash save "作業中の変更"
+
+# 2. 別のブランチに切り替えて作業
+git checkout feature/urgent-fix
+# 緊急修正を実施
+git add .
+git commit -m "緊急修正"
+git push origin feature/urgent-fix
+
+# 3. 元のブランチに戻る
+git checkout feature/original-work
+
+# 4. 保存した変更を復元
+git stash pop
+```
+
+### まとめ
+
+stashとcherry-pickのポイント：
+
+- **stash**: 作業中の変更を一時保存、作業ディレクトリをクリーンな状態にする
+- **stashの管理**: 一覧表示、適用、削除、複数のstashの管理
+- **cherry-pick**: 特定のコミットを選択的に適用
+- **cherry-pickの実践**: 基本的な使用、コンフリクトの解決、コミットメッセージの変更
+- **実践的な使用例**: 緊急修正の適用、特定機能の適用、作業中の変更の一時保存
+
+適切にstashとcherry-pickを使用することで、柔軟に開発を進めることができます。
+

@@ -1,0 +1,201 @@
+---
+title: "filter-branchとbisect"
+label: "filter-branchとbisect"
+---
+
+## filter-branchとbisect
+
+履歴の書き換えとバグの特定に使用する`filter-branch`と`bisect`について詳しく解説します。
+
+### filter-branch（フィルターブランチ）
+
+#### filter-branchとは
+
+**定義:**
+`filter-branch`は、Gitの履歴を書き換える強力なコマンドです。すべてのコミットに対して操作を適用します。
+
+**基本的な使い方:**
+
+```bash
+# 履歴を書き換え
+git filter-branch [オプション] [コマンド]
+
+# 例: すべてのコミットからファイルを削除
+git filter-branch --tree-filter 'rm -f password.txt' HEAD
+
+# 例: すべてのコミットでメールアドレスを変更
+git filter-branch --env-filter '
+if [ "$GIT_AUTHOR_EMAIL" = "old@example.com" ]; then
+    export GIT_AUTHOR_EMAIL="new@example.com"
+fi
+' HEAD
+```
+
+#### 実践例
+
+**機密情報の削除:**
+
+```bash
+# 1. 機密情報を含むファイルを削除
+git filter-branch --force --index-filter \
+  "git rm --cached --ignore-unmatch secrets.txt" \
+  --prune-empty --tag-name-filter cat -- --all
+
+# 2. リモートに強制プッシュ（注意が必要）
+git push origin --force --all
+git push origin --force --tags
+
+# 3. ローカルの参照を削除
+git for-each-ref --format="delete %(refname)" refs/original | git update-ref --stdin
+git reflog expire --expire=now --all
+git gc --prune=now --aggressive
+```
+
+**メールアドレスの変更:**
+
+```bash
+# すべてのコミットでメールアドレスを変更
+git filter-branch --env-filter '
+if [ "$GIT_AUTHOR_EMAIL" = "old@example.com" ]; then
+    export GIT_AUTHOR_EMAIL="new@example.com"
+    export GIT_AUTHOR_NAME="New Name"
+fi
+if [ "$GIT_COMMITTER_EMAIL" = "old@example.com" ]; then
+    export GIT_COMMITTER_EMAIL="new@example.com"
+    export GIT_COMMITTER_NAME="New Name"
+fi
+' --tag-name-filter cat -- --branches --tags
+```
+
+**ディレクトリの移動:**
+
+```bash
+# すべてのコミットでディレクトリを移動
+git filter-branch --tree-filter '
+if [ -d old-dir ]; then
+    mkdir -p new-dir
+    mv old-dir/* new-dir/
+    rmdir old-dir
+fi
+' HEAD
+```
+
+### bisect（バイセクト）
+
+#### bisectとは
+
+**定義:**
+`bisect`は、二分探索を使用してバグが導入されたコミットを特定するコマンドです。
+
+**基本的な使い方:**
+
+```bash
+# bisectを開始
+git bisect start
+
+# バグがあるコミットを指定
+git bisect bad
+
+# バグがないコミットを指定
+git bisect good <コミットハッシュ>
+
+# または、タグを使用
+git bisect good v1.0.0
+
+# bisectを終了
+git bisect reset
+```
+
+#### 実践例
+
+**バグの特定:**
+
+```bash
+# 1. bisectを開始
+git bisect start
+
+# 2. 現在のコミットがバグがあることを指定
+git bisect bad
+
+# 3. バグがないことがわかっているコミットを指定
+git bisect good abc1234
+
+# 4. Gitが中間のコミットをチェックアウト
+# テストを実行して、バグがあるかどうかを確認
+
+# 5. バグがある場合
+git bisect bad
+
+# 6. バグがない場合
+git bisect good
+
+# 7. 繰り返し（Gitが自動的に次のコミットをチェックアウト）
+
+# 8. バグが導入されたコミットが特定されたら
+git bisect reset
+```
+
+**自動化されたbisect:**
+
+```bash
+# テストスクリプトを使用した自動bisect
+git bisect start
+git bisect bad
+git bisect good v1.0.0
+
+# テストスクリプトを実行
+git bisect run npm test
+
+# bisectが自動的にバグのコミットを特定
+```
+
+**実践的なワークフロー:**
+
+```bash
+# 1. バグが報告された
+# バグ: ログイン機能が動作しない
+
+# 2. bisectを開始
+git bisect start
+
+# 3. 現在のコミットがバグがあることを指定
+git bisect bad
+
+# 4. バグがないことがわかっているコミットを指定
+git bisect good v1.0.0
+
+# 5. Gitが中間のコミットをチェックアウト
+# 例: commit def5678
+
+# 6. テストを実行
+npm test
+# テストが失敗 → バグがある
+git bisect bad
+
+# 7. Gitが次のコミットをチェックアウト
+# 例: commit ghi9012
+
+# 8. テストを実行
+npm test
+# テストが成功 → バグがない
+git bisect good
+
+# 9. 繰り返し...
+
+# 10. バグが導入されたコミットが特定される
+# 例: commit jkl3456 "ユーザー認証の実装を変更"
+
+# 11. bisectを終了
+git bisect reset
+```
+
+### まとめ
+
+filter-branchとbisectのポイント：
+
+- **filter-branch**: 履歴の書き換え、機密情報の削除、メールアドレスの変更
+- **bisect**: 二分探索によるバグの特定、自動化されたbisect
+- **実践例**: 機密情報の削除、メールアドレスの変更、バグの特定
+
+適切にfilter-branchとbisectを使用することで、履歴の管理とバグの特定が容易になります。
+

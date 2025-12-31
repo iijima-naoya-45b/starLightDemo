@@ -1,0 +1,504 @@
+---
+title: "ブラウザキャッシュとHTTPキャッシュ"
+label: "ブラウザキャッシュとHTTPキャッシュ"
+---
+
+## ブラウザキャッシュとHTTPキャッシュ
+
+ブラウザキャッシュとHTTPキャッシュは、Webアプリケーションのパフォーマンスを向上させる最も基本的なキャッシング手法です。適切に設定することで、ネットワーク通信を削減し、ページの読み込み速度を大幅に向上させることができます。
+
+### ブラウザキャッシュとは
+
+ブラウザキャッシュは、ブラウザが一度取得したリソース（HTML、CSS、JavaScript、画像など）をローカルに保存し、次回アクセス時に再利用する仕組みです。
+
+**キャッシュの動作フロー:**
+
+```
+1. ユーザーがページにアクセス
+   ↓
+2. ブラウザがリソースをリクエスト
+   ↓
+3. サーバーがリソースとHTTPヘッダーを返す
+   ↓
+4. ブラウザがHTTPヘッダーを確認
+   ↓
+5. キャッシュ可能な場合: ローカルに保存
+   キャッシュ不可な場合: 毎回サーバーから取得
+   ↓
+6. 次回アクセス時: キャッシュから取得（高速）
+```
+
+### HTTPキャッシュヘッダー
+
+HTTPキャッシュは、HTTPヘッダーを使用してブラウザやプロキシサーバーにキャッシュの動作を指示します。
+
+#### Cache-Controlヘッダー
+
+`Cache-Control`ヘッダーは、キャッシュの動作を制御する最も重要なヘッダーです。
+
+**基本的なディレクティブ:**
+
+```http
+# 1時間キャッシュ
+Cache-Control: max-age=3600
+
+# キャッシュを使用する前に検証が必要
+Cache-Control: no-cache
+
+# キャッシュしない
+Cache-Control: no-store
+
+# ブラウザのみキャッシュ（プロキシではキャッシュしない）
+Cache-Control: private
+
+# すべてのキャッシュで保存可能
+Cache-Control: public
+
+# キャッシュは有効だが、期限切れ後は検証が必要
+Cache-Control: must-revalidate
+
+# キャッシュを再検証せずに使用可能（期限切れでも使用）
+Cache-Control: stale-while-revalidate=86400
+```
+
+**実装例（Node.js/Express）:**
+
+```typescript
+import express from 'express';
+
+const app = express();
+
+// 静的ファイル（CSS、JavaScript）: 長期間キャッシュ
+app.use('/static', express.static('public', {
+  maxAge: '1y', // 1年間キャッシュ
+  immutable: true, // 変更されないことを示す
+  setHeaders: (res, path) => {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  },
+}));
+
+// HTML: 短いキャッシュ（再検証が必要）
+app.get('*', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+  next();
+});
+
+// APIレスポンス: 中程度のキャッシュ
+app.get('/api/products', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=300'); // 5分
+  res.json({ products: [] });
+});
+```
+
+**実装例（Next.js）:**
+
+```typescript
+// next.config.js
+module.exports = {
+  async headers() {
+    return [
+      {
+        source: '/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+      {
+        source: '/api/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=300, stale-while-revalidate=600',
+          },
+        ],
+      },
+    ];
+  },
+};
+```
+
+#### Expiresヘッダー
+
+`Expires`ヘッダーは、キャッシュの有効期限を絶対時刻で指定します。
+
+```http
+Expires: Mon, 01 Jan 2024 12:00:00 GMT
+```
+
+**注意点:**
+
+- `Cache-Control`の`max-age`が優先される
+- サーバーとクライアントの時刻がずれている場合、問題が発生する可能性がある
+- 現在は`Cache-Control`の使用が推奨される
+
+#### ETagヘッダー
+
+`ETag`（Entity Tag）は、リソースのバージョンを表す識別子です。リソースが変更されたかどうかを判定するために使用されます。
+
+```http
+ETag: "abc123def456"
+```
+
+**動作フロー:**
+
+```
+1. サーバーがリソースとETagを返す
+   ↓
+2. ブラウザがリソースをキャッシュ
+   ↓
+3. 次回アクセス時: If-None-MatchヘッダーにETagを送信
+   ↓
+4. サーバーがETagを比較
+   - 一致する場合: 304 Not Modified（キャッシュを使用）
+   - 一致しない場合: 200 OK（新しいリソースを返す）
+```
+
+**実装例:**
+
+```typescript
+import crypto from 'crypto';
+
+app.get('/api/products', (req, res) => {
+  const products = getProducts();
+  const content = JSON.stringify(products);
+  
+  // ETagを生成（コンテンツのハッシュ）
+  const etag = crypto.createHash('md5').update(content).digest('hex');
+  
+  // クライアントのETagと比較
+  if (req.headers['if-none-match'] === etag) {
+    res.status(304).end(); // 変更なし
+    return;
+  }
+  
+  res.setHeader('ETag', etag);
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.json(products);
+});
+```
+
+#### Last-Modifiedヘッダー
+
+`Last-Modified`ヘッダーは、リソースの最終更新日時を指定します。
+
+```http
+Last-Modified: Mon, 01 Jan 2024 12:00:00 GMT
+```
+
+**動作フロー:**
+
+```
+1. サーバーがリソースとLast-Modifiedを返す
+   ↓
+2. ブラウザがリソースをキャッシュ
+   ↓
+3. 次回アクセス時: If-Modified-SinceヘッダーにLast-Modifiedを送信
+   ↓
+4. サーバーが日時を比較
+   - 変更されていない場合: 304 Not Modified
+   - 変更されている場合: 200 OK（新しいリソースを返す）
+```
+
+**実装例:**
+
+```typescript
+import fs from 'fs';
+
+app.get('/api/products', (req, res) => {
+  const products = getProducts();
+  const lastModified = new Date('2024-01-01T12:00:00Z');
+  
+  // クライアントのLast-Modifiedと比較
+  const ifModifiedSince = req.headers['if-modified-since'];
+  if (ifModifiedSince && new Date(ifModifiedSince) >= lastModified) {
+    res.status(304).end(); // 変更なし
+    return;
+  }
+  
+  res.setHeader('Last-Modified', lastModified.toUTCString());
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.json(products);
+});
+```
+
+### キャッシュの検証フロー
+
+HTTPキャッシュの検証は、以下のフローで行われます。
+
+```
+1. ブラウザがキャッシュを確認
+   ↓
+2. キャッシュが存在するか？
+   - 存在しない場合: サーバーにリクエスト
+   ↓
+3. キャッシュが有効か？（max-age、Expires）
+   - 有効な場合: キャッシュから取得（高速）
+   ↓
+4. キャッシュが期限切れの場合: 検証が必要
+   ↓
+5. If-None-Match（ETag）またはIf-Modified-Since（Last-Modified）を送信
+   ↓
+6. サーバーが304 Not Modifiedを返す場合: キャッシュを使用
+   サーバーが200 OKを返す場合: 新しいリソースを使用
+```
+
+### 実務でのキャッシュ戦略
+
+#### 静的リソースのキャッシュ
+
+静的リソース（CSS、JavaScript、画像など）は、ファイル名にハッシュを含めることで、長期間キャッシュできます。
+
+```http
+# CSS/JavaScript: 長期間キャッシュ（ファイル名にハッシュを含める）
+Cache-Control: public, max-age=31536000, immutable
+
+# 例: app.abc123.js（ハッシュが含まれている）
+# ファイルが変更されると、ハッシュが変わり、新しいファイルとして扱われる
+```
+
+**実装例（Next.js）:**
+
+```typescript
+// next.config.js
+module.exports = {
+  // ビルド時にファイル名にハッシュを含める
+  webpack: (config) => {
+    config.output.filename = '[name].[contenthash].js';
+    return config;
+  },
+};
+```
+
+#### HTMLのキャッシュ
+
+HTMLは、頻繁に更新される可能性があるため、短いキャッシュまたは再検証が必要です。
+
+```http
+# HTML: 短いキャッシュ（再検証が必要）
+Cache-Control: no-cache, must-revalidate
+
+# または、短いキャッシュ + stale-while-revalidate
+Cache-Control: public, max-age=60, stale-while-revalidate=300
+```
+
+**stale-while-revalidateの動作:**
+
+```
+1. キャッシュが有効な場合: キャッシュから取得（即座に表示）
+2. キャッシュが期限切れだが、stale-while-revalidate期間内の場合:
+   - 古いキャッシュを表示（即座に表示）
+   - バックグラウンドで新しいデータを取得
+   - 新しいデータが取得できたら、次回アクセス時に更新
+```
+
+#### APIレスポンスのキャッシュ
+
+APIレスポンスは、データの性質に応じてキャッシュ戦略を選択します。
+
+```http
+# 頻繁に更新されるデータ: 短いキャッシュ
+Cache-Control: public, max-age=60, stale-while-revalidate=300
+
+# 更新頻度が低いデータ: 中程度のキャッシュ
+Cache-Control: public, max-age=3600
+
+# ユーザー固有のデータ: キャッシュしない
+Cache-Control: private, no-cache
+```
+
+**実装例:**
+
+```typescript
+// ユーザー固有のデータ: キャッシュしない
+app.get('/api/user/profile', authenticate, (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-cache');
+  res.json({ user: req.user });
+});
+
+// 公開データ: キャッシュ可能
+app.get('/api/products', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
+  res.json({ products: getProducts() });
+});
+```
+
+### キャッシュの無効化
+
+キャッシュを無効化する方法は、以下の通りです。
+
+#### 1. ファイル名の変更
+
+```typescript
+// ファイル名にハッシュを含めることで、自動的に無効化
+// app.js → app.abc123.js（変更後）
+// ブラウザは新しいファイルとして認識し、古いキャッシュを使用しない
+```
+
+#### 2. クエリパラメータの追加
+
+```html
+<!-- キャッシュを無効化するためにクエリパラメータを追加 -->
+<link rel="stylesheet" href="/style.css?v=2">
+<script src="/app.js?v=2"></script>
+```
+
+**注意点:**
+
+- クエリパラメータは、CDNやプロキシによって無視される可能性がある
+- ファイル名にハッシュを含める方が確実
+
+#### 3. Cache-Controlヘッダーの変更
+
+```typescript
+// キャッシュを無効化するために、no-cacheを設定
+res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+```
+
+### ベストプラクティス
+
+#### 1. 適切なTTLの設定
+
+```typescript
+// ✅ 良い例: データの性質に応じてTTLを設定
+const cacheStrategies = {
+  // 静的ファイル: 長期間キャッシュ
+  static: 'public, max-age=31536000, immutable',
+  
+  // HTML: 短いキャッシュ + stale-while-revalidate
+  html: 'public, max-age=60, stale-while-revalidate=300',
+  
+  // API（頻繁に更新）: 短いキャッシュ
+  apiFrequent: 'public, max-age=60, stale-while-revalidate=300',
+  
+  // API（更新頻度が低い）: 中程度のキャッシュ
+  apiStable: 'public, max-age=3600',
+  
+  // ユーザー固有: キャッシュしない
+  userSpecific: 'private, no-cache',
+};
+```
+
+#### 2. ETagとLast-Modifiedの併用
+
+```typescript
+// ✅ 良い例: ETagとLast-Modifiedを併用
+app.get('/api/products', (req, res) => {
+  const products = getProducts();
+  const content = JSON.stringify(products);
+  const etag = crypto.createHash('md5').update(content).digest('hex');
+  const lastModified = new Date();
+  
+  // ETagの検証
+  if (req.headers['if-none-match'] === etag) {
+    res.status(304).end();
+    return;
+  }
+  
+  // Last-Modifiedの検証
+  const ifModifiedSince = req.headers['if-modified-since'];
+  if (ifModifiedSince && new Date(ifModifiedSince) >= lastModified) {
+    res.status(304).end();
+    return;
+  }
+  
+  res.setHeader('ETag', etag);
+  res.setHeader('Last-Modified', lastModified.toUTCString());
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.json(products);
+});
+```
+
+#### 3. Varyヘッダーの使用
+
+`Vary`ヘッダーは、レスポンスが異なる条件（Accept-Language、User-Agentなど）によって変わることを示します。
+
+```http
+Vary: Accept-Language, User-Agent
+```
+
+**実装例:**
+
+```typescript
+// 言語によって異なるコンテンツを返す場合
+app.get('/api/content', (req, res) => {
+  const lang = req.headers['accept-language'] || 'en';
+  const content = getContent(lang);
+  
+  res.setHeader('Vary', 'Accept-Language');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.json(content);
+});
+```
+
+### よくある問題と解決方法
+
+#### 1. キャッシュが更新されない
+
+**問題:**
+
+```typescript
+// ❌ 悪い例: キャッシュが更新されない
+app.get('/api/products', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=31536000'); // 1年間キャッシュ
+  res.json({ products: getProducts() });
+});
+```
+
+**解決:**
+
+```typescript
+// ✅ 良い例: 適切なTTLとETagを使用
+app.get('/api/products', (req, res) => {
+  const products = getProducts();
+  const etag = generateETag(products);
+  
+  if (req.headers['if-none-match'] === etag) {
+    res.status(304).end();
+    return;
+  }
+  
+  res.setHeader('ETag', etag);
+  res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
+  res.json({ products });
+});
+```
+
+#### 2. ユーザー固有のデータがキャッシュされる
+
+**問題:**
+
+```typescript
+// ❌ 悪い例: ユーザー固有のデータがキャッシュされる
+app.get('/api/user/profile', authenticate, (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=3600'); // 問題: 他のユーザーにもキャッシュされる可能性
+  res.json({ user: req.user });
+});
+```
+
+**解決:**
+
+```typescript
+// ✅ 良い例: privateを指定
+app.get('/api/user/profile', authenticate, (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-cache'); // ブラウザのみ、再検証が必要
+  res.json({ user: req.user });
+});
+```
+
+### まとめ
+
+ブラウザキャッシュとHTTPキャッシュは、Webアプリケーションのパフォーマンスを向上させる基本的な手法です。
+
+**重要なポイント:**
+
+- **Cache-Controlヘッダー**: キャッシュの動作を制御する最も重要なヘッダー
+- **ETagとLast-Modified**: リソースの変更を検証するためのメカニズム
+- **適切なTTLの設定**: データの性質に応じてTTLを設定
+- **Varyヘッダー**: 異なる条件によってレスポンスが変わることを示す
+- **stale-while-revalidate**: ユーザー体験を向上させる高度なキャッシュ戦略
+
+これらのベストプラクティスを守ることで、パフォーマンスが高く、ユーザー体験の優れたWebアプリケーションを構築できます。
+

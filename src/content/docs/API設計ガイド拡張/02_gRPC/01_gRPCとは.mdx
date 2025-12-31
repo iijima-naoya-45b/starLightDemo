@@ -1,0 +1,325 @@
+---
+title: "gRPCとは"
+label: "gRPCとは"
+---
+
+## gRPCとは
+
+gRPCは、Googleが開発した高性能なRPC（Remote Procedure Call）フレームワークです。Protocol Buffersを使用して、効率的な通信を実現します。
+
+### なぜgRPCが必要なのか
+
+#### RESTful APIの課題
+
+**問題のある実装:**
+
+```typescript
+// RESTful API: JSON形式で通信
+// リクエスト
+POST /api/users
+Content-Type: application/json
+
+{
+  "name": "Alice",
+  "email": "alice@example.com",
+  "age": 25
+}
+
+// レスポンス
+{
+  "id": 1,
+  "name": "Alice",
+  "email": "alice@example.com",
+  "age": 25
+}
+
+// 問題点:
+// - テキスト形式のため、サイズが大きい
+// - 型安全性がない
+// - パフォーマンスが限定的
+```
+
+**影響:**
+- 通信量の増加
+- パフォーマンスの低下
+- 型安全性の欠如
+
+#### gRPCによる解決
+
+**改善された実装:**
+
+```protobuf
+// Protocol Buffers: バイナリ形式で通信
+syntax = "proto3";
+
+service UserService {
+  rpc GetUser(GetUserRequest) returns (User);
+  rpc CreateUser(CreateUserRequest) returns (User);
+}
+
+message GetUserRequest {
+  int32 id = 1;
+}
+
+message CreateUserRequest {
+  string name = 1;
+  string email = 2;
+  int32 age = 3;
+}
+
+message User {
+  int32 id = 1;
+  string name = 2;
+  string email = 3;
+  int32 age = 4;
+}
+```
+
+**メリット:**
+- バイナリ形式のため、サイズが小さい
+- 型安全性が保証される
+- 高いパフォーマンス
+- ストリーミング対応
+
+### gRPCの特徴
+
+#### 1. Protocol Buffers
+
+**定義:**
+構造化データをシリアライズするための言語非依存のフォーマットです。
+
+**メリット:**
+- **サイズ**: JSONより約3-10倍小さい
+- **速度**: シリアライズ/デシリアライズが高速
+- **型安全性**: スキーマにより型が保証される
+- **後方互換性**: スキーマの進化に対応
+
+#### 2. HTTP/2ベース
+
+**特徴:**
+- マルチプレクシング（複数のリクエストを並列処理）
+- サーバープッシュ
+- ヘッダー圧縮
+- ストリーミング
+
+#### 3. 4つの通信パターン
+
+**1. Unary RPC（単一リクエスト・単一レスポンス）:**
+
+```protobuf
+rpc GetUser(GetUserRequest) returns (User);
+```
+
+**2. Server Streaming（単一リクエスト・複数レスポンス）:**
+
+```protobuf
+rpc ListUsers(ListUsersRequest) returns (stream User);
+```
+
+**3. Client Streaming（複数リクエスト・単一レスポンス）:**
+
+```protobuf
+rpc CreateUsers(stream CreateUserRequest) returns (CreateUsersResponse);
+```
+
+**4. Bidirectional Streaming（複数リクエスト・複数レスポンス）:**
+
+```protobuf
+rpc Chat(stream ChatMessage) returns (stream ChatMessage);
+```
+
+### gRPCの実装例
+
+#### Node.jsでの実装
+
+**プロトファイル:**
+
+```protobuf
+// user.proto
+syntax = "proto3";
+
+package user;
+
+service UserService {
+  rpc GetUser(GetUserRequest) returns (User);
+  rpc CreateUser(CreateUserRequest) returns (User);
+  rpc ListUsers(ListUsersRequest) returns (stream User);
+}
+
+message GetUserRequest {
+  int32 id = 1;
+}
+
+message CreateUserRequest {
+  string name = 1;
+  string email = 2;
+  int32 age = 3;
+}
+
+message ListUsersRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+message User {
+  int32 id = 1;
+  string name = 2;
+  string email = 3;
+  int32 age = 4;
+}
+```
+
+**サーバー実装:**
+
+```typescript
+import * as grpc from '@grpc/grpc-js';
+import * as protoLoader from '@grpc/proto-loader';
+import path from 'path';
+
+const PROTO_PATH = path.join(__dirname, '../proto/user.proto');
+
+const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
+  keepCase: true,
+  longs: String,
+  enums: String,
+  defaults: true,
+  oneofs: true,
+});
+
+const userProto = grpc.loadPackageDefinition(packageDefinition).user as any;
+
+// サーバーの実装
+const server = new grpc.Server();
+
+server.addService(userProto.UserService.service, {
+  GetUser: (call: any, callback: any) => {
+    const userId = call.request.id;
+    const user = getUserById(userId);
+    
+    if (!user) {
+      callback({
+        code: grpc.status.NOT_FOUND,
+        message: `User ${userId} not found`,
+      });
+      return;
+    }
+    
+    callback(null, user);
+  },
+  
+  CreateUser: (call: any, callback: any) => {
+    const { name, email, age } = call.request;
+    const user = createUser({ name, email, age });
+    callback(null, user);
+  },
+  
+  ListUsers: (call: any) => {
+    const { page, page_size } = call.request;
+    const users = getUsers(page, page_size);
+    
+    users.forEach((user: any) => {
+      call.write(user);
+    });
+    
+    call.end();
+  },
+});
+
+server.bindAsync(
+  '0.0.0.0:50051',
+  grpc.ServerCredentials.createInsecure(),
+  (error, port) => {
+    if (error) {
+      console.error('Server failed to start:', error);
+      return;
+    }
+    server.start();
+    console.log(`Server running on port ${port}`);
+  }
+);
+```
+
+**クライアント実装:**
+
+```typescript
+import * as grpc from '@grpc/grpc-js';
+import * as protoLoader from '@grpc/proto-loader';
+import path from 'path';
+
+const PROTO_PATH = path.join(__dirname, '../proto/user.proto');
+
+const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
+  keepCase: true,
+  longs: String,
+  enums: String,
+  defaults: true,
+  oneofs: true,
+});
+
+const userProto = grpc.loadPackageDefinition(packageDefinition).user as any;
+
+const client = new userProto.UserService(
+  'localhost:50051',
+  grpc.credentials.createInsecure()
+);
+
+// Unary RPC
+client.GetUser({ id: 1 }, (error: any, user: any) => {
+  if (error) {
+    console.error('Error:', error);
+    return;
+  }
+  console.log('User:', user);
+});
+
+// Server Streaming
+const stream = client.ListUsers({ page: 1, page_size: 10 });
+stream.on('data', (user: any) => {
+  console.log('User:', user);
+});
+stream.on('end', () => {
+  console.log('Stream ended');
+});
+stream.on('error', (error: any) => {
+  console.error('Stream error:', error);
+});
+```
+
+### gRPC vs RESTful API
+
+#### 比較表
+
+| 項目 | gRPC | RESTful API |
+|------|------|-------------|
+| 通信形式 | Protocol Buffers（バイナリ） | JSON（テキスト） |
+| パフォーマンス | 高い | 中程度 |
+| 型安全性 | 高い | 低い |
+| ストリーミング | 対応 | 限定的（SSE、WebSocket） |
+| ブラウザサポート | 限定的（gRPC-Web） | 完全 |
+| 学習コスト | 高い | 低い |
+
+#### 使い分け
+
+**gRPCを使うべき場合:**
+- マイクロサービス間の通信
+- 高いパフォーマンスが必要
+- 型安全性が重要
+- ストリーミングが必要
+
+**RESTful APIを使うべき場合:**
+- ブラウザからのアクセス
+- シンプルなAPI
+- 広くサポートされている形式が必要
+
+### まとめ
+
+gRPCのポイント：
+
+- **Protocol Buffers**: 効率的なシリアライゼーション
+- **HTTP/2**: マルチプレクシングとストリーミング
+- **4つの通信パターン**: Unary、Server Streaming、Client Streaming、Bidirectional Streaming
+- **高いパフォーマンス**: バイナリ形式により高速
+- **型安全性**: スキーマにより型が保証される
+
+適切にgRPCを使用することで、高性能なAPIを構築できます。
+

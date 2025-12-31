@@ -1,0 +1,169 @@
+---
+title: "よく使うコマンドの組み合わせ"
+label: "よく使うコマンドの組み合わせ"
+---
+
+## よく使うコマンドの組み合わせ
+
+実務でよく使うコマンドの組み合わせを実践例とともに解説します。
+
+### ログ分析
+
+#### エラーログの確認
+
+```bash
+# 最新のエラーを確認
+tail -100 /var/log/app.log | grep ERROR
+
+# エラーの数をカウント
+grep -c ERROR /var/log/app.log
+
+# エラーが発生した時間を確認
+grep ERROR /var/log/app.log | awk '{print $1, $2}'
+
+# エラーの種類ごとにカウント
+grep ERROR /var/log/app.log | awk '{print $NF}' | sort | uniq -c
+```
+
+#### アクセスログの分析
+
+```bash
+# アクセス数の多いIPアドレス
+awk '{print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head -10
+
+# ステータスコードの統計
+awk '{print $9}' /var/log/nginx/access.log | sort | uniq -c | sort -rn
+
+# 特定の時間帯のアクセス
+grep "01/Jan/2024:10" /var/log/nginx/access.log | wc -l
+```
+
+### ファイル操作
+
+#### 大きなファイルの検索と削除
+
+```bash
+# 100MB以上のファイルを検索
+find /home -type f -size +100M
+
+# 古いファイルを検索（30日以上前）
+find /tmp -type f -mtime +30
+
+# 古いファイルを削除（注意が必要）
+find /tmp -type f -mtime +30 -delete
+
+# 空のファイルを検索
+find /home -type f -empty
+
+# 空のディレクトリを検索
+find /home -type d -empty
+```
+
+#### ファイルの整理
+
+```bash
+# 拡張子ごとにファイルを整理
+for ext in txt pdf jpg; do
+  mkdir -p $ext
+  mv *.$ext $ext/ 2>/dev/null
+done
+
+# 日付ごとにファイルを整理
+for file in *.log; do
+  date=$(stat -c %y "$file" | cut -d' ' -f1)
+  mkdir -p "$date"
+  mv "$file" "$date/"
+done
+```
+
+### プロセス管理
+
+#### プロセスの監視と管理
+
+```bash
+# CPU使用率の高いプロセス
+ps aux --sort=-%cpu | head -10
+
+# メモリ使用率の高いプロセス
+ps aux --sort=-%mem | head -10
+
+# 特定のプロセスのリソース使用状況
+ps aux | grep nginx | awk '{sum+=$3} END {print "CPU:", sum"%"}'
+
+# プロセスを終了（安全な方法）
+pkill -15 nginx  # SIGTERMで正常終了
+sleep 5
+pkill -9 nginx   # SIGKILLで強制終了（必要に応じて）
+```
+
+### システム監視
+
+#### リソース使用状況の確認
+
+```bash
+# CPUとメモリの使用状況を1行で表示
+echo "CPU: $(top -bn1 | grep "Cpu(s)" | awk '{print $2}') | Memory: $(free -h | awk '/^Mem:/ {print $3 "/" $2}')"
+
+# ディスク使用率が80%を超えるパーティション
+df -h | awk '$5+0 > 80 {print $0}'
+
+# メモリ使用率が高いプロセス
+ps aux --sort=-%mem | head -5
+```
+
+### バックアップとアーカイブ
+
+#### バックアップスクリプト
+
+```bash
+#!/bin/bash
+# バックアップスクリプト
+
+BACKUP_DIR="/backup"
+SOURCE_DIR="/var/www"
+DATE=$(date +%Y%m%d_%H%M%S)
+
+# バックアップの作成
+tar -czf $BACKUP_DIR/backup_$DATE.tar.gz $SOURCE_DIR
+
+# 古いバックアップの削除（7日以上前）
+find $BACKUP_DIR -name "backup_*.tar.gz" -mtime +7 -delete
+
+# バックアップの確認
+if [ -f "$BACKUP_DIR/backup_$DATE.tar.gz" ]; then
+  echo "Backup successful: backup_$DATE.tar.gz"
+else
+  echo "Backup failed!"
+  exit 1
+fi
+```
+
+### ネットワーク診断
+
+#### 接続の確認
+
+```bash
+# ポートが開いているか確認
+nc -zv hostname 80
+
+# 複数のポートを確認
+for port in 80 443 8080; do
+  nc -zv localhost $port
+done
+
+# 接続しているプロセスを確認
+netstat -tulpn | grep LISTEN
+```
+
+### まとめ
+
+よく使うコマンドの組み合わせのポイント：
+
+- **ログ分析**: grep、awk、sort、uniqの組み合わせ
+- **ファイル操作**: find、xargs、mvの組み合わせ
+- **プロセス管理**: ps、grep、awkの組み合わせ
+- **システム監視**: top、free、dfの組み合わせ
+- **バックアップ**: tar、find、dateの組み合わせ
+
+適切にコマンドを組み合わせることで、効率的な作業ができます。
+

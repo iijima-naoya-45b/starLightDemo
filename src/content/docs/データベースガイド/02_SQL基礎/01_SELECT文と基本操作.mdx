@@ -1,0 +1,223 @@
+---
+title: "SELECT文と基本操作"
+label: "SELECT文と基本操作"
+---
+
+## SELECT文と基本操作
+
+SQLの基本であるSELECT文と、データの取得・操作の基本を解説します。
+
+### SELECT文の基本構文
+
+#### 基本的なSELECT文
+
+```sql
+-- すべてのカラムを取得
+SELECT * FROM users;
+
+-- 特定のカラムを取得
+SELECT id, name, email FROM users;
+
+-- カラムにエイリアスを付ける
+SELECT id AS user_id, name AS user_name FROM users;
+```
+
+#### WHERE句による条件指定
+
+```sql
+-- 条件に合う行を取得
+SELECT * FROM users WHERE age >= 18;
+
+-- 複数の条件を組み合わせる
+SELECT * FROM users 
+WHERE age >= 18 AND status = 'active';
+
+-- IN句を使用
+SELECT * FROM users 
+WHERE id IN (1, 2, 3, 4, 5);
+
+-- LIKE句を使用（パターンマッチング）
+SELECT * FROM users 
+WHERE name LIKE 'A%';  -- Aで始まる名前
+```
+
+#### ORDER BYによる並び替え
+
+```sql
+-- 昇順で並び替え
+SELECT * FROM users ORDER BY name ASC;
+
+-- 降順で並び替え
+SELECT * FROM users ORDER BY created_at DESC;
+
+-- 複数のカラムで並び替え
+SELECT * FROM users 
+ORDER BY status ASC, created_at DESC;
+```
+
+#### LIMITによる件数制限
+
+```sql
+-- 最初の10件を取得
+SELECT * FROM users LIMIT 10;
+
+-- オフセットを指定（ページネーション）
+SELECT * FROM users LIMIT 10 OFFSET 20;  -- 21-30件目を取得
+```
+
+### JOINによる結合
+
+#### INNER JOIN
+
+```sql
+-- ユーザーと注文を結合
+SELECT u.name, o.amount, o.created_at
+FROM users u
+INNER JOIN orders o ON u.id = o.user_id;
+```
+
+#### LEFT JOIN
+
+```sql
+-- すべてのユーザーを取得（注文がないユーザーも含む）
+SELECT u.name, o.amount
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id;
+```
+
+#### RIGHT JOIN
+
+```sql
+-- すべての注文を取得（ユーザーが存在しない注文も含む）
+SELECT u.name, o.amount
+FROM users u
+RIGHT JOIN orders o ON u.id = o.user_id;
+```
+
+### 集約関数
+
+#### COUNT、SUM、AVG、MAX、MIN
+
+```sql
+-- ユーザー数を取得
+SELECT COUNT(*) FROM users;
+
+-- 条件に合うユーザー数を取得
+SELECT COUNT(*) FROM users WHERE status = 'active';
+
+-- 合計金額を取得
+SELECT SUM(amount) FROM orders;
+
+-- 平均金額を取得
+SELECT AVG(amount) FROM orders;
+
+-- 最大金額を取得
+SELECT MAX(amount) FROM orders;
+
+-- 最小金額を取得
+SELECT MIN(amount) FROM orders;
+```
+
+#### GROUP BYによるグループ化
+
+```sql
+-- ユーザーごとの注文数を取得
+SELECT user_id, COUNT(*) AS order_count
+FROM orders
+GROUP BY user_id;
+
+-- ユーザーごとの合計金額を取得
+SELECT user_id, SUM(amount) AS total_amount
+FROM orders
+GROUP BY user_id;
+```
+
+#### HAVINGによるグループのフィルタリング
+
+```sql
+-- 注文数が5件以上のユーザーを取得
+SELECT user_id, COUNT(*) AS order_count
+FROM orders
+GROUP BY user_id
+HAVING COUNT(*) >= 5;
+```
+
+### サブクエリ
+
+#### スカラーサブクエリ
+
+```sql
+-- 各ユーザーの最新注文日を取得
+SELECT 
+  id,
+  name,
+  (SELECT MAX(created_at) FROM orders WHERE user_id = users.id) AS last_order_date
+FROM users;
+```
+
+#### 相関サブクエリ
+
+```sql
+-- 平均以上の金額の注文を取得
+SELECT *
+FROM orders o1
+WHERE amount > (
+  SELECT AVG(amount)
+  FROM orders o2
+  WHERE o2.user_id = o1.user_id
+);
+```
+
+### INSERT、UPDATE、DELETE
+
+#### INSERT
+
+```sql
+-- 1行を挿入
+INSERT INTO users (name, email, age)
+VALUES ('Alice', 'alice@example.com', 25);
+
+-- 複数行を挿入
+INSERT INTO users (name, email, age)
+VALUES 
+  ('Bob', 'bob@example.com', 30),
+  ('Charlie', 'charlie@example.com', 22);
+```
+
+#### UPDATE
+
+```sql
+-- 条件に合う行を更新
+UPDATE users
+SET age = 26, status = 'active'
+WHERE id = 1;
+
+-- すべての行を更新（注意が必要）
+UPDATE users
+SET updated_at = CURRENT_TIMESTAMP;
+```
+
+#### DELETE
+
+```sql
+-- 条件に合う行を削除
+DELETE FROM users WHERE id = 1;
+
+-- すべての行を削除（注意が必要）
+DELETE FROM users;
+```
+
+### まとめ
+
+SELECT文と基本操作のポイント：
+
+- **SELECT文**: データの取得
+- **WHERE句**: 条件によるフィルタリング
+- **JOIN**: 複数テーブルの結合
+- **集約関数**: COUNT、SUM、AVGなど
+- **GROUP BY**: グループ化
+- **サブクエリ**: クエリ内のクエリ
+- **INSERT/UPDATE/DELETE**: データの操作
+
+基本的なSQL操作を理解することで、効率的にデータを操作できます。
+

@@ -1,0 +1,260 @@
+---
+title: "冪等性と整合性"
+label: "冪等性と整合性"
+---
+
+## 冪等性と整合性
+
+分散システムでは「1回しか実行されない」は幻想。「何度実行されても最終状態が正しい」ことを保証する設計を詳しく解説します。
+
+### 冪等性の重要性
+
+分散システムでは、ネットワークエラー、タイムアウト、再起動などにより、同じ処理が複数回実行される可能性があります。
+
+#### 問題のあるコード
+
+```php
+// ❌ 問題のあるコード: 非冪等な処理
+function createOrder($orderData) {
+    // 問題: 再実行時に注文が二重作成される
+    $pdo = getConnection();
+    $stmt = $pdo->prepare("INSERT INTO orders (user_id, amount) VALUES (?, ?)");
+    $stmt->execute([$orderData['user_id'], $orderData['amount']]);
+    return $pdo->lastInsertId();
+}
+```
+
+**なぜ問題か:**
+
+- **再実行時の二重作成**: ネットワークエラーでクライアントが再送すると、注文が2つ作成される
+- **データの不整合**: 同じ注文が複数存在し、在庫や決済に影響する
+
+### 冪等性の担保
+
+#### Idempotency Keyの使用
+
+```php
+// ✅ 良い例: Idempotency Keyによる冪等性の担保
+function createOrder($orderData, $idempotencyKey) {
+    $pdo = getConnection();
+    
+    try {
+        $pdo->beginTransaction();
+        
+        // Idempotency Keyで既存の注文を確認
+        $stmt = $pdo->prepare("SELECT * FROM orders WHERE idempotency_key = ?");
+        $stmt->execute([$idempotencyKey]);
+        $existingOrder = $stmt->fetch();
+        
+        if ($existingOrder) {
+            // 既に存在する場合は、既存の注文を返す
+            $pdo->commit();
+            return $existingOrder['id'];
+        }
+        
+        // 新規作成
+        $stmt = $pdo->prepare("INSERT INTO orders (user_id, amount, idempotency_key) VALUES (?, ?, ?)");
+        $stmt->execute([
+            $orderData['user_id'],
+            $orderData['amount'],
+            $idempotencyKey,
+        ]);
+        $orderId = $pdo->lastInsertId();
+        
+        $pdo->commit();
+        return $orderId;
+    } catch (\Exception $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+}
+
+// マイグレーションでIdempotency Keyを追加
+// CREATE UNIQUE INDEX idx_orders_idempotency_key ON orders(idempotency_key);
+```
+
+**なぜ重要か:**
+
+- **重複防止**: 同じIdempotency Keyで再実行しても、同じ結果が返される
+- **データの整合性**: 注文の重複作成を防止
+
+### トランザクション境界
+
+DB取引中に外部APIを呼ばない（失敗時復旧不可）。
+
+#### 問題のあるコード
+
+```php
+// ❌ 問題のあるコード: トランザクション内で外部APIを呼ぶ
+function createOrder($orderData) {
+    $pdo = getConnection();
+    try {
+        $pdo->beginTransaction();
+        
+        // 1. 注文を作成（DBトランザクション内）
+        $stmt = $pdo->prepare("INSERT INTO orders (user_id, amount) VALUES (?, ?)");
+        $stmt->execute([$orderData['user_id'], $orderData['amount']]);
+        $orderId = $pdo->lastInsertId();
+        
+        // 2. トランザクション内で外部APIを呼ぶ（問題）
+        $ch = curl_init('https://payment-api.example.com/charge');
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
+            'order_id' => $orderId,
+            'amount' => $orderData['amount'],
+        ]));
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        $response = curl_exec($ch);
+        
+        if (curl_getinfo($ch, CURLINFO_HTTP_CODE) !== 200) {
+            throw new PaymentException('Payment failed');
+        }
+        
+        // 3. 決済結果を保存
+        $stmt = $pdo->prepare("UPDATE orders SET payment_status = ? WHERE id = ?");
+        $stmt->execute(['COMPLETED', $orderId]);
+        
+        $pdo->commit();
+        return $orderId;
+    } catch (\Exception $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+}
+```
+
+**なぜ問題か:**
+
+- **ロールバック不可**: 外部APIが成功した後にトランザクションが失敗した場合、外部APIのロールバックが困難
+- **データの不整合**: 外部APIは成功しているが、DBには注文が存在しない状態になる可能性
+
+#### Outboxパターンの実装
+
+```php
+// ✅ 良い例: Outboxパターンによる解決
+function createOrder($orderData, $idempotencyKey) {
+    $pdo = getConnection();
+    try {
+        $pdo->beginTransaction();
+        
+        // 1. Idempotency Keyで既存の注文を確認
+        $stmt = $pdo->prepare("SELECT * FROM orders WHERE idempotency_key = ?");
+        $stmt->execute([$idempotencyKey]);
+        $existingOrder = $stmt->fetch();
+        
+        if ($existingOrder) {
+            $pdo->commit();
+            return $existingOrder['id'];
+        }
+        
+        // 2. トランザクション内で注文を作成
+        $stmt = $pdo->prepare("INSERT INTO orders (user_id, amount, idempotency_key) VALUES (?, ?, ?)");
+        $stmt->execute([
+            $orderData['user_id'],
+            $orderData['amount'],
+            $idempotencyKey,
+        ]);
+        $orderId = $pdo->lastInsertId();
+        
+        // 3. Outboxテーブルに外部API呼び出しを記録（トランザクション内）
+        $payload = json_encode([
+            'order_id' => $orderId,
+            'amount' => $orderData['amount'],
+        ]);
+        
+        $stmt = $pdo->prepare("INSERT INTO outbox_events (event_type, aggregate_id, payload, idempotency_key, status) VALUES (?, ?, ?, ?, ?)");
+        $stmt->execute([
+            'PAYMENT_CHARGE',
+            (string)$orderId,
+            $payload,
+            $idempotencyKey,
+            'PENDING',
+        ]);
+        
+        // 4. トランザクションをコミット（外部APIは呼ばない）
+        $pdo->commit();
+        return $orderId;
+    } catch (\Exception $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+}
+
+// 別プロセスでOutboxを処理
+function processOutbox() {
+    $pdo = getConnection();
+    $stmt = $pdo->prepare("SELECT * FROM outbox_events WHERE status = 'PENDING' LIMIT 10");
+    $stmt->execute();
+    $pendingEvents = $stmt->fetchAll();
+    
+    foreach ($pendingEvents as $event) {
+        try {
+            // 外部APIを呼ぶ（トランザクション外）
+            $payload = json_decode($event['payload'], true);
+            
+            $ch = curl_init('https://payment-api.example.com/charge');
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Idempotency-Key: ' . $event['idempotency_key'],
+            ]);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            
+            if ($httpCode === 200) {
+                $stmt = $pdo->prepare("UPDATE outbox_events SET status = 'COMPLETED' WHERE id = ?");
+                $stmt->execute([$event['id']]);
+            } else {
+                $stmt = $pdo->prepare("UPDATE outbox_events SET status = 'FAILED', retry_count = retry_count + 1 WHERE id = ?");
+                $stmt->execute([$event['id']]);
+            }
+        } catch (\Exception $e) {
+            $stmt = $pdo->prepare("UPDATE outbox_events SET status = 'FAILED', retry_count = retry_count + 1 WHERE id = ?");
+            $stmt->execute([$event['id']]);
+            error_log("Failed to process outbox event: {$event['id']} - " . $e->getMessage());
+        }
+    }
+}
+
+// 定期的にOutboxを処理
+// cronジョブで5秒ごとに実行
+```
+
+**なぜ重要か:**
+
+- **トランザクションの短縮**: DBのロック時間が短縮される
+- **外部障害の分離**: 外部APIの障害がトランザクションに影響しない
+- **再実行の容易さ**: Outboxテーブルから再実行可能
+- **冪等性の保証**: Idempotency Keyにより重複実行を防止
+
+### 再送安全なフロー
+
+「結果整合性で良いデータ」と「厳密整合性が必要なデータ」を明示的に分類する。
+
+#### 整合性レベルの分類
+
+```php
+// 厳密整合性が必要なデータ（ACIDトランザクション）
+// ordersテーブル: 注文、決済、在庫など、ビジネス的に重要なデータ
+
+// 結果整合性で良いデータ（イベント駆動）
+// order_analyticsテーブル: 分析データ、ログ、通知など、最終的に整合性が取れれば良いデータ
+// 集計値は最終的に整合性が取れれば良い
+```
+
+**使い分け:**
+
+- **厳密整合性**: 注文、決済、在庫など、ビジネス的に重要なデータ
+- **結果整合性**: 分析データ、ログ、通知など、最終的に整合性が取れれば良いデータ
+
+### まとめ
+
+冪等性と整合性のポイント：
+
+- **冪等性の担保**: Idempotency Keyで再実行を安全化
+- **トランザクション境界**: DB取引中に外部APIを呼ばない（Outboxパターンを使用）
+- **再送安全なフロー**: 厳密整合性と結果整合性を明示的に分類
+
+これらの原則により、「何度実行されても最終状態が正しい」堅牢なシステムを構築できます。
+

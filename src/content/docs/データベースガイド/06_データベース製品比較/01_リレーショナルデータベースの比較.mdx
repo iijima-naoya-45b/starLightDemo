@@ -1,0 +1,199 @@
+---
+title: "リレーショナルデータベースの比較"
+label: "リレーショナルデータベースの比較"
+---
+
+## リレーショナルデータベースの比較
+
+主要なリレーショナルデータベース（PostgreSQL、MySQL、SQL Server、Oracle）の特徴と使い分けを解説します。
+
+### PostgreSQL
+
+#### 特徴
+
+**メリット:**
+- オープンソースで無料
+- 高度な機能（JSON型、配列型、全文検索など）
+- 標準SQLへの準拠が高い
+- 拡張性が高い（拡張機能が豊富）
+
+**デメリット:**
+- メモリ使用量が多い
+- 設定が複雑
+
+**使用例:**
+
+```sql
+-- JSON型の使用
+CREATE TABLE products (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255),
+  attributes JSONB
+);
+
+INSERT INTO products (name, attributes)
+VALUES ('Laptop', '{"color": "black", "weight": 2.5}');
+
+-- JSONクエリ
+SELECT * FROM products 
+WHERE attributes->>'color' = 'black';
+```
+
+**選定基準:**
+- 複雑なデータ型が必要
+- 標準SQLへの準拠が重要
+- オープンソースを希望
+
+### MySQL
+
+#### 特徴
+
+**メリット:**
+- シンプルで使いやすい
+- パフォーマンスが良い
+- 豊富なドキュメントとコミュニティ
+- 多くのホスティングサービスでサポート
+
+**デメリット:**
+- 高度な機能が少ない
+- 標準SQLへの準拠が低い
+
+**使用例:**
+
+```sql
+-- 基本的なテーブル作成
+CREATE TABLE users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- インデックスの作成
+CREATE INDEX idx_email ON users(email);
+```
+
+**選定基準:**
+- シンプルなWebアプリケーション
+- 高速な読み書きが必要
+- 豊富なサポートが必要
+
+### SQL Server
+
+#### 特徴
+
+**メリット:**
+- エンタープライズ機能が充実
+- 統合開発環境（SSMS）が優秀
+- Windows環境との統合が良い
+- レプリケーション機能が充実
+
+**デメリット:**
+- ライセンス費用が高い
+- Windows環境に依存
+
+**使用例:**
+
+```sql
+-- T-SQLの使用
+DECLARE @user_count INT;
+
+SELECT @user_count = COUNT(*)
+FROM users
+WHERE status = 'active';
+
+PRINT 'Active users: ' + CAST(@user_count AS VARCHAR);
+```
+
+**選定基準:**
+- Windows環境
+- エンタープライズ機能が必要
+- 予算がある
+
+### Oracle Database
+
+#### 特徴
+
+**メリット:**
+- 最高レベルのパフォーマンス
+- エンタープライズ機能が最も充実
+- 高い可用性とスケーラビリティ
+- 豊富なツールとサポート
+
+**デメリット:**
+- ライセンス費用が非常に高い
+- 複雑で学習コストが高い
+
+**使用例:**
+
+```sql
+-- PL/SQLの使用
+DECLARE
+  v_count NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO v_count
+  FROM users
+  WHERE status = 'active';
+  
+  DBMS_OUTPUT.PUT_LINE('Active users: ' || v_count);
+END;
+```
+
+**選定基準:**
+- 大規模エンタープライズアプリケーション
+- 最高レベルのパフォーマンスが必要
+- 予算が十分にある
+
+### 比較表
+
+| 項目 | PostgreSQL | MySQL | SQL Server | Oracle |
+|------|-----------|-------|------------|--------|
+| ライセンス | オープンソース | オープンソース/商用 | 商用 | 商用 |
+| コスト | 無料 | 無料/有料 | 高 | 非常に高 |
+| パフォーマンス | 高 | 高 | 高 | 最高 |
+| 機能の豊富さ | 非常に豊富 | 標準的 | 豊富 | 最も豊富 |
+| 標準SQL準拠 | 高い | 低い | 中程度 | 高い |
+| 学習コスト | 中 | 低 | 中 | 高 |
+| コミュニティ | 大きい | 非常に大きい | 大きい | 大きい |
+
+### 選定の指針
+
+#### 小規模から中規模のWebアプリケーション
+
+**推奨: MySQL または PostgreSQL**
+
+```sql
+-- シンプルなWebアプリケーションにはMySQL
+-- 複雑な機能が必要な場合はPostgreSQL
+```
+
+#### エンタープライズアプリケーション
+
+**推奨: PostgreSQL、SQL Server、またはOracle**
+
+```sql
+-- Windows環境: SQL Server
+-- Linux環境: PostgreSQL または Oracle
+-- 予算がある場合: Oracle
+```
+
+#### クラウド環境
+
+**推奨: マネージドサービス**
+
+- **AWS**: RDS（PostgreSQL、MySQL、SQL Server、Oracle）
+- **GCP**: Cloud SQL（PostgreSQL、MySQL、SQL Server）
+- **Azure**: Azure SQL Database
+
+### まとめ
+
+リレーショナルデータベースの比較のポイント：
+
+- **PostgreSQL**: オープンソース、高度な機能、標準SQL準拠
+- **MySQL**: シンプル、高速、豊富なサポート
+- **SQL Server**: エンタープライズ機能、Windows統合
+- **Oracle**: 最高のパフォーマンス、エンタープライズ機能
+- **選定**: プロジェクトの要件、予算、環境を考慮
+
+適切なデータベースの選択により、プロジェクトの成功に貢献できます。
+

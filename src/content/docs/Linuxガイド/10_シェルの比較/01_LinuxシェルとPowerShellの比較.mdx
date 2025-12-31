@@ -1,0 +1,400 @@
+---
+title: "LinuxシェルとPowerShellの比較"
+label: "LinuxシェルとPowerShellの比較"
+---
+
+## LinuxシェルとPowerShellの比較
+
+Linuxのbash/shとPowerShellの違いについて詳しく解説します。
+
+### なぜシェルの違いを理解する必要があるのか
+
+#### 異なる環境での作業
+
+**問題のある状況:**
+
+```bash
+# Linux環境で動作するスクリプト
+#!/bin/bash
+files=$(ls *.txt)
+for file in $files; do
+  echo "Processing $file"
+done
+
+# Windows環境（PowerShell）では動作しない
+# エラー: lsコマンドが存在しない、構文が異なる
+```
+
+**影響:**
+- 環境ごとにスクリプトを書き直す必要がある
+- コマンドの違いによる混乱
+- 学習コストの増加
+
+#### シェルの違いを理解するメリット
+
+**改善された理解:**
+
+```bash
+# Linux (bash)
+files=$(ls *.txt)
+
+# PowerShell
+$files = Get-ChildItem *.txt
+```
+
+**メリット:**
+- 環境に応じた適切なコマンドの選択
+- クロスプラットフォーム対応の理解
+- 効率的な作業
+
+### 基本的な違い
+
+#### 1. オブジェクト指向 vs テキストベース
+
+**Linux (bash):**
+
+```bash
+# テキストベースの処理
+files=$(ls *.txt)
+echo "$files" | grep "test"
+
+# 出力は常にテキスト
+ls -l
+# -rw-r--r-- 1 user group 1024 Jan 01 10:00 file.txt
+```
+
+**PowerShell:**
+
+```powershell
+# オブジェクトベースの処理
+$files = Get-ChildItem *.txt
+$files | Where-Object { $_.Name -like "*test*" }
+
+# 出力はオブジェクト
+Get-ChildItem
+# Mode                 LastWriteTime         Length Name
+# ----                 -------------         ------ ----
+# -a---          2024/01/01    10:00       1024 file.txt
+```
+
+#### 2. コマンドの命名規則
+
+**Linux (bash):**
+
+```bash
+# 短縮形のコマンド
+ls -la
+ps aux
+grep "pattern" file.txt
+```
+
+**PowerShell:**
+
+```powershell
+# 動詞-名詞形式のコマンドレット
+Get-ChildItem -Force
+Get-Process
+Select-String "pattern" file.txt
+
+# エイリアスも利用可能
+ls -Force  # Get-ChildItemのエイリアス
+```
+
+### コマンドの対応表
+
+#### ファイル操作
+
+| 操作 | Linux (bash) | PowerShell |
+|------|--------------|------------|
+| ファイル一覧 | `ls` | `Get-ChildItem` / `ls` |
+| ディレクトリ移動 | `cd` | `Set-Location` / `cd` |
+| ファイルコピー | `cp` | `Copy-Item` / `cp` |
+| ファイル移動 | `mv` | `Move-Item` / `mv` |
+| ファイル削除 | `rm` | `Remove-Item` / `rm` |
+| ファイル作成 | `touch` | `New-Item` / `ni` |
+| ファイル内容表示 | `cat` | `Get-Content` / `cat` |
+
+#### 実践例
+
+**Linux (bash):**
+
+```bash
+# ファイル一覧
+ls -la
+
+# ファイルをコピー
+cp source.txt dest.txt
+
+# ファイルを削除
+rm file.txt
+
+# ファイル内容を表示
+cat file.txt
+```
+
+**PowerShell:**
+
+```powershell
+# ファイル一覧
+Get-ChildItem -Force
+
+# ファイルをコピー
+Copy-Item source.txt dest.txt
+
+# ファイルを削除
+Remove-Item file.txt
+
+# ファイル内容を表示
+Get-Content file.txt
+```
+
+#### プロセス管理
+
+| 操作 | Linux (bash) | PowerShell |
+|------|--------------|------------|
+| プロセス一覧 | `ps aux` | `Get-Process` |
+| プロセス終了 | `kill <PID>` | `Stop-Process -Id <PID>` |
+| プロセス検索 | `ps aux \| grep nginx` | `Get-Process \| Where-Object {$_.Name -eq "nginx"}` |
+
+#### 実践例
+
+**Linux (bash):**
+
+```bash
+# プロセス一覧
+ps aux
+
+# 特定のプロセスを検索
+ps aux | grep nginx
+
+# プロセスを終了
+kill 1234
+```
+
+**PowerShell:**
+
+```powershell
+# プロセス一覧
+Get-Process
+
+# 特定のプロセスを検索
+Get-Process | Where-Object {$_.Name -eq "nginx"}
+
+# プロセスを終了
+Stop-Process -Id 1234
+```
+
+#### テキスト処理
+
+| 操作 | Linux (bash) | PowerShell |
+|------|--------------|------------|
+| テキスト検索 | `grep "pattern" file.txt` | `Select-String "pattern" file.txt` |
+| テキスト置換 | `sed 's/old/new/g' file.txt` | `(Get-Content file.txt) -replace 'old', 'new'` |
+| テキストフィルタ | `awk '{print $1}' file.txt` | `Get-Content file.txt \| ForEach-Object {$_.Split()[0]}` |
+
+#### 実践例
+
+**Linux (bash):**
+
+```bash
+# テキスト検索
+grep "ERROR" /var/log/app.log
+
+# テキスト置換
+sed 's/old/new/g' file.txt
+
+# フィールド抽出
+awk '{print $1}' file.txt
+```
+
+**PowerShell:**
+
+```powershell
+# テキスト検索
+Select-String "ERROR" C:\logs\app.log
+
+# テキスト置換
+(Get-Content file.txt) -replace 'old', 'new' | Set-Content file.txt
+
+# フィールド抽出
+Get-Content file.txt | ForEach-Object {$_.Split()[0]}
+```
+
+### 変数とパイプ
+
+#### 変数の扱い
+
+**Linux (bash):**
+
+```bash
+# 変数の定義
+name="Alice"
+age=25
+
+# 変数の使用
+echo $name
+echo ${name}
+
+# コマンドの結果を変数に格納
+files=$(ls *.txt)
+```
+
+**PowerShell:**
+
+```powershell
+# 変数の定義
+$name = "Alice"
+$age = 25
+
+# 変数の使用
+Write-Host $name
+Write-Host $name.Length  # オブジェクトのプロパティにアクセス
+
+# コマンドの結果を変数に格納
+$files = Get-ChildItem *.txt
+```
+
+#### パイプの違い
+
+**Linux (bash):**
+
+```bash
+# テキストをパイプで渡す
+ls -l | grep "txt" | awk '{print $9}'
+
+# 各コマンドはテキストを処理
+ps aux | grep nginx | awk '{print $2}'
+```
+
+**PowerShell:**
+
+```powershell
+# オブジェクトをパイプで渡す
+Get-ChildItem | Where-Object {$_.Extension -eq ".txt"} | Select-Object Name
+
+# 各コマンドレットはオブジェクトを処理
+Get-Process | Where-Object {$_.Name -eq "nginx"} | Select-Object Id
+```
+
+### スクリプトの違い
+
+#### 条件分岐
+
+**Linux (bash):**
+
+```bash
+#!/bin/bash
+if [ "$1" == "start" ]; then
+  echo "Starting..."
+elif [ "$1" == "stop" ]; then
+  echo "Stopping..."
+else
+  echo "Usage: $0 {start|stop}"
+fi
+```
+
+**PowerShell:**
+
+```powershell
+if ($args[0] -eq "start") {
+  Write-Host "Starting..."
+} elseif ($args[0] -eq "stop") {
+  Write-Host "Stopping..."
+} else {
+  Write-Host "Usage: script.ps1 {start|stop}"
+}
+```
+
+#### ループ
+
+**Linux (bash):**
+
+```bash
+#!/bin/bash
+# forループ
+for i in 1 2 3 4 5; do
+  echo $i
+done
+
+# ファイルのリスト
+for file in *.txt; do
+  echo "Processing $file"
+done
+```
+
+**PowerShell:**
+
+```powershell
+# forループ
+for ($i = 1; $i -le 5; $i++) {
+  Write-Host $i
+}
+
+# ファイルのリスト
+Get-ChildItem *.txt | ForEach-Object {
+  Write-Host "Processing $($_.Name)"
+}
+```
+
+### 使い分けの指針
+
+#### Linux (bash)を使うべき場合
+
+**特徴:**
+- テキストベースの処理
+- シンプルな構文
+- 広くサポートされている
+
+**適しているプロジェクト:**
+- Linux/Unix環境での作業
+- シンプルなスクリプト
+- テキスト処理が中心
+
+#### PowerShellを使うべき場合
+
+**特徴:**
+- オブジェクトベースの処理
+- .NETとの統合
+- クロスプラットフォーム対応（PowerShell Core）
+
+**適しているプロジェクト:**
+- Windows環境での作業
+- 複雑なオブジェクト操作
+- .NETアプリケーションとの連携
+
+### クロスプラットフォーム対応
+
+#### PowerShell Core
+
+**特徴:**
+- Windows、Linux、macOSで動作
+- オープンソース
+- .NET Coreベース
+
+**実践例:**
+
+```powershell
+# Linux環境でもPowerShellを使用可能
+pwsh script.ps1
+
+# クロスプラットフォーム対応のスクリプト
+if ($IsLinux) {
+  Write-Host "Running on Linux"
+} elseif ($IsWindows) {
+  Write-Host "Running on Windows"
+}
+```
+
+### まとめ
+
+LinuxシェルとPowerShellの比較のポイント：
+
+- **基本的な違い**: オブジェクト指向 vs テキストベース
+- **コマンドの対応**: 類似した操作でも構文が異なる
+- **変数とパイプ**: オブジェクトベース vs テキストベース
+- **スクリプト**: 構文の違い、条件分岐、ループ
+- **使い分け**: 環境と要件に応じて選択
+- **クロスプラットフォーム**: PowerShell Coreで対応可能
+
+適切にシェルの違いを理解することで、環境に応じた効率的な作業ができます。
+

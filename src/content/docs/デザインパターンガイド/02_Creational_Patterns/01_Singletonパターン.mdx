@@ -1,0 +1,94 @@
+---
+title: "Singletonパターン"
+label: "Singletonパターン"
+---
+
+## Singletonパターン
+
+Singletonパターンは、クラスのインスタンスが1つだけ存在することを保証するデザインパターンです。
+
+### なぜSingletonパターンが必要なのか
+
+#### 問題のある実装
+
+**問題のあるコード:**
+
+```typescript
+// 複数のインスタンスが作成される可能性がある
+class DatabaseConnection {
+  connect() {
+    // データベース接続
+  }
+}
+
+const db1 = new DatabaseConnection();
+const db2 = new DatabaseConnection();
+// 問題: 複数の接続が作成される
+```
+
+#### Singletonパターンによる解決
+
+**改善されたコード:**
+
+```typescript
+class DatabaseConnection {
+  private static instance: DatabaseConnection;
+  
+  private constructor() {
+    // プライベートコンストラクタ
+  }
+  
+  public static getInstance(): DatabaseConnection {
+    if (!DatabaseConnection.instance) {
+      DatabaseConnection.instance = new DatabaseConnection();
+    }
+    return DatabaseConnection.instance;
+  }
+  
+  connect() {
+    // データベース接続
+  }
+}
+
+const db1 = DatabaseConnection.getInstance();
+const db2 = DatabaseConnection.getInstance();
+// db1 === db2 (同じインスタンス)
+```
+
+### 使用例
+
+#### ロガーの実装
+
+```typescript
+class Logger {
+  private static instance: Logger;
+  
+  private constructor() {}
+  
+  public static getInstance(): Logger {
+    if (!Logger.instance) {
+      Logger.instance = new Logger();
+    }
+    return Logger.instance;
+  }
+  
+  log(message: string) {
+    console.log(`[${new Date().toISOString()}] ${message}`);
+  }
+}
+
+// 使用
+const logger = Logger.getInstance();
+logger.log('Application started');
+```
+
+### まとめ
+
+Singletonパターンのポイント：
+
+- **単一インスタンス**: クラスのインスタンスが1つだけ存在
+- **グローバルアクセス**: どこからでもアクセス可能
+- **使用例**: データベース接続、ロガー、設定管理
+
+適切にSingletonパターンを使用することで、リソースを効率的に管理できます。
+

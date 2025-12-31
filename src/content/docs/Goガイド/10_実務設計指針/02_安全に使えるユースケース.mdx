@@ -1,0 +1,93 @@
+---
+title: "安全に使えるユースケース"
+label: "安全に使えるユースケース"
+---
+
+## 安全に使えるユースケース
+
+Goで安全に実装できるユースケースを詳しく解説します。
+
+### 1. トランザクション内でのデータベース操作
+
+#### 安全な実装
+
+```go
+func CreateOrder(orderData OrderData) (*Order, error) {
+    tx := db.Begin()
+    defer func() {
+        if r := recover(); r != nil {
+            tx.Rollback()
+        }
+    }()
+    
+    // ✅ 安全: トランザクション内でのデータベース操作のみ
+    order := &Order{UserID: orderData.UserID, Amount: orderData.Amount}
+    if err := tx.Create(order).Error; err != nil {
+        tx.Rollback()
+        return nil, err
+    }
+    
+    // ✅ 安全: 同じトランザクション内での在庫更新
+    for _, item := range orderData.Items {
+        if err := tx.Model(&Inventory{}).
+            Where("product_id = ?", item.ProductID).
+            Update("stock", gorm.Expr("stock - ?", item.Quantity)).Error; err != nil {
+            tx.Rollback()
+            return nil, err
+        }
+    }
+    
+    if err := tx.Commit().Error; err != nil {
+        return nil, err
+    }
+    
+    return order, nil
+}
+```
+
+**なぜ安全か:**
+
+- **ACID特性**: トランザクションのACID特性が保証される
+- **ロールバック**: エラー時に自動的にロールバック
+- **一貫性**: データの一貫性が保たれる
+
+### 2. Goroutineによる並行処理
+
+#### 安全な実装
+
+```go
+func ProcessOrders(orderIDs []int64) {
+    // ✅ 安全: Goroutineによる並行処理
+    var wg sync.WaitGroup
+    semaphore := make(chan struct{}, 10) // 最大10個のgoroutine
+    
+    for _, orderID := range orderIDs {
+        wg.Add(1)
+        go func(id int64) {
+            defer wg.Done()
+            semaphore <- struct{}{} // セマフォを取得
+            defer func() { <-semaphore }() // セマフォを解放
+            
+            processOrder(id)
+        }(orderID)
+    }
+    
+    wg.Wait() // すべてのgoroutineの完了を待つ
+}
+```
+
+**なぜ安全か:**
+
+- **並行処理**: 複数の処理を並行して実行
+- **リソース制限**: セマフォにより、同時実行数を制限
+- **エラーハンドリング**: 各goroutineでエラーを処理
+
+### まとめ
+
+安全に使えるユースケースのポイント：
+
+- **トランザクション内でのデータベース操作**: ACID特性が保証される
+- **Goroutineによる並行処理**: 並行処理が可能、リソース制限が必要
+
+適切なユースケースの選択により、安全で信頼性の高いGoアプリケーションを構築できます。
+

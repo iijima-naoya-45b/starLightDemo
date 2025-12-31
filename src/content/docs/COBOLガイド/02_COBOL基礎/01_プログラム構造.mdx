@@ -1,0 +1,228 @@
+---
+title: "COBOLプログラム構造"
+label: "COBOLプログラム構造"
+---
+
+## COBOLプログラム構造
+
+COBOLプログラムの基本構造を詳しく解説します。
+
+### COBOLプログラムの4つのディビジョン
+
+#### 1. IDENTIFICATION DIVISION（識別部）
+
+**役割:**
+
+プログラムの識別情報を定義します。
+
+**構文:**
+
+```cobol
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. HELLO-WORLD.
+       AUTHOR. YOUR-NAME.
+       DATE-WRITTEN. 2024-01-01.
+       DATE-COMPILED. 2024-01-01.
+```
+
+**説明:**
+
+- `PROGRAM-ID`: プログラム名を定義
+- `AUTHOR`: 作成者名
+- `DATE-WRITTEN`: 作成日
+- `DATE-COMPILED`: コンパイル日
+
+#### 2. ENVIRONMENT DIVISION（環境部）
+
+**役割:**
+
+プログラムが実行される環境を定義します。
+
+**構文:**
+
+```cobol
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT INPUT-FILE ASSIGN TO 'INPUT.DAT'
+               ORGANIZATION IS SEQUENTIAL
+               ACCESS MODE IS SEQUENTIAL
+               FILE STATUS IS WS-FILE-STATUS.
+           SELECT OUTPUT-FILE ASSIGN TO 'OUTPUT.DAT'
+               ORGANIZATION IS SEQUENTIAL
+               ACCESS MODE IS SEQUENTIAL
+               FILE STATUS IS WS-FILE-STATUS.
+```
+
+**説明:**
+
+- `FILE-CONTROL`: ファイルの定義
+- `SELECT`: ファイルの選択
+- `ASSIGN TO`: ファイルの割り当て
+- `ORGANIZATION`: ファイル組織（SEQUENTIAL、INDEXED、RELATIVE）
+- `ACCESS MODE`: アクセスモード（SEQUENTIAL、RANDOM、DYNAMIC）
+- `FILE STATUS`: ファイルステータス変数
+
+#### 3. DATA DIVISION（データ部）
+
+**役割:**
+
+プログラムで使用するデータを定義します。
+
+**構文:**
+
+```cobol
+       DATA DIVISION.
+       FILE SECTION.
+       FD INPUT-FILE
+           RECORD CONTAINS 80 CHARACTERS
+           BLOCK CONTAINS 0 RECORDS.
+       01 INPUT-RECORD.
+           05 CUSTOMER-ID      PIC X(10).
+           05 CUSTOMER-NAME     PIC X(30).
+           05 CUSTOMER-BALANCE PIC 9(10)V99.
+       
+       WORKING-STORAGE SECTION.
+       01 WS-COUNTER           PIC 9(5) VALUE ZERO.
+       01 WS-TOTAL-BALANCE     PIC 9(10)V99 VALUE ZERO.
+       01 WS-FILE-STATUS       PIC X(2).
+           88 WS-FILE-OK       VALUE '00'.
+           88 WS-FILE-EOF      VALUE '10'.
+           88 WS-FILE-ERROR    VALUE '99'.
+```
+
+**説明:**
+
+- `FILE SECTION`: ファイルレコードの定義
+- `WORKING-STORAGE SECTION`: 作業用変数の定義
+- `PIC`: データ形式の定義
+  - `X`: 英数字
+  - `9`: 数値
+  - `V`: 小数点
+- `VALUE`: 初期値の設定
+- `88`: 条件名の定義
+
+#### 4. PROCEDURE DIVISION（手続き部）
+
+**役割:**
+
+プログラムの処理ロジックを記述します。
+
+**構文:**
+
+```cobol
+       PROCEDURE DIVISION.
+       MAIN-PROCEDURE.
+           OPEN INPUT INPUT-FILE
+                OUTPUT OUTPUT-FILE
+           
+           PERFORM UNTIL WS-FILE-EOF
+               READ INPUT-FILE
+                   AT END SET WS-FILE-EOF TO TRUE
+                   NOT AT END
+                       ADD CUSTOMER-BALANCE TO WS-TOTAL-BALANCE
+                       ADD 1 TO WS-COUNTER
+                       WRITE OUTPUT-RECORD FROM INPUT-RECORD
+               END-READ
+           END-PERFORM
+           
+           DISPLAY "Total Records: " WS-COUNTER
+           DISPLAY "Total Balance: " WS-TOTAL-BALANCE
+           
+           CLOSE INPUT-FILE
+                 OUTPUT-FILE
+           
+           STOP RUN.
+```
+
+**説明:**
+
+- `OPEN`: ファイルを開く
+- `READ`: ファイルを読む
+- `WRITE`: ファイルに書く
+- `CLOSE`: ファイルを閉じる
+- `PERFORM`: ループ処理
+- `DISPLAY`: 画面に表示
+- `STOP RUN`: プログラム終了
+
+### 完全なプログラム例
+
+```cobol
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. CUSTOMER-REPORT.
+       AUTHOR. YOUR-NAME.
+       DATE-WRITTEN. 2024-01-01.
+       
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT INPUT-FILE ASSIGN TO 'CUSTOMER.DAT'
+               ORGANIZATION IS SEQUENTIAL
+               ACCESS MODE IS SEQUENTIAL
+               FILE STATUS IS WS-FILE-STATUS.
+           SELECT OUTPUT-FILE ASSIGN TO 'REPORT.DAT'
+               ORGANIZATION IS SEQUENTIAL
+               ACCESS MODE IS SEQUENTIAL
+               FILE STATUS IS WS-FILE-STATUS.
+       
+       DATA DIVISION.
+       FILE SECTION.
+       FD INPUT-FILE
+           RECORD CONTAINS 80 CHARACTERS.
+       01 INPUT-RECORD.
+           05 CUSTOMER-ID      PIC X(10).
+           05 CUSTOMER-NAME     PIC X(30).
+           05 CUSTOMER-BALANCE PIC 9(10)V99.
+       
+       FD OUTPUT-FILE
+           RECORD CONTAINS 80 CHARACTERS.
+       01 OUTPUT-RECORD        PIC X(80).
+       
+       WORKING-STORAGE SECTION.
+       01 WS-COUNTER           PIC 9(5) VALUE ZERO.
+       01 WS-TOTAL-BALANCE     PIC 9(10)V99 VALUE ZERO.
+       01 WS-FILE-STATUS       PIC X(2).
+           88 WS-FILE-OK       VALUE '00'.
+           88 WS-FILE-EOF      VALUE '10'.
+           88 WS-FILE-ERROR    VALUE '99'.
+       
+       PROCEDURE DIVISION.
+       MAIN-PROCEDURE.
+           OPEN INPUT INPUT-FILE
+                OUTPUT OUTPUT-FILE
+           
+           IF WS-FILE-ERROR
+               DISPLAY "File open error: " WS-FILE-STATUS
+               STOP RUN
+           END-IF
+           
+           PERFORM UNTIL WS-FILE-EOF
+               READ INPUT-FILE
+                   AT END SET WS-FILE-EOF TO TRUE
+                   NOT AT END
+                       ADD CUSTOMER-BALANCE TO WS-TOTAL-BALANCE
+                       ADD 1 TO WS-COUNTER
+                       WRITE OUTPUT-RECORD FROM INPUT-RECORD
+               END-READ
+           END-PERFORM
+           
+           DISPLAY "Total Records: " WS-COUNTER
+           DISPLAY "Total Balance: " WS-TOTAL-BALANCE
+           
+           CLOSE INPUT-FILE
+                 OUTPUT-FILE
+           
+           STOP RUN.
+```
+
+### まとめ
+
+COBOLプログラム構造のポイント：
+
+- **IDENTIFICATION DIVISION**: プログラムの識別情報
+- **ENVIRONMENT DIVISION**: 環境の定義、ファイルの定義
+- **DATA DIVISION**: データの定義、ファイルレコード、作業用変数
+- **PROCEDURE DIVISION**: 処理ロジック
+
+適切なプログラム構造により、読みやすく保守しやすいCOBOLプログラムを書けます。
+

@@ -1,0 +1,249 @@
+---
+title: "PowerShellの基本操作"
+label: "PowerShellの基本操作"
+---
+
+## PowerShellの基本操作
+
+PowerShellの基本的な操作方法を詳しく解説します。
+
+### PowerShellとは
+
+#### PowerShellの特徴
+
+**定義:**
+PowerShellは、Microsoftが開発したタスク自動化と構成管理のためのシェルおよびスクリプト言語です。
+
+**特徴:**
+- オブジェクトベースの処理
+- .NETとの統合
+- クロスプラットフォーム対応（PowerShell Core）
+- 強力なパイプライン
+
+### 基本的なコマンドレット
+
+#### Get-Command（コマンドの検索）
+
+```powershell
+# すべてのコマンドレットを表示
+Get-Command
+
+# 特定のパターンで検索
+Get-Command *Process*
+
+# 動詞で検索
+Get-Command -Verb Get
+
+# 名詞で検索
+Get-Command -Noun Process
+```
+
+#### Get-Help（ヘルプの表示）
+
+```powershell
+# コマンドレットのヘルプを表示
+Get-Help Get-Process
+
+# 詳細なヘルプ
+Get-Help Get-Process -Detailed
+
+# 完全なヘルプ
+Get-Help Get-Process -Full
+
+# 例を表示
+Get-Help Get-Process -Examples
+```
+
+### ファイル操作
+
+#### Get-ChildItem（ファイル一覧）
+
+```powershell
+# 現在のディレクトリのファイル一覧
+Get-ChildItem
+
+# すべてのファイルを表示（-Force: 隠しファイルも含む）
+Get-ChildItem -Force
+
+# 再帰的に表示（-Recurse）
+Get-ChildItem -Recurse
+
+# フィルタリング
+Get-ChildItem *.txt
+
+# 詳細情報を表示
+Get-ChildItem | Format-List
+```
+
+#### Set-Location（ディレクトリ移動）
+
+```powershell
+# ディレクトリに移動
+Set-Location C:\Users
+
+# ホームディレクトリに移動
+Set-Location ~
+
+# 前のディレクトリに戻る
+Set-Location -
+```
+
+#### Copy-Item / Move-Item / Remove-Item
+
+```powershell
+# ファイルをコピー
+Copy-Item source.txt dest.txt
+
+# ディレクトリを再帰的にコピー
+Copy-Item -Path source_dir -Destination dest_dir -Recurse
+
+# ファイルを移動
+Move-Item source.txt dest.txt
+
+# ファイルを削除
+Remove-Item file.txt
+
+# 確認しながら削除
+Remove-Item file.txt -Confirm
+```
+
+### プロセス管理
+
+#### Get-Process（プロセス一覧）
+
+```powershell
+# すべてのプロセスを表示
+Get-Process
+
+# 特定のプロセスを検索
+Get-Process -Name nginx
+
+# プロセスの詳細情報
+Get-Process | Format-List *
+
+# CPU使用率でソート
+Get-Process | Sort-Object CPU -Descending
+```
+
+#### Stop-Process（プロセス終了）
+
+```powershell
+# プロセスを終了（ID指定）
+Stop-Process -Id 1234
+
+# プロセスを終了（名前指定）
+Stop-Process -Name nginx
+
+# 強制終了
+Stop-Process -Id 1234 -Force
+```
+
+### テキスト処理
+
+#### Get-Content（ファイル内容の読み取り）
+
+```powershell
+# ファイル内容を表示
+Get-Content file.txt
+
+# 最初の10行を表示
+Get-Content file.txt -TotalCount 10
+
+# 最後の10行を表示
+Get-Content file.txt -Tail 10
+
+# リアルタイムで監視（-Wait）
+Get-Content file.txt -Wait
+```
+
+#### Select-String（テキスト検索）
+
+```powershell
+# テキストを検索
+Select-String "ERROR" file.txt
+
+# 大文字小文字を区別しない（-CaseSensitive: $false）
+Select-String "error" file.txt -CaseSensitive:$false
+
+# 行番号を表示（-LineNumber）
+Select-String "ERROR" file.txt -LineNumber
+
+# 複数のファイルから検索
+Select-String "ERROR" *.log
+```
+
+#### テキスト置換
+
+```powershell
+# テキストを置換
+(Get-Content file.txt) -replace 'old', 'new' | Set-Content file.txt
+
+# 正規表現を使用
+(Get-Content file.txt) -replace '\d+', 'NUMBER' | Set-Content file.txt
+```
+
+### 変数とオブジェクト
+
+#### 変数の操作
+
+```powershell
+# 変数の定義
+$name = "Alice"
+$age = 25
+
+# 変数の使用
+Write-Host $name
+Write-Host $age
+
+# 配列の定義
+$items = @("item1", "item2", "item3")
+
+# ハッシュテーブル
+$hash = @{
+  Name = "Alice"
+  Age = 25
+}
+```
+
+#### オブジェクトの操作
+
+```powershell
+# オブジェクトのプロパティにアクセス
+$file = Get-ChildItem file.txt
+Write-Host $file.Name
+Write-Host $file.Length
+Write-Host $file.LastWriteTime
+
+# オブジェクトをフィルタリング
+Get-Process | Where-Object {$_.CPU -gt 100}
+
+# オブジェクトを選択
+Get-Process | Select-Object Name, CPU, Memory
+```
+
+### パイプライン
+
+#### パイプラインの使い方
+
+```powershell
+# オブジェクトをパイプで渡す
+Get-ChildItem | Where-Object {$_.Extension -eq ".txt"} | Select-Object Name
+
+# 複数のコマンドレットを連結
+Get-Process | Where-Object {$_.CPU -gt 100} | Sort-Object CPU -Descending | Select-Object -First 10
+```
+
+### まとめ
+
+PowerShellの基本操作のポイント：
+
+- **Get-Command**: コマンドの検索
+- **Get-Help**: ヘルプの表示
+- **ファイル操作**: Get-ChildItem、Set-Location、Copy-Item、Move-Item、Remove-Item
+- **プロセス管理**: Get-Process、Stop-Process
+- **テキスト処理**: Get-Content、Select-String、テキスト置換
+- **変数とオブジェクト**: 変数の操作、オブジェクトのプロパティアクセス
+- **パイプライン**: オブジェクトベースのパイプ処理
+
+適切にPowerShellを使用することで、効率的な作業ができます。
+

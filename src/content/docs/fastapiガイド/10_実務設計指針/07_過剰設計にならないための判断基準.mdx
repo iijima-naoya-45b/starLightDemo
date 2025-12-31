@@ -1,0 +1,72 @@
+---
+title: "過剰設計にならないための判断基準"
+label: "過剰設計にならないための判断基準"
+---
+
+## 過剰設計にならないための判断基準
+
+過剰設計を避け、適切な設計を行うための判断基準を詳しく解説します。
+
+### 判断基準1: 非同期処理の使用
+
+#### シンプルなケース
+
+**条件:**
+
+- 処理時間が短い（1秒以内）
+- I/O操作が少ない
+- 並行処理が不要
+
+**実装:**
+
+```python
+# ✅ シンプルな実装で十分
+@app.get("/users/{user_id}")
+async def get_user(user_id: int):
+    user = db.query(User).filter_by(id=user_id).first()
+    return user
+```
+
+**判断基準:**
+
+- **非同期処理は不要**: 処理時間が短い、I/O操作が少ない
+
+#### 複雑なケース
+
+**条件:**
+
+- 処理時間が長い（5秒以上）
+- 複数のI/O操作がある
+- 並行処理が必要
+
+**実装:**
+
+```python
+# ✅ 適切な設計が必要
+import httpx
+import asyncio
+
+@app.post("/orders")
+async def create_order(order_data: OrderData):
+    async with httpx.AsyncClient() as client:
+        # 複数のI/O操作を並行して実行
+        tasks = [
+            client.post("https://api.example.com/payment", json=order_data.dict()),
+            client.post("https://api.example.com/inventory", json=order_data.dict()),
+        ]
+        results = await asyncio.gather(*tasks)
+    return results
+```
+
+**判断基準:**
+
+- **非同期処理が必要**: 処理時間が長い、複数のI/O操作がある、並行処理が必要
+
+### まとめ
+
+過剰設計にならないための判断基準のポイント：
+
+- **非同期処理の使用**: 処理時間とI/O操作の数に応じて判断
+
+適切な判断基準により、過剰設計を避け、効率的なシステムを構築できます。
+

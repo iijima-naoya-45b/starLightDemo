@@ -1,0 +1,444 @@
+---
+title: "基本的な記述方法"
+label: "基本的な記述方法"
+---
+
+## 基本的な記述方法
+
+OpenAPI仕様の基本的な記述方法を詳しく解説します。
+
+### OpenAPIファイルの構造
+
+#### 最小限のOpenAPIファイル
+
+```yaml
+openapi: 3.0.0
+info:
+  title: My API
+  version: 1.0.0
+paths: {}
+```
+
+### Info（情報）
+
+#### 基本的なInfo
+
+```yaml
+info:
+  title: User Management API
+  version: 1.0.0
+  description: |
+    ユーザー管理を行うAPIです。
+    ユーザーの作成、取得、更新、削除が可能です。
+  termsOfService: https://example.com/terms
+  contact:
+    name: API Support
+    url: https://example.com/support
+    email: support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+```
+
+### Servers（サーバー）
+
+#### サーバーの定義
+
+```yaml
+servers:
+  - url: https://api.example.com/v1
+    description: 本番環境
+  - url: https://staging-api.example.com/v1
+    description: ステージング環境
+    variables:
+      port:
+        default: '443'
+        enum:
+          - '443'
+          - '8443'
+  - url: http://localhost:3000/v1
+    description: 開発環境
+```
+
+### Paths（パス）
+
+#### GETエンドポイント
+
+```yaml
+paths:
+  /api/users:
+    get:
+      summary: ユーザー一覧取得
+      description: ユーザーの一覧を取得します
+      operationId: getUsers
+      tags:
+        - Users
+      parameters:
+        - name: page
+          in: query
+          description: ページ番号
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: 1ページあたりの件数
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+```
+
+#### POSTエンドポイント
+
+```yaml
+paths:
+  /api/users:
+    post:
+      summary: ユーザー作成
+      description: 新しいユーザーを作成します
+      operationId: createUser
+      tags:
+        - Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+            example:
+              name: "John Doe"
+              email: "john@example.com"
+              password: "password123"
+      responses:
+        '201':
+          description: 作成成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: ユーザーが既に存在します
+```
+
+#### PUT/PATCHエンドポイント
+
+```yaml
+paths:
+  /api/users/{userId}:
+    put:
+      summary: ユーザー更新（全置換）
+      operationId: updateUser
+      tags:
+        - Users
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    patch:
+      summary: ユーザー更新（部分更新）
+      operationId: patchUser
+      tags:
+        - Users
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchUserRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+```
+
+#### DELETEエンドポイント
+
+```yaml
+paths:
+  /api/users/{userId}:
+    delete:
+      summary: ユーザー削除
+      operationId: deleteUser
+      tags:
+        - Users
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: 削除成功
+        '404':
+          description: ユーザーが見つかりません
+```
+
+### Components（コンポーネント）
+
+#### Schemas（スキーマ）
+
+```yaml
+components:
+  schemas:
+    User:
+      type: object
+      required:
+        - id
+        - name
+        - email
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        name:
+          type: string
+          example: "John Doe"
+        email:
+          type: string
+          format: email
+          example: "john@example.com"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+    
+    CreateUserRequest:
+      type: object
+      required:
+        - name
+        - email
+        - password
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+    
+    UpdateUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        email:
+          type: string
+          format: email
+```
+
+#### Parameters（パラメータ）
+
+```yaml
+components:
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      description: ページ番号
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    
+    LimitParam:
+      name: limit
+      in: query
+      description: 1ページあたりの件数
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    
+    UserIdParam:
+      name: userId
+      in: path
+      required: true
+      description: ユーザーID
+      schema:
+        type: string
+```
+
+#### Responses（レスポンス）
+
+```yaml
+components:
+  responses:
+    BadRequest:
+      description: 不正なリクエスト
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: "BAD_REQUEST"
+            message: "Invalid request parameters"
+    
+    Unauthorized:
+      description: 認証が必要です
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: "UNAUTHORIZED"
+            message: "Authentication required"
+    
+    NotFound:
+      description: リソースが見つかりません
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: "NOT_FOUND"
+            message: "Resource not found"
+    
+    InternalServerError:
+      description: サーバーエラー
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: "INTERNAL_SERVER_ERROR"
+            message: "An internal server error occurred"
+```
+
+#### Security Schemes（セキュリティスキーム）
+
+```yaml
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWTトークンによる認証
+    
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: APIキーによる認証
+    
+    OAuth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://example.com/oauth/authorize
+          tokenUrl: https://example.com/oauth/token
+          scopes:
+            read:users: ユーザー情報の読み取り
+            write:users: ユーザー情報の書き込み
+```
+
+### Security（セキュリティ）
+
+#### エンドポイントごとのセキュリティ
+
+```yaml
+paths:
+  /api/users:
+    get:
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      # ...
+    post:
+      security:
+        - BearerAuth: [write:users]
+      # ...
+```
+
+#### グローバルセキュリティ
+
+```yaml
+security:
+  - BearerAuth: []
+
+paths:
+  /api/public:
+    get:
+      security: []  # セキュリティを無効化
+      # ...
+```
+
+### まとめ
+
+基本的な記述方法のポイント：
+
+- **Info**: APIの基本情報
+- **Servers**: サーバーの定義
+- **Paths**: エンドポイントの定義
+- **Components**: 再利用可能なコンポーネント（Schemas、Parameters、Responses、Security Schemes）
+- **Security**: セキュリティの定義
+
+適切なOpenAPIの記述により、明確で保守しやすいAPIドキュメントを作成できます。
+

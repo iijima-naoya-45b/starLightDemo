@@ -1,0 +1,227 @@
+---
+title: "REST、gRPC、GraphQL、tRPCの比較"
+label: "REST、gRPC、GraphQL、tRPCの比較"
+---
+
+## REST、gRPC、GraphQL、tRPCの比較
+
+各API設計手法の特徴と使い分けを詳しく解説します。
+
+### 比較表
+
+| 項目 | RESTful API | gRPC | GraphQL | tRPC |
+|------|-------------|------|---------|------|
+| **通信形式** | JSON（テキスト） | Protocol Buffers（バイナリ） | JSON（テキスト） | JSON（テキスト） |
+| **パフォーマンス** | 中程度 | 非常に高い | 中程度 | 高い |
+| **型安全性** | なし | 高い（スキーマ） | 高い（スキーマ） | 非常に高い（TypeScript） |
+| **学習コスト** | 低い | 高い | 高い | 中程度 |
+| **ブラウザサポート** | 完全 | 限定的（gRPC-Web） | 完全 | 完全 |
+| **ストリーミング** | 限定的（SSE、WebSocket） | 完全対応 | サブスクリプション | 限定的 |
+| **キャッシング** | 簡単（HTTPキャッシュ） | 複雑 | 複雑 | 簡単 |
+| **エコシステム** | 非常に豊富 | 豊富 | 豊富 | 限定的（TypeScript） |
+| **マイクロサービス** | 適している | 非常に適している | 適している | 適している |
+
+### 使い分けの指針
+
+#### RESTful APIを使うべき場合
+
+**特徴:**
+- シンプルで理解しやすい
+- 広くサポートされている
+- HTTPキャッシュが使用できる
+
+**使用例:**
+
+```typescript
+// シンプルなCRUD操作
+GET    /api/users
+GET    /api/users/1
+POST   /api/users
+PUT    /api/users/1
+DELETE /api/users/1
+```
+
+**適しているプロジェクト:**
+- シンプルなWebアプリケーション
+- ブラウザからのアクセスが主
+- チームの学習コストを抑えたい
+
+#### gRPCを使うべき場合
+
+**特徴:**
+- 非常に高いパフォーマンス
+- 型安全性が高い
+- ストリーミング対応
+
+**使用例:**
+
+```protobuf
+// マイクロサービス間の通信
+service OrderService {
+  rpc CreateOrder(CreateOrderRequest) returns (Order);
+  rpc StreamOrders(StreamOrdersRequest) returns (stream Order);
+}
+```
+
+**適しているプロジェクト:**
+- マイクロサービス間の通信
+- 高いパフォーマンスが必要
+- ストリーミングが必要
+- 内部API
+
+#### GraphQLを使うべき場合
+
+**特徴:**
+- 柔軟なデータ取得
+- オーバーフェッチングの削減
+- 複雑なデータ構造
+
+**使用例:**
+
+```graphql
+# 必要なデータのみを取得
+query {
+  user(id: 1) {
+    name
+    orders {
+      amount
+      products {
+        name
+      }
+    }
+  }
+}
+```
+
+**適しているプロジェクト:**
+- 複雑なデータ取得が必要
+- クライアントが多様なデータを要求
+- モバイルアプリケーション
+- パブリックAPI
+
+#### tRPCを使うべき場合
+
+**特徴:**
+- エンドツーエンドの型安全性
+- TypeScriptの型システムを活用
+- 開発効率が高い
+
+**使用例:**
+
+```typescript
+// バックエンド
+export const appRouter = t.router({
+  getUser: t.procedure
+    .input(z.object({ id: z.number() }))
+    .query(({ input }) => getUserById(input.id)),
+});
+
+// フロントエンド
+const user = await trpc.getUser.query({ id: 1 });
+// userの型が自動的に推論される
+```
+
+**適しているプロジェクト:**
+- TypeScriptプロジェクト
+- フロントエンドとバックエンドが同じコードベース
+- 型安全性を最優先
+- 開発効率を重視
+
+### 実践的な選択基準
+
+#### 1. プロジェクトの規模
+
+**小規模プロジェクト:**
+- **推奨**: RESTful API
+- **理由**: シンプルで学習コストが低い
+
+**中規模プロジェクト:**
+- **推奨**: RESTful API または tRPC
+- **理由**: バランスが良い
+
+**大規模プロジェクト:**
+- **推奨**: gRPC（マイクロサービス間）、GraphQL（パブリックAPI）、tRPC（フルスタックTypeScript）
+- **理由**: パフォーマンスと型安全性が重要
+
+#### 2. チームのスキル
+
+**TypeScriptに慣れている:**
+- **推奨**: tRPC
+- **理由**: 型安全性と開発効率
+
+**GraphQLの経験がある:**
+- **推奨**: GraphQL
+- **理由**: 柔軟なデータ取得
+
+**シンプルさを重視:**
+- **推奨**: RESTful API
+- **理由**: 学習コストが低い
+
+#### 3. パフォーマンス要件
+
+**非常に高いパフォーマンスが必要:**
+- **推奨**: gRPC
+- **理由**: バイナリ形式により高速
+
+**中程度のパフォーマンスで十分:**
+- **推奨**: RESTful API、GraphQL、tRPC
+- **理由**: 実用上問題なし
+
+#### 4. クライアントの種類
+
+**ブラウザからのアクセスが主:**
+- **推奨**: RESTful API、GraphQL、tRPC
+- **理由**: ブラウザサポートが充実
+
+**サーバー間通信が主:**
+- **推奨**: gRPC
+- **理由**: 高いパフォーマンス
+
+### ハイブリッドアプローチ
+
+#### 複数のAPI設計手法の併用
+
+**実践例:**
+
+```typescript
+// パブリックAPI: RESTful API
+app.get('/api/users/:id', getUserHandler);
+
+// 内部API（マイクロサービス間）: gRPC
+const orderService = new OrderServiceClient('order-service:50051');
+
+// フロントエンドAPI: tRPC
+export const appRouter = t.router({
+  getUser: t.procedure.query(() => getUser()),
+});
+
+// 複雑なデータ取得: GraphQL
+const GET_USER = gql`
+  query GetUser($id: ID!) {
+    user(id: $id) {
+      name
+      orders {
+        amount
+      }
+    }
+  }
+`;
+```
+
+**メリット:**
+- 各API設計手法の長所を活用
+- 用途に応じて最適な手法を選択
+
+### まとめ
+
+API設計手法の比較のポイント：
+
+- **RESTful API**: シンプル、広くサポート、HTTPキャッシュ
+- **gRPC**: 高いパフォーマンス、型安全性、ストリーミング
+- **GraphQL**: 柔軟なデータ取得、オーバーフェッチング削減
+- **tRPC**: エンドツーエンドの型安全性、TypeScript統合
+- **使い分け**: プロジェクトの要件、チームのスキル、パフォーマンス要件を考慮
+- **ハイブリッド**: 複数の手法を併用することも可能
+
+適切なAPI設計手法の選択により、効率的で保守しやすいAPIを構築できます。
+

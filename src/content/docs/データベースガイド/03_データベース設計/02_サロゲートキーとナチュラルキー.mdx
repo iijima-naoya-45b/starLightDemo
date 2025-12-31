@@ -1,0 +1,350 @@
+---
+title: "サロゲートキーとナチュラルキー"
+label: "サロゲートキーとナチュラルキー"
+---
+
+## サロゲートキーとナチュラルキー
+
+データベース設計において、主キー（Primary Key）の選択は重要な判断です。サロゲートキーとナチュラルキーの違いと使い分けを詳しく解説します。
+
+### なぜサロゲートキーとナチュラルキーを理解する必要があるのか
+
+#### 不適切な主キー選択の問題
+
+**問題のある実装:**
+
+```sql
+-- ナチュラルキーを使用（問題のある例）
+CREATE TABLE users (
+  email VARCHAR(255) PRIMARY KEY,  -- メールアドレスを主キーに
+  name VARCHAR(100) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 問題点:
+-- 1. メールアドレスが変更された場合、外部キー参照が壊れる
+-- 2. メールアドレスが長く、インデックスのサイズが大きくなる
+-- 3. 複合キーが必要になる可能性がある
+```
+
+**影響:**
+- パフォーマンスの低下
+- メンテナンスの困難
+- データ整合性の問題
+- スケーラビリティの低下
+
+#### サロゲートキーによる解決
+
+**改善された実装:**
+
+```sql
+-- サロゲートキーを使用
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,  -- サロゲートキー
+  email VARCHAR(255) UNIQUE NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- メリット:
+-- 1. 変更されない安定したキー
+-- 2. 小さく効率的なインデックス
+-- 3. 外部キー参照が簡単
+-- 4. スケーラビリティが高い
+```
+
+### サロゲートキーとは
+
+#### 定義
+
+**サロゲートキー（Surrogate Key）:**
+- ビジネスロジックとは無関係な、システムが自動生成する一意の識別子
+- データベース内部でのみ意味を持つ
+- 通常は連番（AUTO_INCREMENT、SERIAL、IDENTITY）を使用
+
+**特徴:**
+- 変更されない
+- シンプルで効率的
+- ビジネスロジックに依存しない
+
+#### 実装例
+
+**PostgreSQL:**
+
+```sql
+-- SERIAL型を使用
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  name VARCHAR(100) NOT NULL
+);
+
+-- または、IDENTITY列を使用（PostgreSQL 10以降）
+CREATE TABLE users (
+  id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  name VARCHAR(100) NOT NULL
+);
+```
+
+**MySQL:**
+
+```sql
+-- AUTO_INCREMENTを使用
+CREATE TABLE users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  name VARCHAR(100) NOT NULL
+);
+```
+
+**SQL Server:**
+
+```sql
+-- IDENTITY列を使用
+CREATE TABLE users (
+  id INT IDENTITY(1,1) PRIMARY KEY,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  name VARCHAR(100) NOT NULL
+);
+```
+
+### ナチュラルキーとは
+
+#### 定義
+
+**ナチュラルキー（Natural Key）:**
+- ビジネスロジックに基づいた、実世界で意味を持つ識別子
+- 例: メールアドレス、社員番号、ISBN、電話番号
+
+**特徴:**
+- ビジネスロジックと関連がある
+- 変更される可能性がある
+- 複合キーになる可能性がある
+
+#### 実装例
+
+```sql
+-- ナチュラルキーを使用
+CREATE TABLE countries (
+  country_code CHAR(2) PRIMARY KEY,  -- ISO国コード
+  name VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE books (
+  isbn VARCHAR(13) PRIMARY KEY,  -- ISBN
+  title VARCHAR(255) NOT NULL,
+  author VARCHAR(100) NOT NULL
+);
+
+-- 複合ナチュラルキー
+CREATE TABLE order_items (
+  order_id INT NOT NULL,
+  product_code VARCHAR(50) NOT NULL,
+  quantity INT NOT NULL,
+  PRIMARY KEY (order_id, product_code)
+);
+```
+
+### サロゲートキー vs ナチュラルキー
+
+#### 比較表
+
+| 項目 | サロゲートキー | ナチュラルキー |
+|------|---------------|---------------|
+| **定義** | システムが生成する識別子 | ビジネスロジックに基づく識別子 |
+| **変更** | 変更されない | 変更される可能性がある |
+| **サイズ** | 小さい（整数） | 大きい可能性がある |
+| **パフォーマンス** | 高い | 低い可能性がある |
+| **可読性** | 低い（意味がない） | 高い（意味がある） |
+| **複合キー** | 不要 | 必要になる可能性がある |
+| **外部キー** | 簡単 | 複雑になる可能性がある |
+
+#### 使い分けの指針
+
+**サロゲートキーを使うべき場合:**
+
+```sql
+-- 1. 変更される可能性があるデータ
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,  -- サロゲートキー
+  email VARCHAR(255) UNIQUE NOT NULL,  -- 変更される可能性がある
+  name VARCHAR(100) NOT NULL
+);
+
+-- 2. 複合キーが必要になる可能性があるデータ
+CREATE TABLE orders (
+  id SERIAL PRIMARY KEY,  -- サロゲートキー
+  user_id INT NOT NULL,
+  order_date DATE NOT NULL,
+  UNIQUE (user_id, order_date)  -- ビジネスルールはUNIQUE制約で表現
+);
+
+-- 3. パフォーマンスが重要な場合
+CREATE TABLE products (
+  id SERIAL PRIMARY KEY,  -- 小さく効率的
+  sku VARCHAR(50) UNIQUE NOT NULL,  -- ビジネスキーは別途管理
+  name VARCHAR(255) NOT NULL
+);
+```
+
+**ナチュラルキーを使うべき場合:**
+
+```sql
+-- 1. 変更されない標準化された識別子
+CREATE TABLE countries (
+  country_code CHAR(2) PRIMARY KEY,  -- ISO国コード（変更されない）
+  name VARCHAR(100) NOT NULL
+);
+
+-- 2. ビジネスロジックで意味を持つ識別子
+CREATE TABLE books (
+  isbn VARCHAR(13) PRIMARY KEY,  -- ISBN（標準化されている）
+  title VARCHAR(255) NOT NULL,
+  author VARCHAR(100) NOT NULL
+);
+
+-- 3. 複合キーが自然な場合
+CREATE TABLE enrollments (
+  student_id INT NOT NULL,
+  course_id INT NOT NULL,
+  semester VARCHAR(10) NOT NULL,
+  PRIMARY KEY (student_id, course_id, semester)  -- 自然な複合キー
+);
+```
+
+### 実践的な設計パターン
+
+#### 1. サロゲートキー + ナチュラルキー（UNIQUE制約）
+
+**実践例:**
+
+```sql
+-- サロゲートキーを主キーに、ナチュラルキーはUNIQUE制約で管理
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,  -- サロゲートキー（主キー）
+  email VARCHAR(255) UNIQUE NOT NULL,  -- ナチュラルキー（UNIQUE制約）
+  employee_number VARCHAR(20) UNIQUE,  -- 社員番号（UNIQUE制約）
+  name VARCHAR(100) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- メリット:
+-- - 主キーは安定している（id）
+-- - ビジネスキーも一意性が保証される（email、employee_number）
+-- - 外部キー参照が簡単（idを使用）
+-- - ビジネスキーの変更が容易（emailが変更されてもidは変わらない）
+```
+
+#### 2. 複合キーの扱い
+
+**実践例:**
+
+```sql
+-- サロゲートキーを使用して複合キーを回避
+CREATE TABLE order_items (
+  id SERIAL PRIMARY KEY,  -- サロゲートキー
+  order_id INT NOT NULL,
+  product_id INT NOT NULL,
+  quantity INT NOT NULL,
+  UNIQUE (order_id, product_id),  -- ビジネスルールはUNIQUE制約で表現
+  FOREIGN KEY (order_id) REFERENCES orders(id),
+  FOREIGN KEY (product_id) REFERENCES products(id)
+);
+
+-- メリット:
+-- - 外部キー参照が簡単（idを使用）
+-- - ビジネスルールはUNIQUE制約で表現
+-- - パフォーマンスが向上（単一カラムのインデックス）
+```
+
+#### 3. UUIDを使用したサロゲートキー
+
+**実践例:**
+
+```sql
+-- UUIDを使用したサロゲートキー（分散システム向け）
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),  -- UUID
+  email VARCHAR(255) UNIQUE NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- メリット:
+-- - 分散システムで一意性が保証される
+-- - シーケンシャルIDの推測が困難（セキュリティ）
+-- - マージが容易（異なるデータベース間で）
+
+-- デメリット:
+-- - サイズが大きい（16バイト vs 4バイト）
+-- - パフォーマンスが若干低下する可能性
+-- - 可読性が低い
+```
+
+### パフォーマンスへの影響
+
+#### インデックスのサイズ
+
+**サロゲートキー（整数）:**
+
+```sql
+-- 4バイトの整数
+CREATE TABLE users (
+  id INT PRIMARY KEY,  -- 4バイト
+  email VARCHAR(255) UNIQUE NOT NULL
+);
+
+-- インデックスサイズ: 小さい
+-- パフォーマンス: 高い
+```
+
+**ナチュラルキー（文字列）:**
+
+```sql
+-- 255バイトの文字列
+CREATE TABLE users (
+  email VARCHAR(255) PRIMARY KEY,  -- 最大255バイト
+  name VARCHAR(100) NOT NULL
+);
+
+-- インデックスサイズ: 大きい
+-- パフォーマンス: 低い可能性
+```
+
+#### JOINのパフォーマンス
+
+**サロゲートキーを使用:**
+
+```sql
+-- 効率的なJOIN
+SELECT u.name, o.total
+FROM users u
+JOIN orders o ON u.id = o.user_id;  -- 整数の比較、高速
+
+-- インデックス: 小さい、効率的
+```
+
+**ナチュラルキーを使用:**
+
+```sql
+-- 非効率なJOIN
+SELECT u.name, o.total
+FROM users u
+JOIN orders o ON u.email = o.user_email;  -- 文字列の比較、遅い可能性
+
+-- インデックス: 大きい、非効率
+```
+
+### まとめ
+
+サロゲートキーとナチュラルキーのポイント：
+
+- **サロゲートキー**: システムが生成する識別子、変更されない、効率的
+- **ナチュラルキー**: ビジネスロジックに基づく識別子、変更される可能性、意味がある
+- **使い分け**: サロゲートキーは一般的に推奨、ナチュラルキーは標準化された識別子に使用
+- **実践的な設計**: サロゲートキー + UNIQUE制約、複合キーの回避、UUIDの使用
+- **パフォーマンス**: サロゲートキーはインデックスサイズが小さく、JOINが高速
+
+適切にサロゲートキーとナチュラルキーを使い分けることで、効率的で保守しやすいデータベース設計ができます。
+

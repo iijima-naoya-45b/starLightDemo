@@ -1,0 +1,219 @@
+---
+title: "観測可能性の設計"
+label: "観測可能性の設計"
+---
+
+## 観測可能性の設計
+
+障害は「再現」ではなく「観測」で解決する。観測可能性を高める設計を詳しく解説します。
+
+### ログ設計
+
+各処理にトレースID（request_id）を通し、入出力境界ごとにJSON構造化ログを吐く。
+
+#### 実装例
+
+```ruby
+# ✅ 良い例: 構造化ログとトレースID
+class ApplicationController < ActionController::Base
+  around_action :set_trace_id
+  
+  private
+  
+  def set_trace_id
+    # トレースIDを生成（またはリクエストヘッダーから取得）
+    trace_id = request.headers['X-Trace-Id'] || SecureRandom.uuid
+    request.trace_id = trace_id
+    
+    # すべてのログにトレースIDを自動的に含める
+    Rails.logger.tagged(trace_id, current_user&.id) do
+      yield
+    end
+    
+    response.headers['X-Trace-Id'] = trace_id
+  end
+end
+
+class OrdersController < ApplicationController
+  def create
+    # 入出力境界でログを出力
+    Rails.logger.info({
+      order_data: order_params,
+      timestamp: Time.current.iso8601
+    }.to_json)
+    
+    order = OrderService.new.create_order(order_params, request.trace_id)
+    
+    Rails.logger.info({
+      order_id: order.id,
+      status: order.status,
+      duration: (Time.current - request.start_time) * 1000
+    }.to_json)
+    
+    render json: order, status: :created
+  rescue => e
+    Rails.logger.error({
+      error: e.message,
+      stack: e.backtrace.join("\n")
+    }.to_json)
+    
+    render json: { error: 'Internal server error' }, status: :internal_server_error
+  end
+end
+
+# config/environments/production.rb
+config.log_formatter = ::Logger::Formatter::Json.new
+config.log_level = :info
+```
+
+**ログの出力例:**
+
+```json
+{
+  "timestamp": "2024-01-01T10:00:00.000Z",
+  "level": "INFO",
+  "message": "Order creation started",
+  "trace_id": "abc123",
+  "user_id": "user456",
+  "order_data": {
+    "amount": 10000,
+    "items": [...]
+  }
+}
+```
+
+**なぜ重要か:**
+
+- **トレーサビリティ**: トレースIDでリクエスト全体を追跡可能
+- **構造化ログ**: JSON形式で検索・分析が容易
+- **コンテキスト**: ユーザーIDなどのコンテキストを自動的に含める
+
+### メトリクス設計
+
+成功率・レイテンシ・リトライ回数・プール使用率を定常監視する。
+
+#### 実装例
+
+```ruby
+# ✅ 良い例: Prometheusを使用したメトリクス収集
+require 'prometheus/client'
+
+Prometheus::Client.registry = Prometheus::Client::Registry.new
+
+# カウンター: 注文作成回数
+ORDER_CREATION_COUNTER = Prometheus::Client::Counter.new(
+  :orders_created_total,
+  docstring: 'Total number of orders created',
+  labels: [:status]
+)
+
+# ヒストグラム: 注文作成のレイテンシ
+ORDER_CREATION_DURATION = Prometheus::Client::Histogram.new(
+  :orders_creation_duration_seconds,
+  docstring: 'Order creation duration in seconds',
+  buckets: [0.1, 0.5, 1, 2, 5]
+)
+
+# ゲージ: 接続プールの使用率
+CONNECTION_POOL_GAUGE = Prometheus::Client::Gauge.new(
+  :db_connection_pool_active,
+  docstring: 'Active database connections'
+)
+
+class OrdersController < ApplicationController
+  def create
+    timer = ORDER_CREATION_DURATION.start_timer
+    
+    begin
+      order = OrderService.new.create_order(order_params, request.trace_id)
+      
+      # 成功時のメトリクス
+      ORDER_CREATION_COUNTER.increment(labels: { status: 'success' })
+      
+      render json: order, status: :created
+    rescue => e
+      # 失敗時のメトリクス
+      ORDER_CREATION_COUNTER.increment(labels: { status: 'failure' })
+      
+      render json: { error: 'Internal server error' }, status: :internal_server_error
+    ensure
+      timer.observe_duration
+    end
+  end
+end
+
+# メトリクスエンドポイント
+class MetricsController < ApplicationController
+  def index
+    render plain: Prometheus::Client.registry.to_s
+  end
+end
+```
+
+**監視すべきメトリクス:**
+
+- **成功率**: `orders_created_total{status="success"}` / `orders_created_total{status="failure"}`
+- **レイテンシ**: `orders_creation_duration_seconds` (p50, p95, p99)
+- **リトライ回数**: `orders_retry_total`
+- **プール使用率**: `db_connection_pool_active` / `db_connection_pool_max`
+
+### トレース設計
+
+外部API・DBアクセス単位にSpanを埋め、分散トレース可能にする。
+
+#### 実装例
+
+```ruby
+# ✅ 良い例: OpenTelemetryを使用した分散トレース
+require 'opentelemetry/sdk'
+require 'opentelemetry/exporter/jaeger'
+
+OpenTelemetry::SDK.configure do |c|
+  c.service_name = 'order-service'
+  c.use_all
+end
+
+tracer = OpenTelemetry.tracer_provider.tracer('order-service')
+
+class OrderService
+  def create_order(order_data, trace_id)
+    tracer.in_span('create-order') do |span|
+      span.set_attribute('order.amount', order_data[:amount])
+      span.set_attribute('trace.id', trace_id)
+      
+      # DB操作のSpan
+      tracer.in_span('db.save-order') do |db_span|
+        order = Order.create!(order_data)
+        db_span.set_attribute('order.id', order.id)
+        order
+      end
+    end
+  end
+end
+```
+
+**トレースの出力例:**
+
+```
+Trace: abc123
+├─ Span: create-order (duration: 150ms)
+│  ├─ Span: db.save-order (duration: 50ms)
+│  └─ Span: payment-api.charge (duration: 100ms)
+```
+
+**なぜ重要か:**
+
+- **分散トレース**: 複数サービス間のリクエストフローを追跡可能
+- **ボトルネック特定**: どの処理が遅いかを特定可能
+- **エラー追跡**: エラーが発生した箇所を特定可能
+
+### まとめ
+
+観測可能性の設計のポイント：
+
+- **ログ**: トレースIDを通し、構造化ログを出力
+- **メトリクス**: 成功率・レイテンシ・リトライ回数・プール使用率を監視
+- **トレース**: 外部API・DBアクセス単位にSpanを埋め、分散トレース可能にする
+
+これらの設計により、障害を「再現」ではなく「観測」で解決できます。
+

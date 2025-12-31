@@ -1,0 +1,317 @@
+---
+title: "高度な記述方法"
+label: "高度な記述方法"
+---
+
+## 高度な記述方法
+
+OpenAPI仕様の高度な記述方法を詳しく解説します。
+
+### バリデーション
+
+#### スキーマのバリデーション
+
+```yaml
+components:
+  schemas:
+    User:
+      type: object
+      required:
+        - id
+        - name
+        - email
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '^[a-zA-Z ]+$'
+        email:
+          type: string
+          format: email
+          pattern: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        age:
+          type: integer
+          minimum: 0
+          maximum: 150
+        score:
+          type: number
+          minimum: 0
+          maximum: 100
+          multipleOf: 0.5
+        tags:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          maxItems: 10
+          uniqueItems: true
+```
+
+### 継承とコンポジション
+
+#### allOf（継承）
+
+```yaml
+components:
+  schemas:
+    BaseUser:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+    
+    AdminUser:
+      allOf:
+        - $ref: '#/components/schemas/BaseUser'
+        - type: object
+          properties:
+            permissions:
+              type: array
+              items:
+                type: string
+    
+    RegularUser:
+      allOf:
+        - $ref: '#/components/schemas/BaseUser'
+        - type: object
+          properties:
+            subscription:
+              type: string
+```
+
+#### oneOf/anyOf（選択）
+
+```yaml
+components:
+  schemas:
+    PaymentMethod:
+      oneOf:
+        - $ref: '#/components/schemas/CreditCard'
+        - $ref: '#/components/schemas/BankAccount'
+        - $ref: '#/components/schemas/DigitalWallet'
+      discriminator:
+        propertyName: type
+        mapping:
+          credit_card: '#/components/schemas/CreditCard'
+          bank_account: '#/components/schemas/BankAccount'
+          digital_wallet: '#/components/schemas/DigitalWallet'
+    
+    CreditCard:
+      type: object
+      required:
+        - type
+        - cardNumber
+      properties:
+        type:
+          type: string
+          enum: [credit_card]
+        cardNumber:
+          type: string
+        expiryDate:
+          type: string
+```
+
+### カスタムフォーマット
+
+#### カスタムフォーマットの定義
+
+```yaml
+components:
+  schemas:
+    CustomDate:
+      type: string
+      format: date
+      pattern: '^\d{4}-\d{2}-\d{2}$'
+      example: "2024-01-01"
+    
+    CustomDateTime:
+      type: string
+      format: date-time
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
+      example: "2024-01-01T00:00:00Z"
+    
+    PhoneNumber:
+      type: string
+      pattern: '^\+?[1-9]\d{1,14}$'
+      example: "+81-90-1234-5678"
+    
+    PostalCode:
+      type: string
+      pattern: '^\d{3}-\d{4}$'
+      example: "123-4567"
+```
+
+### 条件付きバリデーション
+
+#### 条件付きバリデーションの実装
+
+```yaml
+components:
+  schemas:
+    Order:
+      type: object
+      required:
+        - items
+        - paymentMethod
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        paymentMethod:
+          $ref: '#/components/schemas/PaymentMethod'
+        shippingAddress:
+          $ref: '#/components/schemas/Address'
+        billingAddress:
+          $ref: '#/components/schemas/Address'
+      # 条件: 配送先が指定されている場合、請求先も必須
+      if:
+        properties:
+          shippingAddress:
+            type: object
+      then:
+        required:
+          - billingAddress
+```
+
+### リンクとコールバック
+
+#### リンク（Link）
+
+```yaml
+paths:
+  /api/users/{userId}:
+    get:
+      operationId: getUser
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          links:
+            updateUser:
+              operationId: updateUser
+              parameters:
+                userId: '$response.body#/id'
+            deleteUser:
+              operationId: deleteUser
+              parameters:
+                userId: '$response.body#/id'
+```
+
+#### コールバック（Callback）
+
+```yaml
+paths:
+  /api/webhooks:
+    post:
+      operationId: createWebhook
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                  format: uri
+      callbacks:
+        onEvent:
+          '{$request.body#/url}':
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/WebhookPayload'
+              responses:
+                '200':
+                  description: Webhook受信成功
+```
+
+### 外部参照
+
+#### 外部ファイルの参照
+
+```yaml
+# main.yaml
+openapi: 3.0.0
+info:
+  title: My API
+  version: 1.0.0
+paths:
+  /api/users:
+    $ref: './paths/users.yaml'
+components:
+  schemas:
+    User:
+      $ref: './schemas/User.yaml'
+```
+
+```yaml
+# paths/users.yaml
+get:
+  summary: ユーザー一覧取得
+  responses:
+    '200':
+      description: 成功
+      content:
+        application/json:
+          schema:
+            type: array
+            items:
+              $ref: '../schemas/User.yaml'
+```
+
+### 拡張（Extensions）
+
+#### カスタム拡張
+
+```yaml
+paths:
+  /api/users:
+    get:
+      summary: ユーザー一覧取得
+      x-codegen:
+        methodName: getUsers
+        returnType: User[]
+      x-rate-limit:
+        requests: 100
+        period: 60
+      x-examples:
+        - name: Example 1
+          value:
+            users:
+              - id: "1"
+                name: "John Doe"
+      responses:
+        '200':
+          description: 成功
+          x-response-time: 100ms
+```
+
+### まとめ
+
+高度な記述方法のポイント：
+
+- **バリデーション**: 詳細なバリデーションルール
+- **継承とコンポジション**: allOf、oneOf、anyOf
+- **カスタムフォーマット**: 独自のフォーマット定義
+- **条件付きバリデーション**: 条件に応じたバリデーション
+- **リンクとコールバック**: 関連エンドポイントの定義
+- **外部参照**: ファイル分割と再利用
+- **拡張**: カスタム拡張の使用
+
+適切な高度な記述方法により、より詳細で柔軟なAPIドキュメントを作成できます。
+

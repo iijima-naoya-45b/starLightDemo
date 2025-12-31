@@ -1,0 +1,245 @@
+---
+title: "観測可能性の設計"
+label: "観測可能性の設計"
+---
+
+## 観測可能性の設計
+
+障害は「再現」ではなく「観測」で解決する。観測可能性を高める設計を詳しく解説します。
+
+### ログ設計
+
+各処理にトレースID（request_id）を通し、入出力境界ごとにJSON構造化ログを吐く。
+
+#### 実装例
+
+```php
+// ✅ 良い例: 構造化ログとトレースID
+function setTraceId() {
+    // トレースIDを生成（またはリクエストヘッダーから取得）
+    $traceId = $_SERVER['HTTP_X_TRACE_ID'] ?? bin2hex(random_bytes(16));
+    
+    // すべてのログにトレースIDを自動的に含める
+    return $traceId;
+}
+
+function logInfo($message, $context = []) {
+    $log = [
+        'timestamp' => date('c'),
+        'level' => 'INFO',
+        'message' => $message,
+        'trace_id' => $GLOBALS['trace_id'] ?? null,
+        'user_id' => $_SESSION['user_id'] ?? null,
+    ] + $context;
+    
+    error_log(json_encode($log));
+}
+
+function createOrder($orderData) {
+    $traceId = setTraceId();
+    $GLOBALS['trace_id'] = $traceId;
+    
+    // 入出力境界でログを出力
+    logInfo('Order creation started', [
+        'order_data' => $orderData,
+    ]);
+    
+    $startTime = microtime(true);
+    
+    try {
+        $orderId = createOrderInDB($orderData, $traceId);
+        
+        logInfo('Order creation completed', [
+            'order_id' => $orderId,
+            'duration' => (microtime(true) - $startTime) * 1000,
+        ]);
+        
+        return $orderId;
+    } catch (\Exception $e) {
+        logError('Order creation failed', [
+            'error' => $e->getMessage(),
+            'stack' => $e->getTraceAsString(),
+        ]);
+        throw $e;
+    }
+}
+
+function logError($message, $context = []) {
+    $log = [
+        'timestamp' => date('c'),
+        'level' => 'ERROR',
+        'message' => $message,
+        'trace_id' => $GLOBALS['trace_id'] ?? null,
+    ] + $context;
+    
+    error_log(json_encode($log));
+}
+```
+
+**ログの出力例:**
+
+```json
+{
+  "timestamp": "2024-01-01T10:00:00.000Z",
+  "level": "INFO",
+  "message": "Order creation started",
+  "trace_id": "abc123",
+  "user_id": "user456",
+  "order_data": {
+    "amount": 10000,
+    "items": [...]
+  }
+}
+```
+
+**なぜ重要か:**
+
+- **トレーサビリティ**: トレースIDでリクエスト全体を追跡可能
+- **構造化ログ**: JSON形式で検索・分析が容易
+- **コンテキスト**: ユーザーIDなどのコンテキストを自動的に含める
+
+### メトリクス設計
+
+成功率・レイテンシ・リトライ回数・プール使用率を定常監視する。
+
+#### 実装例
+
+```php
+// ✅ 良い例: Prometheusを使用したメトリクス収集
+require_once 'vendor/autoload.php';
+use Prometheus\CollectorRegistry;
+use Prometheus\Storage\Redis;
+
+$registry = new CollectorRegistry(new Redis(['host' => 'localhost']));
+
+// カウンター: 注文作成回数
+$orderCreationCounter = $registry->getOrRegisterCounter(
+    'orders',
+    'orders_created_total',
+    'Total number of orders created',
+    ['status']
+);
+
+// ヒストグラム: 注文作成のレイテンシ
+$orderCreationDuration = $registry->getOrRegisterHistogram(
+    'orders',
+    'orders_creation_duration_seconds',
+    'Order creation duration in seconds',
+    [],
+    [0.1, 0.5, 1, 2, 5]
+);
+
+// ゲージ: 接続プールの使用率
+$connectionPoolGauge = $registry->getOrRegisterGauge(
+    'db',
+    'connection_pool_active',
+    'Active database connections'
+);
+
+function createOrder($orderData) {
+    global $orderCreationCounter, $orderCreationDuration;
+    
+    $timer = $orderCreationDuration->startTimer();
+    
+    try {
+        $orderId = createOrderInDB($orderData);
+        
+        // 成功時のメトリクス
+        $orderCreationCounter->inc(['success']);
+        
+        return $orderId;
+    } catch (\Exception $e) {
+        // 失敗時のメトリクス
+        $orderCreationCounter->inc(['failure']);
+        throw $e;
+    } finally {
+        $timer->observeDuration();
+    }
+}
+
+// メトリクスエンドポイント
+function getMetrics() {
+    global $registry;
+    $renderer = new \Prometheus\RenderTextFormat();
+    header('Content-Type: text/plain');
+    echo $renderer->render($registry->getMetricFamilySamples());
+}
+```
+
+**監視すべきメトリクス:**
+
+- **成功率**: `orders_created_total{status="success"}` / `orders_created_total{status="failure"}`
+- **レイテンシ**: `orders_creation_duration_seconds` (p50, p95, p99)
+- **リトライ回数**: `orders_retry_total`
+- **プール使用率**: `db_connection_pool_active` / `db_connection_pool_max`
+
+### トレース設計
+
+外部API・DBアクセス単位にSpanを埋め、分散トレース可能にする。
+
+#### 実装例
+
+```php
+// ✅ 良い例: OpenTelemetryを使用した分散トレース
+require_once 'vendor/autoload.php';
+use OpenTelemetry\API\Trace\TracerProvider;
+use OpenTelemetry\SDK\Trace\TracerProvider as SDKTracerProvider;
+
+$tracerProvider = new SDKTracerProvider();
+$tracer = $tracerProvider->getTracer('order-service');
+
+function createOrder($orderData, $traceId) {
+    global $tracer;
+    
+    // 親Spanを作成
+    $span = $tracer->spanBuilder('create-order')
+        ->setAttribute('order.amount', $orderData['amount'])
+        ->setAttribute('trace.id', $traceId)
+        ->startSpan();
+    
+    try {
+        // DB操作のSpan
+        $dbSpan = $tracer->spanBuilder('db.save-order')
+            ->setParent($span->getContext())
+            ->startSpan();
+        
+        $orderId = createOrderInDB($orderData);
+        
+        $dbSpan->setAttribute('order.id', $orderId);
+        $dbSpan->end();
+        
+        return $orderId;
+    } catch (\Exception $e) {
+        $span->recordException($e);
+        throw $e;
+    } finally {
+        $span->end();
+    }
+}
+```
+
+**トレースの出力例:**
+
+```
+Trace: abc123
+├─ Span: create-order (duration: 150ms)
+│  ├─ Span: db.save-order (duration: 50ms)
+│  └─ Span: payment-api.charge (duration: 100ms)
+```
+
+**なぜ重要か:**
+
+- **分散トレース**: 複数サービス間のリクエストフローを追跡可能
+- **ボトルネック特定**: どの処理が遅いかを特定可能
+- **エラー追跡**: エラーが発生した箇所を特定可能
+
+### まとめ
+
+観測可能性の設計のポイント：
+
+- **ログ**: トレースIDを通し、構造化ログを出力
+- **メトリクス**: 成功率・レイテンシ・リトライ回数・プール使用率を監視
+- **トレース**: 外部API・DBアクセス単位にSpanを埋め、分散トレース可能にする
+
+これらの設計により、障害を「再現」ではなく「観測」で解決できます。
+

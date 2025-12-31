@@ -1,0 +1,198 @@
+---
+title: "パイプとリダイレクトの基礎"
+label: "パイプとリダイレクトの基礎"
+---
+
+## パイプとリダイレクトの基礎
+
+パイプとリダイレクトは、Linuxコマンドを組み合わせて強力な処理を行うための重要な機能です。
+
+### リダイレクト
+
+#### 標準出力のリダイレクト
+
+```bash
+# 標準出力をファイルに書き込む（上書き）
+ls > file_list.txt
+
+# 標準出力をファイルに追記
+ls >> file_list.txt
+
+# 標準エラーをファイルに書き込む
+command 2> error.log
+
+# 標準出力と標準エラーを同じファイルに
+command > output.log 2>&1
+
+# 標準出力と標準エラーを別々のファイルに
+command > output.log 2> error.log
+```
+
+#### 標準入力のリダイレクト
+
+```bash
+# ファイルから標準入力に読み込む
+command < input.txt
+
+# ヒアドキュメント
+command << EOF
+line1
+line2
+EOF
+```
+
+#### 実践例
+
+```bash
+# コマンドの出力をファイルに保存
+ps aux > processes.txt
+
+# エラーログを別ファイルに保存
+python app.py > output.log 2> error.log
+
+# すべての出力を同じファイルに
+python app.py > all.log 2>&1
+
+# ファイルの内容をコマンドに渡す
+sort < unsorted.txt > sorted.txt
+```
+
+### パイプ
+
+#### 基本的な使い方
+
+```bash
+# コマンドの出力を次のコマンドの入力に
+command1 | command2
+
+# 複数のパイプを連結
+command1 | command2 | command3
+```
+
+#### 実践例
+
+```bash
+# プロセス一覧から特定のプロセスを検索
+ps aux | grep nginx
+
+# ログファイルからエラーを検索して表示
+cat /var/log/app.log | grep ERROR | tail -20
+
+# ファイル一覧をソートして表示
+ls -l | sort
+
+# 重複を除去
+cat file.txt | sort | uniq
+
+# 行数をカウント
+cat file.txt | wc -l
+
+# 大きなファイルの最初の100行を表示
+cat large_file.txt | head -100
+```
+
+### よく使うパイプの組み合わせ
+
+#### 1. grepとパイプ
+
+```bash
+# ログからエラーを検索
+cat /var/log/app.log | grep ERROR
+
+# 複数の条件で検索
+ps aux | grep -E "nginx|apache"
+
+# 検索結果の前後を表示
+cat /var/log/app.log | grep -A 5 -B 5 ERROR
+```
+
+#### 2. sortとuniq
+
+```bash
+# ファイルをソート
+cat file.txt | sort
+
+# 重複を除去
+cat file.txt | sort | uniq
+
+# 重複行の数をカウント
+cat file.txt | sort | uniq -c
+
+# 重複行のみを表示
+cat file.txt | sort | uniq -d
+```
+
+#### 3. awkとsed
+
+```bash
+# awk: テキスト処理
+ps aux | awk '{print $2, $11}'  # PIDとコマンド名を表示
+
+# sed: テキスト置換
+cat file.txt | sed 's/old/new/g'
+
+# 特定の行を抽出
+cat file.txt | sed -n '10,20p'  # 10-20行目を表示
+```
+
+#### 4. cutとtr
+
+```bash
+# cut: フィールドの抽出
+echo "a,b,c,d" | cut -d',' -f1,3  # a,c
+
+# tr: 文字の変換・削除
+echo "HELLO" | tr 'A-Z' 'a-z'  # hello
+echo "hello world" | tr -d ' '  # helloworld
+```
+
+### 高度なパイプの使い方
+
+#### xargs（引数の展開）
+
+```bash
+# ファイル一覧に対してコマンドを実行
+find . -name "*.txt" | xargs rm
+
+# 並列実行（-P: parallel）
+find . -name "*.txt" | xargs -P 4 -I {} process_file {}
+
+# 引数の最大数を指定（-n: max-args）
+find . -name "*.txt" | xargs -n 1 echo
+```
+
+#### tee（出力の分岐）
+
+```bash
+# 標準出力をファイルにも書き込む
+command | tee output.log
+
+# 追記モード
+command | tee -a output.log
+
+# 複数のファイルに書き込む
+command | tee file1.log file2.log
+```
+
+#### 実践例
+
+```bash
+# コマンドの実行結果をファイルに保存しながら表示
+ps aux | tee processes.txt | grep nginx
+
+# ログをファイルに保存しながらリアルタイムで表示
+tail -f /var/log/app.log | tee app_backup.log | grep ERROR
+```
+
+### まとめ
+
+パイプとリダイレクトのポイント：
+
+- **リダイレクト**: `>`（上書き）、`>>`（追記）、`2>`（標準エラー）
+- **パイプ**: `|`でコマンドを連結
+- **よく使う組み合わせ**: grep、sort、uniq、awk、sed
+- **xargs**: 引数の展開、並列実行
+- **tee**: 出力の分岐、ファイルへの保存
+
+適切にパイプとリダイレクトを使用することで、強力な処理ができます。
+

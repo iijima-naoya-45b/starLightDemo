@@ -5,6 +5,17 @@ label: "システムテスト詳細"
 
 ## システムテスト詳細
 
+システムテストは、Railsアプリケーションの**エンドツーエンド（E2E）テスト**を実行するための機能です。Capybaraを使用して、実際のユーザーがブラウザで操作するのと同じように、アプリケーションの動作をテストできます。
+
+### システムテストとは
+
+システムテストは、以下のような特徴があります：
+
+- **ユーザー視点のテスト**: 実際のブラウザ操作をシミュレート
+- **統合テスト**: モデル、コントローラー、ビュー、ルーティングなどが連携して動作することを確認
+- **JavaScript対応**: JavaScriptを使った動的な操作もテスト可能
+- **データベースの使用**: 実際のデータベースを使用してテスト（テスト用のデータベース）
+
 ### Capybaraを使ったE2Eテスト
 
 ```ruby
@@ -12,49 +23,174 @@ label: "システムテスト詳細"
 require 'rails_helper'
 
 RSpec.describe 'Users', type: :system do
+  # letを使用してテストデータを準備
+  # 各テストケースで必要になったときに初めて実行される（遅延評価）
   let(:user) { create(:user) }
 
   describe 'ユーザー登録' do
     it '新規ユーザーを登録できること' do
+      # ユーザー登録ページにアクセス
       visit new_user_registration_path
       
+      # フォームに入力
       fill_in 'メールアドレス', with: 'new@example.com'
       fill_in 'パスワード', with: 'password123'
       fill_in 'パスワード（確認）', with: 'password123'
+      
+      # 登録ボタンをクリック
       click_button '登録'
       
+      # 成功メッセージが表示されることを確認
       expect(page).to have_content('アカウント登録が完了しました')
+      
+      # データベースに正しく保存されたことを確認
       expect(User.last.email).to eq('new@example.com')
+    end
+    
+    it 'バリデーションエラーが表示されること' do
+      visit new_user_registration_path
+      
+      # 必須項目を入力せずに送信
+      click_button '登録'
+      
+      # エラーメッセージが表示されることを確認
+      expect(page).to have_content('メールアドレスを入力してください')
+      expect(page).to have_content('パスワードを入力してください')
     end
   end
 
   describe 'ログイン' do
     it 'ログインできること' do
+      # ログインページにアクセス
       visit new_user_session_path
       
+      # ログイン情報を入力
       fill_in 'メールアドレス', with: user.email
       fill_in 'パスワード', with: user.password
+      
+      # ログインボタンをクリック
       click_button 'ログイン'
       
+      # ログイン成功メッセージが表示されることを確認
       expect(page).to have_content('ログインしました')
+      
+      # ログイン後のページに遷移したことを確認
+      expect(page).to have_current_path(root_path)
+    end
+    
+    it '無効な認証情報ではログインできないこと' do
+      visit new_user_session_path
+      
+      fill_in 'メールアドレス', with: 'invalid@example.com'
+      fill_in 'パスワード', with: 'wrongpassword'
+      click_button 'ログイン'
+      
+      # エラーメッセージが表示されることを確認
+      expect(page).to have_content('メールアドレスまたはパスワードが違います')
     end
   end
 
   describe 'JavaScriptを使った操作' do
+    # js: trueを指定することで、JavaScriptドライバー（Selenium）を使用
     it 'モーダルを開閉できること', js: true do
       visit root_path
       
+      # モーダルを開くボタンをクリック
       click_button 'モーダルを開く'
+      
+      # モーダルが表示されることを確認
+      # visible: trueで、実際に表示されている要素のみを検証
       expect(page).to have_css('.modal', visible: true)
       
+      # モーダル内のコンテンツが表示されることを確認
+      within '.modal' do
+        expect(page).to have_content('モーダルの内容')
+      end
+      
+      # 閉じるボタンをクリック
       click_button '閉じる'
+      
+      # モーダルが非表示になることを確認
       expect(page).not_to have_css('.modal', visible: true)
+    end
+    
+    it 'Ajaxでデータを取得できること', js: true do
+      visit users_path
+      
+      # Ajaxリクエストをトリガーするボタンをクリック
+      click_button '更新'
+      
+      # Ajaxの完了を待ってから検証
+      # waitオプションで最大待機時間を指定（デフォルトは2秒）
+      expect(page).to have_content('更新が完了しました', wait: 5)
+      
+      # 更新されたデータが表示されることを確認
+      expect(page).to have_css('.user-list .user-item', count: 10)
+    end
+  end
+  
+  describe 'ページネーション' do
+    before do
+      # テストデータを準備（30件のユーザーを作成）
+      create_list(:user, 30)
+    end
+    
+    it 'ページネーションが動作すること' do
+      visit users_path
+      
+      # 1ページ目に10件表示されることを確認
+      expect(page).to have_css('.user-item', count: 10)
+      
+      # 2ページ目に遷移
+      click_link '次へ'
+      
+      # 2ページ目に10件表示されることを確認
+      expect(page).to have_css('.user-item', count: 10)
+      expect(page).to have_current_path(users_path(page: 2))
     end
   end
 end
 ```
 
 ### ドライバーの設定
+
+Capybaraは、異なるドライバーを使用してブラウザを操作できます。各ドライバーの特徴と設定方法を説明します。
+
+#### Rack::Testドライバー（デフォルト）
+
+```ruby
+# spec/rails_helper.rb
+RSpec.configure do |config|
+  config.before(:each, type: :system) do
+    # デフォルトはRack::Test（高速、JavaScript非対応）
+    driven_by :rack_test
+  end
+end
+```
+
+**特徴:**
+
+- **高速**: JavaScriptを実行しないため、非常に高速
+- **軽量**: ブラウザを起動しないため、リソース消費が少ない
+- **制限**: JavaScriptを使った動的な操作はテストできない
+
+**使用例:**
+
+```ruby
+# JavaScriptを使わない基本的なフォーム送信など
+RSpec.describe 'ユーザー登録', type: :system do
+  it 'フォームからユーザーを登録できること' do
+    visit new_user_registration_path
+    fill_in 'メールアドレス', with: 'test@example.com'
+    fill_in 'パスワード', with: 'password123'
+    click_button '登録'
+    
+    expect(page).to have_content('登録が完了しました')
+  end
+end
+```
+
+#### Selenium Chrome Headlessドライバー（推奨）
 
 ```ruby
 # spec/support/capybara.rb
@@ -63,13 +199,273 @@ require 'selenium-webdriver'
 
 Capybara.register_driver :selenium_chrome_headless do |app|
   options = Selenium::WebDriver::Chrome::Options.new
+  # ヘッドレスモード（ブラウザのGUIを表示しない）
   options.add_argument('--headless')
+  # CI環境での実行に必要（セキュリティサンドボックスを無効化）
   options.add_argument('--no-sandbox')
+  # メモリ不足エラーを防ぐ
   options.add_argument('--disable-dev-shm-usage')
+  # GPUを無効化（ヘッドレスモードでは不要）
+  options.add_argument('--disable-gpu')
+  # ウィンドウサイズを指定（レスポンシブデザインのテストに重要）
+  options.add_argument('--window-size=1920,1080')
+  # ログレベルの設定
+  options.add_argument('--log-level=3')
   
   Capybara::Selenium::Driver.new(app, browser: :chrome, options: options)
 end
 
+# JavaScriptが必要なテストで使用するドライバーを設定
 Capybara.javascript_driver = :selenium_chrome_headless
+
+# デフォルトの待機時間を設定（秒）
+Capybara.default_max_wait_time = 5
 ```
 
+**特徴:**
+
+- **JavaScript対応**: JavaScriptを使った動的な操作もテスト可能
+- **高速**: ヘッドレスモードで実行されるため、通常のSeleniumより高速
+- **CI/CD対応**: サーバー環境でも実行可能
+- **推奨**: 多くのプロジェクトで推奨される設定
+
+**使用例:**
+
+```ruby
+# spec/rails_helper.rb
+RSpec.configure do |config|
+  config.before(:each, type: :system, js: true) do
+    # JavaScriptが必要な場合はSeleniumを使用
+    driven_by :selenium_chrome_headless
+  end
+end
+
+# テストコード
+RSpec.describe 'Ajax通信', type: :system, js: true do
+  it 'Ajaxでデータを取得できること' do
+    visit users_path
+    
+    click_button '更新'
+    
+    # Ajaxの完了を待つ（自動的に待機）
+    expect(page).to have_content('更新が完了しました', wait: 5)
+  end
+end
+```
+
+#### Selenium Chromeドライバー（デバッグ用）
+
+```ruby
+# spec/support/capybara.rb
+Capybara.register_driver :selenium_chrome do |app|
+  Capybara::Selenium::Driver.new(app, browser: :chrome)
+end
+```
+
+**特徴:**
+
+- **デバッグに便利**: 実際のブラウザが起動するため、テストの動作を確認できる
+- **開発環境向け**: ローカル開発環境でのデバッグに最適
+- **遅い**: ブラウザを起動するため、テスト実行が遅い
+
+**使用例:**
+
+```ruby
+# デバッグ時のみ使用
+RSpec.describe '複雑な操作', type: :system, js: true do
+  before do
+    # デバッグ時のみ通常のChromeを使用
+    driven_by :selenium_chrome if ENV['DEBUG']
+  end
+  
+  it '複雑な操作をテストすること' do
+    # テストコード
+  end
+end
+```
+
+### よくある問題と解決方法
+
+#### 1. 要素が見つからないエラー
+
+```ruby
+# ❌ 問題: 要素が見つからない
+click_button '送信' # Capybara::ElementNotFound
+
+# ✅ 解決: 待機時間を設定
+Capybara.default_max_wait_time = 5
+
+# または、特定の要素に対して待機
+expect(page).to have_button('送信', wait: 10)
+click_button '送信'
+```
+
+#### 2. JavaScriptの実行待ち
+
+```ruby
+# ❌ 問題: JavaScriptの実行が完了する前に検証
+click_button 'Ajax送信'
+expect(page).to have_content('完了') # まだ実行されていない可能性
+
+# ✅ 解決: マッチャーは自動的に待機するが、明示的に待機時間を指定
+expect(page).to have_content('完了', wait: 5)
+
+# または、特定の要素の出現を待つ
+expect(page).to have_css('.success-message', visible: true, wait: 5)
+```
+
+#### 3. データベースのクリーンアップ
+
+```ruby
+# spec/rails_helper.rb
+RSpec.configure do |config|
+  # 各テストの前にデータベースをクリーンアップ
+  config.before(:each, type: :system) do
+    DatabaseCleaner.strategy = :transaction
+    DatabaseCleaner.start
+  end
+  
+  config.after(:each, type: :system) do
+    DatabaseCleaner.clean
+  end
+end
+```
+
+### ベストプラクティス
+
+#### 1. テストの独立性
+
+```ruby
+# ✅ 良い例: 各テストが独立している
+RSpec.describe 'ユーザー登録', type: :system do
+  it '新規ユーザーを登録できること' do
+    visit new_user_registration_path
+    fill_in 'メールアドレス', with: 'new@example.com'
+    fill_in 'パスワード', with: 'password123'
+    click_button '登録'
+    
+    expect(page).to have_content('登録が完了しました')
+    expect(User.count).to eq(1)
+  end
+  
+  it '既存のメールアドレスでは登録できないこと' do
+    create(:user, email: 'existing@example.com')
+    
+    visit new_user_registration_path
+    fill_in 'メールアドレス', with: 'existing@example.com'
+    fill_in 'パスワード', with: 'password123'
+    click_button '登録'
+    
+    expect(page).to have_content('メールアドレスは既に使用されています')
+  end
+end
+```
+
+#### 2. ヘルパーメソッドの活用
+
+```ruby
+# spec/support/system_test_helpers.rb
+module SystemTestHelpers
+  def login_as(user)
+    visit new_user_session_path
+    fill_in 'メールアドレス', with: user.email
+    fill_in 'パスワード', with: user.password
+    click_button 'ログイン'
+  end
+  
+  def logout
+    click_link 'ログアウト'
+  end
+  
+  def fill_user_form(user_attributes = {})
+    fill_in 'ユーザー名', with: user_attributes[:name] || 'テストユーザー'
+    fill_in 'メールアドレス', with: user_attributes[:email] || 'test@example.com'
+    fill_in 'パスワード', with: user_attributes[:password] || 'password123'
+  end
+end
+
+RSpec.configure do |config|
+  config.include SystemTestHelpers, type: :system
+end
+
+# 使用例
+RSpec.describe 'ユーザー機能', type: :system do
+  let(:user) { create(:user) }
+  
+  before do
+    login_as(user)
+  end
+  
+  it 'プロフィールを編集できること' do
+    visit edit_user_path(user)
+    fill_user_form(name: '新しい名前')
+    click_button '更新'
+    
+    expect(page).to have_content('更新が完了しました')
+  end
+end
+```
+
+#### 3. ページオブジェクトパターンの使用
+
+```ruby
+# spec/support/pages/user_registration_page.rb
+class UserRegistrationPage
+  include Capybara::DSL
+  
+  def visit_page
+    visit new_user_registration_path
+  end
+  
+  def fill_email(email)
+    fill_in 'メールアドレス', with: email
+  end
+  
+  def fill_password(password)
+    fill_in 'パスワード', with: password
+  end
+  
+  def fill_password_confirmation(password)
+    fill_in 'パスワード（確認）', with: password
+  end
+  
+  def submit
+    click_button '登録'
+  end
+  
+  def success_message
+    page.find('.success-message').text
+  end
+  
+  def error_messages
+    page.all('.error-message').map(&:text)
+  end
+end
+
+# spec/system/users_spec.rb
+RSpec.describe 'ユーザー登録', type: :system do
+  let(:page) { UserRegistrationPage.new }
+  
+  it '新規ユーザーを登録できること' do
+    page.visit_page
+    page.fill_email('test@example.com')
+    page.fill_password('password123')
+    page.fill_password_confirmation('password123')
+    page.submit
+    
+    expect(page.success_message).to eq('登録が完了しました')
+  end
+end
+```
+
+### まとめ
+
+システムテストは、RailsアプリケーションのE2Eテストを実行するための強力な機能です。以下のポイントを押さえることで、効果的なテストを書くことができます：
+
+- **ドライバーの使い分け**: JavaScriptが必要な場合のみSeleniumを使用し、それ以外はRack::Testを使用
+- **待機処理**: 動的なコンテンツに対しては適切な待機時間を設定
+- **テストの独立性**: 各テストが独立して実行できるようにする
+- **ヘルパーメソッド**: 繰り返し使用する操作はヘルパーメソッドに抽出
+- **ページオブジェクトパターン**: 複雑なテストはページオブジェクトパターンで整理
+
+これらのベストプラクティスを守ることで、保守性が高く、実行速度の速いテストスイートを構築できます。

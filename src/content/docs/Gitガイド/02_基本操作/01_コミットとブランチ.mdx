@@ -1,0 +1,79 @@
+---
+title: "コミットとブランチ"
+label: "コミットとブランチ"
+---
+
+## コミットとブランチ
+
+Gitの基本操作であるコミットとブランチについて解説します。
+
+### コミット
+
+#### コミットの基本
+
+```bash
+# 変更をステージング
+git add .
+
+# コミット
+git commit -m "Add user authentication feature"
+
+# コミットメッセージのベストプラクティス
+# 1行目: 変更の要約（50文字以内）
+# 2行目: 空行
+# 3行目以降: 詳細な説明
+git commit -m "Add user authentication
+
+- Implement JWT token generation
+- Add login endpoint
+- Add password hashing"
+```
+
+#### コミットの修正
+
+```bash
+# 直前のコミットメッセージを修正
+git commit --amend -m "New message"
+
+# 直前のコミットに変更を追加
+git add .
+git commit --amend --no-edit
+```
+
+### ブランチ
+
+#### ブランチの作成と切り替え
+
+```bash
+# ブランチの作成
+git branch feature/user-login
+
+# ブランチの切り替え
+git checkout feature/user-login
+
+# ブランチの作成と切り替えを同時に
+git checkout -b feature/user-login
+```
+
+#### ブランチのマージ
+
+```bash
+# ブランチをマージ
+git checkout main
+git merge feature/user-login
+
+# マージ後のブランチ削除
+git branch -d feature/user-login
+```
+
+### まとめ
+
+コミットとブランチのポイント：
+
+- **コミット**: 変更を記録
+- **コミットメッセージ**: 明確で簡潔なメッセージ
+- **ブランチ**: 独立した開発ライン
+- **マージ**: ブランチを統合
+
+適切なコミットとブランチ管理により、効率的な開発ができます。
+

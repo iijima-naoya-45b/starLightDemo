@@ -1,0 +1,539 @@
+---
+title: "CQRS完全ガイド"
+label: "CQRS完全ガイド"
+---
+
+## CQRS完全ガイド
+
+Command Query Responsibility Segregation（CQRS）パターンを詳しく解説します。
+
+### なぜCQRSが必要なのか
+
+#### 従来のCRUDアーキテクチャの問題点
+
+**問題のある実装:**
+
+```typescript
+// ❌ 悪い例: 読み書きが同じモデルを使用
+class OrderService {
+  async getOrder(orderId: string): Promise<Order> {
+    // 読み取り: 複雑なJOINクエリが必要
+    return await db.order.findUnique({
+      where: { id: orderId },
+      include: {
+        user: true,
+        items: {
+          include: {
+            product: true,
+          },
+        },
+        payment: true,
+        shipping: true,
+      },
+    });
+  }
+  
+  async createOrder(orderData: OrderData): Promise<Order> {
+    // 書き込み: 複数のテーブルを更新
+    return await db.$transaction(async (tx) => {
+      const order = await tx.order.create({ data: orderData });
+      await tx.orderItem.createMany({ data: orderData.items });
+      await tx.payment.create({ data: { orderId: order.id } });
+      await tx.shipping.create({ data: { orderId: order.id } });
+      return order;
+    });
+  }
+  
+  async updateOrder(orderId: string, data: Partial<Order>): Promise<Order> {
+    // 更新: 複雑なバリデーションと更新ロジック
+    return await db.order.update({
+      where: { id: orderId },
+      data,
+    });
+  }
+}
+```
+
+**問題点:**
+
+1. **パフォーマンス**: 読み取りと書き込みで最適化が異なる
+2. **スケーラビリティ**: 読み取りと書き込みを独立してスケールできない
+3. **複雑性**: 同じモデルで読み書きの両方を扱う必要がある
+4. **最適化の困難**: 読み取りと書き込みの最適化が競合する
+
+**影響:**
+
+- パフォーマンスの低下
+- スケーラビリティの制限
+- コードの複雑化
+- 最適化の困難
+
+#### CQRSによる解決
+
+**改善された実装:**
+
+```typescript
+// ✅ 良い例: CQRSパターンを使用
+// Command側（書き込み）
+class OrderCommandService {
+  async createOrder(orderData: OrderData): Promise<void> {
+    // 書き込み専用のモデルを使用
+    await db.$transaction(async (tx) => {
+      const order = await tx.order.create({ data: orderData });
+      await tx.orderItem.createMany({ data: orderData.items });
+      
+      // イベントを発行
+      await this.eventBus.publish('order.created', {
+        orderId: order.id,
+        userId: order.userId,
+        items: orderData.items,
+      });
+    });
+  }
+  
+  async updateOrder(orderId: string, data: Partial<Order>): Promise<void> {
+    await db.order.update({
+      where: { id: orderId },
+      data,
+    });
+    
+    // イベントを発行
+    await this.eventBus.publish('order.updated', {
+      orderId,
+      data,
+    });
+  }
+}
+
+// Query側（読み取り）
+class OrderQueryService {
+  async getOrder(orderId: string): Promise<OrderView> {
+    // 読み取り専用のビューを使用
+    return await db.orderView.findUnique({
+      where: { id: orderId },
+    });
+  }
+  
+  async getOrdersByUser(userId: string): Promise<OrderView[]> {
+    // 最適化された読み取りクエリ
+    return await db.orderView.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+}
+
+// イベントハンドラー: Command側のイベントをQuery側のビューに反映
+class OrderViewProjection {
+  async handleOrderCreated(event: OrderCreatedEvent): Promise<void> {
+    // 読み取り専用のビューを更新
+    await db.orderView.create({
+      data: {
+        id: event.orderId,
+        userId: event.userId,
+        items: event.items,
+        status: 'PENDING',
+        createdAt: new Date(),
+      },
+    });
+  }
+  
+  async handleOrderUpdated(event: OrderUpdatedEvent): Promise<void> {
+    await db.orderView.update({
+      where: { id: event.orderId },
+      data: event.data,
+    });
+  }
+}
+```
+
+**メリット:**
+
+- パフォーマンスの向上: 読み取りと書き込みを独立して最適化
+- スケーラビリティ: 読み取りと書き込みを独立してスケール
+- 複雑性の分離: 読み取りと書き込みのロジックを分離
+- 最適化の容易さ: それぞれに最適な最適化を適用
+
+### CQRSの基本概念
+
+#### Command（コマンド）
+
+**定義:**
+システムの状態を変更する操作です。
+
+**特徴:**
+
+- 副作用がある（状態を変更する）
+- 戻り値は通常voidまたはID
+- 冪等性を保証する必要がある場合がある
+
+**実装例:**
+
+```typescript
+// Commandの定義
+interface CreateOrderCommand {
+  userId: string;
+  items: Array<{ productId: string; quantity: number }>;
+  shippingAddress: Address;
+}
+
+// Command Handler
+class CreateOrderCommandHandler {
+  async handle(command: CreateOrderCommand): Promise<string> {
+    // バリデーション
+    await this.validate(command);
+    
+    // ビジネスロジック
+    const order = await this.orderRepository.create({
+      userId: command.userId,
+      items: command.items,
+      shippingAddress: command.shippingAddress,
+      status: 'PENDING',
+    });
+    
+    // イベントを発行
+    await this.eventBus.publish('order.created', {
+      orderId: order.id,
+      userId: command.userId,
+      items: command.items,
+    });
+    
+    return order.id;
+  }
+  
+  private async validate(command: CreateOrderCommand): Promise<void> {
+    // バリデーションロジック
+    if (!command.userId) {
+      throw new Error('User ID is required');
+    }
+    if (command.items.length === 0) {
+      throw new Error('Items are required');
+    }
+  }
+}
+```
+
+#### Query（クエリ）
+
+**定義:**
+システムの状態を読み取る操作です。
+
+**特徴:**
+
+- 副作用がない（状態を変更しない）
+- 戻り値はデータ
+- 冪等性が保証される
+
+**実装例:**
+
+```typescript
+// Queryの定義
+interface GetOrderQuery {
+  orderId: string;
+}
+
+interface GetOrdersByUserQuery {
+  userId: string;
+  page: number;
+  limit: number;
+}
+
+// Query Handler
+class GetOrderQueryHandler {
+  async handle(query: GetOrderQuery): Promise<OrderView> {
+    // 読み取り専用のビューから取得
+    const order = await this.orderViewRepository.findById(query.orderId);
+    
+    if (!order) {
+      throw new Error('Order not found');
+    }
+    
+    return order;
+  }
+}
+
+class GetOrdersByUserQueryHandler {
+  async handle(query: GetOrdersByUserQuery): Promise<OrderView[]> {
+    // 最適化された読み取りクエリ
+    return await this.orderViewRepository.findByUserId(
+      query.userId,
+      query.page,
+      query.limit
+    );
+  }
+}
+```
+
+### CQRSの実装パターン
+
+#### パターン1: 単一データベースでのCQRS
+
+**実装:**
+
+```typescript
+// 同じデータベース内で読み書きを分離
+class OrderCommandService {
+  private db: PrismaClient;
+  
+  async createOrder(orderData: OrderData): Promise<void> {
+    // 書き込み: 正規化されたテーブルに書き込む
+    await this.db.$transaction(async (tx) => {
+      const order = await tx.order.create({ data: orderData });
+      await tx.orderItem.createMany({ data: orderData.items });
+    });
+    
+    // イベントを発行
+    await this.eventBus.publish('order.created', { orderId: order.id });
+  }
+}
+
+class OrderQueryService {
+  private db: PrismaClient;
+  
+  async getOrder(orderId: string): Promise<OrderView> {
+    // 読み取り: 非正規化されたビューから読み取る
+    return await this.db.orderView.findUnique({
+      where: { id: orderId },
+    });
+  }
+}
+
+// イベントハンドラー: Command側のイベントをQuery側のビューに反映
+class OrderViewProjection {
+  async handleOrderCreated(event: OrderCreatedEvent): Promise<void> {
+    // 読み取り専用のビューを更新
+    await this.db.orderView.create({
+      data: {
+        id: event.orderId,
+        // 非正規化されたデータを保存
+        userId: event.userId,
+        items: JSON.stringify(event.items),
+        status: 'PENDING',
+      },
+    });
+  }
+}
+```
+
+**メリット:**
+
+- 実装が比較的簡単
+- 単一のデータベースで管理できる
+- トランザクションの整合性が保たれる
+
+**デメリット:**
+
+- 読み書きのスケーリングが独立できない
+- データベースがボトルネックになる可能性
+
+#### パターン2: 複数データベースでのCQRS
+
+**実装:**
+
+```typescript
+// 読み書きで異なるデータベースを使用
+class OrderCommandService {
+  private writeDb: PrismaClient; // 書き込み専用データベース
+  
+  async createOrder(orderData: OrderData): Promise<void> {
+    await this.writeDb.$transaction(async (tx) => {
+      const order = await tx.order.create({ data: orderData });
+      await tx.orderItem.createMany({ data: orderData.items });
+    });
+    
+    // イベントを発行
+    await this.eventBus.publish('order.created', { orderId: order.id });
+  }
+}
+
+class OrderQueryService {
+  private readDb: PrismaClient; // 読み取り専用データベース（レプリカ）
+  
+  async getOrder(orderId: string): Promise<OrderView> {
+    // 読み取り専用のレプリカから読み取る
+    return await this.readDb.orderView.findUnique({
+      where: { id: orderId },
+    });
+  }
+}
+
+// イベントハンドラー: 書き込みデータベースのイベントを読み取りデータベースに反映
+class OrderViewProjection {
+  private readDb: PrismaClient;
+  
+  async handleOrderCreated(event: OrderCreatedEvent): Promise<void> {
+    // 読み取りデータベースのビューを更新
+    await this.readDb.orderView.create({
+      data: {
+        id: event.orderId,
+        userId: event.userId,
+        items: JSON.stringify(event.items),
+        status: 'PENDING',
+      },
+    });
+  }
+}
+```
+
+**メリット:**
+
+- 読み書きを独立してスケールできる
+- 読み取り専用レプリカを使用できる
+- パフォーマンスの最適化が容易
+
+**デメリット:**
+
+- 実装が複雑
+- データの整合性の管理が困難（最終的整合性）
+- イベントの順序管理が必要
+
+### CQRSの適用基準
+
+#### CQRSを適用すべき場合
+
+**条件:**
+
+- 読み取りと書き込みの比率が大きく異なる（読み取りが多い）
+- 読み取りと書き込みの最適化要件が異なる
+- 複雑なクエリが必要
+- 高いスケーラビリティが必要
+
+**実践例:**
+
+```typescript
+// 読み取りが多いシステム（ECサイトの商品一覧など）
+class ProductQueryService {
+  // 複雑なクエリ: フィルタリング、ソート、ページネーション
+  async searchProducts(query: ProductSearchQuery): Promise<ProductView[]> {
+    return await this.productViewRepository.search({
+      keyword: query.keyword,
+      category: query.category,
+      priceRange: query.priceRange,
+      sortBy: query.sortBy,
+      page: query.page,
+      limit: query.limit,
+    });
+  }
+}
+
+// 書き込みは少ないが、複雑なビジネスロジックがある
+class ProductCommandService {
+  async createProduct(command: CreateProductCommand): Promise<void> {
+    // 複雑なバリデーションとビジネスロジック
+    await this.validateProduct(command);
+    await this.checkPermissions(command.userId);
+    
+    const product = await this.productRepository.create({
+      name: command.name,
+      price: command.price,
+      category: command.category,
+    });
+    
+    await this.eventBus.publish('product.created', { productId: product.id });
+  }
+}
+```
+
+#### CQRSを適用しないべき場合
+
+**条件:**
+
+- シンプルなCRUD操作のみ
+- 読み取りと書き込みの比率がほぼ同じ
+- スケーラビリティの要件が低い
+- チームが小規模
+
+**実践例:**
+
+```typescript
+// シンプルなCRUD操作
+class SimpleService {
+  async getItem(id: string): Promise<Item> {
+    return await db.item.findUnique({ where: { id } });
+  }
+  
+  async createItem(data: ItemData): Promise<Item> {
+    return await db.item.create({ data });
+  }
+  
+  async updateItem(id: string, data: Partial<Item>): Promise<Item> {
+    return await db.item.update({ where: { id }, data });
+  }
+  
+  async deleteItem(id: string): Promise<void> {
+    await db.item.delete({ where: { id } });
+  }
+}
+```
+
+### 実践的な実装例
+
+#### 完全なCQRS実装
+
+```typescript
+// Command Bus
+class CommandBus {
+  private handlers: Map<string, CommandHandler> = new Map();
+  
+  register(commandType: string, handler: CommandHandler): void {
+    this.handlers.set(commandType, handler);
+  }
+  
+  async execute<T>(command: Command): Promise<T> {
+    const handler = this.handlers.get(command.constructor.name);
+    if (!handler) {
+      throw new Error(`No handler found for ${command.constructor.name}`);
+    }
+    return await handler.handle(command);
+  }
+}
+
+// Query Bus
+class QueryBus {
+  private handlers: Map<string, QueryHandler> = new Map();
+  
+  register(queryType: string, handler: QueryHandler): void {
+    this.handlers.set(queryType, handler);
+  }
+  
+  async execute<T>(query: Query): Promise<T> {
+    const handler = this.handlers.get(query.constructor.name);
+    if (!handler) {
+      throw new Error(`No handler found for ${query.constructor.name}`);
+    }
+    return await handler.handle(query);
+  }
+}
+
+// 使用例
+const commandBus = new CommandBus();
+const queryBus = new QueryBus();
+
+// Command Handlerを登録
+commandBus.register('CreateOrderCommand', new CreateOrderCommandHandler());
+
+// Query Handlerを登録
+queryBus.register('GetOrderQuery', new GetOrderQueryHandler());
+
+// Commandを実行
+await commandBus.execute(new CreateOrderCommand({
+  userId: 'user-1',
+  items: [{ productId: 'product-1', quantity: 2 }],
+}));
+
+// Queryを実行
+const order = await queryBus.execute(new GetOrderQuery({ orderId: 'order-1' }));
+```
+
+### まとめ
+
+CQRS完全ガイドのポイント：
+
+- **なぜ必要か**: 読み取りと書き込みの最適化要件が異なる
+- **Command**: 状態を変更する操作、副作用がある
+- **Query**: 状態を読み取る操作、副作用がない
+- **実装パターン**: 単一データベース、複数データベース
+- **適用基準**: 読み取りが多い、複雑なクエリ、高いスケーラビリティが必要な場合
+
+適切なCQRSの実装により、読み取りと書き込みを独立して最適化し、スケーラブルなシステムを構築できます。
+

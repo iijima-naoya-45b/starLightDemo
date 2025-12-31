@@ -1,0 +1,183 @@
+---
+title: "よくあるアンチパターン"
+label: "よくあるアンチパターン"
+---
+
+## よくあるアンチパターン
+
+PHPでよくあるアンチパターンと、実際に事故った構造を詳しく解説します。
+
+### A. リソースの「垂れ流し」
+
+#### 実際に事故った構造
+
+```php
+// ❌ アンチパターン: 例外を握りつぶしてファイルやDB接続を閉じない
+function processFile($filePath) {
+    $file = fopen($filePath, 'r');
+    try {
+        // ファイル処理...
+    } catch (Exception $e) {
+        // 問題: 例外を握りつぶしてファイルを閉じない
+        error_log("File processing failed: " . $e->getMessage());
+        // ファイルが閉じられず、ファイル記述子がリーク
+    }
+    // 問題: finallyブロックがないため、正常終了時もファイルが閉じられない
+}
+```
+
+**なぜ事故るか:**
+
+1. **ファイル記述子の枯渇**: ファイルが閉じられず、OSのファイル記述子が枯渇する
+2. **接続リーク**: DB接続が閉じられず、接続プールが枯渇する
+3. **数時間後の停止**: リソースリークは数時間後にシステム全体を停止させる
+
+**設計レビューでの指摘文例:**
+
+```
+【指摘】リソースが適切に解放されていません。
+【問題】例外時にファイルやDB接続が閉じられず、リソースリークが発生します。
+【影響】ファイル記述子・接続プールの枯渇、数時間後のシステム停止
+【推奨】try-finallyブロックまたは適切なリソース管理で確実にリソースを解放する
+```
+
+### B. 無防備な待機
+
+#### 実際に事故った構造
+
+```php
+// ❌ アンチパターン: 外部API呼び出しにタイムアウトを設定しない
+function createOrder($orderData) {
+    $pdo = getConnection();
+    try {
+        $pdo->beginTransaction();
+        
+        // 1. 注文を作成（データベースに保存）
+        $stmt = $pdo->prepare("INSERT INTO orders (user_id, amount) VALUES (?, ?)");
+        $stmt->execute([$orderData['user_id'], $orderData['amount']]);
+        $orderId = $pdo->lastInsertId();
+        
+        // 2. トランザクション内で外部APIを呼ぶ（問題）
+        // 問題: タイムアウトが設定されていない
+        // 問題: サーキットブレーカーがない
+        $ch = curl_init('https://payment-api.example.com/charge');
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
+            'order_id' => $orderId,
+            'amount' => $orderData['amount'],
+        ]));
+        $response = curl_exec($ch);
+        
+        if (curl_getinfo($ch, CURLINFO_HTTP_CODE) !== 200) {
+            throw new PaymentException('Payment failed');
+        }
+        
+        // 3. 決済結果を保存
+        $stmt = $pdo->prepare("UPDATE orders SET payment_status = ? WHERE id = ?");
+        $stmt->execute(['COMPLETED', $orderId]);
+        
+        $pdo->commit();
+        return $orderId;
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+}
+```
+
+**なぜ事故るか:**
+
+1. **トランザクションの長時間保持**: 外部APIの応答を待つ間、データベースのロックが保持される
+2. **外部障害の影響**: 外部APIの障害がデータベーストランザクションに影響する
+3. **ロールバックの困難**: 外部APIが成功した後にトランザクションが失敗した場合、外部APIのロールバックが困難
+4. **タイムアウトのリスク**: 外部APIの応答が遅い場合、トランザクションがタイムアウトする
+5. **プロセスプールの飽和**: 遅延が連鎖してプロセスプールが飽和し、全エンドポイントが応答不能に
+
+### C. 非冪等な再試行
+
+#### 実際に事故った構造
+
+```php
+// ❌ アンチパターン: 再送時にデータが二重登録される
+function createOrder($orderData) {
+    // 問題: Idempotency Keyがない
+    // 問題: 再実行時に注文が二重作成される
+    $pdo = getConnection();
+    $stmt = $pdo->prepare("INSERT INTO orders (user_id, amount) VALUES (?, ?)");
+    $stmt->execute([$orderData['user_id'], $orderData['amount']]);
+    return $pdo->lastInsertId();
+}
+
+// クライアント側でリトライ
+function createOrderWithRetry($orderData) {
+    for ($i = 0; $i < 3; $i++) {
+        try {
+            createOrder($orderData);
+            return; // 成功
+        } catch (Exception $e) {
+            if ($i === 2) {
+                throw $e; // 最終リトライ失敗
+            }
+            sleep(1 * ($i + 1)); // リトライ
+        }
+    }
+}
+```
+
+**なぜ事故るか:**
+
+1. **二重登録**: ネットワークエラーでクライアントが再送すると、注文が2つ作成される
+2. **データの不整合**: 同じ注文が複数存在し、在庫や決済に影響する
+3. **ビジネスロジックの破綻**: 重複データにより、ビジネスロジックが正しく動作しない
+
+**設計レビューでの指摘文例:**
+
+```
+【指摘】非冪等な再試行が実装されています。
+【問題】再送時にデータが二重登録され、データの不整合が発生します。
+【影響】データの不整合、ビジネスロジックの破綻
+【推奨】Idempotency Keyを使用して冪等性を保証する
+```
+
+### D. SQLインジェクション
+
+#### 実際に事故った構造
+
+```php
+// ❌ アンチパターン: SQLインジェクション
+function getUser($userId) {
+    $pdo = getConnection();
+    // 問題: ユーザー入力を直接SQLに埋め込む
+    $query = "SELECT * FROM users WHERE id = " . $userId;
+    $result = $pdo->query($query);
+    return $result->fetch();
+}
+```
+
+**なぜ事故るか:**
+
+1. **SQLインジェクション**: 悪意のあるSQLコードが実行される
+2. **データの漏洩**: データベースの全データが漏洩する可能性
+3. **データの改ざん**: データベースのデータが改ざんされる可能性
+
+**設計レビューでの指摘文例:**
+
+```
+【指摘】SQLインジェクションの脆弱性があります。
+【問題】ユーザー入力を直接SQLに埋め込んでいます。
+【影響】データの漏洩、データの改ざん
+【推奨】プリペアドステートメントを使用する
+```
+
+### まとめ
+
+よくあるアンチパターンのポイント：
+
+- **A. リソースの「垂れ流し」**: 例外を握りつぶしてファイルやDB接続を閉じない → 数時間後にシステム停止
+- **B. 無防備な待機**: 外部API呼び出しにタイムアウトを設定しない → プロセスプールの飽和、全エンドポイントの応答不能
+- **C. 非冪等な再試行**: 再送時にデータが二重登録される → データの不整合、ビジネスロジックの破綻
+- **D. SQLインジェクション**: ユーザー入力を直接SQLに埋め込む → データの漏洩、データの改ざん
+
+これらのアンチパターンを避けることで、安全で信頼性の高いPHPアプリケーションを構築できます。
+
+**重要な原則**: 「正常に動く」よりも「異常時に安全に壊れる」ことを優先する。
+

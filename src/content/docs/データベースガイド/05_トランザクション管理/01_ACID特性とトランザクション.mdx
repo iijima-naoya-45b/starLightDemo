@@ -1,0 +1,285 @@
+---
+title: "ACID特性とトランザクション"
+label: "ACID特性とトランザクション"
+---
+
+## ACID特性とトランザクション
+
+トランザクションは、データベースの整合性を保証する重要な仕組みです。ACID特性を理解することで、適切なトランザクション管理ができます。
+
+### なぜトランザクションが重要なのか
+
+#### トランザクションなしの処理
+
+**問題のある実装:**
+
+```sql
+-- 銀行口座間の送金処理（トランザクションなし）
+-- 1. 送金元の口座から引き出す
+UPDATE accounts SET balance = balance - 1000 WHERE id = 1;
+
+-- 2. 送金先の口座に振り込む
+UPDATE accounts SET balance = balance + 1000 WHERE id = 2;
+
+-- 問題点:
+-- - 1つ目のUPDATEが成功し、2つ目のUPDATEが失敗した場合、
+--   送金元の口座から1000円が消えてしまう
+-- - データの整合性が保証されない
+```
+
+**発生する問題:**
+- データの不整合
+- お金が消える
+- 二重処理のリスク
+
+#### トランザクションによる解決
+
+**改善された実装:**
+
+```sql
+-- トランザクションを使用
+BEGIN TRANSACTION;
+
+-- 1. 送金元の口座から引き出す
+UPDATE accounts SET balance = balance - 1000 WHERE id = 1;
+
+-- 2. 送金先の口座に振り込む
+UPDATE accounts SET balance = balance + 1000 WHERE id = 2;
+
+-- すべて成功した場合のみコミット
+COMMIT;
+
+-- エラーが発生した場合はロールバック
+-- ROLLBACK;
+```
+
+**メリット:**
+- すべての処理が成功するか、すべて失敗するか（All or Nothing）
+- データの整合性が保証される
+- エラー時の自動ロールバック
+
+### ACID特性
+
+#### Atomicity（原子性）
+
+**定義:**
+トランザクション内のすべての操作が、すべて成功するか、すべて失敗するかのいずれかです。
+
+```sql
+BEGIN TRANSACTION;
+
+UPDATE accounts SET balance = balance - 1000 WHERE id = 1;
+UPDATE accounts SET balance = balance + 1000 WHERE id = 2;
+
+-- エラーが発生した場合、すべての変更がロールバックされる
+-- 成功した場合のみ、すべての変更がコミットされる
+COMMIT;
+```
+
+#### Consistency（一貫性）
+
+**定義:**
+トランザクションの前後で、データベースの整合性制約が満たされる状態です。
+
+```sql
+-- 整合性制約: 口座残高は0以上でなければならない
+ALTER TABLE accounts ADD CONSTRAINT check_balance CHECK (balance >= 0);
+
+BEGIN TRANSACTION;
+
+-- この操作は整合性制約違反のため失敗する
+UPDATE accounts SET balance = -100 WHERE id = 1;
+-- エラー: CHECK制約違反
+
+-- トランザクション全体がロールバックされる
+ROLLBACK;
+```
+
+#### Isolation（分離性）
+
+**定義:**
+同時実行されるトランザクションが互いに影響を与えないことです。
+
+```sql
+-- トランザクション1
+BEGIN TRANSACTION;
+SELECT balance FROM accounts WHERE id = 1;  -- 1000を読み取る
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+-- まだコミットしていない
+
+-- トランザクション2（同時実行）
+BEGIN TRANSACTION;
+SELECT balance FROM accounts WHERE id = 1;  -- 1000を読み取る（変更前の値）
+-- トランザクション1の変更は見えない
+```
+
+#### Durability（永続性）
+
+**定義:**
+コミットされたトランザクションの変更は、システム障害が発生しても失われないことです。
+
+```sql
+BEGIN TRANSACTION;
+UPDATE accounts SET balance = balance - 1000 WHERE id = 1;
+COMMIT;  -- コミット後、変更は永続化される
+
+-- システム障害が発生しても、変更は失われない
+```
+
+### トランザクションの実装
+
+#### 基本的なトランザクション
+
+```sql
+-- トランザクションの開始
+BEGIN TRANSACTION;
+-- または
+START TRANSACTION;
+
+-- 処理の実行
+UPDATE accounts SET balance = balance - 1000 WHERE id = 1;
+UPDATE accounts SET balance = balance + 1000 WHERE id = 2;
+
+-- コミット（変更を確定）
+COMMIT;
+
+-- ロールバック（変更を取消）
+-- ROLLBACK;
+```
+
+#### エラーハンドリング
+
+```sql
+BEGIN TRANSACTION;
+
+BEGIN TRY
+    UPDATE accounts SET balance = balance - 1000 WHERE id = 1;
+    UPDATE accounts SET balance = balance + 1000 WHERE id = 2;
+    COMMIT;
+END TRY
+BEGIN CATCH
+    ROLLBACK;
+    -- エラーログを記録
+    PRINT 'Error occurred: ' + ERROR_MESSAGE();
+END CATCH;
+```
+
+### トランザクションの分離レベル
+
+#### READ UNCOMMITTED（未コミット読み取り）
+
+**特徴:**
+- 最も低い分離レベル
+- ダーティリードが発生する可能性がある
+
+```sql
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+BEGIN TRANSACTION;
+SELECT balance FROM accounts WHERE id = 1;
+-- 他のトランザクションの未コミットの変更も読み取れる
+COMMIT;
+```
+
+#### READ COMMITTED（コミット済み読み取り）
+
+**特徴:**
+- デフォルトの分離レベル（多くのデータベース）
+- ダーティリードは防げるが、非再現読み取りが発生する可能性がある
+
+```sql
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+BEGIN TRANSACTION;
+SELECT balance FROM accounts WHERE id = 1;
+-- コミット済みの変更のみ読み取れる
+COMMIT;
+```
+
+#### REPEATABLE READ（再現可能読み取り）
+
+**特徴:**
+- 同じトランザクション内で同じクエリを実行しても同じ結果が得られる
+- ファントムリードが発生する可能性がある
+
+```sql
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+
+BEGIN TRANSACTION;
+SELECT balance FROM accounts WHERE id = 1;
+-- 同じトランザクション内では同じ値が読み取れる
+SELECT balance FROM accounts WHERE id = 1;  -- 同じ値
+COMMIT;
+```
+
+#### SERIALIZABLE（直列化可能）
+
+**特徴:**
+- 最も高い分離レベル
+- すべての並行性の問題を防げるが、パフォーマンスが低下する可能性がある
+
+```sql
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+BEGIN TRANSACTION;
+SELECT balance FROM accounts WHERE id = 1;
+-- 完全に分離された状態で読み取れる
+COMMIT;
+```
+
+### デッドロック
+
+#### デッドロックの発生
+
+**デッドロックの例:**
+
+```sql
+-- トランザクション1
+BEGIN TRANSACTION;
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;  -- ロック1を取得
+-- ロック2を待機
+
+-- トランザクション2（同時実行）
+BEGIN TRANSACTION;
+UPDATE accounts SET balance = balance - 100 WHERE id = 2;  -- ロック2を取得
+-- ロック1を待機
+
+-- デッドロックが発生
+```
+
+#### デッドロックの回避
+
+**対策:**
+
+1. **ロックの順序を統一**
+   ```sql
+   -- 常にIDの小さい順にロックを取得
+   UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+   UPDATE accounts SET balance = balance - 100 WHERE id = 2;
+   ```
+
+2. **タイムアウトの設定**
+   ```sql
+   SET LOCK_TIMEOUT 5000;  -- 5秒でタイムアウト
+   ```
+
+3. **トランザクションの時間を短くする**
+   ```sql
+   -- トランザクション内の処理を最小限にする
+   BEGIN TRANSACTION;
+   -- 必要な処理のみを実行
+   COMMIT;
+   ```
+
+### まとめ
+
+ACID特性とトランザクションのポイント：
+
+- **ACID特性**: Atomicity、Consistency、Isolation、Durability
+- **トランザクション**: BEGIN、COMMIT、ROLLBACK
+- **分離レベル**: READ UNCOMMITTED、READ COMMITTED、REPEATABLE READ、SERIALIZABLE
+- **デッドロック**: ロックの順序を統一し、タイムアウトを設定
+- **エラーハンドリング**: TRY-CATCHブロックでエラーを処理
+
+適切なトランザクション管理により、データの整合性を保証できます。
+

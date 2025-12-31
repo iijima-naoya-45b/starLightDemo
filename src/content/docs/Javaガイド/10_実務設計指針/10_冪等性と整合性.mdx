@@ -1,0 +1,238 @@
+---
+title: "冪等性と整合性"
+label: "冪等性と整合性"
+---
+
+## 冪等性と整合性
+
+分散システムでは「1回しか実行されない」は幻想。「何度実行されても最終状態が正しい」ことを保証する設計を詳しく解説します。
+
+### 冪等性の重要性
+
+分散システムでは、ネットワークエラー、タイムアウト、再起動などにより、同じ処理が複数回実行される可能性があります。
+
+#### 問題のあるコード
+
+```java
+// ❌ 問題のあるコード: 非冪等な処理
+@Service
+public class OrderService {
+    @Transactional
+    public Order createOrder(OrderData orderData) {
+        // 問題: 再実行時に注文が二重作成される
+        Order order = new Order(orderData);
+        return orderRepository.save(order);
+    }
+}
+```
+
+**なぜ問題か:**
+
+- **再実行時の二重作成**: ネットワークエラーでクライアントが再送すると、注文が2つ作成される
+- **データの不整合**: 同じ注文が複数存在し、在庫や決済に影響する
+
+### 冪等性の担保
+
+#### Idempotency Keyの使用
+
+```java
+// ✅ 良い例: Idempotency Keyによる冪等性の担保
+@Service
+public class OrderService {
+    @Transactional
+    public Order createOrder(OrderData orderData, String idempotencyKey) {
+        // Idempotency Keyで既存の注文を確認
+        Optional<Order> existingOrder = orderRepository.findByIdempotencyKey(idempotencyKey);
+        if (existingOrder.isPresent()) {
+            // 既に存在する場合は、既存の注文を返す
+            return existingOrder.get();
+        }
+        
+        // 新規作成
+        Order order = new Order(orderData);
+        order.setIdempotencyKey(idempotencyKey);
+        return orderRepository.save(order);
+    }
+}
+
+// エンティティにIdempotency Keyを追加
+@Entity
+public class Order {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @Column(unique = true)
+    private String idempotencyKey; // 一意制約で重複を防止
+    
+    // ...
+}
+```
+
+**なぜ重要か:**
+
+- **重複防止**: 同じIdempotency Keyで再実行しても、同じ結果が返される
+- **データの整合性**: 注文の重複作成を防止
+
+### トランザクション境界
+
+DB取引中に外部APIを呼ばない（失敗時復旧不可）。
+
+#### 問題のあるコード
+
+```java
+// ❌ 問題のあるコード: トランザクション内で外部APIを呼ぶ
+@Service
+public class OrderService {
+    @Transactional
+    public Order createOrder(OrderData orderData) {
+        // 1. 注文を作成（DBトランザクション内）
+        Order order = orderRepository.save(new Order(orderData));
+        
+        // 2. トランザクション内で外部APIを呼ぶ（問題）
+        PaymentResult result = paymentApiClient.chargePayment(order.getId(), orderData.getAmount());
+        
+        if (!result.isSuccess()) {
+            throw new PaymentException("Payment failed");
+        }
+        
+        // 3. 決済結果を保存
+        order.setPaymentStatus("COMPLETED");
+        return orderRepository.save(order);
+    }
+}
+```
+
+**なぜ問題か:**
+
+- **ロールバック不可**: 外部APIが成功した後にトランザクションが失敗した場合、外部APIのロールバックが困難
+- **データの不整合**: 外部APIは成功しているが、DBには注文が存在しない状態になる可能性
+
+#### Outboxパターンの実装
+
+```java
+// ✅ 良い例: Outboxパターンによる解決
+@Service
+public class OrderService {
+    @Autowired
+    private OrderRepository orderRepository;
+    
+    @Autowired
+    private OutboxRepository outboxRepository;
+    
+    @Transactional
+    public Order createOrder(OrderData orderData, String idempotencyKey) {
+        // 1. Idempotency Keyで既存の注文を確認
+        Optional<Order> existingOrder = orderRepository.findByIdempotencyKey(idempotencyKey);
+        if (existingOrder.isPresent()) {
+            return existingOrder.get();
+        }
+        
+        // 2. トランザクション内で注文を作成
+        Order order = new Order(orderData);
+        order.setIdempotencyKey(idempotencyKey);
+        order = orderRepository.save(order);
+        
+        // 3. Outboxテーブルに外部API呼び出しを記録（トランザクション内）
+        OutboxEvent event = new OutboxEvent();
+        event.setEventType("PAYMENT_CHARGE");
+        event.setAggregateId(order.getId().toString());
+        event.setPayload(JSON.toJSONString(Map.of(
+            "orderId", order.getId(),
+            "amount", orderData.getAmount()
+        )));
+        event.setIdempotencyKey(idempotencyKey);
+        event.setStatus("PENDING");
+        outboxRepository.save(event);
+        
+        // 4. トランザクションをコミット（外部APIは呼ばない）
+        return order;
+    }
+}
+
+// 別プロセスでOutboxを処理
+@Component
+public class OutboxProcessor {
+    @Scheduled(fixedRate = 5000)
+    public void processOutbox() {
+        List<OutboxEvent> pendingEvents = outboxRepository.findByStatus("PENDING");
+        
+        for (OutboxEvent event : pendingEvents) {
+            try {
+                // 外部APIを呼ぶ（トランザクション外）
+                Map<String, Object> payload = JSON.parseObject(event.getPayload(), Map.class);
+                
+                // Idempotency Keyをヘッダーに含める
+                PaymentResult result = paymentApiClient.chargePayment(
+                    (Long) payload.get("orderId"),
+                    (BigDecimal) payload.get("amount"),
+                    event.getIdempotencyKey() // Idempotency Keyを渡す
+                );
+                
+                if (result.isSuccess()) {
+                    event.setStatus("COMPLETED");
+                    outboxRepository.save(event);
+                } else {
+                    event.setStatus("FAILED");
+                    event.setRetryCount(event.getRetryCount() + 1);
+                    outboxRepository.save(event);
+                }
+            } catch (Exception e) {
+                event.setStatus("FAILED");
+                event.setRetryCount(event.getRetryCount() + 1);
+                outboxRepository.save(event);
+            }
+        }
+    }
+}
+```
+
+**なぜ重要か:**
+
+- **トランザクションの短縮**: DBのロック時間が短縮される
+- **外部障害の分離**: 外部APIの障害がトランザクションに影響しない
+- **再実行の容易さ**: Outboxテーブルから再実行可能
+- **冪等性の保証**: Idempotency Keyにより重複実行を防止
+
+### 再送安全なフロー
+
+「結果整合性で良いデータ」と「厳密整合性が必要なデータ」を明示的に分類する。
+
+#### 整合性レベルの分類
+
+```java
+// 厳密整合性が必要なデータ（ACIDトランザクション）
+@Entity
+public class Order {
+    @Id
+    private Long id;
+    private BigDecimal amount;
+    private String status; // CREATED, PAID, CANCELLED
+}
+
+// 結果整合性で良いデータ（イベント駆動）
+@Entity
+public class OrderAnalytics {
+    @Id
+    private Long id;
+    private Long orderId;
+    private BigDecimal totalAmount; // 集計値（最終的に整合性が取れれば良い）
+    private LocalDateTime lastUpdated;
+}
+```
+
+**使い分け:**
+
+- **厳密整合性**: 注文、決済、在庫など、ビジネス的に重要なデータ
+- **結果整合性**: 分析データ、ログ、通知など、最終的に整合性が取れれば良いデータ
+
+### まとめ
+
+冪等性と整合性のポイント：
+
+- **冪等性の担保**: Idempotency Keyで再実行を安全化
+- **トランザクション境界**: DB取引中に外部APIを呼ばない（Outboxパターンを使用）
+- **再送安全なフロー**: 厳密整合性と結果整合性を明示的に分類
+
+これらの原則により、「何度実行されても最終状態が正しい」堅牢なシステムを構築できます。
+

@@ -1,0 +1,406 @@
+---
+title: "Retryパターン"
+label: "Retryパターン"
+---
+
+## Retryパターン
+
+リトライパターンを詳しく解説します。
+
+### なぜRetryが必要なのか
+
+#### 一時的な障害の問題
+
+**問題のある実装:**
+
+```typescript
+// ❌ 悪い例: リトライがない
+class PaymentService {
+  async chargePayment(orderId: string, amount: number): Promise<PaymentResult> {
+    // 1回だけ試行
+    const response = await fetch('https://payment-api.example.com/charge', {
+      method: 'POST',
+      body: JSON.stringify({ orderId, amount }),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Payment failed');
+    }
+    
+    return await response.json();
+  }
+}
+```
+
+**問題点:**
+
+1. **一時的な障害**: ネットワークの一時的な問題で失敗する
+2. **可用性の低下**: 1回の失敗で処理が終了する
+3. **ユーザー体験の悪化**: ユーザーが手動で再試行する必要がある
+
+**影響:**
+
+- 可用性の低下
+- ユーザー体験の悪化
+- データの不整合
+
+#### Retryによる解決
+
+**改善された実装:**
+
+```typescript
+// ✅ 良い例: Retryパターンを使用
+class RetryPolicy {
+  private maxRetries: number;
+  private baseDelay: number;
+  private maxDelay: number;
+  private backoffMultiplier: number;
+  
+  constructor(
+    maxRetries: number = 3,
+    baseDelay: number = 1000,
+    maxDelay: number = 10000,
+    backoffMultiplier: number = 2
+  ) {
+    this.maxRetries = maxRetries;
+    this.baseDelay = baseDelay;
+    this.maxDelay = maxDelay;
+    this.backoffMultiplier = backoffMultiplier;
+  }
+  
+  async execute<T>(
+    fn: () => Promise<T>,
+    isRetryable: (error: Error) => boolean = () => true
+  ): Promise<T> {
+    let lastError: Error;
+    
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error as Error;
+        
+        // リトライ可能なエラーか確認
+        if (!isRetryable(lastError)) {
+          throw lastError;
+        }
+        
+        // 最後の試行でない場合、待機してリトライ
+        if (attempt < this.maxRetries) {
+          const delay = this.calculateDelay(attempt);
+          await this.sleep(delay);
+        }
+      }
+    }
+    
+    throw lastError!;
+  }
+  
+  private calculateDelay(attempt: number): number {
+    // 指数バックオフ: 1秒、2秒、4秒...
+    const delay = this.baseDelay * Math.pow(this.backoffMultiplier, attempt);
+    return Math.min(delay, this.maxDelay);
+  }
+  
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
+
+class PaymentService {
+  private retryPolicy: RetryPolicy;
+  
+  constructor() {
+    this.retryPolicy = new RetryPolicy(3, 1000, 10000, 2);
+  }
+  
+  async chargePayment(orderId: string, amount: number): Promise<PaymentResult> {
+    return await this.retryPolicy.execute(async () => {
+      const response = await fetch('https://payment-api.example.com/charge', {
+        method: 'POST',
+        body: JSON.stringify({ orderId, amount }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Payment failed');
+      }
+      
+      return await response.json();
+    }, (error) => {
+      // ネットワークエラーやタイムアウトはリトライ可能
+      return error.message.includes('network') || 
+             error.message.includes('timeout') ||
+             error.message.includes('ECONNREFUSED');
+    });
+  }
+}
+```
+
+**メリット:**
+
+- 一時的な障害への対応: 自動的にリトライ
+- 可用性の向上: 一時的な障害から回復
+- ユーザー体験の向上: ユーザーが手動で再試行する必要がない
+
+### Retry戦略
+
+#### 1. 固定遅延（Fixed Delay）
+
+**実装:**
+
+```typescript
+class FixedDelayRetry {
+  async execute<T>(fn: () => Promise<T>, maxRetries: number = 3, delay: number = 1000): Promise<T> {
+    let lastError: Error;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error as Error;
+        
+        if (attempt < maxRetries) {
+          await this.sleep(delay);
+        }
+      }
+    }
+    
+    throw lastError!;
+  }
+  
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
+```
+
+**使用例:**
+
+```typescript
+const retry = new FixedDelayRetry();
+
+await retry.execute(async () => {
+  return await paymentService.chargePayment(orderId, amount);
+}, 3, 1000); // 3回リトライ、1秒間隔
+```
+
+#### 2. 指数バックオフ（Exponential Backoff）
+
+**実装:**
+
+```typescript
+class ExponentialBackoffRetry {
+  async execute<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000,
+    maxDelay: number = 10000
+  ): Promise<T> {
+    let lastError: Error;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error as Error;
+        
+        if (attempt < maxRetries) {
+          const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
+          await this.sleep(delay);
+        }
+      }
+    }
+    
+    throw lastError!;
+  }
+  
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
+```
+
+**使用例:**
+
+```typescript
+const retry = new ExponentialBackoffRetry();
+
+await retry.execute(async () => {
+  return await paymentService.chargePayment(orderId, amount);
+}, 3, 1000, 10000); // 1秒、2秒、4秒...
+```
+
+#### 3. ジッター付き指数バックオフ（Jittered Exponential Backoff）
+
+**実装:**
+
+```typescript
+class JitteredExponentialBackoffRetry {
+  async execute<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000,
+    maxDelay: number = 10000
+  ): Promise<T> {
+    let lastError: Error;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error as Error;
+        
+        if (attempt < maxRetries) {
+          const baseDelay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
+          // ジッターを追加（0%〜50%のランダムな遅延）
+          const jitter = baseDelay * Math.random() * 0.5;
+          const delay = baseDelay + jitter;
+          await this.sleep(delay);
+        }
+      }
+    }
+    
+    throw lastError!;
+  }
+  
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
+```
+
+**メリット:**
+
+- スラッシングの防止: 複数のクライアントが同時にリトライするのを防ぐ
+- 負荷の分散: リトライのタイミングを分散
+
+### リトライ可能なエラーの判定
+
+#### エラーの分類
+
+```typescript
+class RetryableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RetryableError';
+  }
+}
+
+class NonRetryableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NonRetryableError';
+  }
+}
+
+class RetryPolicy {
+  private isRetryable(error: Error): boolean {
+    // リトライ可能なエラー
+    if (error instanceof RetryableError) {
+      return true;
+    }
+    
+    // ネットワークエラー
+    if (error.message.includes('network') || 
+        error.message.includes('timeout') ||
+        error.message.includes('ECONNREFUSED')) {
+      return true;
+    }
+    
+    // 5xxエラー（サーバーエラー）
+    if (error.message.includes('500') || 
+        error.message.includes('502') ||
+        error.message.includes('503') ||
+        error.message.includes('504')) {
+      return true;
+    }
+    
+    // リトライ不可能なエラー
+    if (error instanceof NonRetryableError) {
+      return false;
+    }
+    
+    // 4xxエラー（クライアントエラー）
+    if (error.message.includes('400') || 
+        error.message.includes('401') ||
+        error.message.includes('403') ||
+        error.message.includes('404')) {
+      return false;
+    }
+    
+    return true; // デフォルトはリトライ可能
+  }
+  
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    let lastError: Error;
+    
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error as Error;
+        
+        if (!this.isRetryable(lastError)) {
+          throw lastError;
+        }
+        
+        if (attempt < this.maxRetries) {
+          const delay = this.calculateDelay(attempt);
+          await this.sleep(delay);
+        }
+      }
+    }
+    
+    throw lastError!;
+  }
+}
+```
+
+### 実践的な実装例
+
+#### Resilience4jを使用した実装
+
+```typescript
+import { Retry, RetryConfig } from 'resilience4j';
+
+const retryConfig: RetryConfig = {
+  maxAttempts: 3,
+  waitDuration: 1000, // 1秒
+  exponentialBackoffMultiplier: 2,
+  exponentialMaxWaitDuration: 10000, // 最大10秒
+  retryExceptions: [NetworkError, TimeoutError],
+  ignoreExceptions: [ValidationError, AuthenticationError],
+};
+
+const retry = Retry.of('payment-service', retryConfig);
+
+class PaymentService {
+  async chargePayment(orderId: string, amount: number): Promise<PaymentResult> {
+    return await retry.executeSupplier(async () => {
+      const response = await fetch('https://payment-api.example.com/charge', {
+        method: 'POST',
+        body: JSON.stringify({ orderId, amount }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Payment failed');
+      }
+      
+      return await response.json();
+    });
+  }
+}
+```
+
+### まとめ
+
+Retryパターンのポイント：
+
+- **なぜ必要か**: 一時的な障害から自動的に回復
+- **Retry戦略**: 固定遅延、指数バックオフ、ジッター付き指数バックオフ
+- **リトライ可能なエラー**: ネットワークエラー、5xxエラーはリトライ可能
+- **実装**: Resilience4jなどのライブラリを使用
+- **設定**: サービスごとに適切な設定値を選択
+
+適切なRetryパターンの実装により、一時的な障害に強いシステムを構築できます。
+

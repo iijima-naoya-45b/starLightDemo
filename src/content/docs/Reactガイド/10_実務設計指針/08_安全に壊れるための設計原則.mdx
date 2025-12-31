@@ -1,0 +1,210 @@
+---
+title: "安全に壊れるための設計原則"
+label: "安全に壊れるための設計原則"
+---
+
+## 安全に壊れるための設計原則
+
+「正常に動く」よりも「異常時に安全に壊れる」ことを優先する設計原則を詳しく解説します。
+
+### 境界防御 (Boundary Defense)
+
+外部(API・DOM・ユーザ入力)からのデータは常に汚染されていると仮定し、型・形式・範囲を検査してからロジックに渡す。
+
+#### 実装例
+
+```typescript
+// ❌ 悪い例: 無防備な入力受付
+function Component({ data }: { data: any }) {
+  // 問題: 型チェックなし、バリデーションなし
+  return <div>{data.value + data.amount}</div>;
+}
+
+// ✅ 良い例: 境界防御の実装
+interface ComponentProps {
+  data: {
+    value: number;
+    amount: number;
+  };
+}
+
+function validateProps(props: unknown): ComponentProps {
+  if (typeof props !== 'object' || props === null) {
+    throw new Error('Invalid props');
+  }
+  
+  const obj = props as Record<string, unknown>;
+  
+  if (typeof obj.data !== 'object' || obj.data === null) {
+    throw new Error('Invalid data');
+  }
+  
+  const data = obj.data as Record<string, unknown>;
+  
+  if (typeof data.value !== 'number' || typeof data.amount !== 'number') {
+    throw new Error('Invalid data types');
+  }
+  
+  return {
+    data: {
+      value: data.value,
+      amount: data.amount,
+    },
+  };
+}
+
+function Component(props: unknown) {
+  const validated = validateProps(props);
+  return <div>{validated.data.value + validated.data.amount}</div>;
+}
+```
+
+**なぜ重要か:**
+
+- **型安全性**: TypeScriptの型システムで型チェック
+- **バリデーション**: 形式・範囲を検査
+- **セキュリティ**: XSS、インジェクションなどの攻撃を防止
+
+### 副作用の局所化
+
+DOM更新・API呼び出し・ストレージ操作などの副作用をロジックの末尾に集約し、それ以前を状態を持たない純粋処理として保つ。
+
+#### 実装例
+
+```typescript
+// ❌ 悪い例: 副作用が散在
+function Component({ items }: { items: Item[] }) {
+  const [filtered, setFiltered] = useState<Item[]>([]);
+  
+  useEffect(() => {
+    // 副作用1: フィルタリング
+    const filtered = items.filter(item => item.active);
+    setFiltered(filtered);
+    
+    // ビジネスロジック（副作用が混在）
+    if (filtered.length > 100) {
+      // 副作用2: ストレージ操作
+      localStorage.setItem('largeData', JSON.stringify(filtered));
+    }
+    
+    // 副作用3: DOM更新
+    document.title = `Items: ${filtered.length}`;
+  }, [items]);
+  
+  return <div>{filtered.length}</div>;
+}
+
+// ✅ 良い例: 副作用の局所化
+function filterItems(items: Item[]): Item[] {
+  // 純粋関数: 副作用なし
+  return items.filter(item => item.active);
+}
+
+function Component({ items }: { items: Item[] }) {
+  const [filtered, setFiltered] = useState<Item[]>([]);
+  
+  useEffect(() => {
+    // 1. 純粋処理: ビジネスロジック（副作用なし）
+    const filtered = filterItems(items);
+    
+    // 2. 副作用の集約: すべての副作用を末尾に
+    setFiltered(filtered);
+    saveToStorageIfNeeded(filtered);
+    updateDocumentTitle(filtered.length);
+  }, [items]);
+  
+  return <div>{filtered.length}</div>;
+}
+
+function saveToStorageIfNeeded(items: Item[]) {
+  if (items.length > 100) {
+    localStorage.setItem('largeData', JSON.stringify(items));
+  }
+}
+
+function updateDocumentTitle(count: number) {
+  document.title = `Items: ${count}`;
+}
+```
+
+**なぜ重要か:**
+
+- **テスト容易性**: 純粋関数は単体テストが容易
+- **可読性**: 副作用が明確に分離される
+- **デバッグ容易性**: 副作用の発生箇所が明確
+
+### 依存の隔離
+
+ビジネスロジックが特定ライブラリやReactの仕様に依存しないよう、インターフェース層で抽象化する。
+
+#### 実装例
+
+```typescript
+// ❌ 悪い例: ReactのAPIに直接依存
+function Component() {
+  const [data, setData] = useState<any[]>([]);
+  
+  useEffect(() => {
+    // ReactのAPIに直接依存
+    fetch('/api/data')
+      .then(res => res.json())
+      .then(json => setData(json));
+  }, []);
+  
+  return <div>{data.length}</div>;
+}
+
+// ✅ 良い例: インターフェースで抽象化
+interface DataRepository {
+  fetchData(): Promise<Data[]>;
+}
+
+class ApiDataRepository implements DataRepository {
+  async fetchData(): Promise<Data[]> {
+    const res = await fetch('/api/data');
+    return res.json();
+  }
+}
+
+class MockDataRepository implements DataRepository {
+  async fetchData(): Promise<Data[]> {
+    return [{ id: 1, name: 'Mock Data' }];
+  }
+}
+
+// カスタムフック: インターフェースに依存
+function useData(repository: DataRepository) {
+  const [data, setData] = useState<Data[]>([]);
+  
+  useEffect(() => {
+    repository.fetchData().then(setData);
+  }, [repository]);
+  
+  return data;
+}
+
+// コンポーネント: カスタムフックを使用
+function Component() {
+  const repository = new ApiDataRepository();
+  const data = useData(repository);
+  
+  return <div>{data.length}</div>;
+}
+```
+
+**なぜ重要か:**
+
+- **交換容易性**: APIを変更してもビジネスロジックは変更不要
+- **テスト容易性**: モックで簡単にテスト可能
+- **保守性**: フレームワークの変更に強い
+
+### まとめ
+
+安全に壊れるための設計原則のポイント：
+
+- **境界防御**: 外部データは常に汚染されていると仮定し、型・形式・範囲を検査
+- **副作用の局所化**: 副作用をロジックの末尾に集約し、純粋処理と分離
+- **依存の隔離**: ビジネスロジックが特定ライブラリに依存しないよう抽象化
+
+これらの原則により、「異常時に安全に壊れる」堅牢なシステムを構築できます。
+

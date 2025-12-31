@@ -1,0 +1,205 @@
+---
+title: "ベストプラクティス"
+label: "ベストプラクティス"
+---
+
+## ベストプラクティス
+
+Node.jsでの正しい構造とベストプラクティスを詳しく解説します。
+
+### 1. Outboxパターンの実装
+
+#### 正しい構造
+
+```typescript
+async function createOrder(orderData: OrderData): Promise<Order> {
+  return await prisma.$transaction(async (tx) => {
+    // ✅ 正しい: トランザクション内でOutboxに記録
+    const order = await tx.order.create({ data: orderData });
+    
+    // Outboxテーブルに外部API呼び出しのタスクを記録
+    await tx.outbox.create({
+      data: {
+        eventType: 'PAYMENT_CHARGE',
+        aggregateId: order.id.toString(),
+        payload: JSON.stringify({
+          orderId: order.id,
+          amount: orderData.amount,
+        }),
+        status: 'PENDING',
+        idempotencyKey: `payment-${order.id}-${Date.now()}`,
+      },
+    });
+    
+    // トランザクションをコミット（外部APIは呼ばない）
+    return order;
+  });
+}
+
+// 別のプロセス/ワーカーでOutboxを処理
+import Queue from 'bull';
+
+const outboxQueue = new Queue('outbox-processing', {
+  redis: {
+    host: process.env.REDIS_HOST,
+    port: parseInt(process.env.REDIS_PORT || '6379'),
+  },
+});
+
+// 定期的にOutboxを処理
+setInterval(async () => {
+  const pendingEvents = await prisma.outbox.findMany({
+    where: { status: 'PENDING' },
+    take: 10,
+  });
+  
+  for (const event of pendingEvents) {
+    await outboxQueue.add('process-outbox', event);
+  }
+}, 5000);
+
+outboxQueue.process('process-outbox', async (job) => {
+  const event = job.data;
+  
+  try {
+    // 外部APIを呼ぶ（トランザクション外）
+    const payload = JSON.parse(event.payload);
+    const response = await fetch('https://payment-api.example.com/charge', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: {
+        'Idempotency-Key': event.idempotencyKey,
+      },
+    });
+    
+    if (response.ok) {
+      await prisma.outbox.update({
+        where: { id: event.id },
+        data: { status: 'COMPLETED' },
+      });
+    } else {
+      await prisma.outbox.update({
+        where: { id: event.id },
+        data: {
+          status: 'FAILED',
+          retryCount: { increment: 1 },
+        },
+      });
+    }
+  } catch (error) {
+    await prisma.outbox.update({
+      where: { id: event.id },
+      data: {
+        status: 'FAILED',
+        retryCount: { increment: 1 },
+      },
+    });
+  }
+});
+```
+
+**なぜ正しいか:**
+
+- **トランザクションの短縮**: データベースのロック時間が短縮される
+- **外部障害の分離**: 外部APIの障害がトランザクションに影響しない
+- **再実行の容易さ**: Outboxテーブルから再実行可能
+- **冪等性の保証**: 冪等キーにより重複実行を防止
+
+### 2. async/awaitの適切な使用
+
+#### 正しい構造
+
+```typescript
+// ✅ 正しい: async/awaitを使用
+app.post('/orders', async (req, res) => {
+  try {
+    const order = await createOrder(req.body);
+    res.json(order);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+async function createOrder(orderData: OrderData): Promise<Order> {
+  return await prisma.$transaction(async (tx) => {
+    const order = await tx.order.create({ data: orderData });
+    return order;
+  });
+}
+```
+
+**なぜ正しいか:**
+
+- **可読性**: コードが読みやすくなる
+- **エラーハンドリング**: try-catchでエラーを処理できる
+- **デバッグ**: エラーの原因を特定しやすい
+
+### 3. 適切なエラーハンドリング
+
+#### 正しい構造
+
+```typescript
+// ✅ 正しい: 適切なエラーハンドリング
+app.post('/orders', async (req, res) => {
+  try {
+    validateOrderData(req.body);
+    const order = await createOrder(req.body);
+    res.json(order);
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      res.status(400).json({ error: error.message });
+    } else if (error instanceof NotFoundError) {
+      res.status(404).json({ error: error.message });
+    } else {
+      log.error('Unexpected error', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+});
+```
+
+**なぜ正しいか:**
+
+- **エラーの分類**: エラーの種類に応じて適切な処理
+- **ロギング**: エラーをログに記録
+- **ユーザーへの適切なレスポンス**: エラーの種類に応じた適切なHTTPステータスコード
+
+### 4. リソースの適切な管理
+
+#### 正しい構造
+
+```typescript
+// ✅ 正しい: リソースの適切な管理
+import { createReadStream } from 'fs';
+import { pipeline } from 'stream/promises';
+
+async function processFile(filePath: string): Promise<void> {
+  const readStream = createReadStream(filePath);
+  
+  try {
+    await pipeline(
+      readStream,
+      // 処理...
+    );
+  } finally {
+    // リソースが自動的にクローズされる
+  }
+}
+```
+
+**なぜ正しいか:**
+
+- **リソースの自動解放**: ストリームが自動的にクローズされる
+- **メモリリークの防止**: リソースが適切に解放される
+
+### まとめ
+
+ベストプラクティスのポイント：
+
+- **Outboxパターン**: トランザクション内で外部API呼び出しを記録し、別プロセスで処理
+- **async/await**: コールバック地獄を避け、可読性を向上
+- **適切なエラーハンドリング**: エラーの種類に応じた適切な処理
+- **リソースの適切な管理**: ストリームやイベントリスナーの適切な管理
+
+適切なベストプラクティスの実装により、安全で信頼性の高いNode.jsアプリケーションを構築できます。
+

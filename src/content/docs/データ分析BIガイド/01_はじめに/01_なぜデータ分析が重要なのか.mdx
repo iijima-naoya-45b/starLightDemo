@@ -1,0 +1,124 @@
+---
+title: "なぜデータ分析が重要なのか"
+label: "なぜデータ分析が重要なのか"
+---
+
+## なぜデータ分析が重要なのか
+
+データ分析は、ビジネスの意思決定を支援する重要な活動です。適切なデータ分析により、ビジネスの成長と最適化を実現できます。
+
+### データ分析の重要性
+
+#### データ分析なしの意思決定の問題
+
+**問題のある状況:**
+
+```
+- 直感に基づいた意思決定
+- データに基づかない判断
+- 効果の測定ができない
+- 改善の方向性が不明確
+```
+
+**影響:**
+- 非効率な意思決定
+- 機会損失
+- リソースの無駄
+
+#### データ分析による解決
+
+**改善された状況:**
+
+```
+- データに基づいた意思決定
+- 効果の測定と検証
+- 改善の方向性が明確
+- 継続的な最適化
+```
+
+**メリット:**
+- 効率的な意思決定
+- 機会の把握
+- リソースの最適化
+
+### データ分析の種類
+
+#### 1. 記述的分析（Descriptive Analytics）
+
+**定義:**
+過去のデータを分析し、何が起こったかを理解します。
+
+**使用例:**
+
+```sql
+-- 月次売上の集計
+SELECT 
+  DATE_TRUNC('month', created_at) AS month,
+  SUM(amount) AS total_sales
+FROM orders
+GROUP BY DATE_TRUNC('month', created_at)
+ORDER BY month;
+```
+
+#### 2. 診断的分析（Diagnostic Analytics）
+
+**定義:**
+データを分析し、なぜそれが起こったかを理解します。
+
+**使用例:**
+
+```sql
+-- 売上減少の原因分析
+SELECT 
+  category,
+  COUNT(*) AS order_count,
+  SUM(amount) AS total_sales
+FROM orders
+WHERE created_at >= '2024-01-01'
+GROUP BY category
+ORDER BY total_sales DESC;
+```
+
+#### 3. 予測的分析（Predictive Analytics）
+
+**定義:**
+過去のデータから未来を予測します。
+
+**使用例:**
+
+```sql
+-- 来月の売上予測（簡易版）
+SELECT 
+  AVG(monthly_sales) AS predicted_sales
+FROM (
+  SELECT 
+    DATE_TRUNC('month', created_at) AS month,
+    SUM(amount) AS monthly_sales
+  FROM orders
+  GROUP BY DATE_TRUNC('month', created_at)
+  ORDER BY month DESC
+  LIMIT 6
+) recent_months;
+```
+
+### データ可視化
+
+#### ダッシュボードの作成
+
+**重要なメトリクス:**
+
+- **KPI**: 売上、ユーザー数、コンバージョン率
+- **トレンド**: 時系列での変化
+- **比較**: 期間比較、カテゴリ比較
+
+### まとめ
+
+データ分析が重要な理由：
+
+- **意思決定**: データに基づいた意思決定ができる
+- **効果測定**: 施策の効果を測定できる
+- **改善**: 継続的な改善ができる
+- **機会把握**: ビジネス機会を把握できる
+
+適切なデータ分析により、ビジネスの成長を実現できます。
+

@@ -1,0 +1,215 @@
+---
+title: "安全に壊れるための設計原則"
+label: "安全に壊れるための設計原則"
+---
+
+## 安全に壊れるための設計原則
+
+「正常に動く」よりも「異常時に安全に壊れる」ことを優先する設計原則を詳しく解説します。
+
+### 境界防御 (Boundary Defense)
+
+外部(API・DB・ユーザ入力)からのデータは常に汚染されていると仮定し、型・形式・範囲を検査してからロジックに渡す。
+
+#### 実装例
+
+```php
+// ❌ 悪い例: 無防備な入力受付
+function createUser($data) {
+    // 問題: 型チェックなし、バリデーションなし
+    $pdo = getConnection();
+    $stmt = $pdo->prepare("INSERT INTO users (name, age, email) VALUES (?, ?, ?)");
+    $stmt->execute([$data['name'], $data['age'], $data['email']]);
+    return $pdo->lastInsertId();
+}
+
+// ✅ 良い例: 境界防御の実装
+function createUser($data) {
+    // バリデーション: 型・形式・範囲を検査
+    $errors = [];
+    
+    if (empty($data['name']) || strlen($data['name']) > 100) {
+        $errors[] = 'Name must be between 1 and 100 characters';
+    }
+    
+    if (!isset($data['age']) || !is_int($data['age']) || $data['age'] < 0 || $data['age'] > 150) {
+        $errors[] = 'Age must be an integer between 0 and 150';
+    }
+    
+    if (empty($data['email']) || !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+        $errors[] = 'Email must be a valid email address';
+    }
+    
+    if (!empty($errors)) {
+        throw new InvalidArgumentException(implode(', ', $errors));
+    }
+    
+    $pdo = getConnection();
+    $stmt = $pdo->prepare("INSERT INTO users (name, age, email) VALUES (?, ?, ?)");
+    $stmt->execute([$data['name'], $data['age'], $data['email']]);
+    return $pdo->lastInsertId();
+}
+```
+
+**なぜ重要か:**
+
+- **型安全性**: 型チェックとバリデーションで実行時に型エラーを検出
+- **バリデーション**: 形式・範囲を検査
+- **セキュリティ**: SQLインジェクション、XSSなどの攻撃を防止
+
+### 副作用の局所化
+
+DB更新・通知・外部呼出などの副作用をロジックの末尾に集約し、それ以前を状態を持たない純粋処理として保つ。
+
+#### 実装例
+
+```php
+// ❌ 悪い例: 副作用が散在
+function createOrder($orderData) {
+    // 副作用1: DB更新
+    $pdo = getConnection();
+    $stmt = $pdo->prepare("INSERT INTO orders (user_id, amount) VALUES (?, ?)");
+    $stmt->execute([$orderData['user_id'], $orderData['amount']]);
+    $orderId = $pdo->lastInsertId();
+    
+    // ビジネスロジック（副作用が混在）
+    if ($orderData['amount'] > 10000) {
+        // 副作用2: 外部API呼び出し
+        sendEmail($orderData['user_id']);
+    }
+    
+    // 副作用3: 別のDB更新
+    $stmt = $pdo->prepare("INSERT INTO audit_logs (event, order_id) VALUES (?, ?)");
+    $stmt->execute(['ORDER_CREATED', $orderId]);
+    
+    return $orderId;
+}
+
+// ✅ 良い例: 副作用の局所化
+function createOrder($orderData) {
+    // 1. 純粋処理: ビジネスロジック（副作用なし）
+    $order = validateAndCreateOrder($orderData);
+    
+    // 2. 副作用の集約: すべての副作用を末尾に
+    $orderId = persistOrder($order);
+    notifyIfNeeded($order);
+    auditOrderCreation($orderId);
+    
+    return $orderId;
+}
+
+// 純粋関数: 副作用なし
+function validateAndCreateOrder($orderData) {
+    // バリデーションとオブジェクト作成のみ
+    if ($orderData['amount'] <= 0) {
+        throw new InvalidArgumentException('Invalid amount');
+    }
+    return [
+        'user_id' => $orderData['user_id'],
+        'amount' => $orderData['amount'],
+    ];
+}
+
+// 副作用: DB更新
+function persistOrder($order) {
+    $pdo = getConnection();
+    $stmt = $pdo->prepare("INSERT INTO orders (user_id, amount) VALUES (?, ?)");
+    $stmt->execute([$order['user_id'], $order['amount']]);
+    return $pdo->lastInsertId();
+}
+
+// 副作用: 通知
+function notifyIfNeeded($order) {
+    if ($order['amount'] > 10000) {
+        sendEmail($order['user_id']);
+    }
+}
+
+// 副作用: 監査ログ
+function auditOrderCreation($orderId) {
+    $pdo = getConnection();
+    $stmt = $pdo->prepare("INSERT INTO audit_logs (event, order_id) VALUES (?, ?)");
+    $stmt->execute(['ORDER_CREATED', $orderId]);
+}
+```
+
+**なぜ重要か:**
+
+- **テスト容易性**: 純粋関数は単体テストが容易
+- **可読性**: 副作用が明確に分離される
+- **デバッグ容易性**: 副作用の発生箇所が明確
+
+### 依存の隔離
+
+ビジネスロジックが特定ライブラリやORMの仕様に依存しないよう、インターフェース層で抽象化する。
+
+#### 実装例
+
+```php
+// ❌ 悪い例: PDOに直接依存
+class OrderService {
+    public function findOrder($id) {
+        // PDOの仕様に依存
+        $pdo = getConnection();
+        $stmt = $pdo->prepare("SELECT * FROM orders WHERE id = ?");
+        $stmt->execute([$id]);
+        return $stmt->fetch();
+    }
+}
+
+// ✅ 良い例: インターフェースで抽象化
+interface OrderRepositoryInterface {
+    public function findById($id);
+    public function save($order);
+}
+
+class PDOOrderRepository implements OrderRepositoryInterface {
+    public function findById($id) {
+        $pdo = getConnection();
+        $stmt = $pdo->prepare("SELECT * FROM orders WHERE id = ?");
+        $stmt->execute([$id]);
+        return $stmt->fetch();
+    }
+    
+    public function save($order) {
+        $pdo = getConnection();
+        $stmt = $pdo->prepare("INSERT INTO orders (user_id, amount) VALUES (?, ?)");
+        $stmt->execute([$order['user_id'], $order['amount']]);
+        return $pdo->lastInsertId();
+    }
+}
+
+// サービス層: インターフェースに依存
+class OrderService {
+    private $repository;
+    
+    public function __construct(OrderRepositoryInterface $repository) {
+        $this->repository = $repository;
+    }
+    
+    public function findOrder($id) {
+        $order = $this->repository->findById($id);
+        if (!$order) {
+            throw new OrderNotFoundException($id);
+        }
+        return $order;
+    }
+}
+```
+
+**なぜ重要か:**
+
+- **交換容易性**: ORMを変更してもビジネスロジックは変更不要
+- **テスト容易性**: モックで簡単にテスト可能
+- **保守性**: フレームワークの変更に強い
+
+### まとめ
+
+安全に壊れるための設計原則のポイント：
+
+- **境界防御**: 外部データは常に汚染されていると仮定し、型・形式・範囲を検査
+- **副作用の局所化**: 副作用をロジックの末尾に集約し、純粋処理と分離
+- **依存の隔離**: ビジネスロジックが特定ライブラリに依存しないよう抽象化
+
+これらの原則により、「異常時に安全に壊れる」堅牢なシステムを構築できます。
+

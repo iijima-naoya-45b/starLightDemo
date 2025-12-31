@@ -1,0 +1,369 @@
+---
+title: "rebaseの安全な使用方法"
+label: "rebaseの安全な使用方法"
+---
+
+## rebaseの安全な使用方法
+
+rebaseを安全に使用するための方法と、push時の注意点について詳しく解説します。
+
+### なぜrebaseの安全な使用方法を理解する必要があるのか
+
+#### 不適切なrebaseの問題
+
+**問題のある状況:**
+
+```bash
+# 共有ブランチでrebaseを実行
+git checkout feature/shared-feature
+git rebase main
+git push --force origin feature/shared-feature
+
+# 問題点:
+# - 他の開発者の作業が失われる
+# - 履歴が壊れる
+# - チーム間の混乱
+```
+
+**影響:**
+- 他の開発者の作業の損失
+- 履歴の破壊
+- チーム間の混乱
+- データの損失
+
+#### 安全なrebaseによる解決
+
+**改善された状況:**
+
+```
+安全なrebase:
+- 個人ブランチでのみ使用
+- --force-with-leaseを使用
+- 適切なタイミングで使用
+```
+
+**メリット:**
+- 他の開発者の作業を保護
+- 履歴の保護
+- 安全な操作
+
+### rebaseがpush時に問題になる理由
+
+#### 履歴の書き換え
+
+**rebase前:**
+
+```
+main: A---B---C
+feature:      D---E
+```
+
+**rebase後:**
+
+```
+main: A---B---C
+feature:          D'---E'
+```
+
+**問題:**
+- リモートのfeatureブランチ: D---E
+- ローカルのfeatureブランチ: D'---E'
+- 履歴が一致しないため、通常のpushが拒否される
+
+#### force pushが必要になる理由
+
+**実践例:**
+
+```bash
+# 1. rebaseを実行
+git rebase main
+
+# 2. 通常のpushを試みる
+git push origin feature/user-auth
+# error: failed to push some refs to 'origin'
+# hint: Updates were rejected because the tip of your current branch is behind
+# hint: its remote counterpart.
+
+# 3. 履歴が一致しないため、force pushが必要
+git push --force origin feature/user-auth
+```
+
+### 安全なforce push
+
+#### --force-with-lease
+
+**定義:**
+`--force-with-lease`は、リモートブランチが他の開発者によって更新されていない場合のみforce pushを実行します。
+
+**基本的な使い方:**
+
+```bash
+# 安全なforce push
+git push --force-with-lease origin <ブランチ名>
+
+# 例:
+git push --force-with-lease origin feature/user-auth
+```
+
+**動作:**
+
+```bash
+# 1. リモートブランチの状態を確認
+# 2. ローカルの参照と一致する場合のみpush
+# 3. 他の開発者が更新している場合は拒否
+```
+
+**実践例:**
+
+```bash
+# 1. rebaseを実行
+git rebase main
+
+# 2. 安全なforce push
+git push --force-with-lease origin feature/user-auth
+
+# 3. 成功した場合
+# リモートブランチが更新される
+
+# 4. 失敗した場合（他の開発者が更新している）
+# error: failed to push some refs to 'origin'
+# hint: Updates were rejected because the remote contains work that you do
+# hint: not have locally.
+
+# 5. リモートの変更を確認
+git fetch origin
+git log origin/feature/user-auth
+
+# 6. 必要に応じて再度rebase
+git rebase origin/feature/user-auth
+
+# 7. 再度force push
+git push --force-with-lease origin feature/user-auth
+```
+
+#### --forceとの違い
+
+**--force:**
+
+```bash
+# 強制的にpush（危険）
+git push --force origin feature/user-auth
+
+# 問題点:
+# - 他の開発者の作業を上書きする可能性
+# - 履歴が壊れる可能性
+# - データの損失
+```
+
+**--force-with-lease:**
+
+```bash
+# 安全なforce push
+git push --force-with-lease origin feature/user-auth
+
+# メリット:
+# - 他の開発者の作業を保護
+# - 履歴の保護
+# - 安全な操作
+```
+
+### rebaseの回避策
+
+#### 1. mergeを使用する
+
+**実践例:**
+
+```bash
+# rebaseの代わりにmergeを使用
+git checkout feature/user-auth
+git merge main
+
+# メリット:
+# - 履歴が書き換えられない
+# - force pushが不要
+# - 安全にpushできる
+# - 共有ブランチでも問題ない
+
+# デメリット:
+# - マージコミットが作成される
+# - 履歴が複雑になる可能性
+```
+
+**使用場面:**
+
+```bash
+# 1. 共有ブランチで作業している場合
+git checkout feature/shared-feature
+git merge main  # rebaseではなくmergeを使用
+git push origin feature/shared-feature  # force push不要
+
+# 2. 履歴を保持したい場合
+git merge main  # マージコミットが作成される
+
+# 3. 安全を最優先する場合
+git merge main  # 最も安全な方法
+```
+
+#### 2. 個人ブランチでのみrebaseを使用
+
+**実践例:**
+
+```bash
+# 個人ブランチでのみrebaseを使用
+git checkout -b feature/my-feature
+# 開発作業...
+git commit -m "機能を実装"
+
+# mainブランチの最新変更を取り込む
+git rebase main
+
+# まだプッシュしていない、または個人ブランチの場合、安全にforce pushできる
+git push --force-with-lease origin feature/my-feature
+```
+
+**確認方法:**
+
+```bash
+# 1. ブランチの状態を確認
+git branch -vv
+
+# 2. 他の開発者が同じブランチで作業しているか確認
+git log origin/feature/my-feature --oneline
+
+# 3. 個人ブランチであることを確認してからrebase
+```
+
+#### 3. プルリクエスト前にrebase
+
+**実践例:**
+
+```bash
+# 1. featureブランチで開発
+git checkout -b feature/user-auth
+git commit -m "認証機能を実装"
+git push -u origin feature/user-auth
+
+# 2. プルリクエストを作成（まだマージしない）
+
+# 3. mainブランチの最新変更を取り込む
+git checkout main
+git pull origin main
+
+# 4. featureブランチにrebase
+git checkout feature/user-auth
+git rebase main
+
+# 5. 安全にforce push（個人ブランチなので安全）
+git push --force-with-lease origin feature/user-auth
+
+# 6. プルリクエストが自動的に更新される
+
+# 7. レビューと承認後、マージ（マージコミットが作成される）
+```
+
+#### 4. マージコミットを避けるための設定
+
+**実践例:**
+
+```bash
+# 1. プルリクエストのマージ設定を変更
+# GitHub/GitLabの設定:
+# - "Squash and merge" を選択
+# - または "Rebase and merge" を選択
+
+# 2. マージコミットを避ける
+# プルリクエストのマージ時に、履歴が整理される
+```
+
+### 実践的なワークフロー
+
+#### 個人ブランチでのrebase
+
+```bash
+# 1. featureブランチを作成
+git checkout -b feature/new-feature main
+git push -u origin feature/new-feature
+
+# 2. 開発作業
+git add .
+git commit -m "新機能を実装"
+git push origin feature/new-feature
+
+# 3. mainブランチの最新変更を取り込む
+git checkout main
+git pull origin main
+
+# 4. featureブランチにrebase
+git checkout feature/new-feature
+git rebase main
+
+# 5. コンフリクトがあれば解決
+# git add .
+# git rebase --continue
+
+# 6. 安全にforce push
+git push --force-with-lease origin feature/new-feature
+
+# 7. プルリクエストを作成
+```
+
+#### 共有ブランチでのmerge
+
+```bash
+# 1. featureブランチを作成（複数の開発者が作業）
+git checkout -b feature/shared-feature main
+git push -u origin feature/shared-feature
+
+# 2. 開発作業
+git add .
+git commit -m "共有機能を実装"
+git push origin feature/shared-feature
+
+# 3. 他の開発者も同じブランチで作業している場合
+
+# 4. mainブランチの最新変更を取り込む（mergeを使用）
+git checkout main
+git pull origin main
+
+# 5. featureブランチにmerge
+git checkout feature/shared-feature
+git merge main
+
+# 6. 通常のpush（force push不要）
+git push origin feature/shared-feature
+
+# 7. プルリクエストを作成
+```
+
+#### プルリクエスト後のrebase
+
+```bash
+# 1. プルリクエストが作成されている
+# 2. レビュー中にmainブランチが更新された
+
+# 3. mainブランチの最新変更を取り込む
+git checkout main
+git pull origin main
+
+# 4. featureブランチにrebase
+git checkout feature/user-auth
+git rebase main
+
+# 5. 安全にforce push
+git push --force-with-lease origin feature/user-auth
+
+# 6. プルリクエストが自動的に更新される
+# 7. レビューを継続
+```
+
+### まとめ
+
+rebaseの安全な使用方法のポイント：
+
+- **rebaseがpush時に問題になる理由**: 履歴の書き換え、履歴の不一致
+- **安全なforce push**: --force-with-leaseを使用、他の開発者の作業を保護
+- **回避策**: mergeを使用、個人ブランチでのみrebase、プルリクエスト前にrebase
+- **実践的なワークフロー**: 個人ブランチでのrebase、共有ブランチでのmerge、プルリクエスト後のrebase
+
+適切にrebaseを安全に使用することで、効率的で安全なブランチ管理ができます。
+

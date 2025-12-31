@@ -1,0 +1,391 @@
+---
+title: "安全に使えるユースケース"
+label: "安全に使えるユースケース"
+---
+
+## 安全に使えるユースケース
+
+GASで安全に実装できるユースケースと、その実装方法を詳しく解説します。
+
+### 1. スプレッドシートの自動更新
+
+**ユースケース:**
+
+定期的に外部APIからデータを取得し、スプレッドシートを自動更新する。
+
+```javascript
+// ✅ 良い例: エラーハンドリングとトランザクションを含む
+function updateSpreadsheetFromAPI() {
+  try {
+    // 1. 外部APIからデータを取得（タイムアウト設定）
+    const response = UrlFetchApp.fetch('https://api.example.com/data', {
+      muteHttpExceptions: true,
+      timeout: 30000, // 30秒でタイムアウト
+    });
+    
+    if (response.getResponseCode() !== 200) {
+      throw new Error(`HTTP ${response.getResponseCode()}`);
+    }
+    
+    const data = JSON.parse(response.getContentText());
+    
+    // 2. スプレッドシートを更新（トランザクション）
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Data');
+    
+    // 既存のデータをクリア
+    sheet.clear();
+    
+    // ヘッダーを設定
+    const headers = ['ID', 'Name', 'Value'];
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    
+    // データを設定（一度に書き込む）
+    const values = data.map(item => [item.id, item.name, item.value]);
+    if (values.length > 0) {
+      sheet.getRange(2, 1, values.length, values[0].length).setValues(values);
+    }
+    
+    Logger.log(`Updated ${values.length} rows`);
+    
+  } catch (error) {
+    Logger.log(`Error updating spreadsheet: ${error.message}`);
+    // エラー通知を送信
+    sendErrorNotification(error);
+    throw error;
+  }
+}
+```
+
+**安全なポイント:**
+
+- **タイムアウト設定**: 30秒でタイムアウト（60秒の制限内）
+- **エラーハンドリング**: try-catchでエラーを捕捉
+- **トランザクション**: 範囲単位でアトミックに更新
+- **ログ出力**: 処理状況をログに記録
+
+### 2. バッチ処理（実行時間制限を考慮）
+
+**ユースケース:**
+
+大量のデータを処理するが、実行時間制限を考慮してバッチ処理に分割する。
+
+```javascript
+// ✅ 良い例: 実行時間制限を考慮したバッチ処理
+function processLargeDataset() {
+  const startTime = new Date().getTime();
+  const maxExecutionTime = 5 * 60 * 1000; // 5分（安全マージン）
+  
+  // 前回の処理位置を取得
+  const properties = PropertiesService.getScriptProperties();
+  let offset = parseInt(properties.getProperty('offset') || '0');
+  
+  try {
+    while (true) {
+      // 実行時間をチェック
+      const elapsed = new Date().getTime() - startTime;
+      if (elapsed > maxExecutionTime) {
+        // 次回実行用に状態を保存
+        properties.setProperty('offset', offset.toString());
+        Logger.log(`Stopped at offset: ${offset} (elapsed: ${elapsed}ms)`);
+        break;
+      }
+      
+      // バッチでデータを取得
+      const batch = fetchDataBatch(offset, 100);
+      if (batch.length === 0) {
+        // 処理完了
+        properties.deleteProperty('offset');
+        Logger.log('Processing completed');
+        break;
+      }
+      
+      // バッチを処理
+      processBatch(batch);
+      offset += batch.length;
+      
+      Logger.log(`Processed ${offset} items`);
+    }
+    
+  } catch (error) {
+    Logger.log(`Error processing dataset: ${error.message}`);
+    // エラー時も状態を保存（次回再試行）
+    properties.setProperty('offset', offset.toString());
+    throw error;
+  }
+}
+
+function fetchDataBatch(offset, limit) {
+  // データベースやAPIからバッチで取得
+  const response = UrlFetchApp.fetch(`https://api.example.com/data?offset=${offset}&limit=${limit}`, {
+    muteHttpExceptions: true,
+    timeout: 30000,
+  });
+  
+  if (response.getResponseCode() !== 200) {
+    throw new Error(`HTTP ${response.getResponseCode()}`);
+  }
+  
+  return JSON.parse(response.getContentText());
+}
+
+function processBatch(batch) {
+  // バッチの処理ロジック
+  batch.forEach(item => {
+    // 各アイテムの処理
+    processItem(item);
+  });
+}
+```
+
+**安全なポイント:**
+
+- **実行時間チェック**: 5分で停止（6分の制限内）
+- **状態の保存**: PropertiesServiceに処理位置を保存
+- **エラーハンドリング**: エラー時も状態を保存（再試行可能）
+- **バッチサイズ**: 100件ずつ処理（メモリ効率）
+
+### 3. メール送信（クォータ制限を考慮）
+
+**ユースケース:**
+
+大量のメールを送信するが、1日の送信制限（100通）を考慮する。
+
+```javascript
+// ✅ 良い例: クォータ制限を考慮したメール送信
+function sendBulkEmails(recipients) {
+  const dailyLimit = 100;
+  const properties = PropertiesService.getScriptProperties();
+  
+  // 今日の送信数を取得
+  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const sentTodayKey = `sent_count_${today}`;
+  const sentToday = parseInt(properties.getProperty(sentTodayKey) || '0');
+  
+  if (sentToday >= dailyLimit) {
+    Logger.log(`Daily email limit reached: ${sentToday}/${dailyLimit}`);
+    // 残りのメールをキューに保存
+    saveEmailQueue(recipients);
+    return;
+  }
+  
+  const remaining = dailyLimit - sentToday;
+  const toSend = recipients.slice(0, remaining);
+  const failed = [];
+  
+  toSend.forEach(recipient => {
+    try {
+      MailApp.sendEmail({
+        to: recipient.email,
+        subject: recipient.subject,
+        body: recipient.body,
+        htmlBody: recipient.htmlBody,
+      });
+      
+      // 送信数をインクリメント
+      properties.setProperty(sentTodayKey, (sentToday + 1).toString());
+      Logger.log(`Sent email to ${recipient.email}`);
+      
+    } catch (error) {
+      Logger.log(`Failed to send email to ${recipient.email}: ${error.message}`);
+      failed.push(recipient);
+    }
+  });
+  
+  // 失敗したメールをキューに戻す
+  if (failed.length > 0) {
+    saveEmailQueue(failed);
+  }
+  
+  // 残りのメールをキューに保存
+  if (recipients.length > remaining) {
+    saveEmailQueue(recipients.slice(remaining));
+  }
+}
+
+function saveEmailQueue(recipients) {
+  const properties = PropertiesService.getScriptProperties();
+  const existingQueue = properties.getProperty('email_queue');
+  const queue = existingQueue ? JSON.parse(existingQueue) : [];
+  
+  queue.push(...recipients);
+  properties.setProperty('email_queue', JSON.stringify(queue));
+}
+
+function getEmailQueue() {
+  const properties = PropertiesService.getScriptProperties();
+  const queue = properties.getProperty('email_queue');
+  return queue ? JSON.parse(queue) : [];
+}
+```
+
+**安全なポイント:**
+
+- **クォータチェック**: 1日の送信制限をチェック
+- **キュー管理**: 送信できないメールをキューに保存
+- **エラーハンドリング**: 失敗したメールをキューに戻す
+- **状態の保存**: 送信数をPropertiesServiceに保存
+
+### 4. 外部API呼び出し（リトライとフォールバック）
+
+**ユースケース:**
+
+外部APIを呼び出すが、タイムアウトやエラー時のリトライとフォールバックを実装する。
+
+```javascript
+// ✅ 良い例: リトライとフォールバックを含むAPI呼び出し
+function fetchDataWithRetry(url, options = {}) {
+  const maxRetries = 3;
+  const retryDelay = 1000; // 1秒
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = UrlFetchApp.fetch(url, {
+        muteHttpExceptions: true,
+        timeout: options.timeout || 30000,
+        ...options,
+      });
+      
+      if (response.getResponseCode() === 200) {
+        return JSON.parse(response.getContentText());
+      }
+      
+      // リトライ可能なエラー（5xx）
+      if (response.getResponseCode() >= 500 && attempt < maxRetries) {
+        Logger.log(`Retry ${attempt}/${maxRetries} for ${url}`);
+        Utilities.sleep(retryDelay * attempt); // 指数バックオフ
+        continue;
+      }
+      
+      throw new Error(`HTTP ${response.getResponseCode()}`);
+      
+    } catch (error) {
+      if (attempt === maxRetries) {
+        Logger.log(`Failed to fetch ${url} after ${maxRetries} attempts: ${error.message}`);
+        // フォールバック: キャッシュから取得
+        return getCachedData(url);
+      }
+      
+      Logger.log(`Retry ${attempt}/${maxRetries} for ${url}: ${error.message}`);
+      Utilities.sleep(retryDelay * attempt);
+    }
+  }
+}
+
+function getCachedData(url) {
+  const properties = PropertiesService.getScriptProperties();
+  const cacheKey = `cache_${Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, url)}`;
+  const cached = properties.getProperty(cacheKey);
+  
+  if (cached) {
+    const data = JSON.parse(cached);
+    const cacheTime = data.timestamp;
+    const now = new Date().getTime();
+    
+    // キャッシュの有効期限: 1時間
+    if (now - cacheTime < 60 * 60 * 1000) {
+      Logger.log('Using cached data');
+      return data.value;
+    }
+  }
+  
+  throw new Error('No cached data available');
+}
+
+function setCachedData(url, data) {
+  const properties = PropertiesService.getScriptProperties();
+  const cacheKey = `cache_${Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, url)}`;
+  
+  properties.setProperty(cacheKey, JSON.stringify({
+    value: data,
+    timestamp: new Date().getTime(),
+  }));
+}
+```
+
+**安全なポイント:**
+
+- **リトライ**: 最大3回までリトライ
+- **指数バックオフ**: リトライ間隔を徐々に延長
+- **フォールバック**: キャッシュからデータを取得
+- **キャッシュ管理**: 1時間の有効期限
+
+### 5. トリガーによる自動実行
+
+**ユースケース:**
+
+時間ベースのトリガーで定期的にスクリプトを実行する。
+
+```javascript
+// ✅ 良い例: トリガーの作成と管理
+function createDailyTrigger() {
+  // 既存のトリガーを削除
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(trigger => {
+    if (trigger.getHandlerFunction() === 'dailyTask') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+  
+  // 新しいトリガーを作成（毎日午前9時）
+  ScriptApp.newTrigger('dailyTask')
+    .timeBased()
+    .everyDays(1)
+    .atHour(9)
+    .create();
+  
+  Logger.log('Daily trigger created');
+}
+
+function dailyTask() {
+  try {
+    // 実行時間をチェック
+    const startTime = new Date().getTime();
+    const maxExecutionTime = 5 * 60 * 1000;
+    
+    // タスクを実行
+    updateSpreadsheetFromAPI();
+    
+    const elapsed = new Date().getTime() - startTime;
+    Logger.log(`Daily task completed in ${elapsed}ms`);
+    
+  } catch (error) {
+    Logger.log(`Daily task failed: ${error.message}`);
+    // エラー通知を送信
+    sendErrorNotification(error);
+  }
+}
+
+function sendErrorNotification(error) {
+  try {
+    MailApp.sendEmail({
+      to: 'admin@example.com',
+      subject: 'GAS Error Notification',
+      body: `Error: ${error.message}\nStack: ${error.stack}`,
+    });
+  } catch (emailError) {
+    Logger.log(`Failed to send error notification: ${emailError.message}`);
+  }
+}
+```
+
+**安全なポイント:**
+
+- **トリガー管理**: 既存のトリガーを削除してから作成
+- **エラーハンドリング**: エラー時に通知を送信
+- **実行時間チェック**: 実行時間を監視
+- **ログ出力**: 処理状況をログに記録
+
+### まとめ
+
+GASで安全に実装できるユースケースは、実行時間制限、クォータ制限、エラーハンドリングを考慮した設計が重要です。
+
+**重要なポイント:**
+
+- **実行時間制限**: 5分で停止（安全マージン）
+- **クォータ制限**: 1日の制限をチェック
+- **エラーハンドリング**: try-catchでエラーを捕捉
+- **状態の保存**: PropertiesServiceに状態を保存
+- **リトライとフォールバック**: 外部API呼び出しにリトライとフォールバックを実装
+
+これらのベストプラクティスを守ることで、堅牢で効率的なGASアプリケーションを構築できます。
+

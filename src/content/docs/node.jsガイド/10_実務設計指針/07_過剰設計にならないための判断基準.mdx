@@ -1,0 +1,102 @@
+---
+title: "過剰設計にならないための判断基準"
+label: "過剰設計にならないための判断基準"
+---
+
+## 過剰設計にならないための判断基準
+
+過剰設計を避け、適切な設計を行うための判断基準を詳しく解説します。
+
+### 判断基準1: Vercel環境での設計
+
+#### シンプルなケース
+
+**条件:**
+
+- 実行時間が短い（10秒以内）
+- メモリ使用量が少ない（512MB以内）
+- ステートレスな処理
+
+**実装:**
+
+```typescript
+// ✅ シンプルな実装で十分
+export default async function handler(req: Request) {
+  const user = await prisma.user.findUnique({
+    where: { id: parseInt(req.params.id) },
+  });
+  
+  return Response.json(user);
+}
+```
+
+**判断基準:**
+
+- **同期処理で十分**: 実行時間が短い
+- **Outboxパターンは不要**: 外部API呼び出しがない
+
+#### 複雑なケース
+
+**条件:**
+
+- 実行時間が長い（5秒以上）
+- 外部API呼び出しがある
+- メモリ使用量が多い
+
+**実装:**
+
+```typescript
+// ✅ 適切な設計が必要
+export default async function handler(req: Request) {
+  const order = await prisma.order.create({ data: req.body });
+  
+  // 非同期処理をキューに投入
+  await messageQueue.send('order.created', { orderId: order.id });
+  
+  return Response.json({ orderId: order.id, status: 'PROCESSING' });
+}
+```
+
+**判断基準:**
+
+- **非同期処理が必要**: 実行時間が長い
+- **Outboxパターンが必要**: 外部API呼び出しがある
+
+### 判断基準2: Render.com環境での設計
+
+#### 常駐プロセス環境
+
+**条件:**
+
+- 実行時間が長い（5分以上）
+- メモリ使用量が多い（1GB以上）
+- ステートフルな処理
+
+**実装:**
+
+```typescript
+// ✅ Render.com環境に適した実装
+app.post('/reports/generate', async (req, res) => {
+  const reportId = uuidv4();
+  
+  // バックグラウンド処理を開始
+  reportService.generateReportAsync(reportId, req.body);
+  
+  res.json({ reportId, status: 'PROCESSING' });
+});
+```
+
+**判断基準:**
+
+- **非同期処理が必要**: 実行時間が長い
+- **常駐プロセスが必要**: 長時間実行される処理
+
+### まとめ
+
+過剰設計にならないための判断基準のポイント：
+
+- **Vercel環境**: 実行時間が短い場合は同期処理、長い場合は非同期処理
+- **Render.com環境**: 長時間実行される処理は非同期処理、常駐プロセスが必要
+
+適切な判断基準により、過剰設計を避け、効率的なシステムを構築できます。
+

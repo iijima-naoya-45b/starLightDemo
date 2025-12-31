@@ -1,0 +1,288 @@
+---
+title: "ベストプラクティス"
+label: "ベストプラクティス"
+---
+
+## ベストプラクティス
+
+Javaでの正しい構造とベストプラクティスを詳しく解説します。
+
+### 1. Outboxパターンの実装
+
+#### 正しい構造
+
+```java
+@Service
+public class OrderService {
+    @Autowired
+    private OrderRepository orderRepository;
+    
+    @Autowired
+    private OutboxRepository outboxRepository;
+    
+    @Transactional
+    public Order createOrder(OrderData orderData) {
+        // ✅ 正しい: トランザクション内でOutboxに記録
+        Order order = orderRepository.save(new Order(orderData));
+        
+        // Outboxテーブルに外部API呼び出しのタスクを記録
+        OutboxEvent event = new OutboxEvent();
+        event.setEventType("PAYMENT_CHARGE");
+        event.setAggregateId(order.getId());
+        event.setPayload(JSON.toJSONString(Map.of(
+            "orderId", order.getId(),
+            "amount", orderData.getAmount()
+        )));
+        event.setStatus("PENDING");
+        event.setIdempotencyKey("payment-" + order.getId() + "-" + System.currentTimeMillis());
+        outboxRepository.save(event);
+        
+        // トランザクションをコミット（外部APIは呼ばない）
+        return order;
+    }
+}
+
+// 別のプロセス/ワーカーでOutboxを処理
+@Component
+public class OutboxProcessor {
+    @Autowired
+    private OutboxRepository outboxRepository;
+    
+    @Autowired
+    private PaymentApiClient paymentApiClient;
+    
+    @Scheduled(fixedRate = 5000) // 5秒ごと
+    public void processOutbox() {
+        List<OutboxEvent> pendingEvents = outboxRepository.findByStatus("PENDING");
+        
+        for (OutboxEvent event : pendingEvents) {
+            try {
+                // 外部APIを呼ぶ（トランザクション外）
+                Map<String, Object> payload = JSON.parseObject(event.getPayload(), Map.class);
+                PaymentResult result = paymentApiClient.chargePayment(
+                    (Long) payload.get("orderId"),
+                    (BigDecimal) payload.get("amount")
+                );
+                
+                if (result.isSuccess()) {
+                    event.setStatus("COMPLETED");
+                    outboxRepository.save(event);
+                } else {
+                    event.setStatus("FAILED");
+                    event.setRetryCount(event.getRetryCount() + 1);
+                    outboxRepository.save(event);
+                }
+            } catch (Exception e) {
+                // エラーハンドリング
+                event.setStatus("FAILED");
+                event.setRetryCount(event.getRetryCount() + 1);
+                outboxRepository.save(event);
+                log.error("Failed to process outbox event: " + event.getId(), e);
+            }
+        }
+    }
+}
+```
+
+**なぜ正しいか:**
+
+- **トランザクションの短縮**: データベースのロック時間が短縮される
+- **外部障害の分離**: 外部APIの障害がトランザクションに影響しない
+- **再実行の容易さ**: Outboxテーブルから再実行可能
+- **冪等性の保証**: 冪等キーにより重複実行を防止
+
+### 2. Serverless環境での非同期処理
+
+#### 正しい構造
+
+```java
+@RestController
+public class ReportController {
+    @Autowired
+    private ReportService reportService;
+    
+    @Autowired
+    private MessageQueue messageQueue;
+    
+    @PostMapping("/reports/generate")
+    public ResponseEntity<ReportResponse> generateReport(@RequestBody ReportRequest request) {
+        // ✅ 正しい: 即座にレスポンスを返す
+        String reportId = UUID.randomUUID().toString();
+        
+        // ジョブをキューに投入
+        messageQueue.send("report.generate", Map.of(
+            "reportId", reportId,
+            "request", request
+        ));
+        
+        return ResponseEntity.accepted()
+            .body(new ReportResponse(reportId, "PROCESSING"));
+    }
+}
+
+// ワーカー（常駐プロセス環境）で処理
+@Component
+public class ReportWorker {
+    @Autowired
+    private ReportService reportService;
+    
+    @RabbitListener(queues = "report.generate")
+    public void processReportGeneration(Map<String, Object> message) {
+        String reportId = (String) message.get("reportId");
+        ReportRequest request = (ReportRequest) message.get("request");
+        
+        // 長時間実行される処理（常駐プロセス環境で実行）
+        Report report = reportService.generateLargeReport(request);
+        
+        // 結果を保存
+        reportService.saveReport(reportId, report);
+    }
+}
+```
+
+**なぜ正しいか:**
+
+- **即座にレスポンス**: ユーザーは即座にレスポンスを受信
+- **非同期処理**: 長時間実行される処理は別プロセスで実行
+- **スケーラビリティ**: ワーカーをスケールして処理能力を向上
+
+### 3. 適切なエラーハンドリング
+
+#### 正しい構造
+
+```java
+@Service
+public class FileService {
+    public void processFile(String filePath) {
+        // ✅ 正しい: try-with-resources文を使用
+        try (FileInputStream fis = new FileInputStream(filePath);
+             BufferedInputStream bis = new BufferedInputStream(fis)) {
+            
+            // ファイル処理
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+            while ((bytesRead = bis.read(buffer)) != -1) {
+                // 処理...
+            }
+        } catch (FileNotFoundException e) {
+            // 適切なエラーハンドリング
+            log.error("File not found: " + filePath, e);
+            throw new FileProcessingException("File not found: " + filePath, e);
+        } catch (IOException e) {
+            // 適切なエラーハンドリング
+            log.error("IO error while processing file: " + filePath, e);
+            throw new FileProcessingException("IO error: " + e.getMessage(), e);
+        }
+    }
+}
+```
+
+**なぜ正しいか:**
+
+- **リソースの自動解放**: try-with-resources文により自動的にリソースがクローズされる
+- **適切なエラーハンドリング**: エラーを適切に処理し、ログに記録
+- **エラーの伝播**: 適切な例外をスローして呼び出し元に伝播
+
+### 4. スレッドセーフティの確保
+
+#### 正しい構造
+
+```java
+@Service
+public class CounterService {
+    // ✅ 正しい: AtomicIntegerを使用
+    private final AtomicInteger count = new AtomicInteger(0);
+    
+    public void increment() {
+        count.incrementAndGet(); // アトミック操作
+    }
+    
+    public int getCount() {
+        return count.get(); // スレッドセーフな読み取り
+    }
+}
+
+// または、synchronizedキーワードを使用
+@Service
+public class CounterService {
+    private int count = 0;
+    private final Object lock = new Object();
+    
+    public void increment() {
+        synchronized (lock) {
+            count++;
+        }
+    }
+    
+    public int getCount() {
+        synchronized (lock) {
+            return count;
+        }
+    }
+}
+```
+
+**なぜ正しいか:**
+
+- **アトミック操作**: `AtomicInteger`によりアトミック操作が保証される
+- **可視性**: 変更がすべてのスレッドに可視になる
+- **競合状態の回避**: 競合状態が発生しない
+
+### 5. トランザクションの適切な管理
+
+#### 正しい構造
+
+```java
+@Service
+public class OrderService {
+    @Autowired
+    private OrderRepository orderRepository;
+    
+    @Autowired
+    private InventoryService inventoryService;
+    
+    @Autowired
+    private PaymentService paymentService;
+    
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
+    public Order createOrder(OrderData orderData) {
+        // ✅ 正しい: トランザクション内でのデータベース操作のみ
+        Order order = orderRepository.save(new Order(orderData));
+        
+        // ✅ 正しい: 同じトランザクション内での在庫更新
+        inventoryService.reduceStock(order.getItems());
+        
+        // ✅ 正しい: トランザクションコミット後に外部APIを呼ぶ
+        TransactionSynchronizationManager.registerSynchronization(
+            new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    // トランザクションコミット後に外部APIを呼ぶ
+                    paymentService.chargePaymentAsync(order.getId(), orderData.getAmount());
+                }
+            }
+        );
+        
+        return order;
+    }
+}
+```
+
+**なぜ正しいか:**
+
+- **トランザクションの短縮**: データベース操作のみをトランザクション内で実行
+- **外部APIの分離**: 外部APIはトランザクション外で実行
+- **一貫性の保証**: トランザクションがコミットされた後にのみ外部APIを呼ぶ
+
+### まとめ
+
+ベストプラクティスのポイント：
+
+- **Outboxパターン**: トランザクション内で外部API呼び出しを記録し、別プロセスで処理
+- **非同期処理**: Serverless環境では即座にレスポンスを返し、長時間処理は別プロセスで実行
+- **適切なエラーハンドリング**: try-with-resources文を使用し、適切なエラーハンドリングを実装
+- **スレッドセーフティ**: `AtomicInteger`や`synchronized`キーワードを使用
+- **トランザクションの適切な管理**: トランザクション内でのデータベース操作のみ、外部APIはトランザクション外で実行
+
+適切なベストプラクティスの実装により、安全で信頼性の高いシステムを構築できます。
+

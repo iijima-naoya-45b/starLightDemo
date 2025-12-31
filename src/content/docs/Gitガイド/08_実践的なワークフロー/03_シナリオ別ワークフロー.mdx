@@ -1,0 +1,308 @@
+---
+title: "シナリオ別ワークフロー"
+label: "シナリオ別ワークフロー"
+---
+
+## シナリオ別ワークフロー
+
+実際の開発現場で発生する様々なシナリオに対応するGit Workflowを詳しく解説します。
+
+### シナリオ1: 複数の開発者が同じブランチで作業
+
+#### 問題
+
+**問題のある状況:**
+
+```
+開発者A: 「featureブランチで作業している...」
+開発者B: 「同じfeatureブランチで作業している...」
+開発者C: 「コンフリクトが頻繁に発生する...」
+
+// 問題点:
+// - コンフリクトが頻繁に発生
+// - 作業の競合
+// - 履歴の混乱
+```
+
+#### 解決策
+
+**推奨される方法:**
+
+```bash
+# 1. 各開発者が個別のfeatureブランチを作成
+開発者A:
+git checkout -b feature/user-auth-developer-a develop
+
+開発者B:
+git checkout -b feature/user-auth-developer-b develop
+
+# 2. 定期的にdevelopブランチの変更を取り込む
+git checkout develop
+git pull origin develop
+git checkout feature/user-auth-developer-a
+git merge develop
+
+# 3. 各開発者のブランチを統合
+# プルリクエストを作成して、順次マージ
+```
+
+**代替方法（同じブランチで作業する場合）:**
+
+```bash
+# 1. 定期的に同期
+git checkout feature/shared-feature
+git pull origin feature/shared-feature
+
+# 2. 作業前に最新の状態を確認
+git fetch origin
+git log origin/feature/shared-feature --oneline
+
+# 3. 小さなコミットを頻繁に作成
+git add .
+git commit -m "feat: 小さな変更"
+git push origin feature/shared-feature
+
+# 4. コンフリクトが発生したらすぐに解決
+git pull origin feature/shared-feature
+# コンフリクトを解決
+git add .
+git commit -m "fix: コンフリクトを解決"
+git push origin feature/shared-feature
+```
+
+### シナリオ2: リリース中に緊急修正が必要
+
+#### 問題
+
+**問題のある状況:**
+
+```
+リリース準備中に緊急バグが発見された
+// 問題点:
+// - リリースブランチで修正すべきか
+// - mainブランチで修正すべきか
+// - どちらに優先すべきか
+```
+
+#### 解決策
+
+**推奨される方法:**
+
+```bash
+# 1. リリースブランチで修正（リリースに含める場合）
+git checkout release/v1.0.0
+git add .
+git commit -m "fix: リリース前の緊急バグ修正"
+git push origin release/v1.0.0
+
+# 2. mainブランチにマージ
+git checkout main
+git merge --no-ff release/v1.0.0
+git tag -a v1.0.0 -m "リリース v1.0.0"
+git push origin main --tags
+
+# 3. developブランチにもマージ
+git checkout develop
+git merge --no-ff release/v1.0.0
+git push origin develop
+
+# 4. 本番環境にデプロイ
+```
+
+**本番環境で既に発生している場合:**
+
+```bash
+# 1. hotfixブランチを作成
+git checkout -b hotfix/critical-bug main
+
+# 2. 緊急修正
+git add .
+git commit -m "hotfix: 緊急バグを修正"
+git push -u origin hotfix/critical-bug
+
+# 3. mainブランチにマージ
+git checkout main
+git merge --no-ff hotfix/critical-bug
+git tag -a v1.0.1 -m "ホットフィックス v1.0.1"
+git push origin main --tags
+
+# 4. developブランチにもマージ
+git checkout develop
+git merge --no-ff hotfix/critical-bug
+git push origin develop
+
+# 5. releaseブランチにもマージ（存在する場合）
+git checkout release/v1.0.0
+git merge --no-ff hotfix/critical-bug
+git push origin release/v1.0.0
+```
+
+### シナリオ3: 長期間の機能開発
+
+#### 問題
+
+**問題のある状況:**
+
+```
+大きな機能を数週間かけて開発する
+// 問題点:
+// - developブランチが進んでいく
+// - コンフリクトが増える
+// - 統合が困難になる
+```
+
+#### 解決策
+
+**推奨される方法:**
+
+```bash
+# 1. featureブランチを作成
+git checkout -b feature/large-feature develop
+
+# 2. 小さな単位で開発
+git add src/feature/module1.ts
+git commit -m "feat: モジュール1を実装"
+git push origin feature/large-feature
+
+# 3. 定期的にdevelopブランチを取り込む（週次など）
+git checkout develop
+git pull origin develop
+git checkout feature/large-feature
+git merge develop
+# または
+git rebase develop
+
+# 4. コンフリクトがあれば解決
+git add .
+git commit -m "fix: コンフリクトを解決"
+git push origin feature/large-feature
+
+# 5. 完了したらプルリクエストを作成
+```
+
+**機能を分割する方法:**
+
+```bash
+# 1. 大きな機能を小さな機能に分割
+# feature/large-feature → feature/part1, feature/part2, feature/part3
+
+# 2. 各機能を個別に開発
+git checkout -b feature/part1 develop
+# 開発作業...
+git checkout develop
+git merge --no-ff feature/part1
+
+git checkout -b feature/part2 develop
+# 開発作業...
+git checkout develop
+git merge --no-ff feature/part2
+
+# 3. 順次統合
+```
+
+### シナリオ4: リリースの取り消し
+
+#### 問題
+
+**問題のある状況:**
+
+```
+リリース後に重大なバグが発見された
+// 問題点:
+// - リリースを取り消したい
+// - ロールバックが必要
+```
+
+#### 解決策
+
+**推奨される方法:**
+
+```bash
+# 1. 前のバージョンのタグを確認
+git tag -l
+# v1.0.0
+# v0.9.0
+
+# 2. 前のバージョンにロールバック
+git checkout v0.9.0
+git checkout -b hotfix/rollback-v1.0.0
+
+# 3. mainブランチにマージ
+git checkout main
+git merge --no-ff hotfix/rollback-v1.0.0
+git tag -a v1.0.1 -m "ロールバック v1.0.0"
+git push origin main --tags
+
+# 4. 本番環境にデプロイ
+```
+
+**revertを使用する方法:**
+
+```bash
+# 1. リリースコミットをrevert
+git checkout main
+git revert <リリースコミットハッシュ>
+
+# 2. タグを付ける
+git tag -a v1.0.1 -m "ロールバック v1.0.0"
+git push origin main --tags
+
+# 3. 本番環境にデプロイ
+```
+
+### シナリオ5: 複数の環境へのデプロイ
+
+#### 問題
+
+**問題のある状況:**
+
+```
+開発環境、ステージング環境、本番環境がある
+// 問題点:
+// - どのブランチをどの環境にデプロイするか
+// - デプロイの順序
+```
+
+#### 解決策
+
+**推奨される方法（GitLab Flow）:**
+
+```bash
+# ブランチ構成:
+# production (本番環境)
+#   └─ pre-production (ステージング環境)
+#       └─ main (開発環境)
+#           └─ feature/* (機能開発)
+
+# 1. featureブランチで開発
+git checkout -b feature/new-feature main
+# 開発作業...
+git push -u origin feature/new-feature
+
+# 2. mainブランチにマージ（開発環境にデプロイ）
+
+# 3. pre-productionブランチにマージ（ステージング環境にデプロイ）
+git checkout pre-production
+git merge main
+git push origin pre-production
+
+# 4. ステージング環境でテスト
+
+# 5. productionブランチにマージ（本番環境にデプロイ）
+git checkout production
+git merge pre-production
+git push origin production
+```
+
+### まとめ
+
+シナリオ別ワークフローのポイント：
+
+- **複数の開発者が同じブランチ**: 個別のブランチを作成、定期的な同期
+- **リリース中に緊急修正**: releaseブランチで修正、またはhotfixブランチを作成
+- **長期間の機能開発**: 定期的な同期、機能の分割
+- **リリースの取り消し**: ロールバック、revertを使用
+- **複数の環境へのデプロイ**: GitLab Flow、環境ごとのブランチ
+
+適切なシナリオ別ワークフローを実践することで、様々な状況に対応できます。
+

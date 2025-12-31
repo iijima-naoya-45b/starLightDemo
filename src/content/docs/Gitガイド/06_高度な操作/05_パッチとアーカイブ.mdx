@@ -1,0 +1,128 @@
+---
+title: "パッチとアーカイブ"
+label: "パッチとアーカイブ"
+---
+
+## パッチとアーカイブ
+
+変更をパッチファイルとして共有したり、リポジトリをアーカイブする方法について詳しく解説します。
+
+### パッチ（Patch）
+
+#### パッチとは
+
+**定義:**
+`patch`は、変更をファイルとして保存し、他のリポジトリに適用できる形式です。
+
+**基本的な使い方:**
+
+```bash
+# 変更をパッチファイルとして作成
+git format-patch <コミット範囲>
+
+# 例: 最新のコミットをパッチとして作成
+git format-patch HEAD~1
+
+# 例: 複数のコミットをパッチとして作成
+git format-patch HEAD~3
+
+# 例: 2つのコミット間の変更をパッチとして作成
+git format-patch abc1234..def5678
+```
+
+#### パッチの作成
+
+**実践例:**
+
+```bash
+# 1. 変更をコミット
+git add .
+git commit -m "新機能を実装"
+
+# 2. パッチファイルを作成
+git format-patch HEAD~1
+# 0001-新機能を実装.patch が作成される
+
+# 3. パッチファイルを確認
+cat 0001-新機能を実装.patch
+
+# 4. パッチファイルを送信（メールなど）
+```
+
+#### パッチの適用
+
+**実践例:**
+
+```bash
+# 1. パッチファイルを取得
+# 0001-新機能を実装.patch
+
+# 2. パッチを適用
+git apply 0001-新機能を実装.patch
+
+# 3. または、コミットとして適用
+git am 0001-新機能を実装.patch
+
+# 4. 複数のパッチを適用
+git am *.patch
+```
+
+### アーカイブ（Archive）
+
+#### アーカイブとは
+
+**定義:**
+`archive`は、リポジトリの特定の状態をアーカイブファイルとして作成するコマンドです。
+
+**基本的な使い方:**
+
+```bash
+# 現在の状態をアーカイブ
+git archive --format=tar --output=archive.tar HEAD
+
+# ZIP形式でアーカイブ
+git archive --format=zip --output=archive.zip HEAD
+
+# 特定のブランチをアーカイブ
+git archive --format=zip --output=archive.zip main
+
+# 特定のディレクトリのみをアーカイブ
+git archive --format=zip --output=archive.zip HEAD -- src/
+```
+
+#### 実践例
+
+**リリース用のアーカイブ:**
+
+```bash
+# 1. タグを付ける
+git tag -a v1.0.0 -m "リリース v1.0.0"
+
+# 2. タグの状態をアーカイブ
+git archive --format=zip --output=v1.0.0.zip v1.0.0
+
+# 3. アーカイブを確認
+unzip -l v1.0.0.zip
+```
+
+**特定のファイルのみをアーカイブ:**
+
+```bash
+# ソースコードのみをアーカイブ
+git archive --format=zip --output=source.zip HEAD -- src/ lib/
+
+# ドキュメントのみをアーカイブ
+git archive --format=zip --output=docs.zip HEAD -- docs/
+```
+
+### まとめ
+
+パッチとアーカイブのポイント：
+
+- **パッチ**: 変更をファイルとして保存、他のリポジトリに適用可能
+- **パッチの作成**: format-patch、複数のコミット、範囲指定
+- **パッチの適用**: apply、am、複数のパッチ
+- **アーカイブ**: リポジトリの特定の状態をアーカイブ、タグ、特定のファイル
+
+適切にパッチとアーカイブを使用することで、変更の共有とリリース管理が容易になります。
+

@@ -1,0 +1,237 @@
+---
+title: "Djangoの実行モデルと前提"
+label: "Djangoの実行モデルと前提"
+---
+
+## Djangoの実行モデルと前提
+
+Djangoの実行モデルと、実務で事故を防ぐための前提条件を詳しく解説します。
+
+### 実行モデルとリソースの物理的制約
+
+コンピュータ資源は有限であり、**性能ではなく制約を前提に設計する**ことが基本です。
+
+#### 主な物理的制約
+
+**CPU・メモリよりも先に枯渇するリソース:**
+
+1. **DB・外部APIのコネクション数**
+   - 接続プールの上限（例: `CONN_MAX_AGE=600`）
+   - 接続リークは数時間後にシステム全体を停止させる
+
+2. **スレッドプール**
+   - WSGIサーバーのスレッド数制限
+   - スレッド枯渇により、すべてのリクエストが処理できなくなる
+
+3. **ファイル記述子**
+   - OSレベルの制限（通常1024〜65536）
+   - ファイルやソケットを適切にクローズしないと枯渇
+
+4. **メモリリーク**
+   - オブジェクトの参照が保持される
+   - グローバル変数やクラス変数の不適切な使用
+
+**実際の事故例:**
+
+```
+10:00:00 - アプリケーション起動（接続プール: 5/5）
+10:00:01 - リクエスト1受信（接続取得: 6/5 → 待機）
+10:00:02 - リクエスト2受信（接続取得: 7/5 → 待機）
+...
+10:30:00 - 接続が解放されず、すべてのリクエストが待機状態
+10:30:01 - タイムアウトエラーが大量発生
+10:30:02 - システム全体が応答不能
+```
+
+### Djangoの実行モデル
+
+#### Pythonの実行モデル
+
+**実行モデル:**
+
+```
+Pythonコード (.py)
+    ↓ インタープリタで実行
+ネイティブコード（実行時）
+```
+
+**重要な特徴:**
+
+1. **動的型付け**: 実行時に型が決定される
+2. **ガベージコレクション**: 自動メモリ管理（ただし、参照が保持されている場合は動作しない）
+3. **GIL（Global Interpreter Lock）**: 同時に1つのスレッドのみが実行される（マルチプロセスで並行処理）
+4. **WSGI/ASGI**: リクエスト/レスポンスサイクル
+
+#### トランザクション境界
+
+**Djangoのトランザクション管理:**
+
+```python
+# Djangoでのトランザクション管理
+from django.db import transaction
+
+@transaction.atomic
+def create_order(order_data):
+    # トランザクション内の処理
+    order = Order.objects.create(**order_data)
+    
+    for item in order_data['items']:
+        inventory = Inventory.objects.get(product_id=item['product_id'])
+        inventory.stock -= item['quantity']
+        inventory.save()
+    
+    return order
+```
+
+**特徴:**
+
+- **宣言的トランザクション管理**: `@transaction.atomic`デコレータで管理
+- **自動ロールバック**: エラー時に自動的にロールバック
+- **ネストしたトランザクション**: ネストしたトランザクションが可能
+
+**他言語との比較:**
+
+```java
+// Java: 宣言的トランザクション管理
+@Transactional
+public Order createOrder(OrderData orderData) {
+    Order order = orderRepository.save(new Order(orderData));
+    return order;
+}
+```
+
+#### 非同期処理
+
+**Djangoの非同期処理:**
+
+```python
+# Celeryを使用
+from celery import Celery
+
+celery_app = Celery('tasks', broker='redis://localhost:6379')
+
+@celery_app.task
+def process_order(order_id):
+    # 非同期処理
+    order = Order.objects.get(id=order_id)
+    payment_service.charge_payment(order.id, order.amount)
+```
+
+**特徴:**
+
+- **信頼できる非同期**: Celeryによる制御
+- **エラーハンドリング**: Celeryのエラーハンドリング機能を使用
+- **再実行**: Celeryのリトライ機能を使用
+
+**他言語との比較:**
+
+```typescript
+// Node.js: Promise/async-await
+async function processOrder(orderId: number) {
+  await paymentService.chargePayment(orderId);
+}
+```
+
+### 実行環境による特性
+
+| 環境 | 特徴 | 主なリスク |
+|------|------|------------|
+| **Serverless** (Lambda/Vercel) | 短寿命・自動スケール | コールドスタート、接続バースト、DBパンク、実行時間制限（Lambda: 15分、Vercel: 300秒） |
+| **常駐プロセス** (Gunicorn/uWSGI) | 長寿命・安定動作 | メモリリーク、プール断片化、デッドロック、接続リーク |
+
+#### Serverless環境での実行
+
+**制約:**
+
+```python
+# ❌ 悪い例: Serverless環境で問題のあるコード
+from django.http import JsonResponse
+
+def create_order(request):
+    # 問題: 長時間実行される可能性がある
+    # 問題: トランザクションが長時間保持される
+    # 問題: 接続プールが適切に管理されない
+    order = Order.objects.create(**request.POST)
+    return JsonResponse({'orderId': order.id})
+```
+
+**問題点:**
+
+- **実行時間の制限**: Lambdaは最大15分、Vercelは最大300秒
+- **コールドスタート**: Pythonの起動に時間がかかる（500ms-2s）
+- **メモリ制限**: メモリ使用量に制限がある（Lambda: 128MB〜10GB）
+- **接続バースト**: スケールアウト時に接続プールが急増し、DBがパンクする可能性
+
+**解決策:**
+
+```python
+# ✅ 良い例: Serverless環境に適したコード
+from django.http import JsonResponse
+from celery import Celery
+
+celery_app = Celery('tasks', broker='redis://localhost:6379')
+
+def create_order(request):
+    # 1. バリデーション（短時間）
+    validate_order_data(request.POST)
+    
+    # 2. 注文を作成（短時間）
+    order = Order.objects.create(**request.POST)
+    
+    # 3. 非同期処理をキューに投入
+    process_order.delay(order.id)
+    
+    # 4. 即座にレスポンスを返す
+    return JsonResponse({'orderId': order.id, 'status': 'PROCESSING'})
+```
+
+### 常駐プロセス環境での実行
+
+#### Gunicornアプリケーションサーバー
+
+**特徴:**
+
+```bash
+# 常駐プロセス環境での実行
+gunicorn myproject.wsgi:application --bind 0.0.0.0:8000
+```
+
+**メリット:**
+
+- **長時間実行可能**: 実行時間の制限がない
+- **接続プール**: データベース接続プールを保持
+- **キャッシュ**: メモリキャッシュを保持
+- **バックグラウンド処理**: Celeryによる処理
+
+**実装例:**
+
+```python
+# ✅ 良い例: 常駐プロセス環境に適したコード
+from django.db import transaction
+from celery import Celery
+
+celery_app = Celery('tasks', broker='redis://localhost:6379')
+
+@transaction.atomic
+def create_order(order_data):
+    order = Order.objects.create(**order_data)
+    
+    # バックグラウンド処理をCeleryで実行
+    process_order.delay(order.id)
+    
+    return order
+```
+
+### まとめ
+
+Djangoの実行モデルと前提のポイント：
+
+- **リソースの物理的制約**: CPU・メモリよりも先に枯渇するのは、DB接続数・スレッドプール・ファイル記述子・メモリリーク
+- **Python**: 動的型付け、ガベージコレクション、GIL、WSGI/ASGI
+- **トランザクション境界**: `@transaction.atomic`で管理、自動ロールバック
+- **非同期処理**: Celeryによる制御、エラーハンドリング、自動リトライ
+- **Serverless環境**: 実行時間制限、コールドスタート、メモリ制限、接続バースト
+- **常駐プロセス環境**: 長時間実行可能、接続プール、キャッシュ、Celery（メモリリーク・接続リークに注意）
+
+**重要な原則**: 性能ではなく制約を前提に設計する。リソースの垂れ流しは数時間後にシステム全体を停止させる。
+
