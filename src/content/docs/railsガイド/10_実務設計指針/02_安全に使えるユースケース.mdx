@@ -1,0 +1,105 @@
+---
+title: "安全に使えるユースケース"
+label: "安全に使えるユースケース"
+---
+
+## 安全に使えるユースケース
+
+Railsで安全に実装できるユースケースを詳しく解説します。
+
+### 1. トランザクション内でのデータベース操作
+
+#### 安全な実装
+
+```ruby
+class OrderService
+  def create_order(order_data)
+    Order.transaction do
+      # ✅ 安全: トランザクション内でのデータベース操作のみ
+      order = Order.create!(order_data)
+      
+      # ✅ 安全: 同じトランザクション内での在庫更新
+      order_data[:items].each do |item|
+        inventory = Inventory.find_by!(product_id: item[:product_id])
+        inventory.decrement!(:stock, item[:quantity])
+      end
+      
+      order
+    end
+  end
+end
+```
+
+**なぜ安全か:**
+
+- **ACID特性**: トランザクションのACID特性が保証される
+- **ロールバック**: エラー時に自動的にロールバック
+- **一貫性**: データの一貫性が保たれる
+
+### 2. after_commitコールバックの使用
+
+#### 安全な実装
+
+```ruby
+class Order < ApplicationRecord
+  after_commit :charge_payment, on: :create
+  
+  private
+  
+  def charge_payment
+    # ✅ 安全: トランザクションコミット後に外部APIを呼ぶ
+    PaymentService.new.charge_payment(id, amount)
+  end
+end
+```
+
+**なぜ安全か:**
+
+- **トランザクションコミット後**: トランザクションがコミットされた後に外部APIを呼ぶ
+- **一貫性**: 注文が確定した後にのみ外部APIが呼ばれる
+- **エラーハンドリング**: 外部APIのエラーがトランザクションに影響しない
+
+### 3. Active Jobによる非同期処理
+
+#### 安全な実装
+
+```ruby
+class OrderService
+  def create_order(order_data)
+    order = Order.create!(order_data)
+    
+    # ✅ 安全: 非同期処理をキューに投入
+    OrderProcessingJob.perform_later(order.id)
+    
+    order
+  end
+end
+
+class OrderProcessingJob < ApplicationJob
+  queue_as :default
+  
+  retry_on StandardError, wait: :exponentially_longer, attempts: 3
+  
+  def perform(order_id)
+    order = Order.find(order_id)
+    PaymentService.new.charge_payment(order.id, order.amount)
+  end
+end
+```
+
+**なぜ安全か:**
+
+- **非同期処理**: 長時間実行される処理を非同期で実行
+- **自動リトライ**: `retry_on`で自動リトライ
+- **エラーハンドリング**: `rescue_from`でエラーを処理
+
+### まとめ
+
+安全に使えるユースケースのポイント：
+
+- **トランザクション内でのデータベース操作**: ACID特性が保証される
+- **after_commitコールバック**: トランザクションコミット後に外部APIを呼ぶ
+- **Active Jobによる非同期処理**: 長時間実行される処理を非同期で実行
+
+適切なユースケースの選択により、安全で信頼性の高いRailsアプリケーションを構築できます。
+

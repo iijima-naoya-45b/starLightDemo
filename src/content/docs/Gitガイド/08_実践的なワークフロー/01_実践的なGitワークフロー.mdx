@@ -1,0 +1,169 @@
+---
+title: "実践的なGitワークフロー"
+label: "実践的なGitワークフロー"
+---
+
+## 実践的なGitワークフロー
+
+実際の開発現場で使用される実践的なGitワークフローを詳しく解説します。
+
+### 機能開発のワークフロー
+
+#### 基本的な流れ
+
+```bash
+# 1. 最新のmainブランチを取得
+git checkout main
+git pull origin main
+
+# 2. featureブランチを作成
+git checkout -b feature/user-authentication
+
+# 3. 開発作業
+git add .
+git commit -m "feat: ユーザー認証機能を実装"
+
+# 4. 定期的にmainブランチの変更を取り込む
+git checkout main
+git pull origin main
+git checkout feature/user-authentication
+git merge main
+# または
+git rebase main
+
+# 5. リモートにプッシュ
+git push -u origin feature/user-authentication
+
+# 6. プルリクエストを作成
+
+# 7. レビューと承認
+
+# 8. mainブランチにマージ
+
+# 9. ローカルのmainブランチを更新
+git checkout main
+git pull origin main
+
+# 10. featureブランチを削除
+git branch -d feature/user-authentication
+git push origin --delete feature/user-authentication
+```
+
+### バグ修正のワークフロー
+
+#### 基本的な流れ
+
+```bash
+# 1. バグを報告された
+# バグ: ログイン画面でエラーが発生
+
+# 2. bugfixブランチを作成
+git checkout -b bugfix/login-error main
+
+# 3. バグを修正
+git add .
+git commit -m "fix: ログイン画面のエラーを修正"
+
+# 4. テストを実行
+npm test
+
+# 5. リモートにプッシュ
+git push -u origin bugfix/login-error
+
+# 6. プルリクエストを作成
+
+# 7. レビューと承認
+
+# 8. mainブランチにマージ
+
+# 9. ローカルのmainブランチを更新
+git checkout main
+git pull origin main
+
+# 10. bugfixブランチを削除
+git branch -d bugfix/login-error
+git push origin --delete bugfix/login-error
+```
+
+### ホットフィックスのワークフロー
+
+#### 基本的な流れ
+
+```bash
+# 1. 緊急バグが報告された
+# バグ: セキュリティ脆弱性
+
+# 2. hotfixブランチを作成（mainブランチから）
+git checkout -b hotfix/security-patch main
+
+# 3. 緊急修正
+git add .
+git commit -m "hotfix: セキュリティパッチを適用"
+
+# 4. テストを実行
+npm test
+
+# 5. mainブランチにマージ
+git checkout main
+git merge --no-ff hotfix/security-patch
+git tag -a v1.0.1 -m "ホットフィックス v1.0.1"
+git push origin main --tags
+
+# 6. developブランチにもマージ
+git checkout develop
+git merge --no-ff hotfix/security-patch
+git push origin develop
+
+# 7. hotfixブランチを削除
+git branch -d hotfix/security-patch
+git push origin --delete hotfix/security-patch
+```
+
+### リリースのワークフロー
+
+#### 基本的な流れ
+
+```bash
+# 1. releaseブランチを作成
+git checkout -b release/v1.0.0 develop
+
+# 2. バージョン番号を更新
+# package.json、CHANGELOG.mdなどを更新
+git add .
+git commit -m "chore: バージョン1.0.0の準備"
+git push -u origin release/v1.0.0
+
+# 3. バグ修正など
+git add .
+git commit -m "fix: リリース前のバグ修正"
+git push origin release/v1.0.0
+
+# 4. ステージング環境でテスト
+
+# 5. mainブランチにマージ
+git checkout main
+git merge --no-ff release/v1.0.0
+git tag -a v1.0.0 -m "リリース v1.0.0"
+git push origin main --tags
+
+# 6. developブランチにもマージ
+git checkout develop
+git merge --no-ff release/v1.0.0
+git push origin develop
+
+# 7. releaseブランチを削除
+git branch -d release/v1.0.0
+git push origin --delete release/v1.0.0
+```
+
+### まとめ
+
+実践的なGitワークフローのポイント：
+
+- **機能開発**: featureブランチでの開発、定期的な同期、プルリクエスト
+- **バグ修正**: bugfixブランチでの修正、テスト、プルリクエスト
+- **ホットフィックス**: mainブランチからの分岐、緊急修正、両ブランチへのマージ
+- **リリース**: releaseブランチでの準備、バージョン管理、タグ付け
+
+適切なワークフローを実践することで、効率的で安全な開発ができます。
+

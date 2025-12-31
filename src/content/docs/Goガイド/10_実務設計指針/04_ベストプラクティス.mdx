@@ -1,0 +1,83 @@
+---
+title: "ベストプラクティス"
+label: "ベストプラクティス"
+---
+
+## ベストプラクティス
+
+Goでの正しい構造とベストプラクティスを詳しく解説します。
+
+### 1. context.Contextの使用
+
+#### 正しい構造
+
+```go
+// ✅ 正しい: context.Contextを使用
+func processOrder(ctx context.Context, orderID int64) error {
+    // タイムアウトを設定
+    ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+    defer cancel()
+    
+    // コンテキストを渡して処理
+    return processOrderWithContext(ctx, orderID)
+}
+
+func processOrderWithContext(ctx context.Context, orderID int64) error {
+    select {
+    case <-ctx.Done():
+        return ctx.Err()
+    case result := <-processOrderAsync(orderID):
+        return result
+    }
+}
+```
+
+**なぜ正しいか:**
+
+- **タイムアウト**: タイムアウトを設定できる
+- **キャンセレーション**: 処理をキャンセルできる
+- **Goroutineの終了**: コンテキストにより、Goroutineを適切に終了できる
+
+### 2. エラーハンドリング
+
+#### 正しい構造
+
+```go
+// ✅ 正しい: 適切なエラーハンドリング
+func createOrder(orderData OrderData) (*Order, error) {
+    tx := db.Begin()
+    defer func() {
+        if r := recover(); r != nil {
+            tx.Rollback()
+        }
+    }()
+    
+    order := &Order{UserID: orderData.UserID, Amount: orderData.Amount}
+    if err := tx.Create(order).Error; err != nil {
+        tx.Rollback()
+        return nil, fmt.Errorf("failed to create order: %w", err)
+    }
+    
+    if err := tx.Commit().Error; err != nil {
+        return nil, fmt.Errorf("failed to commit transaction: %w", err)
+    }
+    
+    return order, nil
+}
+```
+
+**なぜ正しいか:**
+
+- **エラーのラッピング**: エラーをラッピングして、コンテキストを追加
+- **ロールバック**: エラー時に適切にロールバック
+- **エラーの伝播**: エラーを適切に伝播
+
+### まとめ
+
+ベストプラクティスのポイント：
+
+- **context.Contextの使用**: タイムアウト、キャンセレーション、Goroutineの終了
+- **エラーハンドリング**: エラーのラッピング、ロールバック、エラーの伝播
+
+適切なベストプラクティスの実装により、安全で信頼性の高いGoアプリケーションを構築できます。
+

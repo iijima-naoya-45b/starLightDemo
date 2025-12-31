@@ -1,0 +1,274 @@
+---
+title: "復旧設計とフォールバック戦略"
+label: "復旧設計とフォールバック戦略"
+---
+
+## 復旧設計とフォールバック戦略
+
+障害から自動/手動で安全に戻れる設計を詳しく解説します。
+
+### Graceful Degradation
+
+外部依存が落ちたらキャッシュ・スタブで縮退運転する。
+
+#### 実装例
+
+```php
+// ✅ 良い例: キャッシュによるフォールバック
+class ProductService
+{
+    public function getProduct($productId)
+    {
+        // 1. キャッシュから取得を試みる
+        $cached = Cache::get("product:{$productId}");
+        if ($cached) {
+            return $cached;
+        }
+        
+        // 2. データベースから取得を試みる
+        try {
+            $product = Product::findOrFail($productId);
+            
+            // キャッシュに保存（TTL: 1時間）
+            Cache::put("product:{$productId}", $product, 3600);
+            
+            return $product;
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            // 3. データベースが落ちている場合、外部APIから取得を試みる
+            try {
+                $response = Http::timeout(3)->get("https://external-api.example.com/products/{$productId}");
+                $product = new Product($response->json());
+                
+                // キャッシュに保存（次回はキャッシュから取得可能）
+                Cache::put("product:{$productId}", $product, 3600);
+                
+                return $product;
+            } catch (\Exception $apiError) {
+                // 4. すべて失敗した場合、スタブデータを返す
+                Log::warning('All data sources failed, returning stub data', [
+                    'product_id' => $productId,
+                    'db_error' => $e->getMessage(),
+                    'api_error' => $apiError->getMessage(),
+                ]);
+                
+                return $this->createStubProduct($productId);
+            }
+        }
+    }
+    
+    private function createStubProduct($productId)
+    {
+        // スタブデータ（最低限の情報のみ）
+        return new Product([
+            'id' => $productId,
+            'name' => 'Product information temporarily unavailable',
+            'price' => 0,
+        ]);
+    }
+}
+```
+
+**なぜ重要か:**
+
+- **可用性の向上**: 外部依存が落ちても、最低限のサービスを提供可能
+- **ユーザー体験**: 完全なエラーではなく、スタブデータを返すことでユーザー体験を維持
+
+### 再起動安全性
+
+再起動時に中途状態をリカバリ可能にする（例：処理キューの再読込）。
+
+#### 実装例
+
+```php
+// ✅ 良い例: 再起動時にOutboxを再処理
+class OutboxRecoveryService
+{
+    public static function recoverPendingEvents()
+    {
+        // アプリケーション起動時に、PENDING状態のイベントを再処理
+        $pendingEvents = OutboxEvent::where('status', 'PENDING')->get();
+        
+        Log::info('Recovering pending outbox events', [
+            'count' => $pendingEvents->count(),
+        ]);
+        
+        foreach ($pendingEvents as $event) {
+            // リトライ回数が上限を超えていない場合のみ再処理
+            if ($event->retry_count < 3) {
+                self::processOutboxEvent($event);
+            } else {
+                Log::warning('Outbox event exceeded retry limit', [
+                    'event_id' => $event->id,
+                    'retry_count' => $event->retry_count,
+                ]);
+                
+                // 手動対応が必要な状態としてマーク
+                $event->update(['status' => 'MANUAL_REVIEW_REQUIRED']);
+            }
+        }
+    }
+}
+
+// アプリケーション起動時に実行
+// app/Providers/AppServiceProvider.php
+public function boot()
+{
+    OutboxRecoveryService::recoverPendingEvents();
+}
+```
+
+**なぜ重要か:**
+
+- **データの整合性**: 再起動時に中途状態のデータをリカバリ可能
+- **自動復旧**: 手動介入なしで自動的に復旧可能
+
+### バックオフ戦略
+
+Exponential Backoff とJitterでセルフDDoSを防止する。
+
+#### 実装例
+
+```php
+// ✅ 良い例: Exponential Backoff + Jitter
+class PaymentService
+{
+    public function chargePayment($orderId, $amount, $maxRetries = 3)
+    {
+        $retries = 0;
+        
+        while ($retries < $maxRetries) {
+            try {
+                $response = Http::timeout(3)->post('https://payment-api.example.com/charge', [
+                    'order_id' => $orderId,
+                    'amount' => $amount,
+                ]);
+                
+                return $response->json();
+            } catch (\Exception $e) {
+                $retries++;
+                
+                if ($retries >= $maxRetries) {
+                    throw new PaymentException("Payment API failed after {$maxRetries} retries: " . $e->getMessage());
+                }
+                
+                // Exponential Backoff + Jitter
+                $baseDelay = pow(2, $retries) * 1000; // 1s, 2s, 4s
+                $jitter = rand(0, 1000); // 0-1s
+                $delay = ($baseDelay + $jitter) / 1000;
+                
+                usleep($delay * 1000000);
+            }
+        }
+    }
+}
+```
+
+**バックオフの計算:**
+
+```
+リトライ1: 1000ms + random(0-1000ms) = 1000-2000ms
+リトライ2: 2000ms + random(0-2000ms) = 2000-4000ms
+リトライ3: 4000ms + random(0-4000ms) = 4000-8000ms
+```
+
+**なぜ重要か:**
+
+- **セルフDDoS防止**: すべてのクライアントが同時にリトライしないよう、Jitterでランダム化
+- **サーバー負荷の軽減**: Exponential Backoffでサーバーへの負荷を段階的に軽減
+
+### 手動オペ対応
+
+フラグ切替・一時停止がコード修正なしで可能な設計。
+
+#### 実装例
+
+```php
+// ✅ 良い例: 機能フラグによる制御
+class FeatureFlag extends Model
+{
+    protected $fillable = ['key', 'enabled', 'description'];
+}
+
+class FeatureFlagService
+{
+    public static function enabled($key)
+    {
+        $flag = FeatureFlag::where('key', $key)->first();
+        return $flag ? $flag->enabled : false;
+    }
+    
+    public static function enable($key)
+    {
+        FeatureFlag::updateOrCreate(
+            ['key' => $key],
+            ['enabled' => true]
+        );
+    }
+    
+    public static function disable($key)
+    {
+        FeatureFlag::updateOrCreate(
+            ['key' => $key],
+            ['enabled' => false]
+        );
+    }
+}
+
+class OrderService
+{
+    public function createOrder($orderData)
+    {
+        $order = Order::create($orderData);
+        
+        // 機能フラグで外部API呼び出しを制御
+        if (FeatureFlagService::enabled('payment-api.enabled')) {
+            try {
+                PaymentService::chargePayment($order->id, $orderData['amount']);
+            } catch (\Exception $e) {
+                // 外部APIが無効化されている場合、エラーをログに記録するが処理は続行
+                Log::warning('Payment API disabled, skipping payment', [
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        } else {
+            Log::info('Payment API disabled by feature flag');
+        }
+        
+        return $order;
+    }
+}
+
+// 管理画面で機能フラグを切り替え可能
+class AdminFeatureFlagController extends Controller
+{
+    public function enable($key)
+    {
+        FeatureFlagService::enable($key);
+        return response()->json(['message' => 'Feature flag enabled']);
+    }
+    
+    public function disable($key)
+    {
+        FeatureFlagService::disable($key);
+        return response()->json(['message' => 'Feature flag disabled']);
+    }
+}
+```
+
+**なぜ重要か:**
+
+- **迅速な対応**: コード修正なしで、機能を一時的に無効化可能
+- **リスクの軽減**: 問題が発生した場合、すぐに機能を無効化して影響を最小化
+
+### まとめ
+
+復旧設計とフォールバック戦略のポイント：
+
+- **Graceful Degradation**: 外部依存が落ちたらキャッシュ・スタブで縮退運転
+- **再起動安全性**: 再起動時に中途状態をリカバリ可能にする
+- **バックオフ戦略**: Exponential Backoff + JitterでセルフDDoSを防止
+- **手動オペ対応**: フラグ切替・一時停止がコード修正なしで可能な設計
+
+これらの設計により、障害から自動/手動で安全に戻れます。
+

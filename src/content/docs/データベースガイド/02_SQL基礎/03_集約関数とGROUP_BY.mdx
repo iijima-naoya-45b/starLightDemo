@@ -1,0 +1,122 @@
+---
+title: "集約関数とGROUP BY"
+label: "集約関数とGROUP BY"
+---
+
+## 集約関数とGROUP BY
+
+集約関数とGROUP BYを使用することで、データをグループ化し、統計情報を取得できます。
+
+### 集約関数の種類
+
+#### COUNT
+
+```sql
+-- 行数を取得
+SELECT COUNT(*) FROM users;
+
+-- 条件に合う行数を取得
+SELECT COUNT(*) FROM users WHERE status = 'active';
+
+-- NULLを除外してカウント
+SELECT COUNT(email) FROM users;
+```
+
+#### SUM
+
+```sql
+-- 合計を取得
+SELECT SUM(amount) FROM orders;
+
+-- 条件に合う合計を取得
+SELECT SUM(amount) FROM orders WHERE status = 'completed';
+```
+
+#### AVG
+
+```sql
+-- 平均を取得
+SELECT AVG(price) FROM products;
+
+-- 条件に合う平均を取得
+SELECT AVG(price) FROM products WHERE category_id = 1;
+```
+
+#### MAX / MIN
+
+```sql
+-- 最大値を取得
+SELECT MAX(price) FROM products;
+
+-- 最小値を取得
+SELECT MIN(price) FROM products;
+```
+
+### GROUP BYによるグループ化
+
+#### 基本的なGROUP BY
+
+```sql
+-- カテゴリごとの商品数を取得
+SELECT category_id, COUNT(*) AS product_count
+FROM products
+GROUP BY category_id;
+```
+
+#### 複数のカラムでグループ化
+
+```sql
+-- カテゴリとステータスごとの商品数を取得
+SELECT category_id, status, COUNT(*) AS product_count
+FROM products
+GROUP BY category_id, status;
+```
+
+#### HAVINGによるグループのフィルタリング
+
+```sql
+-- 商品数が10個以上のカテゴリを取得
+SELECT category_id, COUNT(*) AS product_count
+FROM products
+GROUP BY category_id
+HAVING COUNT(*) >= 10;
+```
+
+### 実践例
+
+#### ユーザーごとの注文数と合計金額
+
+```sql
+SELECT 
+  user_id,
+  COUNT(*) AS order_count,
+  SUM(amount) AS total_amount,
+  AVG(amount) AS avg_amount
+FROM orders
+GROUP BY user_id
+ORDER BY total_amount DESC;
+```
+
+#### 日次売上の集計
+
+```sql
+SELECT 
+  DATE(created_at) AS order_date,
+  COUNT(*) AS order_count,
+  SUM(amount) AS daily_sales
+FROM orders
+GROUP BY DATE(created_at)
+ORDER BY order_date DESC;
+```
+
+### まとめ
+
+集約関数とGROUP BYのポイント：
+
+- **集約関数**: COUNT、SUM、AVG、MAX、MIN
+- **GROUP BY**: データをグループ化
+- **HAVING**: グループをフィルタリング
+- **実践例**: ユーザーごとの集計、日次売上の集計
+
+適切に集約関数とGROUP BYを使用することで、統計情報を効率的に取得できます。
+

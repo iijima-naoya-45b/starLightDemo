@@ -1,0 +1,238 @@
+---
+title: "復旧設計とフォールバック戦略"
+label: "復旧設計とフォールバック戦略"
+---
+
+## 復旧設計とフォールバック戦略
+
+障害から自動/手動で安全に戻れる設計を詳しく解説します。
+
+### Graceful Degradation
+
+外部依存が落ちたらキャッシュ・スタブで縮退運転する。
+
+#### 実装例
+
+```python
+# ✅ 良い例: キャッシュによるフォールバック
+from django.core.cache import cache
+import requests
+
+def get_product(product_id):
+    # 1. キャッシュから取得を試みる
+    cached = cache.get(f"product:{product_id}")
+    if cached:
+        return cached
+    
+    # 2. データベースから取得を試みる
+    try:
+        product = Product.objects.get(id=product_id)
+        
+        # キャッシュに保存（TTL: 1時間）
+        cache.set(f"product:{product_id}", product, 3600)
+        
+        return product
+    except Product.DoesNotExist:
+        # 3. データベースが落ちている場合、外部APIから取得を試みる
+        try:
+            response = requests.get(
+                f"https://external-api.example.com/products/{product_id}",
+                timeout=3
+            )
+            product = Product(**response.json())
+            
+            # キャッシュに保存（次回はキャッシュから取得可能）
+            cache.set(f"product:{product_id}", product, 3600)
+            
+            return product
+        except Exception as api_error:
+            # 4. すべて失敗した場合、スタブデータを返す
+            logger.warning(
+                "All data sources failed, returning stub data",
+                product_id=product_id,
+                db_error=str(e),
+                api_error=str(api_error),
+            )
+            
+            return create_stub_product(product_id)
+
+def create_stub_product(product_id):
+    # スタブデータ（最低限の情報のみ）
+    return Product(
+        id=product_id,
+        name="Product information temporarily unavailable",
+        price=0,
+    )
+```
+
+**なぜ重要か:**
+
+- **可用性の向上**: 外部依存が落ちても、最低限のサービスを提供可能
+- **ユーザー体験**: 完全なエラーではなく、スタブデータを返すことでユーザー体験を維持
+
+### 再起動安全性
+
+再起動時に中途状態をリカバリ可能にする（例：処理キューの再読込）。
+
+#### 実装例
+
+```python
+# ✅ 良い例: 再起動時にOutboxを再処理
+from celery import shared_task
+
+def recover_pending_events():
+    # アプリケーション起動時に、PENDING状態のイベントを再処理
+    pending_events = OutboxEvent.objects.filter(status='PENDING')
+    
+    logger.info(
+        "Recovering pending outbox events",
+        count=pending_events.count()
+    )
+    
+    for event in pending_events:
+        # リトライ回数が上限を超えていない場合のみ再処理
+        if event.retry_count < 3:
+            process_outbox_event(event)
+        else:
+            logger.warning(
+                "Outbox event exceeded retry limit",
+                event_id=event.id,
+                retry_count=event.retry_count,
+            )
+            
+            # 手動対応が必要な状態としてマーク
+            event.status = 'MANUAL_REVIEW_REQUIRED'
+            event.save()
+
+# アプリケーション起動時に実行
+# apps.py
+from django.apps import AppConfig
+
+class MyAppConfig(AppConfig):
+    def ready(self):
+        recover_pending_events()
+```
+
+**なぜ重要か:**
+
+- **データの整合性**: 再起動時に中途状態のデータをリカバリ可能
+- **自動復旧**: 手動介入なしで自動的に復旧可能
+
+### バックオフ戦略
+
+Exponential Backoff とJitterでセルフDDoSを防止する。
+
+#### 実装例
+
+```python
+# ✅ 良い例: Exponential Backoff + Jitter
+import time
+import random
+
+def retry_with_backoff(fn, max_retries=3):
+    for i in range(max_retries):
+        try:
+            return fn()
+        except Exception as e:
+            if i == max_retries - 1:
+                raise e
+            
+            # Exponential Backoff + Jitter
+            base_delay = 2 ** i * 1000  # 1s, 2s, 4s
+            jitter = random.randint(0, 1000)  # 0-1s
+            delay = (base_delay + jitter) / 1000
+            
+            time.sleep(delay)
+
+def charge_payment(order_id, amount):
+    def _charge():
+        response = requests.post(
+            'https://payment-api.example.com/charge',
+            json={'order_id': order_id, 'amount': amount},
+            timeout=3
+        )
+        if response.status_code != 200:
+            raise PaymentError("Payment failed")
+        return response.json()
+    
+    return retry_with_backoff(_charge)
+```
+
+**バックオフの計算:**
+
+```
+リトライ1: 1000ms + random(0-1000ms) = 1000-2000ms
+リトライ2: 2000ms + random(0-2000ms) = 2000-4000ms
+リトライ3: 4000ms + random(0-4000ms) = 4000-8000ms
+```
+
+**なぜ重要か:**
+
+- **セルフDDoS防止**: すべてのクライアントが同時にリトライしないよう、Jitterでランダム化
+- **サーバー負荷の軽減**: Exponential Backoffでサーバーへの負荷を段階的に軽減
+
+### 手動オペ対応
+
+フラグ切替・一時停止がコード修正なしで可能な設計。
+
+#### 実装例
+
+```python
+# ✅ 良い例: 機能フラグによる制御
+class FeatureFlag(models.Model):
+    key = models.CharField(max_length=100, unique=True)
+    enabled = models.BooleanField(default=False)
+    description = models.TextField()
+
+def is_feature_enabled(key):
+    try:
+        flag = FeatureFlag.objects.get(key=key)
+        return flag.enabled
+    except FeatureFlag.DoesNotExist:
+        return False
+
+def create_order(request):
+    order = Order.objects.create(**order_data)
+    
+    # 機能フラグで外部API呼び出しを制御
+    if is_feature_enabled('payment-api.enabled'):
+        try:
+            charge_payment(order.id, order.amount)
+        except Exception as e:
+            # 外部APIが無効化されている場合、エラーをログに記録するが処理は続行
+            logger.warning(
+                "Payment API disabled, skipping payment",
+                order_id=order.id,
+                error=str(e),
+            )
+    else:
+        logger.info("Payment API disabled by feature flag")
+    
+    return JsonResponse({'id': order.id})
+
+# 管理画面で機能フラグを切り替え可能
+# admin.py
+from django.contrib import admin
+
+@admin.register(FeatureFlag)
+class FeatureFlagAdmin(admin.ModelAdmin):
+    list_display = ['key', 'enabled', 'description']
+    list_editable = ['enabled']
+```
+
+**なぜ重要か:**
+
+- **迅速な対応**: コード修正なしで、機能を一時的に無効化可能
+- **リスクの軽減**: 問題が発生した場合、すぐに機能を無効化して影響を最小化
+
+### まとめ
+
+復旧設計とフォールバック戦略のポイント：
+
+- **Graceful Degradation**: 外部依存が落ちたらキャッシュ・スタブで縮退運転
+- **再起動安全性**: 再起動時に中途状態をリカバリ可能にする
+- **バックオフ戦略**: Exponential Backoff + JitterでセルフDDoSを防止
+- **手動オペ対応**: フラグ切替・一時停止がコード修正なしで可能な設計
+
+これらの設計により、障害から自動/手動で安全に戻れます。
+

@@ -1,0 +1,195 @@
+---
+title: "マイクロサービスvsモノリスの判断基準"
+label: "マイクロサービスvsモノリスの判断基準"
+---
+
+## マイクロサービスvsモノリスの判断基準
+
+マイクロサービスとモノリスの選択基準を詳しく解説します。
+
+### 判断フローチャート
+
+```
+1. チームサイズは10人以下か？
+   → YES: モノリスを検討
+   → NO: 次のステップへ
+
+2. 開発速度が最重要か？
+   → YES: モノリスを検討
+   → NO: 次のステップへ
+
+3. 独立したデプロイが必要か？
+   → YES: マイクロサービスを検討
+   → NO: 次のステップへ
+
+4. 異なる技術スタックが必要か？
+   → YES: マイクロサービスを検討
+   → NO: 次のステップへ
+
+5. スケーラビリティが最重要か？
+   → YES: マイクロサービスを検討
+   → NO: モノリスを検討
+```
+
+### モノリスを選ぶべき場合
+
+#### 条件
+
+**条件:**
+
+- チームサイズが小規模（10人以下）
+- 開発速度が最重要
+- シンプルなアプリケーション
+- 単一の技術スタックで十分
+
+**実践例:**
+
+```typescript
+// モノリスアーキテクチャ
+class MonolithApplication {
+  // すべての機能が1つのアプリケーションに含まれる
+  async createOrder(orderData: OrderData): Promise<Order> {
+    // ユーザー管理
+    const user = await this.userService.getUser(orderData.userId);
+    
+    // 商品管理
+    const products = await this.productService.getProducts(orderData.productIds);
+    
+    // 注文管理
+    const order = await this.orderService.createOrder(orderData);
+    
+    // 決済処理
+    await this.paymentService.chargePayment(order.id, orderData.amount);
+    
+    // 在庫管理
+    await this.inventoryService.reduceInventory(order.id, orderData.items);
+    
+    return order;
+  }
+}
+```
+
+**メリット:**
+
+- 開発速度が速い
+- デプロイが簡単
+- デバッグが容易
+- トランザクション管理が簡単
+
+**デメリット:**
+
+- スケーラビリティの制限
+- 技術スタックの変更が困難
+- チーム間の競合
+
+### マイクロサービスを選ぶべき場合
+
+#### 条件
+
+**条件:**
+
+- チームサイズが大規模（10人以上）
+- 独立したデプロイが必要
+- 異なる技術スタックが必要
+- スケーラビリティが最重要
+
+**実践例:**
+
+```typescript
+// マイクロサービスアーキテクチャ
+// Order Service
+class OrderService {
+  async createOrder(orderData: OrderData): Promise<Order> {
+    const order = await this.orderRepository.save(orderData);
+    
+    // イベントを発行
+    await this.eventBus.publish('order.created', {
+      orderId: order.id,
+      userId: orderData.userId,
+      items: orderData.items,
+      amount: orderData.amount,
+    });
+    
+    return order;
+  }
+}
+
+// Payment Service
+class PaymentService {
+  async handleOrderCreated(event: OrderCreatedEvent): Promise<void> {
+    await this.chargePayment(event.orderId, event.amount);
+    await this.eventBus.publish('payment.completed', {
+      orderId: event.orderId,
+    });
+  }
+}
+
+// Inventory Service
+class InventoryService {
+  async handlePaymentCompleted(event: PaymentCompletedEvent): Promise<void> {
+    await this.reserveInventory(event.orderId, event.items);
+  }
+}
+```
+
+**メリット:**
+
+- 独立したデプロイ
+- 技術スタックの選択の自由
+- スケーラビリティ
+- チームの独立性
+
+**デメリット:**
+
+- 複雑性の増加
+- 運用コストの増加
+- デバッグの困難
+- トランザクション管理の困難
+
+### 段階的な移行
+
+#### モノリスからマイクロサービスへ
+
+**ステップ1: モノリスの最適化**
+
+```typescript
+// モノリスを最適化
+class OptimizedMonolith {
+  // モジュール化
+  async createOrder(orderData: OrderData): Promise<Order> {
+    // 各モジュールが独立して動作
+    const order = await this.orderModule.createOrder(orderData);
+    await this.paymentModule.chargePayment(order.id, orderData.amount);
+    await this.inventoryModule.reduceInventory(order.id, orderData.items);
+    return order;
+  }
+}
+```
+
+**ステップ2: 境界コンテキストの特定**
+
+```typescript
+// 境界コンテキストを特定
+// - Order Context
+// - Payment Context
+// - Inventory Context
+```
+
+**ステップ3: 段階的な分離**
+
+```typescript
+// 1. データベースを分離
+// 2. APIを分離
+// 3. デプロイを分離
+```
+
+### まとめ
+
+マイクロサービスvsモノリスの判断基準のポイント：
+
+- **モノリス**: 小規模チーム、開発速度が最重要、シンプルなアプリケーション
+- **マイクロサービス**: 大規模チーム、独立したデプロイ、異なる技術スタック、スケーラビリティ
+- **段階的な移行**: モノリスからマイクロサービスへの段階的な移行
+
+適切なアーキテクチャの選択により、効率的でスケーラブルなシステムを構築できます。
+

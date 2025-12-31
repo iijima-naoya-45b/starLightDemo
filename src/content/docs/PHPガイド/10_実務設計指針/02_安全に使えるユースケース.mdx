@@ -1,0 +1,141 @@
+---
+title: "安全に使えるユースケース"
+label: "安全に使えるユースケース"
+---
+
+## 安全に使えるユースケース
+
+PHPで安全に使えるユースケースと、その理由を詳しく解説します。
+
+### 短時間で完了する処理
+
+PHPはリクエストごとにプロセスが起動するため、短時間で完了する処理が適しています。
+
+#### 実装例
+
+```php
+// ✅ 良い例: 短時間で完了する処理
+function createOrder($orderData) {
+    // 1. バリデーション（短時間）
+    if (!validateOrderData($orderData)) {
+        throw new InvalidArgumentException('Invalid order data');
+    }
+    
+    // 2. 注文を作成（短時間）
+    $pdo = getConnection();
+    try {
+        $pdo->beginTransaction();
+        
+        $stmt = $pdo->prepare("INSERT INTO orders (user_id, amount) VALUES (?, ?)");
+        $stmt->execute([$orderData['user_id'], $orderData['amount']]);
+        $orderId = $pdo->lastInsertId();
+        
+        $pdo->commit();
+        
+        // 3. 非同期処理をキューに投入
+        enqueueJob('process_order', ['order_id' => $orderId]);
+        
+        // 4. 即座にレスポンスを返す
+        return ['id' => $orderId, 'status' => 'PROCESSING'];
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+}
+```
+
+**なぜ安全か:**
+
+- **プロセス寿命の短縮**: リクエスト処理が短時間で完了し、プロセスがすぐに解放される
+- **リソースの効率的な使用**: プロセスプールが効率的に使用される
+- **スケーラビリティ**: 短時間処理により、より多くのリクエストを処理可能
+
+### トランザクション内でのDB操作のみ
+
+トランザクション内でDB操作のみを行う場合、安全に使用できます。
+
+#### 実装例
+
+```php
+// ✅ 良い例: トランザクション内でDB操作のみ
+function createOrder($orderData) {
+    $pdo = getConnection();
+    try {
+        $pdo->beginTransaction();
+        
+        // 1. 注文を作成
+        $stmt = $pdo->prepare("INSERT INTO orders (user_id, amount) VALUES (?, ?)");
+        $stmt->execute([$orderData['user_id'], $orderData['amount']]);
+        $orderId = $pdo->lastInsertId();
+        
+        // 2. 在庫を減らす
+        $stmt = $pdo->prepare("UPDATE inventory SET stock = stock - ? WHERE product_id = ?");
+        foreach ($orderData['items'] as $item) {
+            $stmt->execute([$item['quantity'], $item['product_id']]);
+        }
+        
+        // 3. トランザクション内でDB操作のみ（外部APIは呼ばない）
+        $pdo->commit();
+        
+        return $orderId;
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+}
+```
+
+**なぜ安全か:**
+
+- **トランザクションの短縮**: DB操作のみでトランザクションが短時間で完了
+- **ロールバックの容易さ**: エラー時にロールバックが容易
+- **デッドロックの回避**: トランザクション時間が短いため、デッドロックのリスクが低い
+
+### キューによる非同期処理
+
+長時間実行される処理や外部API呼び出しは、キューを使用して非同期処理にします。
+
+#### 実装例
+
+```php
+// ✅ 良い例: キューによる非同期処理
+function createOrder($orderData) {
+    $pdo = getConnection();
+    $stmt = $pdo->prepare("INSERT INTO orders (user_id, amount) VALUES (?, ?)");
+    $stmt->execute([$orderData['user_id'], $orderData['amount']]);
+    $orderId = $pdo->lastInsertId();
+    
+    // 非同期処理をキューに投入（プロセスを占有しない）
+    enqueueJob('process_payment', ['order_id' => $orderId, 'amount' => $orderData['amount']]);
+    enqueueJob('send_notification', ['order_id' => $orderId]);
+    
+    return ['id' => $orderId];
+}
+
+// ワーカープロセスでキューを処理
+function processPaymentJob($orderId, $amount) {
+    // 長時間実行される処理や外部API呼び出し
+    $response = callPaymentAPI($orderId, $amount);
+    
+    $pdo = getConnection();
+    $stmt = $pdo->prepare("UPDATE orders SET payment_status = ? WHERE id = ?");
+    $stmt->execute(['COMPLETED', $orderId]);
+}
+```
+
+**なぜ安全か:**
+
+- **プロセスの解放**: メインプロセスがすぐに解放され、次のリクエストを処理可能
+- **エラーハンドリング**: キューのエラーハンドリング機能を使用
+- **再実行**: キューのリトライ機能により、失敗時の再実行が可能
+
+### まとめ
+
+安全に使えるユースケースのポイント：
+
+- **短時間で完了する処理**: プロセス寿命の短縮、リソースの効率的な使用
+- **トランザクション内でのDB操作のみ**: トランザクションの短縮、ロールバックの容易さ
+- **キューによる非同期処理**: プロセスの解放、エラーハンドリング、再実行
+
+これらのユースケースを守ることで、安全で信頼性の高いPHPアプリケーションを構築できます。
+

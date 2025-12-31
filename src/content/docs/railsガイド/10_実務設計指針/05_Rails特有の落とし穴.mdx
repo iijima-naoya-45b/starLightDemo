@@ -1,0 +1,97 @@
+---
+title: "Rails特有の落とし穴"
+label: "Rails特有の落とし穴"
+---
+
+## Rails特有の落とし穴
+
+Rails特有の落とし穴と、他言語との違いを詳しく解説します。
+
+### 1. after_commit的な逃げ道
+
+#### Railsのafter_commitコールバック
+
+**特徴:**
+
+```ruby
+# Rails: after_commitコールバック
+class Order < ApplicationRecord
+  after_commit :call_external_api, on: :create
+  
+  def call_external_api
+    # トランザクションコミット後に実行される
+    ExternalApi.call(self.id)
+  end
+end
+```
+
+**他言語との比較:**
+
+```java
+// Java: TransactionSynchronizationを使用
+@Transactional
+public Order createOrder(OrderData orderData) {
+    Order order = orderRepository.save(new Order(orderData));
+    
+    TransactionSynchronizationManager.registerSynchronization(
+        new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                externalApi.call(order.getId());
+            }
+        }
+    );
+    
+    return order;
+}
+```
+
+**落とし穴:**
+
+- **after_commitの失敗**: `after_commit`内でエラーが発生しても、トランザクションは既にコミットされている
+- **再実行の困難**: `after_commit`内の処理が失敗した場合、再実行が困難
+
+### 2. トランザクション境界は明示的か？
+
+#### Railsのトランザクション管理
+
+**特徴:**
+
+```ruby
+# Rails: 明示的なトランザクション境界
+class OrderService
+  def create_order(order_data)
+    Order.transaction do
+      # トランザクション内の処理を明示的に記述
+      order = Order.create!(order_data)
+      order
+    end
+  end
+end
+```
+
+**他言語との比較:**
+
+```java
+// Java: 宣言的トランザクション管理
+@Transactional
+public Order createOrder(OrderData orderData) {
+    Order order = orderRepository.save(new Order(orderData));
+    return order;
+}
+```
+
+**落とし穴:**
+
+- **トランザクションの見落とし**: トランザクションを忘れると、データの整合性が保たれない
+- **ネストしたトランザクション**: ネストしたトランザクションの動作を理解する必要がある
+
+### まとめ
+
+Rails特有の落とし穴のポイント：
+
+- **after_commit的な逃げ道**: `after_commit`コールバックにより、トランザクションコミット後に処理を実行可能
+- **トランザクション境界**: 明示的なトランザクション境界、見落としに注意
+
+これらの落とし穴を理解することで、より安全なRailsアプリケーションを構築できます。
+

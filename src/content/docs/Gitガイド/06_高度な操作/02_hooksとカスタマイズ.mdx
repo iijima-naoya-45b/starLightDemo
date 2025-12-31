@@ -1,0 +1,283 @@
+---
+title: "hooksとカスタマイズ"
+label: "hooksとカスタマイズ"
+---
+
+## hooksとカスタマイズ
+
+Gitの動作をカスタマイズするための`hooks`とその他のカスタマイズ方法について詳しく解説します。
+
+### なぜhooksとカスタマイズが必要なのか
+
+#### カスタマイズなしの問題
+
+**問題のある状況:**
+
+```
+開発者: 「コミット前にlintを実行したい...」
+開発者: 「コミットメッセージの形式を統一したい...」
+開発者: 「プッシュ前にテストを実行したい...」
+
+// 問題点:
+// - 手動でのチェックが必要
+// - ルールが守られない
+// - 品質が低下する可能性
+```
+
+**影響:**
+- 手動チェックの負担
+- ルール違反の発生
+- 品質の低下
+- 開発効率の低下
+
+#### hooksとカスタマイズによる解決
+
+**改善された状況:**
+
+```
+自動化されたチェック:
+- コミット前に自動的にlintを実行
+- コミットメッセージの形式を自動チェック
+- プッシュ前に自動的にテストを実行
+```
+
+**メリット:**
+- 手動チェックの削減
+- ルールの自動適用
+- 品質の向上
+- 開発効率の向上
+
+### Git Hooks
+
+#### hooksとは
+
+**定義:**
+`hooks`は、Gitの特定のイベント（コミット、プッシュなど）の前後に実行されるスクリプトです。
+
+**hooksの種類:**
+
+```
+.git/hooks/
+├── pre-commit          # コミット前
+├── prepare-commit-msg  # コミットメッセージ準備時
+├── commit-msg          # コミットメッセージ検証時
+├── post-commit         # コミット後
+├── pre-push            # プッシュ前
+└── post-receive        # リモートで受信後
+```
+
+#### pre-commitフック
+
+**実践例:**
+
+```bash
+#!/bin/sh
+# .git/hooks/pre-commit
+
+# lintを実行
+npm run lint
+if [ $? -ne 0 ]; then
+  echo "Lintエラーがあります。コミットを中止します。"
+  exit 1
+fi
+
+# テストを実行
+npm test
+if [ $? -ne 0 ]; then
+  echo "テストが失敗しました。コミットを中止します。"
+  exit 1
+fi
+
+# ファイルサイズをチェック
+for file in $(git diff --cached --name-only); do
+  if [ -f "$file" ]; then
+    size=$(wc -c < "$file")
+    if [ $size -gt 10485760 ]; then  # 10MB
+      echo "ファイル $file が大きすぎます（10MB以上）。"
+      exit 1
+    fi
+  fi
+done
+
+exit 0
+```
+
+**実行権限の付与:**
+
+```bash
+chmod +x .git/hooks/pre-commit
+```
+
+#### commit-msgフック
+
+**実践例:**
+
+```bash
+#!/bin/sh
+# .git/hooks/commit-msg
+
+# コミットメッセージの形式をチェック
+commit_msg=$(cat "$1")
+
+# 形式: "type: subject"
+# type: feat, fix, docs, style, refactor, test, chore
+# subject: 50文字以内
+
+if ! echo "$commit_msg" | grep -qE "^(feat|fix|docs|style|refactor|test|chore): .{1,50}$"; then
+  echo "コミットメッセージの形式が正しくありません。"
+  echo "形式: type: subject"
+  echo "例: feat: ユーザー認証機能を追加"
+  exit 1
+fi
+
+exit 0
+```
+
+#### pre-pushフック
+
+**実践例:**
+
+```bash
+#!/bin/sh
+# .git/hooks/pre-push
+
+# プッシュ前にテストを実行
+echo "プッシュ前にテストを実行します..."
+npm test
+
+if [ $? -ne 0 ]; then
+  echo "テストが失敗しました。プッシュを中止します。"
+  exit 1
+fi
+
+# ビルドを実行
+echo "プッシュ前にビルドを実行します..."
+npm run build
+
+if [ $? -ne 0 ]; then
+  echo "ビルドが失敗しました。プッシュを中止します。"
+  exit 1
+fi
+
+exit 0
+```
+
+### Huskyを使用したhooks管理
+
+#### Huskyとは
+
+**定義:**
+Huskyは、Git hooksを簡単に管理するためのNode.jsパッケージです。
+
+**インストール:**
+
+```bash
+npm install --save-dev husky
+```
+
+**設定:**
+
+```json
+// package.json
+{
+  "scripts": {
+    "prepare": "husky install"
+  }
+}
+```
+
+**hooksの設定:**
+
+```bash
+# pre-commitフックを設定
+npx husky add .husky/pre-commit "npm run lint"
+
+# commit-msgフックを設定
+npx husky add .husky/commit-msg "npx --no-install commitlint --edit \$1"
+
+# pre-pushフックを設定
+npx husky add .husky/pre-push "npm test"
+```
+
+**実践例:**
+
+```bash
+# .husky/pre-commit
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+npm run lint
+npm run test
+```
+
+### Git設定のカスタマイズ
+
+#### エイリアスの設定
+
+**実践例:**
+
+```bash
+# よく使うコマンドのエイリアス
+git config --global alias.st status
+git config --global alias.co checkout
+git config --global alias.br branch
+git config --global alias.ci commit
+git config --global alias.unstage 'reset HEAD --'
+
+# カスタムエイリアス
+git config --global alias.lg "log --oneline --graph --decorate --all"
+git config --global alias.last "log -1 HEAD"
+git config --global alias.visual "!gitk"
+```
+
+**使用例:**
+
+```bash
+# git status → git st
+git st
+
+# git checkout → git co
+git co main
+
+# git log --oneline --graph --decorate --all → git lg
+git lg
+```
+
+#### エディタの設定
+
+**実践例:**
+
+```bash
+# デフォルトエディタを設定
+git config --global core.editor "code --wait"  # VS Code
+git config --global core.editor "vim"          # Vim
+git config --global core.editor "nano"         # Nano
+```
+
+#### マージツールの設定
+
+**実践例:**
+
+```bash
+# マージツールを設定
+git config --global merge.tool vimdiff
+git config --global mergetool.vimdiff.cmd 'vimdiff "$LOCAL" "$REMOTE" "$MERGED"'
+
+# マージツールを使用
+git mergetool
+```
+
+### まとめ
+
+hooksとカスタマイズのポイント：
+
+- **Git Hooks**: コミット、プッシュなどのイベントで自動実行
+- **pre-commitフック**: コミット前のチェック（lint、テストなど）
+- **commit-msgフック**: コミットメッセージの形式チェック
+- **pre-pushフック**: プッシュ前のチェック（テスト、ビルドなど）
+- **Husky**: Git hooksを簡単に管理
+- **エイリアス**: よく使うコマンドの短縮
+- **設定のカスタマイズ**: エディタ、マージツールなどの設定
+
+適切にhooksとカスタマイズを使用することで、開発効率と品質を向上させることができます。
+

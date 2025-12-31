@@ -1,17 +1,29 @@
 ---
-title: "Next.jsのルーティング"
-label: "Next.jsのルーティング"
+title: "Next.jsのルーティング詳細"
+label: "Next.jsのルーティング詳細"
 ---
 
-## 🛤️ Next.jsのルーティング（App RouterとPages Router）
+## Next.jsのルーティング詳細
 
 Next.jsは、ファイルシステムに基づいたルーティングを採用しています。これにより、プロジェクト内のディレクトリやファイルがそのままURLパスになります。Next.js 13以降、新しいApp Routerが導入され、既存のPages Routerと異なるアプローチでルーティングを管理します。
 
-### 1. App Routerによるルーティング
+### App RouterとPages Routerの違い
+
+| 特徴 | Pages Router | App Router |
+|------|--------------|------------|
+| ディレクトリ | `pages/` | `app/` |
+| 動的セグメント | `[name].tsx` | `[name]/page.tsx` |
+| パス取得 | `useRouter().query` | `params`プロパティ |
+| サーバーコンポーネント | 非対応 | 対応 |
+| レイアウト共有 | `_app.tsx` | `layout.tsx` |
+| データフェッチング | `getServerSideProps`, `getStaticProps` | `async`コンポーネント |
+| 推奨 | 既存プロジェクト | 新規プロジェクト |
+
+## App Routerによるルーティング
 
 App Routerは、`app/`ディレクトリを使用してルーティングを管理します。このアプローチでは、レイアウトの共有、ストリーミング、サーバーコンポーネントの利用が容易になります。
 
-#### ファイルベースのルーティング (`app/`)
+### ファイルベースのルーティング (`app/`)
 
 `app/`ディレクトリ内のサブディレクトリがURLパスに対応します。各セグメントの`page.tsx`ファイルが、そのパスのUIを定義します。
 
@@ -22,15 +34,37 @@ App Routerは、`app/`ディレクトリを使用してルーティングを管�
 ├── about/
 │   └── page.tsx       // /aboutページ
 └── blog/
+    ├── layout.tsx     // /blog配下の共通レイアウト
+    ├── page.tsx       // /blogページ
     └── [slug]/
         └── page.tsx   // /blog/[slug]ページ
 ```
 
-#### 動的ルーティング (TypeScript)
+### 基本的なページの作成
+
+```typescript
+// app/about/page.tsx
+export default function AboutPage() {
+  return (
+    <div>
+      <h1>About Us</h1>
+      <p>私たちについて</p>
+    </div>
+  );
+}
+```
+
+**特徴:**
+
+- **自動ルーティング**: `app/about/page.tsx`が自動的に`/about`ルートになる
+- **デフォルトエクスポート**: `page.tsx`はデフォルトエクスポートが必要
+- **サーバーコンポーネント**: デフォルトでサーバーコンポーネントとして動作
+
+### 動的ルーティング
 
 動的なパスセグメントは、角括弧`[]`で囲んで指定します。例えば、`[slug]`というディレクトリは、`/blog/first-post`や`/blog/second-post`のようなURLに対応します。
 
-##### 例: `app/blog/[slug]/page.tsx`
+#### 単一の動的セグメント
 
 ```typescript
 // app/blog/[slug]/page.tsx
@@ -40,20 +74,255 @@ type BlogPostPageProps = {
   };
 };
 
-const BlogPostPage = ({ params }: BlogPostPageProps) => {
-  return <h1>ブログ投稿: {params.slug}</h1>;
-};
-
-export default BlogPostPage;
+export default async function BlogPostPage({ params }: BlogPostPageProps) {
+  // サーバーコンポーネントなので、直接データフェッチングが可能
+  const post = await fetch(`https://api.example.com/posts/${params.slug}`)
+    .then(res => res.json());
+  
+  return (
+    <div>
+      <h1>{post.title}</h1>
+      <p>{post.content}</p>
+    </div>
+  );
+}
 ```
 
-- `params`: App Routerでは、動的なセグメントの値が`params`プロパティとしてコンポーネントに渡されます。これにより、`useRouter`フックを使用する必要がなくなります。
+**特徴:**
 
-### 2. Pages Routerによるルーティング
+- **`params`プロパティ**: 動的なセグメントの値が`params`プロパティとして渡される
+- **型安全性**: TypeScriptで型定義が可能
+- **サーバーコンポーネント**: `async`関数として定義可能
+
+#### 複数の動的セグメント
+
+```typescript
+// app/shop/[category]/[product]/page.tsx
+type ProductPageProps = {
+  params: {
+    category: string;
+    product: string;
+  };
+};
+
+export default function ProductPage({ params }: ProductPageProps) {
+  return (
+    <div>
+      <h1>カテゴリ: {params.category}</h1>
+      <h2>商品: {params.product}</h2>
+    </div>
+  );
+}
+```
+
+**URL例:**
+
+- `/shop/electronics/iphone` → `category: 'electronics'`, `product: 'iphone'`
+- `/shop/clothing/t-shirt` → `category: 'clothing'`, `product: 't-shirt'`
+
+#### キャッチオールルート
+
+```typescript
+// app/docs/[...slug]/page.tsx
+type DocsPageProps = {
+  params: {
+    slug: string[];
+  };
+};
+
+export default function DocsPage({ params }: DocsPageProps) {
+  // slugは配列として渡される
+  // /docs/getting-started/installation → ['getting-started', 'installation']
+  const path = params.slug.join('/');
+  
+  return <div>ドキュメント: {path}</div>;
+}
+```
+
+**URL例:**
+
+- `/docs/getting-started` → `slug: ['getting-started']`
+- `/docs/getting-started/installation` → `slug: ['getting-started', 'installation']`
+
+#### オプショナルキャッチオールルート
+
+```typescript
+// app/shop/[[...slug]]/page.tsx
+type ShopPageProps = {
+  params: {
+    slug?: string[];
+  };
+};
+
+export default function ShopPage({ params }: ShopPageProps) {
+  if (!params.slug) {
+    return <div>ショップトップページ</div>;
+  }
+  
+  return <div>ショップ: {params.slug.join('/')}</div>;
+}
+```
+
+**URL例:**
+
+- `/shop` → `slug: undefined`（オプショナル）
+- `/shop/electronics` → `slug: ['electronics']`
+- `/shop/electronics/phones` → `slug: ['electronics', 'phones']`
+
+### レイアウトの共有
+
+`layout.tsx`ファイルを使用して、複数のページで共通のレイアウトを共有できます。
+
+```typescript
+// app/layout.tsx（ルートレイアウト）
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="ja">
+      <body>
+        <header>
+          <nav>
+            <a href="/">ホーム</a>
+            <a href="/about">About</a>
+            <a href="/blog">Blog</a>
+          </nav>
+        </header>
+        <main>{children}</main>
+        <footer>
+          <p>&copy; 2024 My App</p>
+        </footer>
+      </body>
+    </html>
+  );
+}
+```
+
+```typescript
+// app/blog/layout.tsx（ブログ専用レイアウト）
+export default function BlogLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="blog-container">
+      <aside>
+        <h2>カテゴリ</h2>
+        <ul>
+          <li><a href="/blog/tech">技術</a></li>
+          <li><a href="/blog/life">生活</a></li>
+        </ul>
+      </aside>
+      <article>{children}</article>
+    </div>
+  );
+}
+```
+
+**特徴:**
+
+- **ネストされたレイアウト**: レイアウトは階層的に適用される
+- **レイアウトの永続化**: ページ遷移時もレイアウトは再レンダリングされない
+- **状態の保持**: レイアウト内の状態はページ遷移時も保持される
+
+### ルートグループ
+
+ルートグループを使用して、URLパスに影響を与えずにルートを整理できます。
+
+```
+/app
+├── (marketing)/
+│   ├── about/
+│   │   └── page.tsx    // /about
+│   └── contact/
+│       └── page.tsx    // /contact
+└── (shop)/
+    ├── products/
+    │   └── page.tsx    // /products
+    └── cart/
+        └── page.tsx    // /cart
+```
+
+**特徴:**
+
+- **URLに影響しない**: 括弧で囲まれたディレクトリはURLパスに含まれない
+- **レイアウトの分離**: 異なるレイアウトを適用できる
+- **組織化**: 関連するルートをグループ化できる
+
+### 並列ルート
+
+`@folder`という命名規則を使用して、同じURLに対して複数のページを同時に表示できます。
+
+```
+/app
+└── dashboard/
+    ├── @analytics/
+    │   └── page.tsx
+    ├── @team/
+    │   └── page.tsx
+    └── page.tsx
+```
+
+```typescript
+// app/dashboard/layout.tsx
+export default function DashboardLayout({
+  analytics,
+  team,
+  children,
+}: {
+  analytics: React.ReactNode;
+  team: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      {children}
+      {analytics}
+      {team}
+    </div>
+  );
+}
+```
+
+### 条件付きルート
+
+`loading.tsx`と`error.tsx`を使用して、ローディング状態とエラー状態を処理できます。
+
+```typescript
+// app/blog/[slug]/loading.tsx
+export default function Loading() {
+  return <div>読み込み中...</div>;
+}
+```
+
+```typescript
+// app/blog/[slug]/error.tsx
+'use client';
+
+export default function Error({
+  error,
+  reset,
+}: {
+  error: Error;
+  reset: () => void;
+}) {
+  return (
+    <div>
+      <h2>エラーが発生しました</h2>
+      <button onClick={reset}>再試行</button>
+    </div>
+  );
+}
+```
+
+## Pages Routerによるルーティング
 
 Pages Routerは、`pages/`ディレクトリを使用してルーティングを管理する従来のアプローチです。
 
-#### ファイルベースのルーティング (`pages/`)
+### ファイルベースのルーティング (`pages/`)
 
 `pages/`ディレクトリ内のファイル名がURLパスになります。
 
@@ -62,14 +331,27 @@ Pages Routerは、`pages/`ディレクトリを使用してルーティングを
 ├── index.tsx          // ルートページ (/)
 ├── about.tsx          // /aboutページ
 └── blog/
+    ├── index.tsx      // /blogページ
     └── [id].tsx       // /blog/[id]ページ
 ```
 
-#### 動的ルーティング (TypeScript)
+### 基本的なページの作成
+
+```typescript
+// pages/about.tsx
+export default function AboutPage() {
+  return (
+    <div>
+      <h1>About Us</h1>
+      <p>私たちについて</p>
+    </div>
+  );
+}
+```
+
+### 動的ルーティング
 
 Pages Routerでは、`useRouter`フックを使って動的なセグメントの値を取得します。
-
-##### 例: `pages/blog/[id].tsx`
 
 ```typescript
 // pages/blog/[id].tsx
@@ -78,22 +360,143 @@ import { useRouter } from 'next/router';
 const BlogPostPage = () => {
   const router = useRouter();
   const { id } = router.query;
+  
+  // クエリパラメータも取得可能
+  const { category } = router.query;
 
-  return <h1>ブログ投稿: {id}</h1>;
+  return (
+    <div>
+      <h1>ブログ投稿: {id}</h1>
+      {category && <p>カテゴリ: {category}</p>}
+    </div>
+  );
 };
 
 export default BlogPostPage;
 ```
 
-- `useRouter`: クライアントサイドでのルーティング情報（URL、クエリパラメータなど）にアクセスするためのフックです。
+**特徴:**
 
-### まとめ
+- **`useRouter`フック**: クライアントサイドでのルーティング情報にアクセス
+- **クエリパラメータ**: URLのクエリパラメータも`router.query`で取得可能
+- **クライアントコンポーネント**: デフォルトでクライアントコンポーネント
 
-| 特徴             | Pages Router | App Router |
-|------------------|--------------|------------|
-| ディレクトリ     | `pages/`     | `app/`     |
-| 動的セグメント   | `[name].tsx` | `[name]/page.tsx` |
-| パス取得         | `useRouter().query` | `params`プロパティ |
-| 利点             | シンプルで理解しやすい | レイアウト共有、サーバーコンポーネント、高度な機能 |
+### データフェッチング
+
+Pages Routerでは、`getServerSideProps`や`getStaticProps`を使用してデータをフェッチします。
+
+```typescript
+// pages/blog/[id].tsx
+import { GetServerSideProps } from 'next';
+
+type BlogPostPageProps = {
+  post: {
+    id: string;
+    title: string;
+    content: string;
+  };
+};
+
+export default function BlogPostPage({ post }: BlogPostPageProps) {
+  return (
+    <div>
+      <h1>{post.title}</h1>
+      <p>{post.content}</p>
+    </div>
+  );
+}
+
+export const getServerSideProps: GetServerSideProps = async (context) => {
+  const { id } = context.params!;
+  
+  const post = await fetch(`https://api.example.com/posts/${id}`)
+    .then(res => res.json());
+  
+  return {
+    props: {
+      post,
+    },
+  };
+};
+```
+
+## ルーティングのベストプラクティス
+
+### 1. App Routerを優先する
 
 新しいプロジェクトを始める場合は、**App Router**の利用が強く推奨されます。App Routerは、将来的なNext.jsの進化の方向性であり、サーバーコンポーネントやデータフェッチの新しい方法など、多くのパフォーマンス改善を提供します。
+
+### 2. 動的ルートの命名規則
+
+```typescript
+// ✅ 良い例: 意味のある名前
+app/blog/[slug]/page.tsx
+app/users/[userId]/page.tsx
+app/products/[productId]/page.tsx
+
+// ❌ 悪い例: 意味のない名前
+app/blog/[id]/page.tsx
+app/users/[id]/page.tsx
+```
+
+### 3. レイアウトの適切な使用
+
+```typescript
+// ✅ 良い例: 共通レイアウトを使用
+app/layout.tsx          // 全体のレイアウト
+app/dashboard/layout.tsx // ダッシュボード専用レイアウト
+
+// ❌ 悪い例: 各ページで個別にレイアウトを実装
+app/dashboard/page.tsx  // レイアウトを含む
+app/dashboard/settings/page.tsx // 同じレイアウトを再度実装
+```
+
+### 4. エラーハンドリング
+
+```typescript
+// app/blog/[slug]/error.tsx
+'use client';
+
+export default function Error({
+  error,
+  reset,
+}: {
+  error: Error;
+  reset: () => void;
+}) {
+  return (
+    <div>
+      <h2>エラーが発生しました</h2>
+      <p>{error.message}</p>
+      <button onClick={reset}>再試行</button>
+    </div>
+  );
+}
+```
+
+### 5. ローディング状態の処理
+
+```typescript
+// app/blog/[slug]/loading.tsx
+export default function Loading() {
+  return (
+    <div>
+      <div className="skeleton">読み込み中...</div>
+    </div>
+  );
+}
+```
+
+## まとめ
+
+Next.jsのルーティングは、ファイルシステムベースで直感的に理解できます。App RouterとPages Routerの違いを理解し、プロジェクトの要件に応じて適切なアプローチを選択することが重要です。
+
+**推奨事項:**
+
+- **新規プロジェクト**: App Routerを使用
+- **既存プロジェクト**: Pages RouterからApp Routerへの移行を検討
+- **動的ルート**: 意味のある名前を使用
+- **レイアウト**: 共通レイアウトを適切に使用
+- **エラーハンドリング**: `error.tsx`と`loading.tsx`を活用
+
+これらのベストプラクティスを守ることで、保守性が高く、パフォーマンスの良いNext.jsアプリケーションを構築できます。

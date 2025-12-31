@@ -1,0 +1,79 @@
+---
+title: "障害時に起きること"
+label: "障害時に起きること"
+---
+
+## 障害時に起きること
+
+Djangoアプリケーションで障害が発生した際のシナリオを詳しく解説します。
+
+### シナリオ1: transaction.on_commit内でのエラー
+
+#### 障害のシナリオ
+
+```
+時刻: 2024-01-01 10:00:00
+状況: 注文作成処理中
+
+10:00:00.000 - トランザクション開始
+10:00:00.100 - データベースに注文を保存
+10:00:00.200 - トランザクションコミット
+10:00:00.300 - transaction.on_commitコールバック実行開始
+10:00:00.400 - 外部API呼び出し（エラー発生）
+10:00:00.500 - エラーが処理されない（トランザクションは既にコミット済み）
+10:00:00.600 - 注文は存在するが、決済は完了していない（データ不整合）
+```
+
+**実際のコード:**
+
+```python
+# ❌ 問題のあるコード
+from django.db import transaction
+
+@transaction.atomic
+def create_order(order_data):
+    order = Order.objects.create(**order_data)
+    
+    # エラーが発生しても、トランザクションは既にコミット済み
+    transaction.on_commit(lambda: payment_service.charge_payment(order.id, order_data['amount']))
+    
+    return order
+```
+
+**障害の影響:**
+
+1. **データの不整合**: 注文は存在するが、決済は完了していない
+2. **エラーの隠蔽**: エラーが発生しても処理されない
+3. **再実行の困難**: 手動で再実行する必要がある
+
+**解決策:**
+
+```python
+# ✅ 解決策: Celeryを使用
+from django.db import transaction
+from celery import Celery
+
+celery_app = Celery('tasks', broker='redis://localhost:6379')
+
+@transaction.atomic
+def create_order(order_data):
+    order = Order.objects.create(**order_data)
+    
+    # Celeryで非同期処理を実行
+    transaction.on_commit(lambda: process_payment.delay(order.id, order_data['amount']))
+    
+    return order
+
+@celery_app.task
+def process_payment(order_id, amount):
+    payment_service.charge_payment(order_id, amount)
+```
+
+### まとめ
+
+障害時に起きることのポイント：
+
+- **transaction.on_commit内でのエラー**: トランザクションは既にコミット済み、Celeryを使用
+
+これらの障害シナリオを理解することで、より堅牢なDjangoアプリケーションを構築できます。
+

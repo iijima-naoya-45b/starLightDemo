@@ -1,0 +1,266 @@
+---
+title: "submoduleとsubtree"
+label: "submoduleとsubtree"
+---
+
+## submoduleとsubtree
+
+複数のリポジトリを管理するための`submodule`と`subtree`について詳しく解説します。
+
+### なぜsubmoduleとsubtreeが必要なのか
+
+#### 複数リポジトリ管理なしの問題
+
+**問題のある状況:**
+
+```
+開発者: 「共通ライブラリを複数のプロジェクトで使いたい...」
+開発者: 「どうやって管理すればいいの？コピーする？」
+
+// 問題点:
+// - コードの重複
+// - 更新の同期が困難
+// - バージョン管理が複雑
+```
+
+**影響:**
+- コードの重複
+- 更新の同期困難
+- バージョン管理の複雑化
+- メンテナンスの困難
+
+#### submoduleとsubtreeによる解決
+
+**改善された状況:**
+
+```
+適切な複数リポジトリ管理:
+- コードの重複を回避
+- 更新の同期が容易
+- バージョン管理が明確
+```
+
+**メリット:**
+- コードの重複回避
+- 更新の同期容易化
+- バージョン管理の明確化
+- メンテナンスの容易化
+
+### submodule（サブモジュール）
+
+#### submoduleとは
+
+**定義:**
+`submodule`は、別のGitリポジトリを現在のリポジトリのサブディレクトリとして組み込む機能です。
+
+**特徴:**
+- 別のリポジトリへの参照を保持
+- 独立したバージョン管理
+- 特定のコミットを参照
+
+#### 基本的な使い方
+
+**submoduleの追加:**
+
+```bash
+# submoduleを追加
+git submodule add <リポジトリURL> <パス>
+
+# 例: 共通ライブラリを追加
+git submodule add https://github.com/example/shared-lib.git libs/shared-lib
+
+# .gitmodulesファイルが作成される
+# libs/shared-libディレクトリが追加される
+```
+
+**submoduleのクローン:**
+
+```bash
+# リポジトリをクローン（submoduleを含む）
+git clone --recursive <リポジトリURL>
+
+# または、クローン後にsubmoduleを初期化
+git clone <リポジトリURL>
+git submodule init
+git submodule update
+
+# または、1つのコマンドで
+git submodule update --init --recursive
+```
+
+**submoduleの更新:**
+
+```bash
+# submoduleを最新のコミットに更新
+cd libs/shared-lib
+git checkout main
+git pull origin main
+cd ../..
+git add libs/shared-lib
+git commit -m "submoduleを更新"
+
+# または、すべてのsubmoduleを更新
+git submodule update --remote
+git add .
+git commit -m "すべてのsubmoduleを更新"
+```
+
+**submoduleの削除:**
+
+```bash
+# submoduleを削除
+git submodule deinit libs/shared-lib
+git rm libs/shared-lib
+git commit -m "submoduleを削除"
+
+# .gitmodulesファイルからも削除される
+```
+
+#### 実践例
+
+**共通ライブラリの管理:**
+
+```bash
+# 1. 共通ライブラリのリポジトリを作成
+# https://github.com/example/shared-lib
+
+# 2. メインプロジェクトにsubmoduleとして追加
+git submodule add https://github.com/example/shared-lib.git libs/shared-lib
+
+# 3. コミット
+git add .gitmodules libs/shared-lib
+git commit -m "共通ライブラリをsubmoduleとして追加"
+
+# 4. 共通ライブラリで変更を加える
+cd libs/shared-lib
+git checkout -b feature/new-feature
+# 変更を加える...
+git add .
+git commit -m "新機能を追加"
+git push origin feature/new-feature
+
+# 5. メインプロジェクトでsubmoduleを更新
+cd ../..
+git submodule update --remote libs/shared-lib
+git add libs/shared-lib
+git commit -m "共通ライブラリを更新"
+```
+
+### subtree（サブツリー）
+
+#### subtreeとは
+
+**定義:**
+`subtree`は、別のリポジトリの履歴を現在のリポジトリに統合する機能です。
+
+**特徴:**
+- 別のリポジトリの履歴を統合
+- 単一のリポジトリとして管理
+- submoduleよりシンプル
+
+#### 基本的な使い方
+
+**subtreeの追加:**
+
+```bash
+# subtreeを追加
+git subtree add --prefix=<パス> <リポジトリURL> <ブランチ> --squash
+
+# 例: 共通ライブラリを追加
+git subtree add --prefix=libs/shared-lib https://github.com/example/shared-lib.git main --squash
+
+# libs/shared-libディレクトリが追加される
+# 履歴が統合される
+```
+
+**subtreeの更新:**
+
+```bash
+# subtreeを更新
+git subtree pull --prefix=<パス> <リポジトリURL> <ブランチ> --squash
+
+# 例: 共通ライブラリを更新
+git subtree pull --prefix=libs/shared-lib https://github.com/example/shared-lib.git main --squash
+```
+
+**subtreeへの変更のプッシュ:**
+
+```bash
+# subtreeの変更を元のリポジトリにプッシュ
+git subtree push --prefix=<パス> <リポジトリURL> <ブランチ>
+
+# 例: 共通ライブラリの変更をプッシュ
+git subtree push --prefix=libs/shared-lib https://github.com/example/shared-lib.git main
+```
+
+#### 実践例
+
+**共通ライブラリの管理:**
+
+```bash
+# 1. 共通ライブラリをsubtreeとして追加
+git subtree add --prefix=libs/shared-lib https://github.com/example/shared-lib.git main --squash
+
+# 2. 共通ライブラリで変更を加える
+cd libs/shared-lib
+# 変更を加える...
+git add .
+git commit -m "共通ライブラリを更新"
+
+# 3. 変更を元のリポジトリにプッシュ
+git subtree push --prefix=libs/shared-lib https://github.com/example/shared-lib.git main
+
+# 4. 共通ライブラリの更新を取り込む
+git subtree pull --prefix=libs/shared-lib https://github.com/example/shared-lib.git main --squash
+```
+
+### submodule vs subtree
+
+#### 比較表
+
+| 項目 | submodule | subtree |
+|------|-----------|---------|
+| **管理方法** | 別リポジトリへの参照 | 履歴を統合 |
+| **複雑さ** | 複雑 | シンプル |
+| **クローン** | 特別な手順が必要 | 通常のクローンでOK |
+| **更新** | 明示的な更新が必要 | 自動的に統合 |
+| **履歴** | 別リポジトリの履歴 | 統合された履歴 |
+| **使用場面** | 独立したプロジェクト | 密結合なプロジェクト |
+
+#### 使い分け
+
+**submoduleを使うべき場合:**
+
+```bash
+# 1. 独立したプロジェクト
+# 例: 共通ライブラリ、フレームワーク
+
+# 2. 複数のプロジェクトで使用
+# 例: 複数のアプリケーションで共通ライブラリを使用
+
+# 3. バージョン管理を分離したい場合
+```
+
+**subtreeを使うべき場合:**
+
+```bash
+# 1. 密結合なプロジェクト
+# 例: モノリポ内のサブプロジェクト
+
+# 2. 単一のプロジェクトで使用
+# 例: 特定のアプリケーション専用のライブラリ
+
+# 3. シンプルな管理を望む場合
+```
+
+### まとめ
+
+submoduleとsubtreeのポイント：
+
+- **submodule**: 別リポジトリへの参照、独立したバージョン管理
+- **subtree**: 履歴を統合、シンプルな管理
+- **使い分け**: submoduleは独立したプロジェクト、subtreeは密結合なプロジェクト
+- **実践例**: 共通ライブラリの管理、更新と同期
+
+適切にsubmoduleとsubtreeを使用することで、効率的に複数リポジトリを管理できます。
+

@@ -1,0 +1,193 @@
+---
+title: "障害時に起きること"
+label: "障害時に起きること"
+---
+
+## 障害時に起きること
+
+Node.jsアプリケーションで障害が発生した際のシナリオを詳しく解説します。
+
+### シナリオ1: イベントループのブロック
+
+#### 障害のシナリオ
+
+```
+時刻: 2024-01-01 10:00:00
+状況: 大量のリクエスト処理中
+
+10:00:00.000 - リクエスト1受信（large-file.txtを読み取り開始）
+10:00:00.100 - 同期I/O操作によりイベントループがブロック
+10:00:05.000 - ファイル読み取り完了（5秒経過）
+10:00:05.100 - リクエスト2受信（5秒間待機していた）
+10:00:05.200 - リクエスト3受信（5秒間待機していた）
+10:00:05.300 - リクエスト4受信（5秒間待機していた）
+...
+10:00:10.000 - すべてのリクエストが処理される（10秒経過）
+```
+
+**実際のコード:**
+
+```typescript
+// ❌ 問題のあるコード
+const fs = require('fs');
+
+app.get('/data', (req, res) => {
+  // 同期I/O操作によりイベントループがブロック
+  const data = fs.readFileSync('large-file.txt', 'utf8');
+  res.json({ data });
+});
+```
+
+**障害の影響:**
+
+1. **イベントループのブロック**: 5秒間、イベントループがブロックされる
+2. **他のリクエストの処理不可**: 5秒間、他のリクエストが処理できない
+3. **タイムアウト**: クライアントがタイムアウトする可能性がある
+4. **パフォーマンスの低下**: アプリケーション全体のパフォーマンスが低下する
+
+**解決策:**
+
+```typescript
+// ✅ 解決策: 非ブロッキング操作を使用
+import { readFile } from 'fs/promises';
+
+app.get('/data', async (req, res) => {
+  try {
+    // 非ブロッキング操作
+    const data = await readFile('large-file.txt', 'utf8');
+    res.json({ data });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+```
+
+### シナリオ2: メモリリークによるクラッシュ
+
+#### 障害のシナリオ
+
+```
+時刻: 2024-01-01 10:00:00
+状況: 長時間実行されるアプリケーション
+
+10:00:00.000 - アプリケーション起動（メモリ使用量: 100MB）
+10:00:01.000 - リクエスト1受信（イベントリスナー1を追加、メモリ使用量: 105MB）
+10:00:02.000 - リクエスト2受信（イベントリスナー2を追加、メモリ使用量: 110MB）
+...
+10:30:00.000 - リクエスト1000受信（イベントリスナー1000を追加、メモリ使用量: 2GB）
+10:30:01.000 - ガベージコレクションが動作（メモリ使用量: 1.8GB）
+10:30:02.000 - OutOfMemoryError発生
+10:30:03.000 - アプリケーションがクラッシュ
+```
+
+**実際のコード:**
+
+```typescript
+// ❌ 問題のあるコード
+const eventEmitter = new EventEmitter();
+
+app.post('/orders', (req, res) => {
+  // イベントリスナーが削除されない
+  eventEmitter.on('order.created', (order) => {
+    sendEmail(order.userId);
+  });
+  
+  createOrder(req.body);
+  res.json({ status: 'ok' });
+});
+```
+
+**障害の影響:**
+
+1. **メモリの枯渇**: イベントリスナーが蓄積され、メモリが枯渇する
+2. **ガベージコレクションの頻発**: ガベージコレクションが頻繁に動作し、パフォーマンスが低下
+3. **OutOfMemoryError**: メモリが枯渇し、アプリケーションがクラッシュ
+4. **データの損失**: 処理中のデータが失われる可能性がある
+
+**解決策:**
+
+```typescript
+// ✅ 解決策: イベントリスナーを適切に管理
+const eventEmitter = new EventEmitter();
+
+// 一度だけ登録
+eventEmitter.once('order.created', (order) => {
+  sendEmail(order.userId);
+});
+
+app.post('/orders', (req, res) => {
+  createOrder(req.body);
+  eventEmitter.emit('order.created', order);
+  res.json({ status: 'ok' });
+});
+```
+
+### シナリオ3: 未処理のPromiseによるエラーの隠蔽
+
+#### 障害のシナリオ
+
+```
+時刻: 2024-01-01 10:00:00
+状況: 注文作成処理中
+
+10:00:00.000 - 注文作成リクエスト受信
+10:00:00.100 - createOrder()を呼び出す（Promiseが処理されない）
+10:00:00.200 - レスポンスを返す（status: 'ok'）
+10:00:00.300 - createOrder()内でエラー発生（データベース接続エラー）
+10:00:00.400 - エラーが処理されない（未処理のPromise）
+10:00:00.500 - ユーザーには「成功」と表示される
+10:00:01.000 - データベースに注文が存在しないことを確認
+```
+
+**実際のコード:**
+
+```typescript
+// ❌ 問題のあるコード
+app.post('/orders', (req, res) => {
+  // Promiseが処理されていない
+  createOrder(req.body);
+  res.json({ status: 'ok' });
+});
+
+async function createOrder(orderData: OrderData): Promise<Order> {
+  // エラーが発生しても処理されない
+  const order = await prisma.order.create({ data: orderData });
+  return order;
+}
+```
+
+**障害の影響:**
+
+1. **エラーの隠蔽**: エラーが発生しても処理されない
+2. **データの不整合**: ユーザーには「成功」と表示されるが、データは作成されていない
+3. **デバッグの困難**: エラーの原因が分からない
+
+**解決策:**
+
+```typescript
+// ✅ 解決策: 適切なエラーハンドリング
+app.post('/orders', async (req, res) => {
+  try {
+    const order = await createOrder(req.body);
+    res.json(order);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+async function createOrder(orderData: OrderData): Promise<Order> {
+  const order = await prisma.order.create({ data: orderData });
+  return order;
+}
+```
+
+### まとめ
+
+障害時に起きることのポイント：
+
+- **イベントループのブロック**: 同期I/O操作によりイベントループがブロックされる、非ブロッキング操作を使用
+- **メモリリークによるクラッシュ**: イベントリスナーが蓄積され、メモリが枯渇する、イベントリスナーを適切に管理
+- **未処理のPromiseによるエラーの隠蔽**: エラーが発生しても処理されない、適切なエラーハンドリングを実装
+
+これらの障害シナリオを理解することで、より堅牢なNode.jsアプリケーションを構築できます。
+

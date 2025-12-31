@@ -1,0 +1,253 @@
+---
+title: "インデックスの活用"
+label: "インデックスの活用"
+---
+
+## インデックスの活用
+
+インデックスは、データベースの検索速度を向上させる重要な仕組みです。適切なインデックス設計により、クエリのパフォーマンスを大幅に改善できます。
+
+### なぜインデックスが重要なのか
+
+#### インデックスなしの検索
+
+**問題のあるクエリ:**
+
+```sql
+-- インデックスがないテーブル
+CREATE TABLE users (
+  id INT PRIMARY KEY,
+  email VARCHAR(255),  -- インデックスなし
+  name VARCHAR(255)
+);
+
+-- メールアドレスで検索（全件スキャンが発生）
+SELECT * FROM users WHERE email = 'alice@example.com';
+
+-- 問題点:
+-- - 100万件のデータがある場合、100万件すべてをスキャンする必要がある
+-- - 検索時間が線形に増加する（O(n)）
+-- - データベースの負荷が増加する
+```
+
+**実際の影響:**
+
+```
+データ件数: 1,000件 → 検索時間: 10ms
+データ件数: 10,000件 → 検索時間: 100ms
+データ件数: 100,000件 → 検索時間: 1,000ms
+データ件数: 1,000,000件 → 検索時間: 10,000ms（10秒）
+```
+
+#### インデックスありの検索
+
+**改善されたクエリ:**
+
+```sql
+-- インデックスを追加
+CREATE INDEX idx_email ON users(email);
+
+-- メールアドレスで検索（インデックススキャンが発生）
+SELECT * FROM users WHERE email = 'alice@example.com';
+
+-- メリット:
+-- - インデックスを使用して高速に検索できる
+-- - 検索時間が対数的に増加する（O(log n)）
+-- - データベースの負荷が軽減される
+```
+
+**実際の改善:**
+
+```
+データ件数: 1,000件 → 検索時間: 1ms（10倍高速）
+データ件数: 10,000件 → 検索時間: 2ms（50倍高速）
+データ件数: 100,000件 → 検索時間: 3ms（333倍高速）
+データ件数: 1,000,000件 → 検索時間: 4ms（2,500倍高速）
+```
+
+### インデックスの種類
+
+#### B-Treeインデックス（最も一般的）
+
+**特徴:**
+- 等価検索と範囲検索に適している
+- ソートされた順序でデータを保持
+
+**使用例:**
+
+```sql
+CREATE INDEX idx_email ON users(email);
+
+-- 等価検索
+SELECT * FROM users WHERE email = 'alice@example.com';
+
+-- 範囲検索
+SELECT * FROM users WHERE age BETWEEN 20 AND 30;
+```
+
+#### ハッシュインデックス
+
+**特徴:**
+- 等価検索のみに適している
+- 範囲検索には使用できない
+
+**使用例:**
+
+```sql
+-- MySQLのMEMORYストレージエンジンで使用可能
+CREATE INDEX idx_email USING HASH ON users(email);
+
+-- 等価検索のみ
+SELECT * FROM users WHERE email = 'alice@example.com';
+```
+
+#### 全文検索インデックス（FULLTEXT）
+
+**特徴:**
+- テキスト検索に適している
+- LIKE検索より高速
+
+**使用例:**
+
+```sql
+CREATE FULLTEXT INDEX idx_content ON articles(content);
+
+-- 全文検索
+SELECT * FROM articles 
+WHERE MATCH(content) AGAINST('database' IN NATURAL LANGUAGE MODE);
+```
+
+### インデックス設計のベストプラクティス
+
+#### 1. WHERE句で使用されるカラムにインデックス
+
+```sql
+-- よく検索されるカラムにインデックス
+CREATE INDEX idx_status ON users(status);
+CREATE INDEX idx_created_at ON users(created_at);
+
+-- クエリで使用
+SELECT * FROM users WHERE status = 'active';
+SELECT * FROM users WHERE created_at >= '2024-01-01';
+```
+
+#### 2. JOINで使用されるカラムにインデックス
+
+```sql
+-- 外部キーにインデックス
+CREATE INDEX idx_user_id ON orders(user_id);
+
+-- JOINクエリで使用
+SELECT u.name, o.amount
+FROM users u
+INNER JOIN orders o ON u.id = o.user_id;
+```
+
+#### 3. ORDER BYで使用されるカラムにインデックス
+
+```sql
+-- ソートに使用されるカラムにインデックス
+CREATE INDEX idx_created_at ON users(created_at);
+
+-- ソートクエリで使用
+SELECT * FROM users ORDER BY created_at DESC;
+```
+
+#### 4. 複合インデックス
+
+**定義:**
+複数のカラムを組み合わせたインデックスです。
+
+```sql
+-- 複合インデックス
+CREATE INDEX idx_status_created_at ON users(status, created_at);
+
+-- クエリで使用（左端のカラムから使用される）
+SELECT * FROM users 
+WHERE status = 'active' 
+ORDER BY created_at DESC;
+
+-- 注意: 左端のカラムのみでは使用されない場合がある
+-- 以下のクエリではインデックスが使用されない可能性がある
+SELECT * FROM users ORDER BY created_at DESC;  -- statusがない
+```
+
+**複合インデックスの順序:**
+
+```sql
+-- よく一緒に検索されるカラムの順序を考慮
+-- カーディナリティが高いカラムを先に配置
+CREATE INDEX idx_category_status ON products(category_id, status);
+
+-- カーディナリティ: category_id > status
+-- より多くの行を絞り込めるカラムを先に配置
+```
+
+### インデックスのデメリット
+
+#### 1. ストレージの増加
+
+```sql
+-- インデックスは追加のストレージを消費する
+-- テーブルサイズの10-20%程度が一般的
+CREATE INDEX idx_email ON users(email);
+-- ストレージが増加する
+```
+
+#### 2. 更新のオーバーヘッド
+
+```sql
+-- INSERT、UPDATE、DELETE時にインデックスも更新される必要がある
+INSERT INTO users (email, name) VALUES ('new@example.com', 'New User');
+-- インデックスも更新されるため、処理時間が増加する
+```
+
+#### 3. 過剰なインデックス
+
+```sql
+-- インデックスが多すぎると、更新のオーバーヘッドが大きくなる
+CREATE INDEX idx_email ON users(email);
+CREATE INDEX idx_name ON users(name);
+CREATE INDEX idx_age ON users(age);
+CREATE INDEX idx_status ON users(status);
+-- 問題: 更新時にすべてのインデックスを更新する必要がある
+```
+
+### インデックスの確認と最適化
+
+#### インデックスの使用状況を確認
+
+```sql
+-- MySQL
+EXPLAIN SELECT * FROM users WHERE email = 'alice@example.com';
+-- keyカラムで使用されているインデックスを確認
+
+-- PostgreSQL
+EXPLAIN ANALYZE SELECT * FROM users WHERE email = 'alice@example.com';
+-- 実行計画と実際の実行時間を確認
+```
+
+#### インデックスの再構築
+
+```sql
+-- MySQL
+ALTER TABLE users DROP INDEX idx_email;
+ALTER TABLE users ADD INDEX idx_email (email);
+
+-- PostgreSQL
+REINDEX INDEX idx_email;
+```
+
+### まとめ
+
+インデックスの活用のポイント：
+
+- **インデックスの重要性**: 検索速度を大幅に向上させる
+- **インデックスの種類**: B-Tree、ハッシュ、全文検索
+- **設計のベストプラクティス**: WHERE、JOIN、ORDER BYで使用されるカラムにインデックス
+- **複合インデックス**: よく一緒に検索されるカラムの組み合わせ
+- **デメリット**: ストレージの増加、更新のオーバーヘッド
+- **最適化**: インデックスの使用状況を確認し、必要に応じて再構築
+
+適切なインデックス設計により、クエリのパフォーマンスを大幅に改善できます。
+

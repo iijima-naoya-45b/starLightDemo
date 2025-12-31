@@ -1,0 +1,285 @@
+---
+title: "VSAMファイルの詳細操作"
+label: "VSAMファイルの詳細操作"
+---
+
+## VSAMファイルの詳細操作
+
+VSAMファイルの高度な操作を詳しく解説します。
+
+### 動的アクセス（DYNAMIC ACCESS）
+
+#### 動的アクセスの特徴
+
+**特徴:**
+
+- シーケンシャルアクセスとランダムアクセスを組み合わせられる
+- 同じファイルに対して異なるアクセス方法を使用可能
+
+**実装例:**
+
+```cobol
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT CUSTOMER-FILE ASSIGN TO CUSTOMER-KSDS
+               ORGANIZATION IS INDEXED
+               ACCESS MODE IS DYNAMIC
+               RECORD KEY IS CUSTOMER-KEY
+               FILE STATUS IS WS-FILE-STATUS.
+       
+       PROCEDURE DIVISION.
+       MAIN-PROCEDURE.
+           OPEN I-O CUSTOMER-FILE
+           
+           *> ランダムアクセスで特定のレコードを読み取り
+           MOVE 'CUST001' TO CUSTOMER-KEY
+           READ CUSTOMER-FILE
+               INVALID KEY
+                   DISPLAY "Record not found"
+               NOT INVALID KEY
+                   DISPLAY "Customer: " CUSTOMER-NAME
+           END-READ
+           
+           *> シーケンシャルアクセスで次のレコードを読み取り
+           READ CUSTOMER-FILE NEXT
+               AT END SET WS-FILE-EOF TO TRUE
+               NOT AT END
+                   DISPLAY "Next Customer: " CUSTOMER-NAME
+           END-READ
+           
+           CLOSE CUSTOMER-FILE
+           STOP RUN.
+```
+
+### START文（位置決め）
+
+#### START文の使用
+
+**目的:**
+
+シーケンシャルアクセスを開始する位置を指定します。
+
+**実装例:**
+
+```cobol
+       *> キー値以上のレコードから開始
+       MOVE 'CUST005' TO CUSTOMER-KEY
+       START CUSTOMER-FILE
+           KEY IS GREATER THAN OR EQUAL TO CUSTOMER-KEY
+           INVALID KEY
+               DISPLAY "Start position not found"
+           NOT INVALID KEY
+               PERFORM UNTIL WS-FILE-EOF
+                   READ CUSTOMER-FILE NEXT
+                       AT END SET WS-FILE-EOF TO TRUE
+                       NOT AT END
+                           DISPLAY "Customer: " CUSTOMER-NAME
+                   END-READ
+               END-PERFORM
+       END-START
+       
+       *> キー値より大きいレコードから開始
+       MOVE 'CUST005' TO CUSTOMER-KEY
+       START CUSTOMER-FILE
+           KEY IS GREATER THAN CUSTOMER-KEY
+           INVALID KEY
+               DISPLAY "Start position not found"
+       END-START
+       
+       *> キー値以下のレコードから開始
+       MOVE 'CUST005' TO CUSTOMER-KEY
+       START CUSTOMER-FILE
+           KEY IS LESS THAN OR EQUAL TO CUSTOMER-KEY
+           INVALID KEY
+               DISPLAY "Start position not found"
+       END-START
+```
+
+### 複合キー（複合キー）
+
+#### 複合キーの定義
+
+**実装例:**
+
+```cobol
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT ORDER-FILE ASSIGN TO ORDER-KSDS
+               ORGANIZATION IS INDEXED
+               ACCESS MODE IS RANDOM
+               RECORD KEY IS ORDER-KEY
+               ALTERNATE RECORD KEY IS CUSTOMER-ORDER-KEY
+                   WITH DUPLICATES
+               FILE STATUS IS WS-FILE-STATUS.
+       
+       DATA DIVISION.
+       FILE SECTION.
+       FD ORDER-FILE.
+       01 ORDER-RECORD.
+           05 ORDER-KEY.
+               10 ORDER-NUMBER      PIC X(10).
+           05 CUSTOMER-ORDER-KEY.
+               10 CUSTOMER-ID       PIC X(10).
+               10 ORDER-DATE        PIC 9(8).
+           05 ORDER-AMOUNT          PIC 9(10)V99.
+```
+
+**使用例:**
+
+```cobol
+       *> 主キーでアクセス
+       MOVE 'ORD001' TO ORDER-NUMBER
+       READ ORDER-FILE
+           INVALID KEY
+               DISPLAY "Order not found"
+       END-READ
+       
+       *> 代替キーでアクセス
+       MOVE 'CUST001' TO CUSTOMER-ID
+       MOVE 20240101 TO ORDER-DATE
+       READ ORDER-FILE
+           KEY IS CUSTOMER-ORDER-KEY
+           INVALID KEY
+               DISPLAY "Order not found"
+       END-READ
+```
+
+### ファイルステータスの詳細
+
+#### ファイルステータスコード
+
+**主要なステータスコード:**
+
+```cobol
+       01 WS-FILE-STATUS       PIC X(2).
+           88 WS-FILE-OK           VALUE '00'.  *> 正常終了
+           88 WS-FILE-EOF           VALUE '10'.  *> ファイル終端
+           88 WS-FILE-DUPLICATE     VALUE '02'.  *> 重複キー
+           88 WS-FILE-NOT-FOUND     VALUE '23'.  *> レコード未找到
+           88 WS-FILE-LOCKED        VALUE '22'.  *> レコードロック
+           88 WS-FILE-ERROR         VALUE '99'.  *> エラー
+```
+
+**エラーハンドリング:**
+
+```cobol
+       READ CUSTOMER-FILE
+       EVALUATE WS-FILE-STATUS
+           WHEN '00'
+               DISPLAY "Read successful"
+           WHEN '10'
+               DISPLAY "End of file"
+           WHEN '23'
+               DISPLAY "Record not found"
+           WHEN '22'
+               DISPLAY "Record locked"
+           WHEN OTHER
+               DISPLAY "Error: " WS-FILE-STATUS
+       END-EVALUATE
+```
+
+### ロック機能
+
+#### レコードロック
+
+**実装例:**
+
+```cobol
+       *> レコードをロックして読み取り
+       MOVE 'CUST001' TO CUSTOMER-KEY
+       READ CUSTOMER-FILE
+           WITH LOCK
+           INVALID KEY
+               DISPLAY "Record not found"
+           NOT INVALID KEY
+               *> レコードがロックされている
+               ADD 100.00 TO CUSTOMER-BALANCE
+               REWRITE CUSTOMER-RECORD
+                   INVALID KEY
+                       DISPLAY "Update error"
+               END-REWRITE
+               *> ロックが解除される
+       END-READ
+```
+
+### 実践的な例
+
+#### マスターファイルの更新
+
+```cobol
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. UPDATE-MASTER.
+       
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT MASTER-FILE ASSIGN TO MASTER-KSDS
+               ORGANIZATION IS INDEXED
+               ACCESS MODE IS DYNAMIC
+               RECORD KEY IS MASTER-KEY
+               FILE STATUS IS WS-FILE-STATUS.
+           SELECT TRANSACTION-FILE ASSIGN TO TRANS-SEQ
+               ORGANIZATION IS SEQUENTIAL
+               ACCESS MODE IS SEQUENTIAL
+               FILE STATUS IS WS-FILE-STATUS.
+       
+       DATA DIVISION.
+       FILE SECTION.
+       FD MASTER-FILE.
+       01 MASTER-RECORD.
+           05 MASTER-KEY        PIC X(10).
+           05 MASTER-BALANCE    PIC 9(10)V99.
+       
+       FD TRANSACTION-FILE.
+       01 TRANSACTION-RECORD.
+           05 TRANS-KEY         PIC X(10).
+           05 TRANS-AMOUNT      PIC S9(10)V99.
+       
+       WORKING-STORAGE SECTION.
+       01 WS-FILE-STATUS       PIC X(2).
+           88 WS-FILE-OK       VALUE '00'.
+           88 WS-FILE-EOF      VALUE '10'.
+           88 WS-FILE-NOT-FOUND VALUE '23'.
+       
+       PROCEDURE DIVISION.
+       MAIN-PROCEDURE.
+           OPEN I-O MASTER-FILE
+                INPUT TRANSACTION-FILE
+           
+           PERFORM UNTIL WS-FILE-EOF
+               READ TRANSACTION-FILE
+                   AT END SET WS-FILE-EOF TO TRUE
+                   NOT AT END
+                       MOVE TRANS-KEY TO MASTER-KEY
+                       READ MASTER-FILE
+                           INVALID KEY
+                               DISPLAY "Master record not found: " TRANS-KEY
+                           NOT INVALID KEY
+                               ADD TRANS-AMOUNT TO MASTER-BALANCE
+                               REWRITE MASTER-RECORD
+                                   INVALID KEY
+                                       DISPLAY "Update error"
+                               END-REWRITE
+                       END-READ
+               END-READ
+           END-PERFORM
+           
+           CLOSE MASTER-FILE
+                 TRANSACTION-FILE
+           STOP RUN.
+```
+
+### まとめ
+
+VSAMファイルの詳細操作のポイント：
+
+- **動的アクセス**: シーケンシャルとランダムを組み合わせ
+- **START文**: シーケンシャルアクセスの開始位置を指定
+- **複合キー**: 主キーと代替キーを使用
+- **ファイルステータス**: 詳細なエラーハンドリング
+- **ロック機能**: レコードの排他制御
+
+適切なVSAMファイルの操作により、効率的で安全なデータ処理が可能になります。
+

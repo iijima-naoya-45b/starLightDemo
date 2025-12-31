@@ -1,0 +1,241 @@
+---
+title: "観測可能性の設計"
+label: "観測可能性の設計"
+---
+
+## 観測可能性の設計
+
+障害は「再現」ではなく「観測」で解決する。観測可能性を高める設計を詳しく解説します。
+
+### ログ設計
+
+各処理にトレースID（request_id）を通し、入出力境界ごとにJSON構造化ログを吐く。
+
+#### 実装例
+
+```typescript
+// ✅ 良い例: 構造化ログとトレースID
+import { v4 as uuidv4 } from 'uuid';
+import pino from 'pino';
+
+const logger = pino({
+  level: 'info',
+  formatters: {
+    level: (label) => {
+      return { level: label };
+    },
+  },
+});
+
+// ミドルウェアでトレースIDを設定
+app.use((req, res, next) => {
+  // トレースIDを生成（またはリクエストヘッダーから取得）
+  const traceId = req.headers['x-trace-id'] || uuidv4();
+  req.traceId = traceId;
+  
+  // すべてのログにトレースIDを自動的に含める
+  req.logger = logger.child({ traceId, userId: req.user?.id });
+  
+  res.setHeader('X-Trace-Id', traceId);
+  next();
+});
+
+app.post('/orders', async (req, res) => {
+  const { logger, traceId } = req;
+  
+  try {
+    // 入出力境界でログを出力
+    logger.info({
+      orderData: req.body,
+      timestamp: new Date().toISOString(),
+    }, 'Order creation started');
+    
+    const order = await createOrder(req.body, traceId);
+    
+    logger.info({
+      orderId: order.id,
+      status: order.status,
+      duration: Date.now() - req.startTime,
+    }, 'Order creation completed');
+    
+    res.json(order);
+  } catch (error) {
+    logger.error({
+      error: error.message,
+      stack: error.stack,
+    }, 'Order creation failed');
+    
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+```
+
+**ログの出力例:**
+
+```json
+{
+  "level": "info",
+  "time": 1704110400000,
+  "traceId": "abc123",
+  "userId": "user456",
+  "orderData": {
+    "amount": 10000,
+    "items": [...]
+  },
+  "msg": "Order creation started"
+}
+```
+
+**なぜ重要か:**
+
+- **トレーサビリティ**: トレースIDでリクエスト全体を追跡可能
+- **構造化ログ**: JSON形式で検索・分析が容易
+- **コンテキスト**: ユーザーIDなどのコンテキストを自動的に含める
+
+### メトリクス設計
+
+成功率・レイテンシ・リトライ回数・プール使用率を定常監視する。
+
+#### 実装例
+
+```typescript
+// ✅ 良い例: Prometheusを使用したメトリクス収集
+import { Registry, Counter, Histogram, Gauge } from 'prom-client';
+
+const register = new Registry();
+
+// カウンター: 注文作成回数
+const orderCreationCounter = new Counter({
+  name: 'orders_created_total',
+  help: 'Total number of orders created',
+  labelNames: ['status'],
+  registers: [register],
+});
+
+// ヒストグラム: 注文作成のレイテンシ
+const orderCreationDuration = new Histogram({
+  name: 'orders_creation_duration_seconds',
+  help: 'Order creation duration in seconds',
+  buckets: [0.1, 0.5, 1, 2, 5],
+  registers: [register],
+});
+
+// ゲージ: 接続プールの使用率
+const connectionPoolGauge = new Gauge({
+  name: 'db_connection_pool_active',
+  help: 'Active database connections',
+  registers: [register],
+});
+
+app.post('/orders', async (req, res) => {
+  const timer = orderCreationDuration.startTimer();
+  
+  try {
+    const order = await createOrder(req.body, req.traceId);
+    
+    // 成功時のメトリクス
+    orderCreationCounter.inc({ status: 'success' });
+    
+    res.json(order);
+  } catch (error) {
+    // 失敗時のメトリクス
+    orderCreationCounter.inc({ status: 'failure' });
+    
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    timer();
+  }
+});
+
+// メトリクスエンドポイント
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
+});
+```
+
+**監視すべきメトリクス:**
+
+- **成功率**: `orders_created_total{status="success"}` / `orders_created_total{status="failure"}`
+- **レイテンシ**: `orders_creation_duration_seconds` (p50, p95, p99)
+- **リトライ回数**: `orders_retry_total`
+- **プール使用率**: `db_connection_pool_active` / `db_connection_pool_max`
+
+### トレース設計
+
+外部API・DBアクセス単位にSpanを埋め、分散トレース可能にする。
+
+#### 実装例
+
+```typescript
+// ✅ 良い例: OpenTelemetryを使用した分散トレース
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
+import { SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { JaegerExporter } from '@opentelemetry/exporter-jaeger';
+import { trace } from '@opentelemetry/api';
+
+const tracerProvider = new NodeTracerProvider();
+tracerProvider.addSpanProcessor(
+  new SimpleSpanProcessor(new JaegerExporter())
+);
+tracerProvider.register();
+
+const tracer = trace.getTracer('order-service');
+
+app.post('/orders', async (req, res) => {
+  // 親Spanを作成
+  const span = tracer.startSpan('create-order', {
+    attributes: {
+      'order.amount': req.body.amount,
+      'trace.id': req.traceId,
+    },
+  });
+  
+  try {
+    // DB操作のSpan
+    const dbSpan = tracer.startSpan('db.save-order');
+    
+    try {
+      const order = await prisma.order.create({ data: req.body });
+      dbSpan.setAttribute('order.id', order.id);
+      return order;
+    } catch (error) {
+      dbSpan.recordException(error);
+      throw error;
+    } finally {
+      dbSpan.end();
+    }
+  } catch (error) {
+    span.recordException(error);
+    throw error;
+  } finally {
+    span.end();
+  }
+});
+```
+
+**トレースの出力例:**
+
+```
+Trace: abc123
+├─ Span: create-order (duration: 150ms)
+│  ├─ Span: db.save-order (duration: 50ms)
+│  └─ Span: payment-api.charge (duration: 100ms)
+```
+
+**なぜ重要か:**
+
+- **分散トレース**: 複数サービス間のリクエストフローを追跡可能
+- **ボトルネック特定**: どの処理が遅いかを特定可能
+- **エラー追跡**: エラーが発生した箇所を特定可能
+
+### まとめ
+
+観測可能性の設計のポイント：
+
+- **ログ**: トレースIDを通し、構造化ログを出力
+- **メトリクス**: 成功率・レイテンシ・リトライ回数・プール使用率を監視
+- **トレース**: 外部API・DBアクセス単位にSpanを埋め、分散トレース可能にする
+
+これらの設計により、障害を「再現」ではなく「観測」で解決できます。
+

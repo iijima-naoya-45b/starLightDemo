@@ -1,0 +1,122 @@
+---
+title: "安全に使えるユースケース"
+label: "安全に使えるユースケース"
+---
+
+## 安全に使えるユースケース
+
+Laravelで安全に使えるユースケースと、その理由を詳しく解説します。
+
+### 短時間で完了する処理
+
+Laravelはリクエストごとにプロセスが起動するため、短時間で完了する処理が適しています。
+
+#### 実装例
+
+```php
+// ✅ 良い例: 短時間で完了する処理
+public function createOrder(Request $request)
+{
+    // 1. バリデーション（短時間）
+    $validated = $request->validate([
+        'amount' => 'required|numeric|min:0',
+        'items' => 'required|array',
+    ]);
+    
+    // 2. 注文を作成（短時間）
+    $order = Order::create($validated);
+    
+    // 3. 非同期処理をキューに投入
+    ProcessOrder::dispatch($order->id);
+    
+    // 4. 即座にレスポンスを返す
+    return response()->json(['id' => $order->id, 'status' => 'PROCESSING']);
+}
+```
+
+**なぜ安全か:**
+
+- **プロセス寿命の短縮**: リクエスト処理が短時間で完了し、プロセスがすぐに解放される
+- **リソースの効率的な使用**: プロセスプールが効率的に使用される
+- **スケーラビリティ**: 短時間処理により、より多くのリクエストを処理可能
+
+### トランザクション内でのDB操作のみ
+
+トランザクション内でDB操作のみを行う場合、安全に使用できます。
+
+#### 実装例
+
+```php
+// ✅ 良い例: トランザクション内でDB操作のみ
+public function createOrder(Request $request)
+{
+    return DB::transaction(function () use ($request) {
+        // 1. 注文を作成
+        $order = Order::create($request->all());
+        
+        // 2. 在庫を減らす
+        foreach ($request->items as $item) {
+            Inventory::where('product_id', $item['product_id'])
+                ->decrement('stock', $item['quantity']);
+        }
+        
+        // 3. トランザクション内でDB操作のみ（外部APIは呼ばない）
+        return $order;
+    });
+}
+```
+
+**なぜ安全か:**
+
+- **トランザクションの短縮**: DB操作のみでトランザクションが短時間で完了
+- **ロールバックの容易さ**: エラー時にロールバックが容易
+- **デッドロックの回避**: トランザクション時間が短いため、デッドロックのリスクが低い
+
+### Queueによる非同期処理
+
+長時間実行される処理や外部API呼び出しは、Queueを使用して非同期処理にします。
+
+#### 実装例
+
+```php
+// ✅ 良い例: Queueによる非同期処理
+public function createOrder(Request $request)
+{
+    $order = Order::create($request->all());
+    
+    // 非同期処理をキューに投入（プロセスを占有しない）
+    ProcessPayment::dispatch($order->id);
+    SendNotification::dispatch($order->id);
+    
+    return response()->json(['id' => $order->id]);
+}
+
+// Jobクラス
+class ProcessPayment implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    
+    public function handle()
+    {
+        // 長時間実行される処理や外部API呼び出し
+        $paymentService->charge($this->orderId);
+    }
+}
+```
+
+**なぜ安全か:**
+
+- **プロセスの解放**: メインプロセスがすぐに解放され、次のリクエストを処理可能
+- **エラーハンドリング**: Queueのエラーハンドリング機能を使用
+- **再実行**: Queueのリトライ機能により、失敗時の再実行が可能
+
+### まとめ
+
+安全に使えるユースケースのポイント：
+
+- **短時間で完了する処理**: プロセス寿命の短縮、リソースの効率的な使用
+- **トランザクション内でのDB操作のみ**: トランザクションの短縮、ロールバックの容易さ
+- **Queueによる非同期処理**: プロセスの解放、エラーハンドリング、再実行
+
+これらのユースケースを守ることで、安全で信頼性の高いLaravelアプリケーションを構築できます。
+

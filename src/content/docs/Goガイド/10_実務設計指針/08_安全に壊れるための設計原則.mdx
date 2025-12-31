@@ -1,0 +1,224 @@
+---
+title: "安全に壊れるための設計原則"
+label: "安全に壊れるための設計原則"
+---
+
+## 安全に壊れるための設計原則
+
+「正常に動く」よりも「異常時に安全に壊れる」ことを優先する設計原則を詳しく解説します。
+
+### 境界防御 (Boundary Defense)
+
+外部(API・DB・ユーザ入力)からのデータは常に汚染されていると仮定し、型・形式・範囲を検査してからロジックに渡す。
+
+#### 実装例
+
+```go
+// ❌ 悪い例: 無防備な入力受付
+func createUser(w http.ResponseWriter, r *http.Request) {
+    var data map[string]interface{}
+    json.NewDecoder(r.Body).Decode(&data)
+    
+    // 問題: 型チェックなし、バリデーションなし
+    name := data["name"].(string)
+    age := data["age"].(float64)
+    
+    user := createUserInDB(name, int(age))
+    json.NewEncoder(w).Encode(user)
+}
+
+// ✅ 良い例: 境界防御の実装
+type CreateUserRequest struct {
+    Name  string `json:"name" validate:"required,min=1,max=100"`
+    Age   int    `json:"age" validate:"required,min=0,max=150"`
+    Email string `json:"email" validate:"required,email"`
+}
+
+func createUser(w http.ResponseWriter, r *http.Request) {
+    var req CreateUserRequest
+    
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
+    
+    // バリデーション: go-playground/validatorで型・形式・範囲を検査
+    validate := validator.New()
+    if err := validate.Struct(req); err != nil {
+        http.Error(w, err.Error(), http.StatusBadRequest)
+        return
+    }
+    
+    user := createUserInDB(req.Name, req.Age, req.Email)
+    json.NewEncoder(w).Encode(user)
+}
+```
+
+**なぜ重要か:**
+
+- **型安全性**: Goの型システムでコンパイル時に型チェック
+- **バリデーション**: 実行時に形式・範囲を検査
+- **セキュリティ**: SQLインジェクション、XSSなどの攻撃を防止
+
+### 副作用の局所化
+
+DB更新・通知・外部呼出などの副作用をロジックの末尾に集約し、それ以前を状態を持たない純粋処理として保つ。
+
+#### 実装例
+
+```go
+// ❌ 悪い例: 副作用が散在
+func createOrder(orderData OrderData) (*Order, error) {
+    // 副作用1: DB更新
+    order, err := orderRepo.Save(orderData)
+    if err != nil {
+        return nil, err
+    }
+    
+    // ビジネスロジック（副作用が混在）
+    if order.Amount > 10000 {
+        // 副作用2: 外部API呼び出し
+        notificationService.SendEmail(order.UserID)
+    }
+    
+    // 副作用3: 別のDB更新
+    auditLogRepo.Save("ORDER_CREATED", order.ID)
+    
+    return order, nil
+}
+
+// ✅ 良い例: 副作用の局所化
+func createOrder(orderData OrderData) (*Order, error) {
+    // 1. 純粋処理: ビジネスロジック（副作用なし）
+    order := validateAndCreateOrder(orderData)
+    
+    // 2. 副作用の集約: すべての副作用を末尾に
+    if err := persistOrder(order); err != nil {
+        return nil, err
+    }
+    
+    if err := notifyIfNeeded(order); err != nil {
+        return nil, err
+    }
+    
+    if err := auditOrderCreation(order); err != nil {
+        return nil, err
+    }
+    
+    return order, nil
+}
+
+// 純粋関数: 副作用なし
+func validateAndCreateOrder(orderData OrderData) *Order {
+    // バリデーションとオブジェクト作成のみ
+    if orderData.Amount <= 0 {
+        panic("Invalid amount")
+    }
+    return &Order{
+        ID:     generateID(),
+        Amount: orderData.Amount,
+    }
+}
+
+// 副作用: DB更新
+func persistOrder(order *Order) error {
+    return orderRepo.Save(order)
+}
+
+// 副作用: 通知
+func notifyIfNeeded(order *Order) error {
+    if order.Amount > 10000 {
+        return notificationService.SendEmail(order.UserID)
+    }
+    return nil
+}
+
+// 副作用: 監査ログ
+func auditOrderCreation(order *Order) error {
+    return auditLogRepo.Save("ORDER_CREATED", order.ID)
+}
+```
+
+**なぜ重要か:**
+
+- **テスト容易性**: 純粋関数は単体テストが容易
+- **可読性**: 副作用が明確に分離される
+- **デバッグ容易性**: 副作用の発生箇所が明確
+
+### 依存の隔離
+
+ビジネスロジックが特定ライブラリやORMの仕様に依存しないよう、インターフェース層で抽象化する。
+
+#### 実装例
+
+```go
+// ❌ 悪い例: ORMに直接依存
+type OrderService struct {
+    db *sql.DB
+}
+
+func (s *OrderService) FindOrder(id int64) (*Order, error) {
+    // GORMの仕様に依存
+    var order Order
+    err := s.db.Where("id = ?", id).First(&order).Error
+    return &order, err
+}
+
+// ✅ 良い例: インターフェースで抽象化
+// ドメイン層のインターフェース
+type OrderRepository interface {
+    FindByID(id int64) (*Order, error)
+    Save(order *Order) error
+}
+
+// インフラ層の実装
+type GormOrderRepository struct {
+    db *gorm.DB
+}
+
+func (r *GormOrderRepository) FindByID(id int64) (*Order, error) {
+    var order Order
+    err := r.db.Where("id = ?", id).First(&order).Error
+    if err != nil {
+        return nil, err
+    }
+    return &order, nil
+}
+
+func (r *GormOrderRepository) Save(order *Order) error {
+    return r.db.Save(order).Error
+}
+
+// サービス層: ドメイン層のインターフェースに依存
+type OrderService struct {
+    repo OrderRepository
+}
+
+func (s *OrderService) FindOrder(id int64) (*Order, error) {
+    order, err := s.repo.FindByID(id)
+    if err != nil {
+        return nil, err
+    }
+    if order == nil {
+        return nil, fmt.Errorf("order not found: %d", id)
+    }
+    return order, nil
+}
+```
+
+**なぜ重要か:**
+
+- **交換容易性**: ORMを変更してもビジネスロジックは変更不要
+- **テスト容易性**: モックで簡単にテスト可能
+- **保守性**: フレームワークの変更に強い
+
+### まとめ
+
+安全に壊れるための設計原則のポイント：
+
+- **境界防御**: 外部データは常に汚染されていると仮定し、型・形式・範囲を検査
+- **副作用の局所化**: 副作用をロジックの末尾に集約し、純粋処理と分離
+- **依存の隔離**: ビジネスロジックが特定ライブラリに依存しないよう抽象化
+
+これらの原則により、「異常時に安全に壊れる」堅牢なシステムを構築できます。
+

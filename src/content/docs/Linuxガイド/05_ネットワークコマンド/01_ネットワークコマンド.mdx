@@ -1,0 +1,168 @@
+---
+title: "ネットワークコマンド"
+label: "ネットワークコマンド"
+---
+
+## ネットワークコマンド
+
+Linuxでのネットワーク操作に使用するコマンドを詳しく解説します。
+
+### ping（接続確認）
+
+#### 基本的な使い方
+
+```bash
+# ホストへの接続を確認
+ping google.com
+
+# 指定回数だけ実行（-c: count）
+ping -c 5 google.com
+
+# 間隔を指定（-i: interval）
+ping -i 2 google.com
+
+# タイムアウトを指定（-W: timeout）
+ping -W 5 google.com
+```
+
+#### 実践例
+
+```bash
+# 接続を確認
+ping -c 3 8.8.8.8
+
+# ネットワークの問題を診断
+ping -c 10 google.com | grep "packet loss"
+```
+
+### netstat / ss（ネットワーク接続確認）
+
+#### netstatの使い方
+
+```bash
+# すべての接続を表示
+netstat -an
+
+# リスニングポートを表示（-l: listening）
+netstat -ln
+
+# プロセス情報も表示（-p: program）
+netstat -lnp
+
+# TCP接続のみ表示（-t: tcp）
+netstat -ant
+
+# UDP接続のみ表示（-u: udp）
+netstat -anu
+```
+
+#### ssの使い方（netstatの代替）
+
+```bash
+# すべての接続を表示
+ss -an
+
+# リスニングポートを表示
+ss -ln
+
+# プロセス情報も表示
+ss -lnp
+
+# TCP接続のみ表示
+ss -ant
+
+# UDP接続のみ表示
+ss -anu
+```
+
+#### 実践例
+
+```bash
+# 特定のポートが使用されているか確認
+netstat -ln | grep 8080
+ss -ln | grep 8080
+
+# 接続しているプロセスを確認
+netstat -lnp | grep nginx
+```
+
+### curl / wget（HTTPリクエスト）
+
+#### curlの使い方
+
+```bash
+# GETリクエスト
+curl https://api.example.com/users
+
+# POSTリクエスト
+curl -X POST https://api.example.com/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Alice","email":"alice@example.com"}'
+
+# ヘッダーを表示（-i: include headers）
+curl -i https://api.example.com/users
+
+# レスポンスヘッダーのみ表示（-I: head）
+curl -I https://api.example.com/users
+
+# ファイルをダウンロード（-O: output）
+curl -O https://example.com/file.txt
+
+# 進捗を表示（-#: progress bar）
+curl -# -O https://example.com/file.txt
+```
+
+#### wgetの使い方
+
+```bash
+# ファイルをダウンロード
+wget https://example.com/file.txt
+
+# 再帰的にダウンロード（-r: recursive）
+wget -r https://example.com/
+
+# 進捗を表示（-p: progress）
+wget -p https://example.com/file.txt
+```
+
+### ifconfig / ip（ネットワーク設定）
+
+#### ifconfigの使い方
+
+```bash
+# ネットワークインターフェースの情報を表示
+ifconfig
+
+# 特定のインターフェースの情報
+ifconfig eth0
+
+# IPアドレスを設定
+sudo ifconfig eth0 192.168.1.100 netmask 255.255.255.0
+```
+
+#### ipの使い方（ifconfigの代替）
+
+```bash
+# ネットワークインターフェースの情報を表示
+ip addr show
+# または
+ip a
+
+# IPアドレスを設定
+sudo ip addr add 192.168.1.100/24 dev eth0
+
+# ルーティングテーブルを表示
+ip route show
+```
+
+### まとめ
+
+ネットワークコマンドのポイント：
+
+- **ping**: 接続確認、ネットワーク診断
+- **netstat/ss**: ネットワーク接続の確認
+- **curl/wget**: HTTPリクエスト、ファイルダウンロード
+- **ifconfig/ip**: ネットワーク設定、インターフェース管理
+
+適切にネットワークコマンドを使用することで、効率的にネットワーク操作ができます。
+

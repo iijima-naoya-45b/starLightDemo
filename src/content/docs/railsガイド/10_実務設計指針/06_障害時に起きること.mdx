@@ -1,0 +1,75 @@
+---
+title: "障害時に起きること"
+label: "障害時に起きること"
+---
+
+## 障害時に起きること
+
+Railsアプリケーションで障害が発生した際のシナリオを詳しく解説します。
+
+### シナリオ1: after_commit内でのエラー
+
+#### 障害のシナリオ
+
+```
+時刻: 2024-01-01 10:00:00
+状況: 注文作成処理中
+
+10:00:00.000 - トランザクション開始
+10:00:00.100 - データベースに注文を保存
+10:00:00.200 - トランザクションコミット
+10:00:00.300 - after_commitコールバック実行開始
+10:00:00.400 - 外部API呼び出し（エラー発生）
+10:00:00.500 - エラーが処理されない（トランザクションは既にコミット済み）
+10:00:00.600 - 注文は存在するが、決済は完了していない（データ不整合）
+```
+
+**実際のコード:**
+
+```ruby
+# ❌ 問題のあるコード
+class Order < ApplicationRecord
+  after_commit :charge_payment, on: :create
+  
+  def charge_payment
+    # エラーが発生しても、トランザクションは既にコミット済み
+    PaymentService.new.charge_payment(id, amount)
+  end
+end
+```
+
+**障害の影響:**
+
+1. **データの不整合**: 注文は存在するが、決済は完了していない
+2. **エラーの隠蔽**: エラーが発生しても処理されない
+3. **再実行の困難**: 手動で再実行する必要がある
+
+**解決策:**
+
+```ruby
+# ✅ 解決策: Active Jobを使用
+class Order < ApplicationRecord
+  after_commit :enqueue_payment_job, on: :create
+  
+  def enqueue_payment_job
+    PaymentJob.perform_later(id, amount)
+  end
+end
+
+class PaymentJob < ApplicationJob
+  retry_on StandardError, wait: :exponentially_longer, attempts: 3
+  
+  def perform(order_id, amount)
+    PaymentService.new.charge_payment(order_id, amount)
+  end
+end
+```
+
+### まとめ
+
+障害時に起きることのポイント：
+
+- **after_commit内でのエラー**: トランザクションは既にコミット済み、Active Jobを使用
+
+これらの障害シナリオを理解することで、より堅牢なRailsアプリケーションを構築できます。
+

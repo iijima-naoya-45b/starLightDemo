@@ -1,0 +1,275 @@
+---
+title: "VSAMファイルとは"
+label: "VSAMファイルとは"
+---
+
+## VSAMファイルとは
+
+VSAM（Virtual Storage Access Method）は、IBMメインフレームで使用されるファイルアクセス方法です。
+
+### なぜVSAMが必要なのか
+
+#### 従来のファイルアクセスの問題点
+
+**問題:**
+
+従来のシーケンシャルファイルアクセスでは、以下の問題がありました：
+
+- ランダムアクセスが困難
+- インデックスによる高速検索ができない
+- 大量のデータ処理に非効率
+
+#### VSAMによる解決
+
+**メリット:**
+
+- ランダムアクセスが可能
+- インデックスによる高速検索
+- 効率的なデータ管理
+
+### VSAMファイルの種類
+
+#### 1. ESDS（Entry Sequenced Data Set）
+
+**特徴:**
+
+- レコードが追加順に格納される
+- シーケンシャルアクセスのみ
+- レコードの削除ができない
+
+**使用例:**
+
+- ログファイル
+- 履歴データ
+- 監査トレイル
+
+#### 2. KSDS（Key Sequenced Data Set）
+
+**特徴:**
+
+- キーによるインデックスアクセス
+- ランダムアクセスが可能
+- レコードの追加・更新・削除が可能
+
+**使用例:**
+
+- マスターファイル
+- トランザクションファイル
+- 参照データ
+
+#### 3. RRDS（Relative Record Data Set）
+
+**特徴:**
+
+- 相対レコード番号によるアクセス
+- 固定長レコード
+- 高速なランダムアクセス
+
+**使用例:**
+
+- 配列のようなデータ
+- 固定長レコードの大量データ
+
+### VSAMファイルの定義
+
+#### JCLでの定義
+
+```jcl
+//VSAMFILE  DD  DSN=USER01.CUSTOMER.KSDS,
+//             DISP=SHR
+```
+
+#### COBOLでの定義
+
+```cobol
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT CUSTOMER-FILE ASSIGN TO CUSTOMER-KSDS
+               ORGANIZATION IS INDEXED
+               ACCESS MODE IS RANDOM
+               RECORD KEY IS CUSTOMER-KEY
+               FILE STATUS IS WS-FILE-STATUS.
+       
+       DATA DIVISION.
+       FILE SECTION.
+       FD CUSTOMER-FILE.
+       01 CUSTOMER-RECORD.
+           05 CUSTOMER-KEY        PIC X(10).
+           05 CUSTOMER-NAME       PIC X(30).
+           05 CUSTOMER-BALANCE    PIC 9(10)V99.
+```
+
+### VSAMファイルの操作
+
+#### 読み取り（READ）
+
+**シーケンシャル読み取り:**
+
+```cobol
+       READ CUSTOMER-FILE
+           AT END SET WS-FILE-EOF TO TRUE
+           NOT AT END
+               DISPLAY "Customer: " CUSTOMER-NAME
+       END-READ
+```
+
+**ランダム読み取り:**
+
+```cobol
+       MOVE 'CUST001' TO CUSTOMER-KEY
+       READ CUSTOMER-FILE
+           INVALID KEY
+               DISPLAY "Customer not found"
+           NOT INVALID KEY
+               DISPLAY "Customer: " CUSTOMER-NAME
+       END-READ
+```
+
+#### 書き込み（WRITE）
+
+```cobol
+       MOVE 'CUST001' TO CUSTOMER-KEY
+       MOVE 'John Doe' TO CUSTOMER-NAME
+       MOVE 1000.00 TO CUSTOMER-BALANCE
+       WRITE CUSTOMER-RECORD
+           INVALID KEY
+               DISPLAY "Write error"
+       END-WRITE
+```
+
+#### 更新（REWRITE）
+
+```cobol
+       MOVE 'CUST001' TO CUSTOMER-KEY
+       READ CUSTOMER-FILE
+           NOT INVALID KEY
+               ADD 100.00 TO CUSTOMER-BALANCE
+               REWRITE CUSTOMER-RECORD
+                   INVALID KEY
+                       DISPLAY "Update error"
+               END-REWRITE
+       END-READ
+```
+
+#### 削除（DELETE）
+
+```cobol
+       MOVE 'CUST001' TO CUSTOMER-KEY
+       DELETE CUSTOMER-FILE
+           INVALID KEY
+               DISPLAY "Delete error"
+       END-DELETE
+```
+
+### ファイルステータス
+
+**ファイルステータスの確認:**
+
+```cobol
+       01 WS-FILE-STATUS       PIC X(2).
+           88 WS-FILE-OK       VALUE '00'.
+           88 WS-FILE-EOF      VALUE '10'.
+           88 WS-FILE-DUPLICATE VALUE '02'.
+           88 WS-FILE-NOT-FOUND VALUE '23'.
+           88 WS-FILE-ERROR    VALUE '99'.
+       
+       READ CUSTOMER-FILE
+       IF WS-FILE-OK
+           DISPLAY "Read successful"
+       ELSE IF WS-FILE-NOT-FOUND
+           DISPLAY "Record not found"
+       ELSE
+           DISPLAY "Error: " WS-FILE-STATUS
+       END-IF
+```
+
+### 実践的な例
+
+#### 完全なVSAM操作プログラム
+
+```cobol
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. VSAM-OPERATIONS.
+       
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT CUSTOMER-FILE ASSIGN TO CUSTOMER-KSDS
+               ORGANIZATION IS INDEXED
+               ACCESS MODE IS RANDOM
+               RECORD KEY IS CUSTOMER-KEY
+               FILE STATUS IS WS-FILE-STATUS.
+       
+       DATA DIVISION.
+       FILE SECTION.
+       FD CUSTOMER-FILE.
+       01 CUSTOMER-RECORD.
+           05 CUSTOMER-KEY        PIC X(10).
+           05 CUSTOMER-NAME       PIC X(30).
+           05 CUSTOMER-BALANCE    PIC 9(10)V99.
+       
+       WORKING-STORAGE SECTION.
+       01 WS-FILE-STATUS       PIC X(2).
+           88 WS-FILE-OK       VALUE '00'.
+           88 WS-FILE-EOF      VALUE '10'.
+           88 WS-FILE-NOT-FOUND VALUE '23'.
+           88 WS-FILE-ERROR    VALUE '99'.
+       
+       PROCEDURE DIVISION.
+       MAIN-PROCEDURE.
+           OPEN I-O CUSTOMER-FILE
+           
+           *> レコードの追加
+           MOVE 'CUST001' TO CUSTOMER-KEY
+           MOVE 'John Doe' TO CUSTOMER-NAME
+           MOVE 1000.00 TO CUSTOMER-BALANCE
+           WRITE CUSTOMER-RECORD
+               INVALID KEY
+                   DISPLAY "Write error: " WS-FILE-STATUS
+           END-WRITE
+           
+           *> レコードの読み取り
+           MOVE 'CUST001' TO CUSTOMER-KEY
+           READ CUSTOMER-FILE
+               INVALID KEY
+                   DISPLAY "Record not found"
+               NOT INVALID KEY
+                   DISPLAY "Customer: " CUSTOMER-NAME
+                   DISPLAY "Balance: " CUSTOMER-BALANCE
+           END-READ
+           
+           *> レコードの更新
+           MOVE 'CUST001' TO CUSTOMER-KEY
+           READ CUSTOMER-FILE
+               NOT INVALID KEY
+                   ADD 100.00 TO CUSTOMER-BALANCE
+                   REWRITE CUSTOMER-RECORD
+                       INVALID KEY
+                           DISPLAY "Update error"
+                   END-REWRITE
+           END-READ
+           
+           *> レコードの削除
+           MOVE 'CUST001' TO CUSTOMER-KEY
+           DELETE CUSTOMER-FILE
+               INVALID KEY
+                   DISPLAY "Delete error"
+           END-DELETE
+           
+           CLOSE CUSTOMER-FILE
+           STOP RUN.
+```
+
+### まとめ
+
+VSAMファイルのポイント：
+
+- **ESDS**: シーケンシャルアクセスのみ、履歴データに適している
+- **KSDS**: キーによるインデックスアクセス、マスターファイルに適している
+- **RRDS**: 相対レコード番号によるアクセス、固定長レコードに適している
+- **操作**: READ、WRITE、REWRITE、DELETE
+- **ファイルステータス**: エラーハンドリングに重要
+
+適切なVSAMファイルの使用により、効率的なデータ管理が可能になります。
+

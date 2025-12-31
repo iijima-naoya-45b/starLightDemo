@@ -1,0 +1,328 @@
+---
+title: "正規化と非正規化"
+label: "正規化と非正規化"
+---
+
+## 正規化と非正規化
+
+正規化は、データベース設計において重要な概念です。適切な正規化により、データの整合性を保ち、冗長性を排除できます。
+
+### なぜ正規化が重要なのか
+
+#### 正規化されていないテーブルの問題
+
+**問題のあるテーブル設計:**
+
+```sql
+-- 正規化されていないテーブル
+CREATE TABLE orders (
+  id INT PRIMARY KEY,
+  customer_name VARCHAR(255),
+  customer_email VARCHAR(255),
+  customer_address VARCHAR(255),
+  product_name VARCHAR(255),
+  product_price DECIMAL(10,2),
+  quantity INT,
+  order_date DATE
+);
+
+-- 問題点:
+-- - 顧客情報が重複する（データの冗長性）
+-- - 顧客情報の更新が困難（複数箇所を更新する必要がある）
+-- - データの不整合が発生しやすい
+-- - ストレージの無駄
+```
+
+**発生する問題:**
+
+```sql
+-- 顧客のメールアドレスを変更する場合
+-- すべての注文レコードを更新する必要がある
+UPDATE orders 
+SET customer_email = 'new@example.com'
+WHERE customer_name = 'Alice';
+
+-- 問題: 一部のレコードが更新されない可能性がある
+-- 問題: パフォーマンスが低下する
+```
+
+#### 正規化による解決
+
+**正規化されたテーブル設計:**
+
+```sql
+-- 顧客テーブル
+CREATE TABLE customers (
+  id INT PRIMARY KEY,
+  name VARCHAR(255),
+  email VARCHAR(255),
+  address VARCHAR(255)
+);
+
+-- 商品テーブル
+CREATE TABLE products (
+  id INT PRIMARY KEY,
+  name VARCHAR(255),
+  price DECIMAL(10,2)
+);
+
+-- 注文テーブル
+CREATE TABLE orders (
+  id INT PRIMARY KEY,
+  customer_id INT,
+  order_date DATE,
+  FOREIGN KEY (customer_id) REFERENCES customers(id)
+);
+
+-- 注文明細テーブル
+CREATE TABLE order_items (
+  id INT PRIMARY KEY,
+  order_id INT,
+  product_id INT,
+  quantity INT,
+  FOREIGN KEY (order_id) REFERENCES orders(id),
+  FOREIGN KEY (product_id) REFERENCES products(id)
+);
+```
+
+**メリット:**
+- データの冗長性が排除される
+- データの整合性が保証される
+- 更新が容易になる
+- ストレージが効率的に使用される
+
+### 正規化の段階
+
+#### 第1正規形（1NF）
+
+**定義:**
+各セルに単一の値のみが含まれ、繰り返しグループがない状態です。
+
+**正規化前:**
+
+```sql
+CREATE TABLE orders (
+  id INT PRIMARY KEY,
+  customer_name VARCHAR(255),
+  products VARCHAR(255)  -- 問題: 複数の商品がカンマ区切りで格納
+);
+
+-- データ例:
+-- id=1, customer_name='Alice', products='Laptop,Mouse,Keyboard'
+```
+
+**正規化後:**
+
+```sql
+CREATE TABLE orders (
+  id INT PRIMARY KEY,
+  customer_name VARCHAR(255)
+);
+
+CREATE TABLE order_items (
+  id INT PRIMARY KEY,
+  order_id INT,
+  product_name VARCHAR(255),
+  FOREIGN KEY (order_id) REFERENCES orders(id)
+);
+
+-- データ例:
+-- orders: id=1, customer_name='Alice'
+-- order_items: (1, 1, 'Laptop'), (2, 1, 'Mouse'), (3, 1, 'Keyboard')
+```
+
+#### 第2正規形（2NF）
+
+**定義:**
+1NFを満たし、部分関数従属がない状態です。
+
+**正規化前:**
+
+```sql
+CREATE TABLE order_items (
+  order_id INT,
+  product_id INT,
+  product_name VARCHAR(255),  -- 問題: product_idに従属
+  quantity INT,
+  price DECIMAL(10,2),
+  PRIMARY KEY (order_id, product_id)
+);
+
+-- 問題: product_nameはproduct_idに従属しているが、主キーの一部ではない
+```
+
+**正規化後:**
+
+```sql
+CREATE TABLE products (
+  id INT PRIMARY KEY,
+  name VARCHAR(255),
+  price DECIMAL(10,2)
+);
+
+CREATE TABLE order_items (
+  order_id INT,
+  product_id INT,
+  quantity INT,
+  FOREIGN KEY (product_id) REFERENCES products(id),
+  PRIMARY KEY (order_id, product_id)
+);
+```
+
+#### 第3正規形（3NF）
+
+**定義:**
+2NFを満たし、推移的関数従属がない状態です。
+
+**正規化前:**
+
+```sql
+CREATE TABLE orders (
+  id INT PRIMARY KEY,
+  customer_id INT,
+  customer_name VARCHAR(255),  -- 問題: customer_idに従属
+  customer_email VARCHAR(255),  -- 問題: customer_idに従属
+  order_date DATE
+);
+
+-- 問題: customer_nameとcustomer_emailはcustomer_idに従属している
+```
+
+**正規化後:**
+
+```sql
+CREATE TABLE customers (
+  id INT PRIMARY KEY,
+  name VARCHAR(255),
+  email VARCHAR(255)
+);
+
+CREATE TABLE orders (
+  id INT PRIMARY KEY,
+  customer_id INT,
+  order_date DATE,
+  FOREIGN KEY (customer_id) REFERENCES customers(id)
+);
+```
+
+#### ボイス・コッド正規形（BCNF）
+
+**定義:**
+3NFを満たし、すべての決定項が候補キーである状態です。
+
+**正規化前:**
+
+```sql
+CREATE TABLE enrollments (
+  student_id INT,
+  course_id INT,
+  instructor_id INT,
+  PRIMARY KEY (student_id, course_id)
+);
+
+-- 問題: instructor_idはcourse_idに従属しているが、候補キーではない
+-- 仮定: 1つのコースには1人の講師が割り当てられる
+```
+
+**正規化後:**
+
+```sql
+CREATE TABLE courses (
+  id INT PRIMARY KEY,
+  instructor_id INT,
+  FOREIGN KEY (instructor_id) REFERENCES instructors(id)
+);
+
+CREATE TABLE enrollments (
+  student_id INT,
+  course_id INT,
+  PRIMARY KEY (student_id, course_id),
+  FOREIGN KEY (course_id) REFERENCES courses(id)
+);
+```
+
+### 非正規化（Denormalization）
+
+#### なぜ非正規化が必要なのか
+
+**正規化のデメリット:**
+
+```sql
+-- 正規化されたテーブル
+-- ユーザー情報を取得するには複数のJOINが必要
+SELECT 
+  u.name,
+  u.email,
+  o.id AS order_id,
+  o.amount,
+  p.name AS product_name
+FROM users u
+INNER JOIN orders o ON u.id = o.user_id
+INNER JOIN order_items oi ON o.id = oi.order_id
+INNER JOIN products p ON oi.product_id = p.id;
+
+-- 問題: 複数のJOINによりパフォーマンスが低下する可能性がある
+```
+
+#### 非正規化の実践例
+
+**読み取り専用の非正規化:**
+
+```sql
+-- レポート用の非正規化テーブル
+CREATE TABLE order_summary (
+  order_id INT PRIMARY KEY,
+  customer_name VARCHAR(255),
+  customer_email VARCHAR(255),
+  total_amount DECIMAL(10,2),
+  order_date DATE,
+  product_names TEXT  -- 商品名をカンマ区切りで格納
+);
+
+-- メリット:
+-- - クエリが高速になる
+-- - JOINが不要になる
+
+-- デメリット:
+-- - データの整合性を保つためにETLプロセスが必要
+-- - ストレージが増加する
+```
+
+#### 非正規化の判断基準
+
+**非正規化を検討すべき場合:**
+
+1. **読み取りパフォーマンスが重要**
+   - レポートやダッシュボード
+   - 分析クエリ
+
+2. **JOINのコストが高い**
+   - 大量のデータを結合する場合
+   - 頻繁に実行されるクエリ
+
+3. **データの更新頻度が低い**
+   - 読み取り専用のデータ
+   - 履歴データ
+
+**正規化を維持すべき場合:**
+
+1. **データの整合性が重要**
+   - トランザクション処理
+   - マスターデータ
+
+2. **更新頻度が高い**
+   - リアルタイムデータ
+   - 頻繁に変更されるデータ
+
+### まとめ
+
+正規化と非正規化のポイント：
+
+- **正規化**: データの冗長性を排除し、整合性を保証
+- **正規化の段階**: 1NF、2NF、3NF、BCNF
+- **非正規化**: パフォーマンス向上のために冗長性を許容
+- **使い分け**: データの整合性とパフォーマンスのバランスを考慮
+- **実践**: 読み取り専用データは非正規化、トランザクションデータは正規化
+
+適切な正規化と非正規化により、効率的なデータベース設計ができます。
+

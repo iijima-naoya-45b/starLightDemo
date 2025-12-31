@@ -1,0 +1,77 @@
+---
+title: "障害時に起きること"
+label: "障害時に起きること"
+---
+
+## 障害時に起きること
+
+Goアプリケーションで障害が発生した際のシナリオを詳しく解説します。
+
+### シナリオ1: Goroutineリークによるメモリ枯渇
+
+#### 障害のシナリオ
+
+```
+時刻: 2024-01-01 10:00:00
+状況: 長時間実行されるアプリケーション
+
+10:00:00.000 - アプリケーション起動（Goroutine数: 10）
+10:00:01.000 - リクエスト1受信（Goroutine1を開始、Goroutine数: 11）
+10:00:02.000 - リクエスト2受信（Goroutine2を開始、Goroutine数: 12）
+...
+10:30:00.000 - リクエスト1000受信（Goroutine1000を開始、Goroutine数: 1010）
+10:30:01.000 - メモリ使用量: 2GB
+10:30:02.000 - OutOfMemoryError発生
+10:30:03.000 - アプリケーションがクラッシュ
+```
+
+**実際のコード:**
+
+```go
+// ❌ 問題のあるコード
+func processOrder(orderID int64) {
+    // Goroutineが終了しない
+    go func() {
+        for {
+            processOrderData(orderID)
+            time.Sleep(1 * time.Second)
+        }
+    }()
+}
+```
+
+**障害の影響:**
+
+1. **Goroutineの蓄積**: Goroutineが終了せず、メモリが枯渇する
+2. **リソースの浪費**: 終了しないGoroutineがリソースを占有する
+3. **パフォーマンスの低下**: Goroutineが増加すると、パフォーマンスが低下する
+
+**解決策:**
+
+```go
+// ✅ 解決策: context.Contextを使用
+func processOrder(ctx context.Context, orderID int64) {
+    go func() {
+        ticker := time.NewTicker(1 * time.Second)
+        defer ticker.Stop()
+        
+        for {
+            select {
+            case <-ctx.Done():
+                return // Goroutineを終了
+            case <-ticker.C:
+                processOrderData(orderID)
+            }
+        }
+    }()
+}
+```
+
+### まとめ
+
+障害時に起きることのポイント：
+
+- **Goroutineリークによるメモリ枯渇**: Goroutineが終了せず、メモリが枯渇する、context.Contextを使用
+
+これらの障害シナリオを理解することで、より堅牢なGoアプリケーションを構築できます。
+

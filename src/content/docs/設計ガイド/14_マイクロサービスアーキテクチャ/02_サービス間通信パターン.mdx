@@ -1,0 +1,140 @@
+---
+title: "サービス間通信パターン"
+label: "サービス間通信パターン"
+---
+
+## サービス間通信パターン
+
+マイクロサービス間の通信パターンを詳しく解説します。
+
+### 同期通信 vs 非同期通信
+
+#### 同期通信
+
+**実装例:**
+
+```typescript
+// 同期通信: HTTP/REST
+class OrderService {
+  async createOrder(orderData: OrderData): Promise<Order> {
+    const order = await this.orderRepository.save(orderData);
+    
+    // 同期で決済サービスを呼び出し
+    const paymentResult = await fetch('http://payment-service/api/charge', {
+      method: 'POST',
+      body: JSON.stringify({ orderId: order.id, amount: orderData.amount }),
+    });
+    
+    if (!paymentResult.ok) {
+      throw new Error('Payment failed');
+    }
+    
+    return order;
+  }
+}
+```
+
+**メリット:**
+
+- シンプル
+- 即座に結果が得られる
+- エラーハンドリングが容易
+
+**デメリット:**
+
+- サービス間の緊密な結合
+- 障害の伝播
+- パフォーマンスの低下
+
+#### 非同期通信
+
+**実装例:**
+
+```typescript
+// 非同期通信: イベント駆動
+class OrderService {
+  async createOrder(orderData: OrderData): Promise<Order> {
+    const order = await this.orderRepository.save(orderData);
+    
+    // イベントを発行（非同期）
+    await this.eventBus.publish('order.created', {
+      orderId: order.id,
+      userId: orderData.userId,
+      items: orderData.items,
+      amount: orderData.amount,
+    });
+    
+    return order;
+  }
+}
+
+// Payment Service
+class PaymentService {
+  async handleOrderCreated(event: OrderCreatedEvent): Promise<void> {
+    await this.chargePayment(event.orderId, event.amount);
+    await this.eventBus.publish('payment.completed', {
+      orderId: event.orderId,
+    });
+  }
+}
+```
+
+**メリット:**
+
+- サービス間の疎結合
+- 障害の分離
+- パフォーマンスの向上
+
+**デメリット:**
+
+- 複雑性の増加
+- 最終的整合性
+- デバッグの困難
+
+### 通信パターン
+
+#### パターン1: API Gateway
+
+**実装例:**
+
+```typescript
+// API Gateway
+class APIGateway {
+  async routeRequest(path: string, method: string, body: any): Promise<any> {
+    if (path.startsWith('/api/orders')) {
+      return await this.orderService.handleRequest(method, body);
+    } else if (path.startsWith('/api/payments')) {
+      return await this.paymentService.handleRequest(method, body);
+    } else if (path.startsWith('/api/inventory')) {
+      return await this.inventoryService.handleRequest(method, body);
+    }
+    
+    throw new Error('Route not found');
+  }
+}
+```
+
+#### パターン2: サービスメッシュ
+
+**実装例:**
+
+```typescript
+// Service Mesh (Istio)
+// サービス間の通信を管理
+// - ロードバランシング
+// - リトライ
+// - タイムアウト
+// - サーキットブレーカー
+```
+
+### まとめ
+
+サービス間通信パターンのポイント：
+
+- **同期通信**: HTTP/REST、シンプル、即座に結果
+- **非同期通信**: イベント駆動、疎結合、パフォーマンス向上
+- **API Gateway**: 統一されたエントリーポイント
+- **Service Mesh**: サービス間通信の管理
+
+適切な通信パターンの選択により、効率的でスケーラブルなマイクロサービスを構築できます。
+

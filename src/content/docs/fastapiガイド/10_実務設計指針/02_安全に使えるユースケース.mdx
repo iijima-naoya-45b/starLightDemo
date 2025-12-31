@@ -1,0 +1,67 @@
+---
+title: "安全に使えるユースケース"
+label: "安全に使えるユースケース"
+---
+
+## 安全に使えるユースケース
+
+FastAPIで安全に実装できるユースケースを詳しく解説します。
+
+### 1. トランザクション内でのデータベース操作
+
+#### 安全な実装
+
+```python
+from sqlalchemy.orm import Session
+
+async def create_order(db: Session, order_data: OrderData) -> Order:
+    # ✅ 安全: トランザクション内でのデータベース操作のみ
+    order = Order(**order_data.dict())
+    db.add(order)
+    
+    # ✅ 安全: 同じトランザクション内での在庫更新
+    for item in order_data.items:
+        inventory = db.query(Inventory).filter_by(product_id=item.product_id).first()
+        inventory.stock -= item.quantity
+    
+    db.commit()
+    return order
+```
+
+**なぜ安全か:**
+
+- **ACID特性**: トランザクションのACID特性が保証される
+- **ロールバック**: エラー時に自動的にロールバック
+- **一貫性**: データの一貫性が保たれる
+
+### 2. Celeryによる非同期処理
+
+#### 安全な実装
+
+```python
+from celery import Celery
+
+celery_app = Celery('tasks', broker='redis://localhost:6379')
+
+@celery_app.task
+def process_order(order_id: int):
+    # ✅ 安全: 非同期処理をCeleryで実行
+    order = Order.query.get(order_id)
+    payment_service.charge_payment(order.id, order.amount)
+```
+
+**なぜ安全か:**
+
+- **非同期処理**: 長時間実行される処理を非同期で実行
+- **自動リトライ**: Celeryのリトライ機能を使用
+- **エラーハンドリング**: Celeryのエラーハンドリング機能を使用
+
+### まとめ
+
+安全に使えるユースケースのポイント：
+
+- **トランザクション内でのデータベース操作**: ACID特性が保証される
+- **Celeryによる非同期処理**: 長時間実行される処理を非同期で実行
+
+適切なユースケースの選択により、安全で信頼性の高いFastAPIアプリケーションを構築できます。
+

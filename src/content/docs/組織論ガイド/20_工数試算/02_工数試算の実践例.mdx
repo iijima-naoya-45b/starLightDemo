@@ -1,0 +1,472 @@
+---
+title: "工数試算の実践例"
+label: "工数試算の実践例"
+---
+
+## 工数試算の実践例
+
+実際のプロジェクトでの工数試算の実践例を詳しく解説します。
+
+### Webアプリケーション開発の工数試算
+
+#### プロジェクト概要
+
+**プロジェクト: ECサイト構築**
+
+```
+要件:
+- ユーザー認証機能
+- 商品一覧・詳細表示
+- カート機能
+- 決済機能
+- 注文履歴
+- 管理画面
+```
+
+#### 機能別の工数見積もり
+
+**1. ユーザー認証機能:**
+
+```typescript
+interface TaskBreakdown {
+  task: string;
+  hours: number;
+  notes: string;
+}
+
+const userAuthTasks: TaskBreakdown[] = [
+  {
+    task: 'ログイン画面の実装',
+    hours: 8,
+    notes: 'UI実装、バリデーション',
+  },
+  {
+    task: '認証APIの実装',
+    hours: 16,
+    notes: 'JWT認証、セッション管理',
+  },
+  {
+    task: 'パスワードリセット機能',
+    hours: 8,
+    notes: 'メール送信、トークン管理',
+  },
+  {
+    task: '単体テスト',
+    hours: 8,
+    notes: 'ユニットテスト、統合テスト',
+  },
+  {
+    task: 'バグ修正・リファクタリング',
+    hours: 8,
+    notes: '予想されるバグ修正',
+  },
+];
+
+const totalHours = userAuthTasks.reduce(
+  (sum, task) => sum + task.hours,
+  0
+); // 48時間 = 6人日
+```
+
+**2. 商品一覧・詳細表示:**
+
+```typescript
+const productListTasks: TaskBreakdown[] = [
+  {
+    task: '商品一覧画面の実装',
+    hours: 16,
+    notes: '一覧表示、ページネーション、フィルタ',
+  },
+  {
+    task: '商品詳細画面の実装',
+    hours: 8,
+    notes: '詳細表示、画像ギャラリー',
+  },
+  {
+    task: '商品検索機能',
+    hours: 12,
+    notes: '全文検索、カテゴリ検索',
+  },
+  {
+    task: 'API実装',
+    hours: 12,
+    notes: 'RESTful API、データベース設計',
+  },
+  {
+    task: 'テスト',
+    hours: 8,
+    notes: '単体テスト、E2Eテスト',
+  },
+  {
+    task: 'バグ修正',
+    hours: 8,
+    notes: '予想されるバグ修正',
+  },
+];
+
+const totalHours = productListTasks.reduce(
+  (sum, task) => sum + task.hours,
+  0
+); // 64時間 = 8人日
+```
+
+**3. カート機能:**
+
+```typescript
+const cartTasks: TaskBreakdown[] = [
+  {
+    task: 'カート画面の実装',
+    hours: 12,
+    notes: 'カート一覧、数量変更、削除',
+  },
+  {
+    task: 'カートAPIの実装',
+    hours: 16,
+    notes: 'CRUD操作、在庫チェック',
+  },
+  {
+    task: 'セッション管理',
+    hours: 8,
+    notes: 'ログイン前後のカート管理',
+  },
+  {
+    task: 'テスト',
+    hours: 8,
+    notes: '単体テスト、結合テスト',
+  },
+  {
+    task: 'バグ修正',
+    hours: 8,
+    notes: '予想されるバグ修正',
+  },
+];
+
+const totalHours = cartTasks.reduce(
+  (sum, task) => sum + task.hours,
+  0
+); // 52時間 = 6.5人日
+```
+
+**4. 決済機能:**
+
+```typescript
+const paymentTasks: TaskBreakdown[] = [
+  {
+    task: '決済画面の実装',
+    hours: 16,
+    notes: '配送先入力、決済方法選択',
+  },
+  {
+    task: '決済APIの実装',
+    hours: 24,
+    notes: 'Stripe連携、決済処理',
+  },
+  {
+    task: '注文確定処理',
+    hours: 16,
+    notes: '在庫更新、メール送信',
+  },
+  {
+    task: 'テスト',
+    hours: 12,
+    notes: '単体テスト、結合テスト、決済テスト',
+  },
+  {
+    task: 'バグ修正',
+    hours: 12,
+    notes: '予想されるバグ修正',
+  },
+];
+
+const totalHours = paymentTasks.reduce(
+  (sum, task) => sum + task.hours,
+  0
+); // 80時間 = 10人日
+```
+
+**5. 管理画面:**
+
+```typescript
+const adminTasks: TaskBreakdown[] = [
+  {
+    task: '商品管理画面',
+    hours: 16,
+    notes: 'CRUD操作、画像アップロード',
+  },
+  {
+    task: '注文管理画面',
+    hours: 12,
+    notes: '注文一覧、ステータス変更',
+  },
+  {
+    task: 'ユーザー管理画面',
+    hours: 8,
+    notes: 'ユーザー一覧、権限管理',
+  },
+  {
+    task: 'API実装',
+    hours: 16,
+    notes: '管理用API、権限チェック',
+  },
+  {
+    task: 'テスト',
+    hours: 8,
+    notes: '単体テスト、E2Eテスト',
+  },
+  {
+    task: 'バグ修正',
+    hours: 8,
+    notes: '予想されるバグ修正',
+  },
+];
+
+const totalHours = adminTasks.reduce(
+  (sum, task) => sum + task.hours,
+  0
+); // 68時間 = 8.5人日
+```
+
+#### 合計工数の計算
+
+```typescript
+const totalFeatureDays = {
+  userAuth: 6,
+  productList: 8,
+  cart: 6.5,
+  payment: 10,
+  admin: 8.5,
+};
+
+const totalDays = Object.values(totalFeatureDays).reduce(
+  (sum, days) => sum + days,
+  0
+); // 39人日
+
+// バッファを追加（20%）
+const bufferPercent = 20;
+const totalWithBuffer = totalDays * (1 + bufferPercent / 100); // 46.8人日 ≈ 47人日
+```
+
+### フェーズ別の工数見積もり
+
+#### プロジェクト全体の工数
+
+```typescript
+interface PhaseEstimate {
+  phase: string;
+  days: number;
+  description: string;
+}
+
+const phaseEstimates: PhaseEstimate[] = [
+  {
+    phase: '要件定義',
+    days: 5,
+    description: '要件ヒアリング、要件定義書作成',
+  },
+  {
+    phase: '設計',
+    days: 10,
+    description: 'システム設計、データベース設計、API設計',
+  },
+  {
+    phase: '開発',
+    days: 30,
+    description: '実装、単体テスト',
+  },
+  {
+    phase: 'テスト',
+    days: 8,
+    description: '結合テスト、システムテスト、E2Eテスト',
+  },
+  {
+    phase: 'デプロイ・運用',
+    days: 4,
+    description: 'デプロイ、運用準備、ドキュメント作成',
+  },
+];
+
+const totalDays = phaseEstimates.reduce(
+  (sum, phase) => sum + phase.days,
+  0
+); // 57人日
+
+// バッファを追加（20%）
+const totalWithBuffer = totalDays * 1.2; // 68.4人日 ≈ 69人日
+```
+
+### チーム構成による工数調整
+
+#### チームメンバーの生産性
+
+```typescript
+interface TeamMember {
+  name: string;
+  role: string;
+  experience: 'junior' | 'middle' | 'senior';
+  productivity: number; // 生産性係数
+  availability: number;  // 稼働率（%）
+}
+
+const teamMembers: TeamMember[] = [
+  {
+    name: '田中（PM）',
+    role: 'プロジェクトマネージャー',
+    experience: 'senior',
+    productivity: 1.0,
+    availability: 50, // 50%の時間をプロジェクトに割り当て
+  },
+  {
+    name: '佐藤（フロントエンド）',
+    role: 'フロントエンドエンジニア',
+    experience: 'senior',
+    productivity: 1.2,
+    availability: 100,
+  },
+  {
+    name: '鈴木（バックエンド）',
+    role: 'バックエンドエンジニア',
+    experience: 'middle',
+    productivity: 1.0,
+    availability: 100,
+  },
+  {
+    name: '高橋（バックエンド）',
+    role: 'バックエンドエンジニア',
+    experience: 'junior',
+    productivity: 0.8,
+    availability: 100,
+  },
+  {
+    name: '伊藤（QA）',
+    role: 'QAエンジニア',
+    experience: 'middle',
+    productivity: 1.0,
+    availability: 50,
+  },
+];
+
+// チームの総生産性を計算
+const totalProductivity = teamMembers.reduce(
+  (sum, member) => sum + (member.productivity * member.availability / 100),
+  0
+); // 約3.7
+
+// 工数をチームの生産性で調整
+const adjustedDays = totalWithBuffer / totalProductivity; // 約18.6人日
+```
+
+### リスクを考慮した工数調整
+
+#### リスク要因の評価
+
+```typescript
+interface RiskFactor {
+  factor: string;
+  impact: number;      // 影響度（1-5）
+  probability: number; // 発生確率（0-1）
+  mitigation: string;  // 対策
+}
+
+const riskFactors: RiskFactor[] = [
+  {
+    factor: '新技術の採用（Next.js、Stripe）',
+    impact: 4,
+    probability: 0.3,
+    mitigation: '事前調査、プロトタイプ作成',
+  },
+  {
+    factor: '要件の変更',
+    impact: 3,
+    probability: 0.5,
+    mitigation: '要件定義の徹底、変更管理プロセス',
+  },
+  {
+    factor: 'リソースの不足',
+    impact: 5,
+    probability: 0.2,
+    mitigation: 'リソース計画の見直し',
+  },
+  {
+    factor: '外部APIの遅延',
+    impact: 3,
+    probability: 0.3,
+    mitigation: '代替案の準備',
+  },
+];
+
+// リスクスコアを計算
+const riskScore = riskFactors.reduce(
+  (sum, risk) => sum + (risk.impact * risk.probability),
+  0
+); // 約4.2
+
+// リスクを考慮した工数調整（リスクスコアの10%を追加）
+const riskAdjustedDays = adjustedDays * (1 + riskScore / 10); // 約26.4人日
+```
+
+### 最終的な工数見積もり
+
+#### 工数の内訳
+
+```typescript
+interface FinalEstimate {
+  baseEstimate: number;      // 基本見積もり
+  buffer: number;            // バッファ
+  riskAdjustment: number;   // リスク調整
+  totalEstimate: number;     // 合計見積もり
+  breakdown: {
+    requirement: number;     // 要件定義
+    design: number;          // 設計
+    development: number;     // 開発
+    testing: number;         // テスト
+    deployment: number;      // デプロイ
+  };
+}
+
+const finalEstimate: FinalEstimate = {
+  baseEstimate: 39,          // 基本見積もり: 39人日
+  buffer: 8,                 // バッファ: 8人日（20%）
+  riskAdjustment: 8,         // リスク調整: 8人日
+  totalEstimate: 55,         // 合計見積もり: 55人日
+  breakdown: {
+    requirement: 5,
+    design: 10,
+    development: 30,
+    testing: 8,
+    deployment: 2,
+  },
+};
+```
+
+#### スケジュールの設定
+
+```typescript
+// チーム構成を考慮したスケジュール
+const schedule = {
+  startDate: '2024-01-01',
+  endDate: '2024-03-15', // 約2.5ヶ月
+  teamSize: 5,
+  workingDays: 55,
+  phases: [
+    { name: '要件定義', days: 5, start: '2024-01-01', end: '2024-01-08' },
+    { name: '設計', days: 10, start: '2024-01-09', end: '2024-01-22' },
+    { name: '開発', days: 30, start: '2024-01-23', end: '2024-03-05' },
+    { name: 'テスト', days: 8, start: '2024-03-06', end: '2024-03-13' },
+    { name: 'デプロイ', days: 2, start: '2024-03-14', end: '2024-03-15' },
+  ],
+};
+```
+
+### まとめ
+
+工数試算の実践例のポイント：
+
+- **機能別の工数見積もり**: 各機能をタスクに分解し、工数を見積もる
+- **フェーズ別の工数見積もり**: プロジェクト全体をフェーズに分けて見積もる
+- **チーム構成による調整**: チームメンバーの生産性と稼働率を考慮
+- **リスクを考慮した調整**: リスク要因を評価し、工数を調整
+- **最終的な見積もり**: バッファとリスクを考慮した合計工数
+
+適切に工数試算の実践例を参考にすることで、より正確な見積もりが可能になります。
+

@@ -2,32 +2,623 @@
 title: "Capybara"
 label: "Capybara"
 ---
-Capybara
+
+## Capybaraとは
+
 Capybaraは、ウェブアプリケーションの**受け入れテスト（E2Eテスト）**をRubyで書くためのツールです。ユーザーがブラウザで行う操作（ボタンのクリック、フォームへの入力など）をシミュレートし、その結果を検証できます。RSpecと組み合わせて使うのが一般的です。
 
-なぜCapybaraを使うのか？
+### なぜCapybaraを使うのか？
+
 Capybaraは、実際のユーザー体験に近い形でアプリケーションが正しく機能するかを確認できます。自然言語に近いメソッドを使うため、テストコードが読みやすくなります。また、背後のドライバーを切り替えることで、テストコードを特定のブラウザに依存させない柔軟なテストが可能です。
 
-Capybaraの基本操作
-Capybaraのテストは、ユーザーの操作を模倣するメソッドで構成されます。
+**主な利点:**
 
-visit: 指定されたURLにアクセスします。
+- **ユーザー視点のテスト**: 実際のブラウザ操作をシミュレートできる
+- **読みやすいコード**: 自然言語に近いメソッド名で、テストコードが理解しやすい
+- **ドライバーの切り替え**: 同じテストコードで異なるブラウザやヘッドレスブラウザを利用可能
+- **Railsとの統合**: Railsのシステムテストと統合されており、設定が簡単
 
-fill_in: フォームのフィールドに値を入力します。
+## Capybaraの基本操作
 
-click_button: ボタンをクリックします。
+Capybaraのテストは、ユーザーの操作を模倣するメソッドで構成されます。以下に主要なメソッドとその詳細な使い方を説明します。
 
-expect(page).to have_content: ページに特定のテキストが存在するかを検証します。
+### ページへのアクセス
 
-Ruby
-
-# Capybaraの基本操作例
+```ruby
+# 指定されたURLにアクセスします
 visit '/login'
-fill_in 'メールアドレス', with: 'test@example.com'
-fill_in 'パスワード', with: 'password'
-click_button 'ログイン'
-expect(page).to have_content 'ログインに成功しました。'
-RailsでのCapybara利用法
-Gemのインストール:Gemfileの:testグループにcapybaraとselenium-webdriver（ブラウザ操作用）を追加し、bundle installを実行します。
 
-RSpecとの連携:spec/rails_helper.rbにrequire 'capybara/rspec'を追加することで、RSpecのテストファイル内でCapybara
+# Railsのパスヘルパーも使用可能
+visit new_user_session_path
+
+# クエリパラメータも指定可能
+visit '/users?page=2&per_page=10'
+```
+
+**注意点:**
+
+- `visit`はページの読み込みが完了するまで待機します
+- JavaScriptを使った動的なコンテンツの読み込みも考慮されます（デフォルトの待機時間は設定可能）
+
+### フォームへの入力
+
+```ruby
+# テキストフィールドに入力
+fill_in 'メールアドレス', with: 'test@example.com'
+
+# ラベル名ではなく、name属性やid属性でも指定可能
+fill_in 'user_email', with: 'test@example.com'
+
+# セレクトボックスの選択
+select '東京都', from: '都道府県'
+
+# チェックボックスの選択/解除
+check '利用規約に同意する'
+uncheck 'ニュースレターを受け取る'
+
+# ラジオボタンの選択
+choose '男性'
+
+# ファイルのアップロード
+attach_file 'プロフィール画像', Rails.root.join('spec', 'fixtures', 'images', 'avatar.jpg')
+```
+
+**実践的な例:**
+
+```ruby
+# 複雑なフォーム入力の例
+describe 'ユーザー登録フォーム' do
+  it 'すべてのフィールドに入力して登録できること' do
+    visit new_user_registration_path
+    
+    # 基本情報
+    fill_in 'ユーザー名', with: 'テストユーザー'
+    fill_in 'メールアドレス', with: 'test@example.com'
+    fill_in 'パスワード', with: 'password123'
+    fill_in 'パスワード（確認）', with: 'password123'
+    
+    # セレクトボックス
+    select '1990', from: '生年月日（年）'
+    select '1月', from: '生年月日（月）'
+    select '1日', from: '生年月日（日）'
+    
+    # チェックボックス
+    check '利用規約に同意する'
+    
+    # 送信
+    click_button '登録'
+    
+    expect(page).to have_content('アカウント登録が完了しました')
+  end
+end
+```
+
+### ボタンやリンクのクリック
+
+```ruby
+# ボタンのクリック（テキストで指定）
+click_button 'ログイン'
+
+# ボタンのクリック（idやname属性で指定）
+click_button 'submit-button'
+
+# リンクのクリック
+click_link '詳細を見る'
+
+# リンクのテキストが部分一致でも可能
+click_link '詳細'
+
+# 画像リンクのクリック
+click_link 'ロゴ'
+
+# 特定の要素をクリック（CSSセレクタで指定）
+find('.modal-close').click
+```
+
+**実践的な例:**
+
+```ruby
+describe 'ナビゲーション' do
+  it 'メニューから各ページに遷移できること' do
+    visit root_path
+    
+    # ドロップダウンメニューを開く
+    click_button 'メニュー'
+    
+    # メニュー内のリンクをクリック
+    within '.dropdown-menu' do
+      click_link 'プロフィール'
+    end
+    
+    expect(page).to have_current_path(user_profile_path)
+  end
+end
+```
+
+### ページ内容の検証
+
+```ruby
+# テキストの存在確認
+expect(page).to have_content('ログインに成功しました。')
+
+# テキストの非存在確認
+expect(page).not_to have_content('エラーが発生しました')
+
+# CSSセレクタでの要素の存在確認
+expect(page).to have_css('.success-message', visible: true)
+
+# 要素の非表示確認
+expect(page).not_to have_css('.error-message', visible: true)
+
+# リンクの存在確認
+expect(page).to have_link('詳細を見る', href: '/users/1')
+
+# ボタンの存在確認
+expect(page).to have_button('送信', disabled: false)
+
+# フォームフィールドの値確認
+expect(page).to have_field('メールアドレス', with: 'test@example.com')
+
+# テーブルの内容確認
+expect(page).to have_table('users-table', with_rows: [
+  ['名前', 'メールアドレス'],
+  ['テストユーザー', 'test@example.com']
+])
+```
+
+**実践的な例:**
+
+```ruby
+describe 'ユーザー一覧ページ' do
+  it 'ユーザー情報が正しく表示されること' do
+    user = create(:user, name: 'テストユーザー', email: 'test@example.com')
+    visit users_path
+    
+    # テーブル内の内容を確認
+    within 'table' do
+      expect(page).to have_content('テストユーザー')
+      expect(page).to have_content('test@example.com')
+    end
+    
+    # リンクが正しく表示されているか確認
+    expect(page).to have_link('詳細', href: user_path(user))
+  end
+end
+```
+
+### 要素の検索と操作
+
+```ruby
+# CSSセレクタで要素を検索
+element = find('.user-card')
+
+# XPathで要素を検索
+element = find(:xpath, "//div[@class='user-card']")
+
+# 要素内での操作（withinブロック）
+within '.user-card' do
+  click_link '編集'
+  expect(page).to have_content('ユーザー情報の編集')
+end
+
+# 複数の要素を検索
+all('.user-card').each do |card|
+  within card do
+    expect(page).to have_content('ユーザー')
+  end
+end
+
+# 要素の属性を取得
+link = find('a.user-link')
+expect(link[:href]).to eq('/users/1')
+expect(link.text).to eq('詳細を見る')
+```
+
+**実践的な例:**
+
+```ruby
+describe 'ユーザーカード' do
+  it '各カードから詳細ページに遷移できること' do
+    users = create_list(:user, 3)
+    visit users_path
+    
+    # 各ユーザーカードを確認
+    all('.user-card').each_with_index do |card, index|
+      within card do
+        expect(page).to have_content(users[index].name)
+        click_link '詳細'
+      end
+      
+      expect(page).to have_current_path(user_path(users[index]))
+      visit users_path # 一覧に戻る
+    end
+  end
+end
+```
+
+## ドライバーの設定と使い分け
+
+Capybaraは、異なるドライバーを使用してブラウザを操作できます。各ドライバーの特徴と使い分けを理解することが重要です。
+
+### デフォルトドライバー（Rack::Test）
+
+```ruby
+# spec/rails_helper.rb
+Capybara.default_driver = :rack_test
+```
+
+**特徴:**
+
+- **高速**: JavaScriptを実行しないため、非常に高速
+- **軽量**: ブラウザを起動しないため、リソース消費が少ない
+- **制限**: JavaScriptを使った動的な操作はテストできない
+
+**使用例:**
+
+```ruby
+# JavaScriptを使わない基本的なフォーム送信など
+RSpec.describe 'ユーザー登録', type: :system do
+  it 'フォームからユーザーを登録できること' do
+    visit new_user_registration_path
+    fill_in 'メールアドレス', with: 'test@example.com'
+    fill_in 'パスワード', with: 'password123'
+    click_button '登録'
+    
+    expect(page).to have_content('登録が完了しました')
+  end
+end
+```
+
+### Seleniumドライバー（実際のブラウザ）
+
+```ruby
+# spec/support/capybara.rb
+require 'capybara/rails'
+require 'selenium-webdriver'
+
+Capybara.register_driver :selenium_chrome do |app|
+  Capybara::Selenium::Driver.new(app, browser: :chrome)
+end
+
+Capybara.javascript_driver = :selenium_chrome
+```
+
+**特徴:**
+
+- **実際のブラウザ**: ChromeやFirefoxなどの実際のブラウザでテスト
+- **JavaScript対応**: JavaScriptを使った動的な操作もテスト可能
+- **遅い**: ブラウザを起動するため、テスト実行が遅い
+- **リソース消費**: メモリやCPUを多く消費する
+
+**使用例:**
+
+```ruby
+# JavaScriptを使った操作をテストする場合
+RSpec.describe 'モーダル', type: :system, js: true do
+  it 'モーダルを開閉できること' do
+    visit root_path
+    
+    click_button 'モーダルを開く'
+    expect(page).to have_css('.modal', visible: true)
+    
+    click_button '閉じる'
+    expect(page).not_to have_css('.modal', visible: true)
+  end
+end
+```
+
+### Headless Chrome（推奨）
+
+```ruby
+# spec/support/capybara.rb
+require 'capybara/rails'
+require 'selenium-webdriver'
+
+Capybara.register_driver :selenium_chrome_headless do |app|
+  options = Selenium::WebDriver::Chrome::Options.new
+  options.add_argument('--headless') # ヘッドレスモード
+  options.add_argument('--no-sandbox') # CI環境での実行に必要
+  options.add_argument('--disable-dev-shm-usage') # メモリ不足エラーを防ぐ
+  options.add_argument('--disable-gpu') # GPUを無効化
+  options.add_argument('--window-size=1920,1080') # ウィンドウサイズを指定
+  
+  Capybara::Selenium::Driver.new(app, browser: :chrome, options: options)
+end
+
+Capybara.javascript_driver = :selenium_chrome_headless
+```
+
+**特徴:**
+
+- **高速**: ヘッドレスモードで実行されるため、通常のSeleniumより高速
+- **JavaScript対応**: JavaScriptを使った操作もテスト可能
+- **CI/CD対応**: サーバー環境でも実行可能
+- **推奨**: 多くのプロジェクトで推奨される設定
+
+**使用例:**
+
+```ruby
+# JavaScriptを使った操作をテストする場合（ヘッドレス）
+RSpec.describe 'Ajax通信', type: :system, js: true do
+  it 'Ajaxでデータを取得できること' do
+    visit users_path
+    
+    click_button '更新'
+    
+    # Ajaxの完了を待つ
+    expect(page).to have_content('更新が完了しました', wait: 5)
+  end
+end
+```
+
+### ドライバーの使い分け
+
+```ruby
+# spec/rails_helper.rb
+RSpec.configure do |config|
+  # デフォルトはRack::Test（高速）
+  config.before(:each, type: :system) do
+    driven_by :rack_test
+  end
+  
+  # js: trueが指定された場合のみSeleniumを使用
+  config.before(:each, type: :system, js: true) do
+    driven_by :selenium_chrome_headless
+  end
+end
+```
+
+**使い分けの指針:**
+
+- **JavaScript不要**: `rack_test`を使用（高速）
+- **JavaScript必要**: `selenium_chrome_headless`を使用（CI/CD対応）
+- **デバッグ時**: 通常の`selenium_chrome`を使用（ブラウザを確認できる）
+
+## よくある問題と解決方法
+
+### 1. 要素が見つからないエラー
+
+```ruby
+# ❌ 問題: 要素が見つからない
+click_button '送信' # Capybara::ElementNotFound
+
+# ✅ 解決: 待機時間を設定
+Capybara.default_max_wait_time = 5 # デフォルトは2秒
+
+# または、特定の要素に対して待機
+expect(page).to have_button('送信', wait: 10)
+```
+
+**原因と対策:**
+
+- **JavaScriptの読み込み待ち**: `wait`オプションを使用
+- **動的なコンテンツ**: `have_content`などのマッチャーは自動的に待機
+- **タイミング問題**: `sleep`ではなく、Capybaraの待機機能を使用
+
+### 2. 複数の要素が見つかるエラー
+
+```ruby
+# ❌ 問題: 複数の要素が見つかる
+click_button '削除' # Capybara::Ambiguous
+
+# ✅ 解決: より具体的なセレクタを使用
+within '.user-card' do
+  click_button '削除'
+end
+
+# または、firstを使用
+first('.delete-button').click
+```
+
+### 3. JavaScriptの実行待ち
+
+```ruby
+# ❌ 問題: JavaScriptの実行が完了する前に検証
+click_button 'Ajax送信'
+expect(page).to have_content('完了') # まだ実行されていない可能性
+
+# ✅ 解決: マッチャーは自動的に待機するが、明示的に待機時間を指定
+expect(page).to have_content('完了', wait: 5)
+
+# または、特定の要素の出現を待つ
+expect(page).to have_css('.success-message', visible: true, wait: 5)
+```
+
+### 4. モーダルやポップアップの操作
+
+```ruby
+# モーダルの操作
+click_button 'モーダルを開く'
+
+# モーダル内での操作
+within '.modal' do
+  fill_in '名前', with: 'テスト'
+  click_button '保存'
+end
+
+# モーダルが閉じるのを待つ
+expect(page).not_to have_css('.modal', visible: true, wait: 5)
+```
+
+### 5. ファイルアップロードのテスト
+
+```ruby
+# ファイルのアップロード
+attach_file 'プロフィール画像', Rails.root.join('spec', 'fixtures', 'images', 'avatar.jpg')
+
+# アップロードの完了を待つ
+expect(page).to have_content('アップロードが完了しました', wait: 5)
+
+# アップロードされたファイルの確認
+expect(page).to have_css('img[src*="avatar"]')
+```
+
+## ベストプラクティス
+
+### 1. テストの独立性
+
+```ruby
+# ✅ 良い例: 各テストが独立している
+RSpec.describe 'ユーザー登録', type: :system do
+  it '新規ユーザーを登録できること' do
+    visit new_user_registration_path
+    fill_in 'メールアドレス', with: 'new@example.com'
+    fill_in 'パスワード', with: 'password123'
+    click_button '登録'
+    
+    expect(page).to have_content('登録が完了しました')
+    expect(User.count).to eq(1)
+  end
+  
+  it '既存のメールアドレスでは登録できないこと' do
+    create(:user, email: 'existing@example.com')
+    
+    visit new_user_registration_path
+    fill_in 'メールアドレス', with: 'existing@example.com'
+    fill_in 'パスワード', with: 'password123'
+    click_button '登録'
+    
+    expect(page).to have_content('メールアドレスは既に使用されています')
+  end
+end
+```
+
+### 2. ページオブジェクトパターンの使用
+
+```ruby
+# spec/support/pages/user_registration_page.rb
+class UserRegistrationPage
+  include Capybara::DSL
+  
+  def visit_page
+    visit new_user_registration_path
+  end
+  
+  def fill_email(email)
+    fill_in 'メールアドレス', with: email
+  end
+  
+  def fill_password(password)
+    fill_in 'パスワード', with: password
+  end
+  
+  def submit
+    click_button '登録'
+  end
+  
+  def success_message
+    page.find('.success-message').text
+  end
+end
+
+# spec/system/users_spec.rb
+RSpec.describe 'ユーザー登録', type: :system do
+  let(:page) { UserRegistrationPage.new }
+  
+  it '新規ユーザーを登録できること' do
+    page.visit_page
+    page.fill_email('test@example.com')
+    page.fill_password('password123')
+    page.submit
+    
+    expect(page.success_message).to eq('登録が完了しました')
+  end
+end
+```
+
+### 3. ヘルパーメソッドの活用
+
+```ruby
+# spec/support/system_test_helpers.rb
+module SystemTestHelpers
+  def login_as(user)
+    visit new_user_session_path
+    fill_in 'メールアドレス', with: user.email
+    fill_in 'パスワード', with: user.password
+    click_button 'ログイン'
+  end
+  
+  def logout
+    click_link 'ログアウト'
+  end
+end
+
+RSpec.configure do |config|
+  config.include SystemTestHelpers, type: :system
+end
+
+# 使用例
+RSpec.describe 'ユーザー機能', type: :system do
+  let(:user) { create(:user) }
+  
+  before do
+    login_as(user)
+  end
+  
+  it 'プロフィールを編集できること' do
+    visit edit_user_path(user)
+    fill_in '名前', with: '新しい名前'
+    click_button '更新'
+    
+    expect(page).to have_content('更新が完了しました')
+  end
+end
+```
+
+## RailsでのCapybara利用法
+
+### Gemのインストール
+
+```ruby
+# Gemfile
+group :test do
+  gem 'capybara'
+  gem 'selenium-webdriver' # ブラウザ操作用
+  gem 'webdrivers' # ドライバーの自動管理
+end
+```
+
+```bash
+bundle install
+```
+
+### RSpecとの連携
+
+```ruby
+# spec/rails_helper.rb
+require 'capybara/rails'
+require 'capybara/rspec'
+
+RSpec.configure do |config|
+  config.include Capybara::DSL, type: :system
+end
+```
+
+### システムテストの設定
+
+```ruby
+# spec/rails_helper.rb
+RSpec.configure do |config|
+  config.before(:each, type: :system) do
+    # デフォルトはRack::Test（高速）
+    driven_by :rack_test
+  end
+  
+  config.before(:each, type: :system, js: true) do
+    # JavaScriptが必要な場合はSeleniumを使用
+    driven_by :selenium_chrome_headless
+  end
+end
+```
+
+## まとめ
+
+Capybaraは、RailsアプリケーションのE2Eテストを書くための強力なツールです。以下のポイントを押さえることで、効果的なテストを書くことができます：
+
+- **基本操作の理解**: `visit`, `fill_in`, `click_button`などの基本メソッドを理解する
+- **ドライバーの使い分け**: JavaScriptが必要な場合のみSeleniumを使用し、それ以外はRack::Testを使用
+- **待機処理**: 動的なコンテンツに対しては適切な待機時間を設定する
+- **テストの独立性**: 各テストが独立して実行できるようにする
+- **ページオブジェクトパターン**: 複雑なテストはページオブジェクトパターンで整理する
+
+これらのベストプラクティスを守ることで、保守性が高く、実行速度の速いテストスイートを構築できます。

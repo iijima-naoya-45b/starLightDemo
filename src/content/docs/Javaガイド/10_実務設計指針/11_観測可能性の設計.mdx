@@ -1,0 +1,240 @@
+---
+title: "観測可能性の設計"
+label: "観測可能性の設計"
+---
+
+## 観測可能性の設計
+
+障害は「再現」ではなく「観測」で解決する。観測可能性を高める設計を詳しく解説します。
+
+### ログ設計
+
+各処理にトレースID（request_id）を通し、入出力境界ごとにJSON構造化ログを吐く。
+
+#### 実装例
+
+```java
+// ✅ 良い例: 構造化ログとトレースID
+@RestController
+@Slf4j
+public class OrderController {
+    @Autowired
+    private OrderService orderService;
+    
+    @PostMapping("/orders")
+    public ResponseEntity<Order> createOrder(
+            @RequestBody OrderData orderData,
+            HttpServletRequest request) {
+        // トレースIDを生成（またはリクエストヘッダーから取得）
+        String traceId = request.getHeader("X-Trace-Id");
+        if (traceId == null) {
+            traceId = UUID.randomUUID().toString();
+        }
+        
+        // MDCにトレースIDを設定（すべてのログに自動的に含まれる）
+        MDC.put("traceId", traceId);
+        MDC.put("userId", getCurrentUserId());
+        
+        try {
+            // 入出力境界でログを出力
+            log.info("Order creation started", Map.of(
+                "orderData", orderData,
+                "timestamp", Instant.now()
+            ));
+            
+            Order order = orderService.createOrder(orderData, traceId);
+            
+            log.info("Order creation completed", Map.of(
+                "orderId", order.getId(),
+                "status", order.getStatus(),
+                "duration", calculateDuration()
+            ));
+            
+            return ResponseEntity.ok(order);
+        } catch (Exception e) {
+            log.error("Order creation failed", Map.of(
+                "error", e.getMessage(),
+                "stackTrace", getStackTrace(e)
+            ), e);
+            throw e;
+        } finally {
+            MDC.clear();
+        }
+    }
+}
+
+// logback.xmlの設定例
+<configuration>
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeContext>true</includeContext>
+            <includeMdc>true</includeMdc>
+        </encoder>
+    </appender>
+    
+    <root level="INFO">
+        <appender-ref ref="JSON" />
+    </root>
+</configuration>
+```
+
+**ログの出力例:**
+
+```json
+{
+  "timestamp": "2024-01-01T10:00:00.000Z",
+  "level": "INFO",
+  "message": "Order creation started",
+  "traceId": "abc123",
+  "userId": "user456",
+  "orderData": {
+    "amount": 10000,
+    "items": [...]
+  }
+}
+```
+
+**なぜ重要か:**
+
+- **トレーサビリティ**: トレースIDでリクエスト全体を追跡可能
+- **構造化ログ**: JSON形式で検索・分析が容易
+- **コンテキスト**: MDCでユーザーIDなどのコンテキストを自動的に含める
+
+### メトリクス設計
+
+成功率・レイテンシ・リトライ回数・プール使用率を定常監視する。
+
+#### 実装例
+
+```java
+// ✅ 良い例: Micrometerを使用したメトリクス収集
+@Service
+public class OrderService {
+    private final MeterRegistry meterRegistry;
+    private final Counter orderCreationCounter;
+    private final Timer orderCreationTimer;
+    private final Gauge connectionPoolGauge;
+    
+    public OrderService(MeterRegistry meterRegistry, DataSource dataSource) {
+        this.meterRegistry = meterRegistry;
+        
+        // カウンター: 注文作成回数
+        this.orderCreationCounter = Counter.builder("orders.created")
+            .description("Number of orders created")
+            .tag("status", "success")
+            .register(meterRegistry);
+        
+        // タイマー: 注文作成のレイテンシ
+        this.orderCreationTimer = Timer.builder("orders.creation.duration")
+            .description("Order creation duration")
+            .register(meterRegistry);
+        
+        // ゲージ: 接続プールの使用率
+        this.connectionPoolGauge = Gauge.builder("db.connection.pool.active", 
+            () -> getActiveConnections(dataSource))
+            .description("Active database connections")
+            .register(meterRegistry);
+    }
+    
+    public Order createOrder(OrderData orderData, String traceId) {
+        return orderCreationTimer.recordCallable(() -> {
+            try {
+                Order order = doCreateOrder(orderData, traceId);
+                
+                // 成功時のメトリクス
+                orderCreationCounter.increment(
+                    Tags.of("status", "success", "traceId", traceId)
+                );
+                
+                return order;
+            } catch (Exception e) {
+                // 失敗時のメトリクス
+                orderCreationCounter.increment(
+                    Tags.of("status", "failure", "error", e.getClass().getSimpleName())
+                );
+                throw e;
+            }
+        });
+    }
+}
+```
+
+**監視すべきメトリクス:**
+
+- **成功率**: `orders.created{status="success"}` / `orders.created{status="failure"}`
+- **レイテンシ**: `orders.creation.duration` (p50, p95, p99)
+- **リトライ回数**: `orders.retry.count`
+- **プール使用率**: `db.connection.pool.active` / `db.connection.pool.max`
+
+### トレース設計
+
+外部API・DBアクセス単位にSpanを埋め、分散トレース可能にする。
+
+#### 実装例
+
+```java
+// ✅ 良い例: Spring Cloud Sleuthを使用した分散トレース
+@Service
+@Slf4j
+public class OrderService {
+    @Autowired
+    private Tracer tracer;
+    
+    @Autowired
+    private PaymentApiClient paymentApiClient;
+    
+    public Order createOrder(OrderData orderData, String traceId) {
+        // 親Spanを作成
+        Span parentSpan = tracer.nextSpan()
+            .name("create-order")
+            .tag("order.amount", orderData.getAmount().toString())
+            .start();
+        
+        try (Tracer.SpanInScope ws = tracer.withSpanInScope(parentSpan)) {
+            // DB操作のSpan
+            Span dbSpan = tracer.nextSpan()
+                .name("db.save-order")
+                .start();
+            
+            try {
+                Order order = orderRepository.save(new Order(orderData));
+                dbSpan.tag("order.id", order.getId().toString());
+                return order;
+            } catch (Exception e) {
+                dbSpan.tag("error", e.getMessage());
+                throw e;
+            } finally {
+                dbSpan.end();
+            }
+        } finally {
+            parentSpan.end();
+        }
+    }
+}
+```
+
+**トレースの出力例:**
+
+```
+Trace: abc123
+├─ Span: create-order (duration: 150ms)
+│  ├─ Span: db.save-order (duration: 50ms)
+│  └─ Span: payment-api.charge (duration: 100ms)
+```
+
+**なぜ重要か:**
+
+- **分散トレース**: 複数サービス間のリクエストフローを追跡可能
+- **ボトルネック特定**: どの処理が遅いかを特定可能
+- **エラー追跡**: エラーが発生した箇所を特定可能
+
+### まとめ
+
+観測可能性の設計のポイント：
+
+- **ログ**: トレースIDを通し、構造化ログを出力
+- **メトリクス**: 成功率・レイテンシ・リトライ回数・プール使用率を監視
+- **トレース**: 外部API・DBアクセス単位にSpanを埋め、分散トレース可能にする
+
+これらの設計により、障害を「再現」ではなく「観測」で解決できます。
+

@@ -1,0 +1,259 @@
+---
+title: "よくある問題と解決方法"
+label: "よくある問題と解決方法"
+---
+
+## よくある問題と解決方法
+
+Gitを使用する際によく発生する問題とその解決方法を詳しく解説します。
+
+### コミットを取り消したい
+
+#### まだプッシュしていない場合
+
+**直前のコミットを取り消し（変更は保持）:**
+
+```bash
+# コミットを取り消し、変更はステージング済みの状態で保持
+git reset --soft HEAD~1
+
+# コミットを取り消し、変更は作業ディレクトリに保持
+git reset HEAD~1
+# または
+git reset --mixed HEAD~1
+
+# コミットを取り消し、変更も破棄
+git reset --hard HEAD~1
+```
+
+**複数のコミットを取り消し:**
+
+```bash
+# 過去3つのコミットを取り消し
+git reset --soft HEAD~3
+```
+
+#### すでにプッシュしている場合
+
+**revertを使用:**
+
+```bash
+# 特定のコミットを取り消す新しいコミットを作成
+git revert <コミットハッシュ>
+
+# 複数のコミットを取り消し
+git revert <コミット1> <コミット2>
+```
+
+### 間違ったブランチにコミットしてしまった
+
+**解決方法:**
+
+```bash
+# 1. 間違ったブランチでコミット
+git checkout wrong-branch
+git commit -m "間違ったコミット"
+
+# 2. コミットを保持したまま、正しいブランチに移動
+git stash
+git checkout correct-branch
+git stash pop
+
+# または、cherry-pickを使用
+git checkout wrong-branch
+# コミットハッシュを確認
+git log --oneline
+# abc1234 間違ったコミット
+
+git checkout correct-branch
+git cherry-pick abc1234
+
+# 3. 間違ったブランチのコミットを取り消し
+git checkout wrong-branch
+git reset --hard HEAD~1
+```
+
+### コミットメッセージを間違えた
+
+**解決方法:**
+
+```bash
+# 直前のコミットメッセージを変更（まだプッシュしていない場合）
+git commit --amend -m "正しいコミットメッセージ"
+
+# エディタで編集
+git commit --amend
+```
+
+### ファイルを間違ってステージングしてしまった
+
+**解決方法:**
+
+```bash
+# ステージングを取り消し（変更は保持）
+git reset HEAD <ファイル名>
+
+# すべてのステージングを取り消し
+git reset HEAD
+```
+
+### 変更を破棄したい
+
+**解決方法:**
+
+```bash
+# 作業ディレクトリの変更を破棄
+git checkout -- <ファイル名>
+
+# すべての変更を破棄
+git checkout -- .
+
+# または、Git 2.23以降
+git restore <ファイル名>
+git restore .
+```
+
+### リモートに強制プッシュしてしまった
+
+**解決方法:**
+
+```bash
+# 1. リモートの状態を確認
+git log origin/main
+
+# 2. リモートの状態に戻す
+git reset --hard origin/main
+
+# 3. または、reflogを使用して過去の状態に戻す
+git reflog
+# abc1234 HEAD@{0}: reset: moving to HEAD~1
+# def5678 HEAD@{1}: commit: 元のコミット
+
+git reset --hard def5678
+```
+
+### マージコンフリクトが発生した
+
+**解決方法:**
+
+```bash
+# 1. コンフリクトファイルを確認
+git status
+
+# 2. コンフリクトファイルを編集
+# <<<<<<< HEAD
+# 現在のブランチの内容
+# =======
+# マージするブランチの内容
+# >>>>>>> branch-name
+
+# 3. コンフリクトを解決
+# ファイルを編集してコンフリクトマーカーを削除
+
+# 4. 解決後、ステージングとコミット
+git add <ファイル名>
+git commit -m "コンフリクトを解決"
+
+# 5. マージを中止する場合
+git merge --abort
+```
+
+### リベースコンフリクトが発生した
+
+**解決方法:**
+
+```bash
+# 1. コンフリクトファイルを確認
+git status
+
+# 2. コンフリクトを解決
+# ファイルを編集してコンフリクトマーカーを削除
+
+# 3. 解決後、ステージングと続行
+git add <ファイル名>
+git rebase --continue
+
+# 4. リベースを中止する場合
+git rebase --abort
+
+# 5. リベースをスキップする場合
+git rebase --skip
+```
+
+### リモートブランチが削除された
+
+**解決方法:**
+
+```bash
+# 1. リモートブランチの情報を更新
+git fetch --prune
+
+# 2. ローカルの追跡ブランチを削除
+git branch -d <ブランチ名>
+
+# 3. または、すべての追跡ブランチをクリーンアップ
+git remote prune origin
+```
+
+### 大きなファイルをコミットしてしまった
+
+**解決方法:**
+
+```bash
+# 1. Git LFSをインストール
+# https://git-lfs.github.com/
+
+# 2. Git LFSを初期化
+git lfs install
+
+# 3. 大きなファイルを追跡
+git lfs track "*.psd"
+git lfs track "*.zip"
+
+# 4. .gitattributesをコミット
+git add .gitattributes
+git commit -m "Git LFSを設定"
+
+# 5. 大きなファイルをコミット
+git add large-file.psd
+git commit -m "大きなファイルを追加"
+```
+
+### パスワードや機密情報をコミットしてしまった
+
+**解決方法:**
+
+```bash
+# 1. filter-branchを使用して履歴から削除
+git filter-branch --force --index-filter \
+  "git rm --cached --ignore-unmatch secrets.txt" \
+  --prune-empty --tag-name-filter cat -- --all
+
+# 2. リモートに強制プッシュ（注意が必要）
+git push origin --force --all
+git push origin --force --tags
+
+# 3. ローカルの参照を削除
+git for-each-ref --format="delete %(refname)" refs/original | git update-ref --stdin
+git reflog expire --expire=now --all
+git gc --prune=now --aggressive
+
+# 4. 機密情報を変更（パスワードなど）
+```
+
+### まとめ
+
+よくある問題と解決方法のポイント：
+
+- **コミットの取り消し**: reset（ローカル）、revert（共有ブランチ）
+- **間違ったブランチ**: stash、cherry-pick
+- **コミットメッセージ**: commit --amend
+- **ステージングの取り消し**: reset HEAD
+- **変更の破棄**: checkout --、restore
+- **マージコンフリクト**: コンフリクト解決、merge --abort
+- **リベースコンフリクト**: コンフリクト解決、rebase --continue/--abort
+- **大きなファイル**: Git LFS
+- **機密情報**: filter-branch
+
+適切にトラブルシューティングを行うことで、効率的に問題を解決できます。
+

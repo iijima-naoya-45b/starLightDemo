@@ -1,0 +1,95 @@
+---
+title: "ベストプラクティス"
+label: "ベストプラクティス"
+---
+
+## ベストプラクティス
+
+Railsでの正しい構造とベストプラクティスを詳しく解説します。
+
+### 1. after_commitコールバックの使用
+
+#### 正しい構造
+
+```ruby
+class Order < ApplicationRecord
+  after_commit :charge_payment, on: :create
+  
+  private
+  
+  def charge_payment
+    # ✅ 正しい: トランザクションコミット後に外部APIを呼ぶ
+    PaymentService.new.charge_payment(id, amount)
+  end
+end
+```
+
+**なぜ正しいか:**
+
+- **トランザクションコミット後**: トランザクションがコミットされた後に外部APIを呼ぶ
+- **一貫性**: 注文が確定した後にのみ外部APIが呼ばれる
+- **エラーハンドリング**: 外部APIのエラーがトランザクションに影響しない
+
+### 2. Active Jobによる非同期処理
+
+#### 正しい構造
+
+```ruby
+class OrderService
+  def create_order(order_data)
+    order = Order.create!(order_data)
+    
+    # ✅ 正しい: 非同期処理をキューに投入
+    OrderProcessingJob.perform_later(order.id)
+    
+    order
+  end
+end
+
+class OrderProcessingJob < ApplicationJob
+  queue_as :default
+  
+  retry_on StandardError, wait: :exponentially_longer, attempts: 3
+  
+  def perform(order_id)
+    order = Order.find(order_id)
+    PaymentService.new.charge_payment(order.id, order.amount)
+  end
+end
+```
+
+**なぜ正しいか:**
+
+- **非同期処理**: 長時間実行される処理を非同期で実行
+- **自動リトライ**: `retry_on`で自動リトライ
+- **エラーハンドリング**: `rescue_from`でエラーを処理
+
+### 3. N+1クエリの回避
+
+#### 正しい構造
+
+```ruby
+# ✅ 正しい: includesを使用して関連データを事前に読み込む
+class OrdersController < ApplicationController
+  def index
+    @orders = Order.includes(:user, :items).all
+    # 3回のクエリのみ: Order.all, User.where(id: ...), OrderItem.where(order_id: ...)
+  end
+end
+```
+
+**なぜ正しいか:**
+
+- **クエリ数の削減**: 関連データを事前に読み込むことで、クエリ数が削減される
+- **パフォーマンスの向上**: データベースへのアクセス回数が減少し、パフォーマンスが向上する
+
+### まとめ
+
+ベストプラクティスのポイント：
+
+- **after_commitコールバック**: トランザクションコミット後に外部APIを呼ぶ
+- **Active Jobによる非同期処理**: 長時間実行される処理を非同期で実行
+- **N+1クエリの回避**: includesを使用して関連データを事前に読み込む
+
+適切なベストプラクティスの実装により、安全で信頼性の高いRailsアプリケーションを構築できます。
+

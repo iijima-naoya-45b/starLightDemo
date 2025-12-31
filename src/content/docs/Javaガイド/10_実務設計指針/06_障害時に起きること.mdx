@@ -1,0 +1,331 @@
+---
+title: "障害時に起きること"
+label: "障害時に起きること"
+---
+
+## 障害時に起きること
+
+Javaアプリケーションで障害が発生した際のシナリオを詳しく解説します。
+
+### シナリオ1: トランザクション内で外部APIがタイムアウト
+
+#### 障害のシナリオ
+
+```
+時刻: 2024-01-01 10:00:00
+状況: 注文作成処理中
+
+10:00:00.000 - トランザクション開始
+10:00:00.100 - データベースに注文を保存（ロック開始）
+10:00:00.200 - 外部決済APIを呼び出し（応答待ち）
+10:00:05.000 - 外部決済APIがタイムアウト（5秒経過）
+10:00:05.100 - トランザクションがロールバック
+10:00:05.200 - データベースのロックが解放される
+```
+
+**実際のコード:**
+
+```java
+// ❌ 問題のあるコード
+@Transactional
+public Order createOrder(OrderData orderData) {
+    Order order = orderRepository.save(new Order(orderData));
+    
+    // 外部APIがタイムアウトする可能性がある
+    PaymentResult result = paymentApiClient.chargePayment(
+        order.getId(), 
+        orderData.getAmount()
+    );
+    
+    if (!result.isSuccess()) {
+        throw new PaymentException("Payment failed");
+    }
+    
+    return order;
+}
+```
+
+**障害の影響:**
+
+1. **データベースのロック**: 5秒間、データベースのロックが保持される
+2. **他のトランザクションのブロック**: 同じレコードにアクセスする他のトランザクションがブロックされる
+3. **デッドロックのリスク**: 複数のトランザクションが相互にロックを待つ可能性がある
+4. **パフォーマンスの低下**: トランザクションの処理時間が長くなり、スループットが低下する
+
+**解決策:**
+
+```java
+// ✅ 解決策: Outboxパターンを使用
+@Transactional
+public Order createOrder(OrderData orderData) {
+    Order order = orderRepository.save(new Order(orderData));
+    
+    // Outboxテーブルに記録（トランザクション内）
+    OutboxEvent event = new OutboxEvent();
+    event.setEventType("PAYMENT_CHARGE");
+    event.setAggregateId(order.getId());
+    event.setPayload(JSON.toJSONString(Map.of(
+        "orderId", order.getId(),
+        "amount", orderData.getAmount()
+    )));
+    event.setStatus("PENDING");
+    outboxRepository.save(event);
+    
+    // トランザクションをコミット（外部APIは呼ばない）
+    return order;
+}
+
+// 別プロセスでOutboxを処理
+@Scheduled(fixedRate = 5000)
+public void processOutbox() {
+    List<OutboxEvent> pendingEvents = outboxRepository.findByStatus("PENDING");
+    
+    for (OutboxEvent event : pendingEvents) {
+        try {
+            Map<String, Object> payload = JSON.parseObject(event.getPayload(), Map.class);
+            PaymentResult result = paymentApiClient.chargePayment(
+                (Long) payload.get("orderId"),
+                (BigDecimal) payload.get("amount")
+            );
+            
+            if (result.isSuccess()) {
+                event.setStatus("COMPLETED");
+                outboxRepository.save(event);
+            }
+        } catch (Exception e) {
+            // エラーハンドリング（トランザクション外）
+            event.setStatus("FAILED");
+            event.setRetryCount(event.getRetryCount() + 1);
+            outboxRepository.save(event);
+        }
+    }
+}
+```
+
+### シナリオ2: Serverless環境でのタイムアウト
+
+#### 障害のシナリオ
+
+```
+時刻: 2024-01-01 10:00:00
+状況: レポート生成処理中（Vercel環境）
+
+10:00:00.000 - 関数実行開始
+10:00:00.100 - データベースからデータを取得開始（100万件）
+10:04:50.000 - データ処理中（4分50秒経過）
+10:04:59.000 - Vercelのタイムアウト（299秒経過）
+10:05:00.000 - 関数が強制終了
+10:05:00.100 - ユーザーにタイムアウトエラーを返す
+```
+
+**実際のコード:**
+
+```java
+// ❌ 問題のあるコード
+@RestController
+public class ReportController {
+    @PostMapping("/reports/generate")
+    public Report generateReport(@RequestBody ReportRequest request) {
+        // 10分かかる処理（Vercelの最大実行時間300秒を超える）
+        return reportService.generateLargeReport(request);
+    }
+}
+```
+
+**障害の影響:**
+
+1. **処理の中断**: 処理が完了する前に強制終了される
+2. **リソースの浪費**: タイムアウトまでリソースを占有する
+3. **ユーザー体験の悪化**: ユーザーはエラーを受信する
+4. **データの不整合**: 処理が途中で中断され、データが不整合になる可能性がある
+
+**解決策:**
+
+```java
+// ✅ 解決策: 非同期処理に変更
+@RestController
+public class ReportController {
+    @Autowired
+    private MessageQueue messageQueue;
+    
+    @PostMapping("/reports/generate")
+    public ResponseEntity<ReportResponse> generateReport(@RequestBody ReportRequest request) {
+        String reportId = UUID.randomUUID().toString();
+        
+        // ジョブをキューに投入（即座に完了）
+        messageQueue.send("report.generate", Map.of(
+            "reportId", reportId,
+            "request", request
+        ));
+        
+        // 即座にレスポンスを返す
+        return ResponseEntity.accepted()
+            .body(new ReportResponse(reportId, "PROCESSING"));
+    }
+}
+
+// ワーカー（常駐プロセス環境）で処理
+@Component
+public class ReportWorker {
+    @RabbitListener(queues = "report.generate")
+    public void processReportGeneration(Map<String, Object> message) {
+        String reportId = (String) message.get("reportId");
+        ReportRequest request = (ReportRequest) message.get("request");
+        
+        // 長時間実行される処理（常駐プロセス環境で実行）
+        Report report = reportService.generateLargeReport(request);
+        reportService.saveReport(reportId, report);
+    }
+}
+```
+
+### シナリオ3: メモリリークによるOutOfMemoryError
+
+#### 障害のシナリオ
+
+```
+時刻: 2024-01-01 10:00:00
+状況: 長時間実行されるバッチ処理
+
+10:00:00.000 - バッチ処理開始
+10:00:00.100 - データベースからデータを取得（100万件）
+10:00:01.000 - メモリ使用量: 500MB
+10:30:00.000 - メモリ使用量: 2GB（ガベージコレクションが動作）
+10:30:05.000 - メモリ使用量: 2.5GB（ガベージコレクションが動作）
+10:30:10.000 - OutOfMemoryError発生
+10:30:10.100 - アプリケーションがクラッシュ
+```
+
+**実際のコード:**
+
+```java
+// ❌ 問題のあるコード
+@Service
+public class BatchService {
+    public void processLargeDataset() {
+        List<Data> allData = dataRepository.findAll(); // 100万件を一度に取得
+        
+        for (Data data : allData) {
+            // 処理...
+            processData(data);
+        }
+    }
+}
+```
+
+**障害の影響:**
+
+1. **メモリの枯渇**: 大量のデータを一度にメモリに読み込む
+2. **ガベージコレクションの頻発**: ガベージコレクションが頻繁に動作し、パフォーマンスが低下
+3. **OutOfMemoryError**: メモリが枯渇し、アプリケーションがクラッシュ
+4. **データの損失**: 処理中のデータが失われる可能性がある
+
+**解決策:**
+
+```java
+// ✅ 解決策: ページネーションを使用
+@Service
+public class BatchService {
+    private static final int BATCH_SIZE = 1000;
+    
+    public void processLargeDataset() {
+        int page = 0;
+        List<Data> batch;
+        
+        do {
+            // バッチごとにデータを取得
+            batch = dataRepository.findAll(PageRequest.of(page, BATCH_SIZE));
+            
+            for (Data data : batch) {
+                processData(data);
+            }
+            
+            // ガベージコレクションを促す
+            System.gc();
+            
+            page++;
+        } while (!batch.isEmpty());
+    }
+}
+```
+
+### シナリオ4: デッドロックの発生
+
+#### 障害のシナリオ
+
+```
+時刻: 2024-01-01 10:00:00
+状況: 複数のトランザクションが同時に実行
+
+10:00:00.000 - トランザクション1開始（注文Aをロック）
+10:00:00.100 - トランザクション2開始（注文Bをロック）
+10:00:00.200 - トランザクション1が注文Bをロックしようとする（待機）
+10:00:00.300 - トランザクション2が注文Aをロックしようとする（待機）
+10:00:30.000 - デッドロック検出（30秒経過）
+10:00:30.100 - トランザクション1がロールバック
+10:00:30.200 - トランザクション2が続行
+```
+
+**実際のコード:**
+
+```java
+// ❌ 問題のあるコード
+@Transactional
+public void transferOrder(Long fromOrderId, Long toOrderId) {
+    Order fromOrder = orderRepository.findById(fromOrderId).orElseThrow();
+    Order toOrder = orderRepository.findById(toOrderId).orElseThrow();
+    
+    // 問題: 異なる順序でロックを取得する可能性がある
+    fromOrder.setStatus("TRANSFERRED");
+    toOrder.setStatus("RECEIVED");
+    
+    orderRepository.save(fromOrder);
+    orderRepository.save(toOrder);
+}
+```
+
+**障害の影響:**
+
+1. **デッドロック**: 複数のトランザクションが相互にロックを待つ
+2. **タイムアウト**: デッドロックが検出されるまで待機する
+3. **ロールバック**: デッドロックが検出されると、一方のトランザクションがロールバックされる
+4. **パフォーマンスの低下**: デッドロックが頻発すると、パフォーマンスが大幅に低下する
+
+**解決策:**
+
+```java
+// ✅ 解決策: ロックの順序を統一
+@Transactional
+public void transferOrder(Long fromOrderId, Long toOrderId) {
+    // ロックの順序を統一（IDの小さい順）
+    Long firstId = Math.min(fromOrderId, toOrderId);
+    Long secondId = Math.max(fromOrderId, toOrderId);
+    
+    Order firstOrder = orderRepository.findById(firstId).orElseThrow();
+    Order secondOrder = orderRepository.findById(secondId).orElseThrow();
+    
+    // 常に同じ順序でロックを取得
+    if (firstOrder.getId().equals(fromOrderId)) {
+        firstOrder.setStatus("TRANSFERRED");
+        secondOrder.setStatus("RECEIVED");
+    } else {
+        secondOrder.setStatus("TRANSFERRED");
+        firstOrder.setStatus("RECEIVED");
+    }
+    
+    orderRepository.save(firstOrder);
+    orderRepository.save(secondOrder);
+}
+```
+
+### まとめ
+
+障害時に起きることのポイント：
+
+- **トランザクション内で外部APIがタイムアウト**: データベースのロックが長時間保持される、Outboxパターンを使用
+- **Serverless環境でのタイムアウト**: 処理が中断される、非同期処理に変更
+- **メモリリークによるOutOfMemoryError**: メモリが枯渇する、ページネーションを使用
+- **デッドロックの発生**: 複数のトランザクションが相互にロックを待つ、ロックの順序を統一
+
+これらの障害シナリオを理解することで、より堅牢なJavaアプリケーションを構築できます。
+

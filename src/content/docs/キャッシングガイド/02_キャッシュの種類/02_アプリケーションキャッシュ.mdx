@@ -1,0 +1,497 @@
+---
+title: "アプリケーションキャッシュ"
+label: "アプリケーションキャッシュ"
+---
+
+## アプリケーションキャッシュ
+
+アプリケーションキャッシュは、アプリケーション内でデータをキャッシュする手法です。データベースへのアクセスを削減し、レスポンスタイムを大幅に短縮できます。
+
+### アプリケーションキャッシュとは
+
+アプリケーションキャッシュは、アプリケーションのメモリ内または外部のキャッシュストア（Redis、Memcachedなど）にデータを保存し、高速にアクセスできるようにする仕組みです。
+
+**キャッシュの階層:**
+
+```
+アプリケーション
+    ↓
+アプリケーションキャッシュ（Redis、Memcached）
+    ↓
+データベース
+```
+
+### インメモリキャッシュ
+
+インメモリキャッシュは、アプリケーションのプロセス内のメモリにデータを保存する最もシンプルなキャッシュ手法です。
+
+#### 基本的な実装
+
+```typescript
+// Node.jsでの実装例
+class InMemoryCache {
+  private cache: Map<string, { value: any; expiresAt: number }> = new Map();
+  
+  set(key: string, value: any, ttl: number = 3600) {
+    const expiresAt = Date.now() + ttl * 1000;
+    this.cache.set(key, { value, expiresAt });
+  }
+  
+  get(key: string): any | null {
+    const item = this.cache.get(key);
+    if (!item) {
+      return null;
+    }
+    
+    // TTLチェック
+    if (Date.now() > item.expiresAt) {
+      this.cache.delete(key);
+      return null;
+    }
+    
+    return item.value;
+  }
+  
+  delete(key: string) {
+    this.cache.delete(key);
+  }
+  
+  clear() {
+    this.cache.clear();
+  }
+  
+  // 期限切れのエントリを定期的に削除
+  cleanup() {
+    const now = Date.now();
+    for (const [key, item] of this.cache.entries()) {
+      if (now > item.expiresAt) {
+        this.cache.delete(key);
+      }
+    }
+  }
+}
+
+const cache = new InMemoryCache();
+
+// 使用例
+async function getUser(userId: string) {
+  // キャッシュから取得を試みる
+  const cached = cache.get(`user:${userId}`);
+  if (cached) {
+    return cached;
+  }
+  
+  // データベースから取得
+  const user = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+  
+  // キャッシュに保存
+  cache.set(`user:${userId}`, user, 3600); // 1時間
+  
+  return user;
+}
+```
+
+#### 利点と欠点
+
+**利点:**
+
+- **シンプル**: 実装が簡単で、追加の依存関係が不要
+- **高速**: メモリアクセスは非常に高速
+- **軽量**: 外部サービスが不要
+
+**欠点:**
+
+- **プロセス固有**: 複数のプロセス間でキャッシュを共有できない
+- **メモリ制限**: プロセスのメモリ制限に依存
+- **永続化なし**: プロセスが再起動すると、キャッシュが失われる
+
+### Redisキャッシュ
+
+Redisは、分散キャッシュとして広く使用されているインメモリデータストアです。
+
+#### Redisの特徴
+
+- **高速**: メモリベースで非常に高速
+- **分散**: 複数のアプリケーションインスタンス間でキャッシュを共有可能
+- **永続化**: オプションでディスクに永続化可能
+- **豊富なデータ構造**: 文字列、リスト、セット、ハッシュ、ソートセットなど
+
+#### 基本的な実装
+
+```typescript
+// Node.js + Redisの実装例
+import Redis from 'ioredis';
+
+const redis = new Redis({
+  host: 'localhost',
+  port: 6379,
+  password: process.env.REDIS_PASSWORD,
+});
+
+async function getUser(userId: string) {
+  // キャッシュから取得を試みる
+  const cached = await redis.get(`user:${userId}`);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+  
+  // データベースから取得
+  const user = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+  
+  // キャッシュに保存（1時間）
+  await redis.setex(`user:${userId}`, 3600, JSON.stringify(user));
+  
+  return user;
+}
+```
+
+#### 高度な機能
+
+**パイプライン:**
+
+```typescript
+// 複数のキーを一度に取得（パフォーマンス向上）
+const pipeline = redis.pipeline();
+pipeline.get('user:1');
+pipeline.get('user:2');
+pipeline.get('user:3');
+const results = await pipeline.exec();
+```
+
+**トランザクション:**
+
+```typescript
+// 複数の操作をアトミックに実行
+const multi = redis.multi();
+multi.set('key1', 'value1');
+multi.set('key2', 'value2');
+multi.exec();
+```
+
+**パブリッシュ/サブスクライブ:**
+
+```typescript
+// キャッシュ無効化の通知
+const publisher = new Redis();
+const subscriber = new Redis();
+
+// サブスクライブ
+subscriber.subscribe('cache-invalidation');
+subscriber.on('message', (channel, message) => {
+  const { key } = JSON.parse(message);
+  cache.delete(key);
+});
+
+// パブリッシュ
+async function invalidateCache(key: string) {
+  await db.query('UPDATE users SET ... WHERE id = ?', [userId]);
+  await publisher.publish('cache-invalidation', JSON.stringify({ key }));
+}
+```
+
+### Memcached
+
+Memcachedは、シンプルなキー・バリューストアの分散キャッシュシステムです。
+
+#### Memcachedの特徴
+
+- **シンプル**: キー・バリューストアのみ
+- **高速**: メモリベースで高速
+- **分散**: 複数のサーバーに分散可能
+- **軽量**: Redisより軽量
+
+#### 基本的な実装
+
+```typescript
+// Node.js + Memcachedの実装例
+import Memcached from 'memcached';
+
+const memcached = new Memcached('localhost:11211');
+
+async function getUser(userId: string) {
+  return new Promise((resolve, reject) => {
+    // キャッシュから取得を試みる
+    memcached.get(`user:${userId}`, (err, cached) => {
+      if (cached) {
+        return resolve(JSON.parse(cached));
+      }
+      
+      // データベースから取得
+      db.query('SELECT * FROM users WHERE id = ?', [userId])
+        .then(user => {
+          // キャッシュに保存（1時間）
+          memcached.set(`user:${userId}`, JSON.stringify(user), 3600, (err) => {
+            if (err) console.error('Cache set error:', err);
+          });
+          resolve(user);
+        })
+        .catch(reject);
+    });
+  });
+}
+```
+
+### RedisとMemcachedの比較
+
+| 特徴 | Redis | Memcached |
+|------|-------|-----------|
+| **データ構造** | 豊富（文字列、リスト、セット、ハッシュなど） | キー・バリューのみ |
+| **永続化** | 可能（RDB、AOF） | 不可 |
+| **レプリケーション** | 可能 | 不可 |
+| **パブリッシュ/サブスクライブ** | 可能 | 不可 |
+| **メモリ効率** | やや低い | 高い |
+| **複雑さ** | 高い | 低い |
+| **用途** | キャッシュ + データストア | キャッシュ専用 |
+
+**選択の指針:**
+
+- **シンプルなキャッシュが必要**: Memcached
+- **高度な機能が必要**: Redis
+- **永続化が必要**: Redis
+- **パブリッシュ/サブスクライブが必要**: Redis
+
+### キャッシュキーの設計
+
+適切なキャッシュキーの設計は、キャッシュの効果を最大化するために重要です。
+
+#### 良いキャッシュキーの特徴
+
+```typescript
+// ✅ 良い例: 明確で一意なキー
+const cacheKey = `user:${userId}`;
+const cacheKey = `product:${productId}:${locale}`;
+const cacheKey = `order:${orderId}:status`;
+
+// ❌ 悪い例: 曖昧で衝突しやすいキー
+const cacheKey = `data`;
+const cacheKey = `user`;
+const cacheKey = `${id}`;
+```
+
+#### 名前空間の使用
+
+```typescript
+// ✅ 良い例: 名前空間を使用
+const cacheKeys = {
+  user: (id: string) => `user:${id}`,
+  product: (id: string) => `product:${id}`,
+  order: (id: string) => `order:${id}`,
+  userOrders: (userId: string) => `user:${userId}:orders`,
+};
+
+// 使用例
+const userKey = cacheKeys.user('123');
+const productKey = cacheKeys.product('456');
+```
+
+#### バージョニング
+
+```typescript
+// ✅ 良い例: バージョンを含める
+const CACHE_VERSION = 'v1';
+const cacheKey = `user:${userId}:${CACHE_VERSION}`;
+
+// スキーマが変更された場合、バージョンを更新することで古いキャッシュを無効化
+```
+
+### キャッシュの無効化戦略
+
+#### 1. TTL（Time To Live）ベース
+
+```typescript
+// TTLを設定して自動的に無効化
+await redis.setex(`user:${userId}`, 3600, JSON.stringify(user)); // 1時間
+```
+
+**利点:**
+
+- **シンプル**: 実装が簡単
+- **自動無効化**: 手動で無効化する必要がない
+
+**欠点:**
+
+- **古いデータ**: TTL期間中は古いデータが表示される可能性がある
+- **一貫性**: データの更新タイミングと無効化タイミングがずれる
+
+#### 2. 明示的な無効化
+
+```typescript
+// データ更新時にキャッシュを無効化
+async function updateUser(userId: string, data: UserData) {
+  // データベースを更新
+  await db.query('UPDATE users SET ? WHERE id = ?', [data, userId]);
+  
+  // キャッシュを無効化
+  await redis.del(`user:${userId}`);
+  
+  // 関連するキャッシュも無効化
+  await redis.del(`user:${userId}:orders`);
+  await redis.del(`user:${userId}:profile`);
+}
+```
+
+**利点:**
+
+- **一貫性**: データ更新時に即座に無効化できる
+- **正確性**: 常に最新のデータを表示できる
+
+**欠点:**
+
+- **複雑さ**: すべての更新箇所で無効化処理が必要
+- **見落とし**: 無効化処理を忘れる可能性がある
+
+#### 3. イベント駆動無効化
+
+```typescript
+// イベントベースのキャッシュ無効化
+class CacheInvalidator {
+  constructor(private redis: Redis) {}
+  
+  async onUserUpdated(userId: string) {
+    // ユーザー更新イベントを受信
+    await this.invalidateUserCache(userId);
+  }
+  
+  private async invalidateUserCache(userId: string) {
+    const keys = [
+      `user:${userId}`,
+      `user:${userId}:orders`,
+      `user:${userId}:profile`,
+    ];
+    
+    // すべての関連キャッシュを無効化
+    await Promise.all(keys.map(key => this.redis.del(key)));
+  }
+}
+```
+
+**利点:**
+
+- **疎結合**: 更新ロジックと無効化ロジックを分離
+- **拡張性**: 新しい無効化ルールを追加しやすい
+
+**欠点:**
+
+- **複雑さ**: イベントシステムの実装が必要
+- **遅延**: イベントの処理に遅延が発生する可能性がある
+
+### ベストプラクティス
+
+#### 1. キャッシュアサイドパターン
+
+```typescript
+// ✅ 良い例: Cache-Asideパターン
+async function getUser(userId: string) {
+  // 1. キャッシュから取得を試みる
+  const cached = await redis.get(`user:${userId}`);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+  
+  // 2. キャッシュにない場合はデータベースから取得
+  const user = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+  
+  // 3. キャッシュに保存
+  await redis.setex(`user:${userId}`, 3600, JSON.stringify(user));
+  
+  return user;
+}
+```
+
+#### 2. キャッシュスラムの防止
+
+**問題:**
+
+```typescript
+// ❌ 悪い例: キャッシュスラムが発生する可能性
+async function getProduct(productId: string) {
+  const cached = await redis.get(`product:${productId}`);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+  
+  // 複数のリクエストが同時に実行されると、データベースに負荷がかかる
+  const product = await db.query('SELECT * FROM products WHERE id = ?', [productId]);
+  await redis.setex(`product:${productId}`, 3600, JSON.stringify(product));
+  return product;
+}
+```
+
+**解決:**
+
+```typescript
+// ✅ 良い例: ロックを使用してキャッシュスラムを防止
+import Redlock from 'redlock';
+
+const redlock = new Redlock([redis], {
+  retryCount: 3,
+  retryDelay: 200,
+});
+
+async function getProduct(productId: string) {
+  // キャッシュから取得を試みる
+  const cached = await redis.get(`product:${productId}`);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+  
+  // ロックを取得（他のプロセスがデータを取得中かチェック）
+  const lock = await redlock.acquire([`lock:product:${productId}`], 5000);
+  
+  try {
+    // 再度キャッシュを確認（ロック取得中に他のプロセスがキャッシュした可能性がある）
+    const cachedAgain = await redis.get(`product:${productId}`);
+    if (cachedAgain) {
+      return JSON.parse(cachedAgain);
+    }
+    
+    // データベースから取得
+    const product = await db.query('SELECT * FROM products WHERE id = ?', [productId]);
+    
+    // キャッシュに保存
+    await redis.setex(`product:${productId}`, 3600, JSON.stringify(product));
+    
+    return product;
+  } finally {
+    await lock.release();
+  }
+}
+```
+
+#### 3. キャッシュウォーミング
+
+```typescript
+// アプリケーション起動時に重要なデータをキャッシュに読み込む
+async function warmupCache() {
+  const popularProducts = await db.query(
+    'SELECT * FROM products WHERE views > 1000 ORDER BY views DESC LIMIT 100'
+  );
+  
+  for (const product of popularProducts) {
+    await redis.setex(
+      `product:${product.id}`,
+      3600,
+      JSON.stringify(product)
+    );
+  }
+}
+
+// アプリケーション起動時に実行
+warmupCache();
+```
+
+### まとめ
+
+アプリケーションキャッシュは、データベースへのアクセスを削減し、レスポンスタイムを大幅に短縮できる重要な技術です。
+
+**重要なポイント:**
+
+- **インメモリキャッシュ**: シンプルだが、プロセス固有
+- **Redis**: 高度な機能を持つ分散キャッシュ
+- **Memcached**: シンプルな分散キャッシュ
+- **キャッシュキーの設計**: 明確で一意なキーを使用
+- **キャッシュの無効化**: TTL、明示的無効化、イベント駆動無効化
+- **キャッシュスラムの防止**: ロックを使用して同時アクセスを制御
+
+これらのベストプラクティスを守ることで、パフォーマンスが高く、スケーラブルなアプリケーションを構築できます。
+

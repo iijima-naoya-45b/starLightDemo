@@ -1,0 +1,250 @@
+---
+title: "復旧設計とフォールバック戦略"
+label: "復旧設計とフォールバック戦略"
+---
+
+## 復旧設計とフォールバック戦略
+
+障害から自動/手動で安全に戻れる設計を詳しく解説します。
+
+### Graceful Degradation
+
+外部依存が落ちたらキャッシュ・スタブで縮退運転する。
+
+#### 実装例
+
+```java
+// ✅ 良い例: キャッシュによるフォールバック
+@Service
+public class ProductService {
+    @Autowired
+    private ProductRepository productRepository;
+    
+    @Autowired
+    private CacheManager cacheManager;
+    
+    @Autowired
+    private ExternalProductApiClient externalApiClient;
+    
+    public Product getProduct(Long productId) {
+        // 1. キャッシュから取得を試みる
+        Cache cache = cacheManager.getCache("products");
+        Product cached = cache.get(productId, Product.class);
+        if (cached != null) {
+            return cached;
+        }
+        
+        // 2. データベースから取得を試みる
+        try {
+            Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ProductNotFoundException(productId));
+            
+            // キャッシュに保存
+            cache.put(productId, product);
+            return product;
+        } catch (Exception e) {
+            // 3. データベースが落ちている場合、外部APIから取得を試みる
+            try {
+                Product product = externalApiClient.getProduct(productId);
+                // キャッシュに保存（次回はキャッシュから取得可能）
+                cache.put(productId, product);
+                return product;
+            } catch (Exception apiException) {
+                // 4. すべて失敗した場合、スタブデータを返す
+                log.warn("All data sources failed, returning stub data", Map.of(
+                    "productId", productId,
+                    "dbError", e.getMessage(),
+                    "apiError", apiException.getMessage()
+                ));
+                return createStubProduct(productId);
+            }
+        }
+    }
+    
+    private Product createStubProduct(Long productId) {
+        // スタブデータ（最低限の情報のみ）
+        Product stub = new Product();
+        stub.setId(productId);
+        stub.setName("Product information temporarily unavailable");
+        stub.setPrice(BigDecimal.ZERO);
+        return stub;
+    }
+}
+```
+
+**なぜ重要か:**
+
+- **可用性の向上**: 外部依存が落ちても、最低限のサービスを提供可能
+- **ユーザー体験**: 完全なエラーではなく、スタブデータを返すことでユーザー体験を維持
+
+### 再起動安全性
+
+再起動時に中途状態をリカバリ可能にする（例：処理キューの再読込）。
+
+#### 実装例
+
+```java
+// ✅ 良い例: 再起動時にOutboxを再処理
+@Component
+public class OutboxRecoveryService {
+    @Autowired
+    private OutboxRepository outboxRepository;
+    
+    @PostConstruct
+    public void recoverPendingEvents() {
+        // アプリケーション起動時に、PENDING状態のイベントを再処理
+        List<OutboxEvent> pendingEvents = outboxRepository.findByStatus("PENDING");
+        
+        log.info("Recovering pending outbox events", Map.of(
+            "count", pendingEvents.size()
+        ));
+        
+        for (OutboxEvent event : pendingEvents) {
+            // リトライ回数が上限を超えていない場合のみ再処理
+            if (event.getRetryCount() < 3) {
+                processOutboxEvent(event);
+            } else {
+                log.warn("Outbox event exceeded retry limit", Map.of(
+                    "eventId", event.getId(),
+                    "retryCount", event.getRetryCount()
+                ));
+                // 手動対応が必要な状態としてマーク
+                event.setStatus("MANUAL_REVIEW_REQUIRED");
+                outboxRepository.save(event);
+            }
+        }
+    }
+}
+```
+
+**なぜ重要か:**
+
+- **データの整合性**: 再起動時に中途状態のデータをリカバリ可能
+- **自動復旧**: 手動介入なしで自動的に復旧可能
+
+### バックオフ戦略
+
+Exponential Backoff とJitterでセルフDDoSを防止する。
+
+#### 実装例
+
+```java
+// ✅ 良い例: Exponential Backoff + Jitter
+@Service
+public class PaymentService {
+    private static final int MAX_RETRIES = 3;
+    private static final long INITIAL_DELAY_MS = 1000;
+    
+    @Retryable(
+        maxAttempts = MAX_RETRIES,
+        backoff = @Backoff(
+            delay = INITIAL_DELAY_MS,
+            multiplier = 2, // Exponential Backoff
+            random = true // Jitter
+        )
+    )
+    public PaymentResult chargePayment(Long orderId, BigDecimal amount) {
+        try {
+            return paymentApiClient.chargePayment(orderId, amount);
+        } catch (PaymentTimeoutException e) {
+            // タイムアウトエラーはリトライ可能
+            throw new RetryableException("Payment timeout", e);
+        } catch (PaymentException e) {
+            // 決済エラーはリトライ不可
+            throw new NonRetryableException("Payment failed", e);
+        }
+    }
+}
+```
+
+**バックオフの計算:**
+
+```
+リトライ1: 1000ms + random(0-1000ms) = 1000-2000ms
+リトライ2: 2000ms + random(0-2000ms) = 2000-4000ms
+リトライ3: 4000ms + random(0-4000ms) = 4000-8000ms
+```
+
+**なぜ重要か:**
+
+- **セルフDDoS防止**: すべてのクライアントが同時にリトライしないよう、Jitterでランダム化
+- **サーバー負荷の軽減**: Exponential Backoffでサーバーへの負荷を段階的に軽減
+
+### 手動オペ対応
+
+フラグ切替・一時停止がコード修正なしで可能な設計。
+
+#### 実装例
+
+```java
+// ✅ 良い例: 機能フラグによる制御
+@Service
+public class OrderService {
+    @Autowired
+    private FeatureFlagService featureFlagService;
+    
+    public Order createOrder(OrderData orderData) {
+        Order order = orderRepository.save(new Order(orderData));
+        
+        // 機能フラグで外部API呼び出しを制御
+        if (featureFlagService.isEnabled("payment-api.enabled")) {
+            try {
+                paymentService.chargePayment(order.getId(), orderData.getAmount());
+            } catch (Exception e) {
+                // 外部APIが無効化されている場合、エラーをログに記録するが処理は続行
+                log.warn("Payment API disabled, skipping payment", Map.of(
+                    "orderId", order.getId()
+                ));
+            }
+        } else {
+            log.info("Payment API disabled by feature flag");
+        }
+        
+        return order;
+    }
+}
+
+// 機能フラグの設定（データベースまたは設定ファイル）
+@Entity
+public class FeatureFlag {
+    @Id
+    private String key;
+    private boolean enabled;
+    private String description;
+}
+
+// 管理画面で機能フラグを切り替え可能
+@RestController
+@RequestMapping("/admin/feature-flags")
+public class FeatureFlagController {
+    @Autowired
+    private FeatureFlagService featureFlagService;
+    
+    @PostMapping("/{key}/enable")
+    public void enableFeatureFlag(@PathVariable String key) {
+        featureFlagService.enable(key);
+    }
+    
+    @PostMapping("/{key}/disable")
+    public void disableFeatureFlag(@PathVariable String key) {
+        featureFlagService.disable(key);
+    }
+}
+```
+
+**なぜ重要か:**
+
+- **迅速な対応**: コード修正なしで、機能を一時的に無効化可能
+- **リスクの軽減**: 問題が発生した場合、すぐに機能を無効化して影響を最小化
+
+### まとめ
+
+復旧設計とフォールバック戦略のポイント：
+
+- **Graceful Degradation**: 外部依存が落ちたらキャッシュ・スタブで縮退運転
+- **再起動安全性**: 再起動時に中途状態をリカバリ可能にする
+- **バックオフ戦略**: Exponential Backoff + JitterでセルフDDoSを防止
+- **手動オペ対応**: フラグ切替・一時停止がコード修正なしで可能な設計
+
+これらの設計により、障害から自動/手動で安全に戻れます。
+

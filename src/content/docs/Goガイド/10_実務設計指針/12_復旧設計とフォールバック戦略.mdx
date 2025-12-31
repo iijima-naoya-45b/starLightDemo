@@ -1,0 +1,260 @@
+---
+title: "復旧設計とフォールバック戦略"
+label: "復旧設計とフォールバック戦略"
+---
+
+## 復旧設計とフォールバック戦略
+
+障害から自動/手動で安全に戻れる設計を詳しく解説します。
+
+### Graceful Degradation
+
+外部依存が落ちたらキャッシュ・スタブで縮退運転する。
+
+#### 実装例
+
+```go
+// ✅ 良い例: キャッシュによるフォールバック
+import "github.com/go-redis/redis/v8"
+
+var redisClient *redis.Client
+
+func getProduct(productID int64) (*Product, error) {
+    // 1. キャッシュから取得を試みる
+    cached, err := redisClient.Get(ctx, fmt.Sprintf("product:%d", productID)).Result()
+    if err == nil {
+        var product Product
+        json.Unmarshal([]byte(cached), &product)
+        return &product, nil
+    }
+    
+    // 2. データベースから取得を試みる
+    product, err := productRepo.FindByID(productID)
+    if err == nil {
+        // キャッシュに保存（TTL: 1時間）
+        productJSON, _ := json.Marshal(product)
+        redisClient.Set(ctx, fmt.Sprintf("product:%d", productID), productJSON, time.Hour)
+        return product, nil
+    }
+    
+    // 3. データベースが落ちている場合、外部APIから取得を試みる
+    resp, err := http.Get(fmt.Sprintf("https://external-api.example.com/products/%d", productID))
+    if err == nil {
+        var product Product
+        json.NewDecoder(resp.Body).Decode(&product)
+        
+        // キャッシュに保存（次回はキャッシュから取得可能）
+        productJSON, _ := json.Marshal(product)
+        redisClient.Set(ctx, fmt.Sprintf("product:%d", productID), productJSON, time.Hour)
+        
+        return &product, nil
+    }
+    
+    // 4. すべて失敗した場合、スタブデータを返す
+    log.Warn("All data sources failed, returning stub data",
+        zap.Int64("product_id", productID),
+        zap.Error(err),
+    )
+    
+    return createStubProduct(productID), nil
+}
+
+func createStubProduct(productID int64) *Product {
+    // スタブデータ（最低限の情報のみ）
+    return &Product{
+        ID:    productID,
+        Name:  "Product information temporarily unavailable",
+        Price: decimal.Zero,
+    }
+}
+```
+
+**なぜ重要か:**
+
+- **可用性の向上**: 外部依存が落ちても、最低限のサービスを提供可能
+- **ユーザー体験**: 完全なエラーではなく、スタブデータを返すことでユーザー体験を維持
+
+### 再起動安全性
+
+再起動時に中途状態をリカバリ可能にする（例：処理キューの再読込）。
+
+#### 実装例
+
+```go
+// ✅ 良い例: 再起動時にOutboxを再処理
+func recoverPendingEvents() {
+    // アプリケーション起動時に、PENDING状態のイベントを再処理
+    var pendingEvents []OutboxEvent
+    db.Where("status = ?", "PENDING").Find(&pendingEvents)
+    
+    log.Info("Recovering pending outbox events",
+        zap.Int("count", len(pendingEvents)),
+    )
+    
+    for _, event := range pendingEvents {
+        // リトライ回数が上限を超えていない場合のみ再処理
+        if event.RetryCount < 3 {
+            processOutboxEvent(&event)
+        } else {
+            log.Warn("Outbox event exceeded retry limit",
+                zap.Uint("event_id", event.ID),
+                zap.Int("retry_count", event.RetryCount),
+            )
+            
+            // 手動対応が必要な状態としてマーク
+            db.Model(&event).Update("status", "MANUAL_REVIEW_REQUIRED")
+        }
+    }
+}
+
+// アプリケーション起動時に実行
+func main() {
+    // データベース接続など初期化処理...
+    
+    // Outboxをリカバリ
+    recoverPendingEvents()
+    
+    // HTTPサーバーを起動
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+**なぜ重要か:**
+
+- **データの整合性**: 再起動時に中途状態のデータをリカバリ可能
+- **自動復旧**: 手動介入なしで自動的に復旧可能
+
+### バックオフ戦略
+
+Exponential Backoff とJitterでセルフDDoSを防止する。
+
+#### 実装例
+
+```go
+// ✅ 良い例: Exponential Backoff + Jitter
+func retryWithBackoff(fn func() error, maxRetries int) error {
+    for i := 0; i < maxRetries; i++ {
+        err := fn()
+        if err == nil {
+            return nil
+        }
+        
+        if i == maxRetries-1 {
+            return err
+        }
+        
+        // Exponential Backoff + Jitter
+        baseDelay := time.Duration(1<<uint(i)) * time.Second // 1s, 2s, 4s
+        jitter := time.Duration(rand.Intn(1000)) * time.Millisecond // 0-1s
+        delay := baseDelay + jitter
+        
+        time.Sleep(delay)
+    }
+    
+    return fmt.Errorf("max retries exceeded")
+}
+
+func chargePayment(orderID int64, amount decimal.Decimal) error {
+    return retryWithBackoff(func() error {
+        client := &http.Client{Timeout: 3 * time.Second}
+        resp, err := client.Post(
+            "https://payment-api.example.com/charge",
+            "application/json",
+            bytes.NewBuffer(orderJSON),
+        )
+        if err != nil {
+            return err
+        }
+        if resp.StatusCode != 200 {
+            return fmt.Errorf("payment failed: %d", resp.StatusCode)
+        }
+        return nil
+    }, 3)
+}
+```
+
+**バックオフの計算:**
+
+```
+リトライ1: 1000ms + random(0-1000ms) = 1000-2000ms
+リトライ2: 2000ms + random(0-2000ms) = 2000-4000ms
+リトライ3: 4000ms + random(0-4000ms) = 4000-8000ms
+```
+
+**なぜ重要か:**
+
+- **セルフDDoS防止**: すべてのクライアントが同時にリトライしないよう、Jitterでランダム化
+- **サーバー負荷の軽減**: Exponential Backoffでサーバーへの負荷を段階的に軽減
+
+### 手動オペ対応
+
+フラグ切替・一時停止がコード修正なしで可能な設計。
+
+#### 実装例
+
+```go
+// ✅ 良い例: 機能フラグによる制御
+type FeatureFlag struct {
+    Key     string
+    Enabled bool
+}
+
+var featureFlags = make(map[string]bool)
+
+func isFeatureEnabled(key string) bool {
+    return featureFlags[key]
+}
+
+func createOrder(orderData OrderData) (*Order, error) {
+    order, err := orderRepo.Save(orderData)
+    if err != nil {
+        return nil, err
+    }
+    
+    // 機能フラグで外部API呼び出しを制御
+    if isFeatureEnabled("payment-api.enabled") {
+        err := paymentService.ChargePayment(order.ID, orderData.Amount)
+        if err != nil {
+            // 外部APIが無効化されている場合、エラーをログに記録するが処理は続行
+            log.Warn("Payment API disabled, skipping payment",
+                zap.Int64("order_id", order.ID),
+                zap.Error(err),
+            )
+        }
+    } else {
+        log.Info("Payment API disabled by feature flag")
+    }
+    
+    return order, nil
+}
+
+// 管理画面で機能フラグを切り替え可能
+func enableFeatureFlagHandler(w http.ResponseWriter, r *http.Request) {
+    key := r.URL.Query().Get("key")
+    featureFlags[key] = true
+    json.NewEncoder(w).Encode(map[string]string{"message": "Feature flag enabled"})
+}
+
+func disableFeatureFlagHandler(w http.ResponseWriter, r *http.Request) {
+    key := r.URL.Query().Get("key")
+    featureFlags[key] = false
+    json.NewEncoder(w).Encode(map[string]string{"message": "Feature flag disabled"})
+}
+```
+
+**なぜ重要か:**
+
+- **迅速な対応**: コード修正なしで、機能を一時的に無効化可能
+- **リスクの軽減**: 問題が発生した場合、すぐに機能を無効化して影響を最小化
+
+### まとめ
+
+復旧設計とフォールバック戦略のポイント：
+
+- **Graceful Degradation**: 外部依存が落ちたらキャッシュ・スタブで縮退運転
+- **再起動安全性**: 再起動時に中途状態をリカバリ可能にする
+- **バックオフ戦略**: Exponential Backoff + JitterでセルフDDoSを防止
+- **手動オペ対応**: フラグ切替・一時停止がコード修正なしで可能な設計
+
+これらの設計により、障害から自動/手動で安全に戻れます。
+

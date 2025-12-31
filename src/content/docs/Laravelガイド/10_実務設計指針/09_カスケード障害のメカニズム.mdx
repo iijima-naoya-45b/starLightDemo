@@ -1,0 +1,171 @@
+---
+title: "カスケード障害のメカニズム"
+label: "カスケード障害のメカニズム"
+---
+
+## カスケード障害のメカニズム
+
+1つの遅延が全体を死滅させるメカニズムと、その対策を詳しく解説します。
+
+### カスケード障害の発生フロー
+
+#### 典型的なシナリオ
+
+```
+1. 外部APIが遅延（通常100ms → 5s）
+   ↓
+2. 接続待ちプロセスが解放されずプールが飽和
+   ↓
+3. 全エンドポイントが応答不能に陥る
+   ↓
+4. 不完全なDBトランザクションを残して全プロセスダウン
+   
+→ 1つの遅延が全体を死滅させる
+```
+
+#### 実際のタイムライン
+
+```
+時刻: 2024-01-01 10:00:00
+状況: 外部決済APIが遅延
+
+10:00:00.000 - 外部決済APIが通常の100msから5秒に遅延開始
+10:00:00.100 - リクエスト1受信（プロセス1を取得、外部API呼び出し開始）
+10:00:00.200 - リクエスト2受信（プロセス2を取得、外部API呼び出し開始）
+10:00:00.300 - リクエスト3受信（プロセス3を取得、外部API呼び出し開始）
+...
+10:00:01.000 - プロセスプールが飽和（5/5プロセスが外部API待ち）
+10:00:01.100 - リクエスト6受信（プロセスプールが満杯、待機）
+10:00:01.200 - リクエスト7受信（プロセスプールが満杯、待機）
+...
+10:00:05.000 - 外部APIが応答（5秒経過）
+10:00:05.100 - プロセス1が解放されるが、すぐに次のリクエストで使用される
+10:00:05.200 - プロセス2が解放されるが、すぐに次のリクエストで使用される
+10:00:05.300 - 外部APIが再び遅延（負荷が高い）
+10:00:10.000 - すべてのプロセスが再び外部API待ちで飽和
+10:00:10.100 - 新しいリクエストが処理できず、タイムアウトエラーが発生
+10:00:10.200 - エラーログが大量に出力され、ログシステムも負荷が高い
+10:00:15.000 - システム全体が応答不能に陥る
+```
+
+### 問題のあるコード
+
+```php
+// ❌ 問題のあるコード: タイムアウトなし、サーキットブレーカーなし
+class PaymentService
+{
+    public function chargePayment($orderId, $amount)
+    {
+        // 問題: タイムアウトが設定されていない
+        // 問題: サーキットブレーカーがない
+        $response = Http::post('https://payment-api.example.com/charge', [
+            'order_id' => $orderId,
+            'amount' => $amount,
+        ]);
+        
+        return $response->json();
+    }
+}
+```
+
+**なぜ事故るか:**
+
+1. **タイムアウトなし**: 外部APIが遅延すると、プロセスが長時間占有される
+2. **サーキットブレーカーなし**: 外部APIが障害状態でも呼び出し続ける
+3. **プロセスプールの飽和**: すべてのプロセスが外部API待ちで、他のリクエストが処理できない
+
+### 解決策
+
+#### 1. タイムアウトの設定
+
+```php
+// ✅ 良い例: タイムアウトを設定
+class PaymentService
+{
+    public function chargePayment($orderId, $amount)
+    {
+        try {
+            $response = Http::timeout(3)->post('https://payment-api.example.com/charge', [
+                'order_id' => $orderId,
+                'amount' => $amount,
+            ]);
+            
+            return $response->json();
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            throw new PaymentTimeoutException("Payment API timeout: " . $e->getMessage());
+        }
+    }
+}
+```
+
+#### 2. サーキットブレーカーの実装
+
+```php
+// ✅ 良い例: Laravel Circuit Breakerを使用したサーキットブレーカー
+use Illuminate\Support\Facades\Cache;
+
+class PaymentService
+{
+    private $circuitBreaker;
+    
+    public function __construct()
+    {
+        $this->circuitBreaker = new CircuitBreaker('payment-api', [
+            'failure_threshold' => 5,
+            'timeout' => 30,
+        ]);
+    }
+    
+    public function chargePayment($orderId, $amount)
+    {
+        return $this->circuitBreaker->call(function () use ($orderId, $amount) {
+            $response = Http::timeout(3)->post('https://payment-api.example.com/charge', [
+                'order_id' => $orderId,
+                'amount' => $amount,
+            ]);
+            
+            return $response->json();
+        });
+    }
+}
+```
+
+#### 3. Queueによる非同期処理
+
+```php
+// ✅ 良い例: Queueで非同期処理
+class ProcessPayment implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    
+    public function handle()
+    {
+        $paymentService = new PaymentService();
+        $paymentService->chargePayment($this->orderId, $this->amount);
+    }
+}
+
+class OrderController extends Controller
+{
+    public function create(Request $request)
+    {
+        $order = Order::create($request->all());
+        
+        // 非同期処理をキューに投入（プロセスプールを占有しない）
+        ProcessPayment::dispatch($order->id, $order->amount);
+        
+        return response()->json(['id' => $order->id]);
+    }
+}
+```
+
+### まとめ
+
+カスケード障害のメカニズムのポイント：
+
+- **発生フロー**: 外部APIの遅延 → プロセスプールの飽和 → 全エンドポイントの応答不能 → システム全体のダウン
+- **対策**: タイムアウト設定、サーキットブレーカー、Queueによる非同期処理
+- **原則**: すべての設計はこのフローを想定して、「時間とリソース」で守る
+
+適切な対策により、1つの遅延が全体を死滅させることを防げます。
+

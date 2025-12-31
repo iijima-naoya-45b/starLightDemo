@@ -1,0 +1,608 @@
+---
+title: "mergeとrebase"
+label: "mergeとrebase"
+---
+
+## mergeとrebase
+
+ブランチを統合する際に使用する`merge`と`rebase`について詳しく解説します。
+
+### なぜmergeとrebaseを理解する必要があるのか
+
+#### ブランチ統合なしの問題
+
+**問題のある状況:**
+
+```
+開発者A: 「featureブランチで開発した機能をmainブランチに統合したい...」
+開発者B: 「どうやって統合するの？手動でコピーする？」
+
+// 問題点:
+// - ブランチの統合方法がわからない
+// - 履歴が複雑になる
+// - コンフリクトの解決が困難
+```
+
+**影響:**
+- ブランチの統合が困難
+- 履歴の複雑化
+- コンフリクトの増加
+- チーム間の混乱
+
+#### mergeとrebaseによる解決
+
+**改善された状況:**
+
+```
+適切なブランチ統合:
+- merge: 履歴を保持しながら統合
+- rebase: 履歴を整理して統合
+- コンフリクトの解決が容易
+```
+
+**メリット:**
+- ブランチの統合が容易
+- 履歴の整理
+- コンフリクトの解決が容易
+- チーム間の協力が向上
+
+### merge（マージ）
+
+#### mergeとは
+
+**定義:**
+`merge`は、2つのブランチの変更を統合するコマンドです。履歴を保持しながら統合します。
+
+**基本的な使い方:**
+
+```bash
+# 現在のブランチに別のブランチをマージ
+git merge <ブランチ名>
+
+# 例: featureブランチをmainブランチにマージ
+git checkout main
+git merge feature
+```
+
+#### mergeの種類
+
+**1. Fast-forward merge（早送りマージ）:**
+
+```bash
+# マージ先のブランチに新しいコミットがない場合
+# 例:
+# main: A---B
+# feature:      C---D
+# 結果: A---B---C---D
+
+git checkout main
+git merge feature
+# Fast-forward mergeが実行される
+```
+
+**2. 3-way merge（3方向マージ）:**
+
+```bash
+# マージ先のブランチにも新しいコミットがある場合
+# 例:
+# main: A---B---E
+# feature:      C---D
+# 結果: A---B---E---M (Mはマージコミット)
+#            \     /
+#             C---D
+
+git checkout main
+git merge feature
+# 3-way mergeが実行され、マージコミットが作成される
+```
+
+**3. マージコミットの作成:**
+
+```bash
+# マージコミットを作成してマージ
+git merge --no-ff feature
+
+# マージメッセージを指定
+git merge -m "featureブランチをマージ" feature
+```
+
+#### mergeの実践例
+
+**基本的なマージ:**
+
+```bash
+# 1. featureブランチで開発
+git checkout -b feature/user-auth
+# 開発作業...
+git add .
+git commit -m "ユーザー認証機能を実装"
+
+# 2. mainブランチにマージ
+git checkout main
+git merge feature/user-auth
+
+# 3. マージ後の確認
+git log --oneline --graph
+```
+
+**コンフリクトの解決:**
+
+```bash
+# マージ時にコンフリクトが発生
+git merge feature
+# Auto-merging file.txt
+# CONFLICT (content): Merge conflict in file.txt
+
+# コンフリクトファイルを確認
+cat file.txt
+# <<<<<<< HEAD
+# mainブランチの内容
+# =======
+# featureブランチの内容
+# >>>>>>> feature
+
+# コンフリクトを解決
+# ファイルを編集してコンフリクトマーカーを削除
+
+# 解決後、ステージングとコミット
+git add file.txt
+git commit -m "コンフリクトを解決"
+```
+
+### rebase（リベース）
+
+#### rebaseとは
+
+**定義:**
+`rebase`は、ブランチのベースを変更し、履歴を一直線に整理するコマンドです。
+
+**基本的な使い方:**
+
+```bash
+# 現在のブランチを別のブランチの上にリベース
+git rebase <ブランチ名>
+
+# 例: featureブランチをmainブランチの上にリベース
+git checkout feature
+git rebase main
+```
+
+#### rebaseの動作
+
+**rebase前:**
+
+```
+main: A---B---C
+feature:      D---E
+```
+
+**rebase後:**
+
+```
+main: A---B---C
+feature:          D'---E'
+```
+
+**実践例:**
+
+```bash
+# 1. featureブランチで開発
+git checkout -b feature/user-profile
+# 開発作業...
+git add .
+git commit -m "ユーザープロフィール機能を実装"
+
+# 2. mainブランチの最新変更を取得
+git checkout main
+git pull origin main
+
+# 3. featureブランチをmainの上にリベース
+git checkout feature/user-profile
+git rebase main
+
+# 4. リベース後の確認
+git log --oneline --graph
+```
+
+#### インタラクティブリベース
+
+**定義:**
+`interactive rebase`は、過去のコミットを編集・統合・削除できる機能です。
+
+**基本的な使い方:**
+
+```bash
+# 過去3つのコミットを編集
+git rebase -i HEAD~3
+
+# エディタが開き、以下のような内容が表示される:
+# pick abc1234 最初のコミット
+# pick def5678 2番目のコミット
+# pick ghi9012 3番目のコミット
+
+# 編集可能なコマンド:
+# pick: コミットを使用
+# reword: コミットメッセージを変更
+# edit: コミットを編集
+# squash: 前のコミットと統合
+# fixup: 前のコミットと統合（メッセージは使用しない）
+# drop: コミットを削除
+```
+
+**実践例:**
+
+```bash
+# コミットメッセージを変更
+git rebase -i HEAD~3
+# reword abc1234 最初のコミット
+# pick def5678 2番目のコミット
+# pick ghi9012 3番目のコミット
+
+# コミットを統合
+git rebase -i HEAD~3
+# pick abc1234 最初のコミット
+# squash def5678 2番目のコミット
+# squash ghi9012 3番目のコミット
+```
+
+#### コンフリクトの解決
+
+**実践例:**
+
+```bash
+# リベース時にコンフリクトが発生
+git rebase main
+# Auto-merging file.txt
+# CONFLICT (content): Merge conflict in file.txt
+
+# コンフリクトファイルを確認
+cat file.txt
+# <<<<<<< HEAD
+# mainブランチの内容
+# =======
+# featureブランチの内容
+# >>>>>>> feature
+
+# コンフリクトを解決
+# ファイルを編集してコンフリクトマーカーを削除
+
+# 解決後、ステージングと続行
+git add file.txt
+git rebase --continue
+
+# リベースを中止する場合
+git rebase --abort
+```
+
+### merge vs rebase
+
+#### 比較表
+
+| 項目 | merge | rebase |
+|------|-------|--------|
+| **履歴** | マージコミットが作成される | 一直線の履歴 |
+| **可読性** | 履歴が複雑になる可能性 | 履歴が整理される |
+| **安全性** | 元の履歴が保持される | 履歴が書き換えられる |
+| **使用場面** | 共有ブランチの統合 | 個人ブランチの整理 |
+| **コンフリクト** | 1回のコンフリクト解決 | 複数回のコンフリクト解決 |
+
+#### 使い分け
+
+**mergeを使うべき場合:**
+
+```bash
+# 1. 共有ブランチの統合
+git checkout main
+git merge feature
+
+# 2. 履歴を保持したい場合
+git merge --no-ff feature
+
+# 3. チームで使用しているブランチ
+```
+
+**rebaseを使うべき場合:**
+
+```bash
+# 1. 個人ブランチの整理
+git checkout feature
+git rebase main
+
+# 2. コミット履歴を整理したい場合
+git rebase -i HEAD~5
+
+# 3. プルリクエストを送る前の整理
+```
+
+### 実践的なワークフロー
+
+#### 1. featureブランチの開発と統合
+
+```bash
+# 1. featureブランチを作成
+git checkout -b feature/new-feature
+
+# 2. 開発作業
+git add .
+git commit -m "新機能を実装"
+
+# 3. mainブランチの最新変更を取得
+git checkout main
+git pull origin main
+
+# 4. featureブランチをmainの上にリベース
+git checkout feature/new-feature
+git rebase main
+
+# 5. コンフリクトがあれば解決
+# git add .
+# git rebase --continue
+
+# 6. mainブランチにマージ
+git checkout main
+git merge feature/new-feature
+
+# 7. リモートにプッシュ
+git push origin main
+```
+
+#### 2. コミット履歴の整理
+
+```bash
+# 1. 過去5つのコミットを整理
+git rebase -i HEAD~5
+
+# 2. エディタで編集
+# pick → squash でコミットを統合
+# pick → reword でメッセージを変更
+
+# 3. 保存して閉じる
+
+# 4. リモートにプッシュ（force pushが必要）
+git push origin feature --force-with-lease
+```
+
+### rebase後のpush時の注意点
+
+#### なぜforce pushが必要なのか
+
+**問題のある状況:**
+
+```bash
+# 1. featureブランチで開発
+git checkout -b feature/user-auth
+git commit -m "認証機能を実装"
+git push -u origin feature/user-auth
+
+# 2. mainブランチの最新変更を取り込むためにrebase
+git rebase main
+
+# 3. 通常のpushを試みる
+git push origin feature/user-auth
+# error: failed to push some refs to 'origin'
+# hint: Updates were rejected because the tip of your current branch is behind
+```
+
+**原因:**
+- rebaseにより履歴が書き換えられる
+- リモートの履歴とローカルの履歴が一致しない
+- 通常のpushでは履歴の不一致により拒否される
+
+#### force pushのリスク
+
+**問題のある状況:**
+
+```bash
+# force pushを実行
+git push --force origin feature/user-auth
+
+# 問題点:
+# - 他の開発者が同じブランチで作業している場合、履歴が壊れる
+# - 他の開発者の作業が失われる可能性
+# - 共有ブランチで実行すると大きな問題になる
+```
+
+**影響:**
+- 他の開発者の作業の損失
+- 履歴の破壊
+- チーム間の混乱
+
+#### 安全なforce push
+
+**--force-with-leaseを使用:**
+
+```bash
+# 安全なforce push
+git push --force-with-lease origin feature/user-auth
+
+# メリット:
+# - リモートブランチが他の開発者によって更新されていない場合のみpush
+# - 他の開発者の作業を保護
+```
+
+**実践例:**
+
+```bash
+# 1. rebaseを実行
+git rebase main
+
+# 2. 安全なforce push
+git push --force-with-lease origin feature/user-auth
+
+# 3. リモートブランチが更新されている場合
+# error: failed to push some refs to 'origin'
+# hint: Updates were rejected because the remote contains work that you do
+# hint: not have locally.
+
+# 4. リモートの変更を確認
+git fetch origin
+git log origin/feature/user-auth
+
+# 5. 必要に応じて再度rebase
+git rebase origin/feature/user-auth
+
+# 6. 再度force push
+git push --force-with-lease origin feature/user-auth
+```
+
+### rebaseの回避策
+
+#### 1. mergeを使用する
+
+**実践例:**
+
+```bash
+# rebaseの代わりにmergeを使用
+git checkout feature/user-auth
+git merge main
+
+# メリット:
+# - 履歴が書き換えられない
+# - force pushが不要
+# - 安全にpushできる
+# - 共有ブランチでも問題ない
+
+# デメリット:
+# - マージコミットが作成される
+# - 履歴が複雑になる可能性
+```
+
+#### 2. 個人ブランチでのみrebaseを使用
+
+**実践例:**
+
+```bash
+# 個人ブランチでのみrebaseを使用
+git checkout -b feature/user-auth
+# 開発作業...
+git commit -m "認証機能を実装"
+
+# mainブランチの最新変更を取り込む
+git rebase main
+
+# まだプッシュしていない場合、安全にforce pushできる
+git push --force-with-lease origin feature/user-auth
+
+# 他の開発者が同じブランチで作業している場合はmergeを使用
+git merge main
+git push origin feature/user-auth
+```
+
+#### 3. プルリクエスト前にrebase
+
+**実践例:**
+
+```bash
+# 1. featureブランチで開発
+git checkout -b feature/user-auth
+git commit -m "認証機能を実装"
+git push -u origin feature/user-auth
+
+# 2. プルリクエストを作成（まだマージしない）
+
+# 3. mainブランチの最新変更を取り込む
+git checkout main
+git pull origin main
+
+# 4. featureブランチにrebase
+git checkout feature/user-auth
+git rebase main
+
+# 5. 安全にforce push（個人ブランチなので安全）
+git push --force-with-lease origin feature/user-auth
+
+# 6. プルリクエストが自動的に更新される
+
+# 7. レビューと承認後、マージ
+```
+
+#### 4. インタラクティブリベースで履歴を整理
+
+**実践例:**
+
+```bash
+# 1. コミット履歴を整理
+git rebase -i HEAD~5
+
+# 2. エディタで編集
+# pick → squash でコミットを統合
+# pick → reword でメッセージを変更
+
+# 3. 保存して閉じる
+
+# 4. 安全にforce push（個人ブランチ）
+git push --force-with-lease origin feature/user-auth
+```
+
+### 実践的なワークフロー
+
+#### 個人ブランチでのrebase
+
+```bash
+# 1. featureブランチを作成
+git checkout -b feature/new-feature main
+
+# 2. 開発作業
+git add .
+git commit -m "新機能を実装"
+git push -u origin feature/new-feature
+
+# 3. mainブランチの最新変更を取り込む
+git checkout main
+git pull origin main
+
+# 4. featureブランチにrebase
+git checkout feature/new-feature
+git rebase main
+
+# 5. コンフリクトがあれば解決
+# git add .
+# git rebase --continue
+
+# 6. 安全にforce push
+git push --force-with-lease origin feature/new-feature
+
+# 7. プルリクエストを作成
+```
+
+#### 共有ブランチでのmerge
+
+```bash
+# 1. featureブランチを作成（複数の開発者が作業）
+git checkout -b feature/shared-feature main
+
+# 2. 開発作業
+git add .
+git commit -m "共有機能を実装"
+git push -u origin feature/shared-feature
+
+# 3. 他の開発者も同じブランチで作業している場合
+
+# 4. mainブランチの最新変更を取り込む（mergeを使用）
+git checkout main
+git pull origin main
+
+# 5. featureブランチにmerge
+git checkout feature/shared-feature
+git merge main
+
+# 6. 通常のpush（force push不要）
+git push origin feature/shared-feature
+
+# 7. プルリクエストを作成
+```
+
+### まとめ
+
+mergeとrebaseのポイント：
+
+- **merge**: ブランチを統合、履歴を保持、マージコミットが作成される
+- **rebase**: ブランチのベースを変更、履歴を整理、一直線の履歴
+- **インタラクティブリベース**: 過去のコミットを編集・統合・削除
+- **使い分け**: mergeは共有ブランチ、rebaseは個人ブランチ
+- **rebase後のpush**: --force-with-leaseを使用、個人ブランチでのみ推奨
+- **回避策**: mergeを使用、個人ブランチでのみrebase、プルリクエスト前にrebase
+- **実践的なワークフロー**: 個人ブランチでのrebase、共有ブランチでのmerge
+
+適切にmergeとrebaseを使用することで、効率的にブランチを管理できます。
+

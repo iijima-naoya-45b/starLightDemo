@@ -1,0 +1,172 @@
+---
+title: "データ定義"
+label: "データ定義"
+---
+
+## データ定義
+
+COBOLのデータ定義を詳しく解説します。
+
+### PIC句（Picture Clause）
+
+#### 基本的なデータ型
+
+**英数字（X）:**
+
+```cobol
+       01 CUSTOMER-NAME     PIC X(30).
+       01 ADDRESS           PIC X(50).
+```
+
+**数値（9）:**
+
+```cobol
+       01 CUSTOMER-ID       PIC 9(10).
+       01 QUANTITY          PIC 9(5).
+       01 PRICE             PIC 9(8)V99.
+```
+
+**編集済み数値:**
+
+```cobol
+       01 AMOUNT            PIC $9(8).99.
+       01 DATE-FORMAT       PIC 9(8).
+       01 PHONE-NUMBER      PIC 9(10).
+```
+
+#### データ型の詳細
+
+**英数字（X）:**
+
+```cobol
+       01 NAME              PIC X(20).     *> 20文字の英数字
+       01 CODE              PIC X(5).      *> 5文字の英数字
+```
+
+**数値（9）:**
+
+```cobol
+       01 ID                PIC 9(5).      *> 5桁の数値
+       01 AMOUNT            PIC 9(8)V99.   *> 8桁の整数、2桁の小数
+       01 PERCENTAGE        PIC 9(3)V9999. *> 3桁の整数、4桁の小数
+```
+
+**編集済み数値:**
+
+```cobol
+       01 AMOUNT            PIC $9(8).99.      *> ドル記号付き
+       01 AMOUNT            PIC $,$$$,$$$.99.  *> カンマ区切り
+       01 AMOUNT            PIC ZZZ,ZZZ.99.    *> 先頭ゼロを空白に
+       01 AMOUNT            PIC +9(8).99.      *> 符号付き
+       01 AMOUNT            PIC -9(8).99.      *> 負数表示
+```
+
+### データ構造
+
+#### グループ項目と基本項目
+
+**グループ項目:**
+
+```cobol
+       01 CUSTOMER-RECORD.
+           05 CUSTOMER-ID      PIC X(10).
+           05 CUSTOMER-NAME    PIC X(30).
+           05 CUSTOMER-ADDRESS.
+               10 STREET       PIC X(30).
+               10 CITY         PIC X(20).
+               10 STATE        PIC X(2).
+               10 ZIP-CODE     PIC 9(5).
+           05 CUSTOMER-BALANCE PIC 9(10)V99.
+```
+
+**OCCURS句（配列）:**
+
+```cobol
+       01 SALES-RECORD.
+           05 SALES-YEAR       PIC 9(4).
+           05 MONTHLY-SALES    OCCURS 12 TIMES.
+               10 MONTH        PIC 9(2).
+               10 AMOUNT       PIC 9(8)V99.
+```
+
+**INDEXED BY句（インデックス）:**
+
+```cobol
+       01 SALES-RECORD.
+           05 SALES-YEAR       PIC 9(4).
+           05 MONTHLY-SALES    OCCURS 12 TIMES
+                              INDEXED BY MONTH-INDEX.
+               10 MONTH        PIC 9(2).
+               10 AMOUNT       PIC 9(8)V99.
+```
+
+### VALUE句（初期値）
+
+**初期値の設定:**
+
+```cobol
+       01 WS-COUNTER           PIC 9(5) VALUE ZERO.
+       01 WS-TOTAL             PIC 9(10)V99 VALUE ZERO.
+       01 WS-FLAG              PIC X VALUE 'N'.
+           88 WS-FLAG-YES      VALUE 'Y'.
+           88 WS-FLAG-NO       VALUE 'N'.
+       01 WS-MESSAGE           PIC X(50) VALUE 'Hello, World!'.
+```
+
+### 条件名（88レベル）
+
+**条件名の定義:**
+
+```cobol
+       01 WS-FILE-STATUS       PIC X(2).
+           88 WS-FILE-OK       VALUE '00'.
+           88 WS-FILE-EOF      VALUE '10'.
+           88 WS-FILE-ERROR    VALUE '99'.
+       
+       01 WS-GENDER            PIC X.
+           88 WS-MALE          VALUE 'M'.
+           88 WS-FEMALE        VALUE 'F'.
+       
+       01 WS-AGE               PIC 9(3).
+           88 WS-MINOR         VALUE 0 THRU 17.
+           88 WS-ADULT         VALUE 18 THRU 64.
+           88 WS-SENIOR        VALUE 65 THRU 999.
+```
+
+**使用例:**
+
+```cobol
+       IF WS-FILE-OK
+           DISPLAY "File operation successful"
+       END-IF
+       
+       IF WS-MINOR
+           DISPLAY "Customer is a minor"
+       END-IF
+```
+
+### REDEFINES句（再定義）
+
+**再定義:**
+
+```cobol
+       01 WS-DATE-FIELD        PIC X(8).
+       01 WS-DATE-REDEF        REDEFINES WS-DATE-FIELD.
+           05 WS-YEAR          PIC 9(4).
+           05 WS-MONTH          PIC 9(2).
+           05 WS-DAY            PIC 9(2).
+```
+
+### まとめ
+
+データ定義のポイント：
+
+- **PIC句**: データ形式の定義（X: 英数字、9: 数値）
+- **グループ項目**: 階層的なデータ構造
+- **OCCURS句**: 配列の定義
+- **VALUE句**: 初期値の設定
+- **条件名（88レベル）**: 条件の定義
+- **REDEFINES句**: データの再定義
+
+適切なデータ定義により、明確で保守しやすいCOBOLプログラムを書けます。
+

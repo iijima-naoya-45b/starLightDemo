@@ -1,0 +1,217 @@
+---
+title: "カスケード障害のメカニズム"
+label: "カスケード障害のメカニズム"
+---
+
+## カスケード障害のメカニズム
+
+1つの遅延が全体を死滅させるメカニズムと、その対策を詳しく解説します。
+
+### カスケード障害の発生フロー
+
+#### 典型的なシナリオ
+
+```
+1. 外部APIが遅延（通常100ms → 5s）
+   ↓
+2. イベントループがブロックされ、すべてのリクエストが処理できなくなる
+   ↓
+3. 全エンドポイントが応答不能に陥る
+   ↓
+4. 不完全なDBトランザクションを残して全プロセスダウン
+   
+→ 1つの遅延が全体を死滅させる
+```
+
+#### 実際のタイムライン
+
+```
+時刻: 2024-01-01 10:00:00
+状況: 外部決済APIが遅延
+
+10:00:00.000 - 外部決済APIが通常の100msから5秒に遅延開始
+10:00:00.100 - リクエスト1受信（外部API呼び出し開始、イベントループがブロック）
+10:00:00.200 - リクエスト2受信（イベントループがブロックされているため待機）
+10:00:00.300 - リクエスト3受信（イベントループがブロックされているため待機）
+...
+10:00:05.000 - 外部APIが応答（5秒経過）
+10:00:05.100 - イベントループが解放されるが、すぐに次のリクエストで使用される
+10:00:05.200 - 外部APIが再び遅延（負荷が高い）
+10:00:10.000 - イベントループが再びブロック
+10:00:10.100 - 新しいリクエストが処理できず、タイムアウトエラーが発生
+10:00:10.200 - エラーログが大量に出力され、ログシステムも負荷が高い
+10:00:15.000 - システム全体が応答不能に陥る
+```
+
+### 問題のあるコード
+
+```typescript
+// ❌ 問題のあるコード: タイムアウトなし、同期I/O操作
+import * as fs from 'fs';
+
+app.post('/orders', async (req, res) => {
+  // 問題: 同期I/O操作によりイベントループがブロック
+  const config = fs.readFileSync('config.json', 'utf8');
+  
+  // 問題: タイムアウトが設定されていない
+  const response = await fetch('https://payment-api.example.com/charge', {
+    method: 'POST',
+    body: JSON.stringify(req.body),
+  });
+  
+  const result = await response.json();
+  res.json(result);
+});
+```
+
+**なぜ事故るか:**
+
+1. **イベントループのブロック**: 同期I/O操作により、イベントループがブロックされる
+2. **タイムアウトなし**: 外部APIが遅延すると、すべてのリクエストが待機する
+3. **全エンドポイントの停止**: イベントループがブロックされている間、すべてのリクエストが処理できない
+
+### 解決策
+
+#### 1. タイムアウトの設定
+
+```typescript
+// ✅ 良い例: タイムアウトを設定
+import { setTimeout } from 'timers/promises';
+
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(timeoutMs).then(() => {
+    controller.abort();
+  });
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error('Request timeout');
+    }
+    throw error;
+  }
+}
+
+app.post('/orders', async (req, res) => {
+  try {
+    const response = await fetchWithTimeout(
+      'https://payment-api.example.com/charge',
+      {
+        method: 'POST',
+        body: JSON.stringify(req.body),
+      },
+      3000 // 3秒でタイムアウト
+    );
+    
+    const result = await response.json();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+```
+
+#### 2. 非同期I/O操作の使用
+
+```typescript
+// ✅ 良い例: 非同期I/O操作を使用
+import { readFile } from 'fs/promises';
+
+app.post('/orders', async (req, res) => {
+  // 非同期I/O操作（イベントループをブロックしない）
+  const config = await readFile('config.json', 'utf8');
+  
+  const response = await fetch('https://payment-api.example.com/charge', {
+    method: 'POST',
+    body: JSON.stringify(req.body),
+  });
+  
+  const result = await response.json();
+  res.json(result);
+});
+```
+
+#### 3. サーキットブレーカーの実装
+
+```typescript
+// ✅ 良い例: サーキットブレーカーの実装
+class CircuitBreaker {
+  private failures = 0;
+  private lastFailureTime = 0;
+  private state: 'CLOSED' | 'OPEN' | 'HALF_OPEN' = 'CLOSED';
+  
+  constructor(
+    private threshold: number = 5,
+    private timeout: number = 60000
+  ) {}
+  
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.state === 'OPEN') {
+      if (Date.now() - this.lastFailureTime > this.timeout) {
+        this.state = 'HALF_OPEN';
+      } else {
+        throw new Error('Circuit breaker is OPEN');
+      }
+    }
+    
+    try {
+      const result = await fn();
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    }
+  }
+  
+  private onSuccess(): void {
+    this.failures = 0;
+    this.state = 'CLOSED';
+  }
+  
+  private onFailure(): void {
+    this.failures++;
+    this.lastFailureTime = Date.now();
+    
+    if (this.failures >= this.threshold) {
+      this.state = 'OPEN';
+    }
+  }
+}
+
+const circuitBreaker = new CircuitBreaker();
+
+app.post('/orders', async (req, res) => {
+  try {
+    const result = await circuitBreaker.execute(async () => {
+      const response = await fetch('https://payment-api.example.com/charge', {
+        method: 'POST',
+        body: JSON.stringify(req.body),
+      });
+      return await response.json();
+    });
+    
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+```
+
+### まとめ
+
+カスケード障害のメカニズムのポイント：
+
+- **発生フロー**: 外部APIの遅延 → イベントループのブロック → 全エンドポイントの応答不能 → システム全体のダウン
+- **対策**: タイムアウト設定、非同期I/O操作、サーキットブレーカー
+- **原則**: すべての設計はこのフローを想定して、「時間とリソース」で守る
+
+適切な対策により、1つの遅延が全体を死滅させることを防げます。
+

@@ -1,0 +1,198 @@
+---
+title: "シェルスクリプトの基礎"
+label: "シェルスクリプトの基礎"
+---
+
+## シェルスクリプトの基礎
+
+シェルスクリプトは、複数のコマンドを自動化するためのスクリプトです。効率的な作業自動化が可能です。
+
+### シェルスクリプトの基本
+
+#### 基本的なスクリプト
+
+```bash
+#!/bin/bash
+# シェバン（使用するシェルを指定）
+
+# 変数の定義
+name="Alice"
+age=25
+
+# 変数の使用
+echo "Name: $name"
+echo "Age: $age"
+
+# コマンドの実行結果を変数に格納
+current_date=$(date)
+echo "Current date: $current_date"
+```
+
+#### 変数の使い方
+
+```bash
+#!/bin/bash
+
+# 変数の定義
+name="Alice"
+
+# 変数の使用
+echo $name
+echo ${name}
+
+# 変数のデフォルト値
+echo ${name:-"Default"}
+
+# 変数が未定義の場合にエラー
+echo ${name:?"Variable is not set"}
+```
+
+#### 引数の処理
+
+```bash
+#!/bin/bash
+
+# 引数の取得
+echo "First argument: $1"
+echo "Second argument: $2"
+echo "All arguments: $@"
+echo "Number of arguments: $#"
+
+# スクリプト名
+echo "Script name: $0"
+```
+
+#### 条件分岐
+
+```bash
+#!/bin/bash
+
+# if文
+if [ "$1" == "start" ]; then
+  echo "Starting..."
+elif [ "$1" == "stop" ]; then
+  echo "Stopping..."
+else
+  echo "Usage: $0 {start|stop}"
+fi
+
+# 数値比較
+if [ $age -gt 18 ]; then
+  echo "Adult"
+fi
+
+# ファイルの存在確認
+if [ -f "file.txt" ]; then
+  echo "File exists"
+fi
+```
+
+#### ループ
+
+```bash
+#!/bin/bash
+
+# forループ
+for i in 1 2 3 4 5; do
+  echo $i
+done
+
+# 範囲指定
+for i in {1..10}; do
+  echo $i
+done
+
+# ファイルのリスト
+for file in *.txt; do
+  echo "Processing $file"
+done
+
+# whileループ
+count=0
+while [ $count -lt 5 ]; do
+  echo $count
+  count=$((count + 1))
+done
+```
+
+#### 関数
+
+```bash
+#!/bin/bash
+
+# 関数の定義
+function greet() {
+  echo "Hello, $1!"
+}
+
+# 関数の呼び出し
+greet "Alice"
+
+# 戻り値
+function add() {
+  local sum=$(( $1 + $2 ))
+  return $sum
+}
+
+add 5 3
+echo "Sum: $?"
+```
+
+### 実践例
+
+#### バックアップスクリプト
+
+```bash
+#!/bin/bash
+
+# バックアップスクリプト
+BACKUP_DIR="/backup"
+SOURCE_DIR="/var/www"
+DATE=$(date +%Y%m%d_%H%M%S)
+
+# バックアップディレクトリの作成
+mkdir -p $BACKUP_DIR
+
+# バックアップの実行
+tar -czf $BACKUP_DIR/backup_$DATE.tar.gz $SOURCE_DIR
+
+# 古いバックアップの削除（7日以上前）
+find $BACKUP_DIR -name "backup_*.tar.gz" -mtime +7 -delete
+
+echo "Backup completed: backup_$DATE.tar.gz"
+```
+
+#### ログ分析スクリプト
+
+```bash
+#!/bin/bash
+
+# ログ分析スクリプト
+LOG_FILE="/var/log/app.log"
+
+# エラーの数をカウント
+error_count=$(grep -c "ERROR" $LOG_FILE)
+echo "Error count: $error_count"
+
+# 最新のエラーを表示
+echo "Latest errors:"
+grep "ERROR" $LOG_FILE | tail -10
+
+# IPアドレスの統計
+echo "Top IP addresses:"
+awk '{print $1}' $LOG_FILE | sort | uniq -c | sort -rn | head -10
+```
+
+### まとめ
+
+シェルスクリプトの基礎のポイント：
+
+- **変数**: 定義、使用、デフォルト値
+- **引数**: `$1`, `$2`, `$@`, `$#`
+- **条件分岐**: if文、数値比較、ファイル確認
+- **ループ**: for、while
+- **関数**: 定義、呼び出し、戻り値
+- **実践例**: バックアップ、ログ分析
+
+適切にシェルスクリプトを使用することで、作業を自動化できます。
+

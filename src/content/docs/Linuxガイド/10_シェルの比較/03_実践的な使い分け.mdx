@@ -1,0 +1,209 @@
+---
+title: "実践的な使い分け"
+label: "実践的な使い分け"
+---
+
+## 実践的な使い分け
+
+LinuxシェルとPowerShellの実践的な使い分けについて詳しく解説します。
+
+### 環境に応じた選択
+
+#### Linux環境での作業
+
+**推奨: bash/sh**
+
+```bash
+#!/bin/bash
+# Linux環境でのスクリプト例
+
+# ログファイルの分析
+grep "ERROR" /var/log/app.log | tail -20
+
+# ファイルのバックアップ
+tar -czf backup_$(date +%Y%m%d).tar.gz /var/www
+
+# プロセスの監視
+ps aux | grep nginx | awk '{print $2, $11}'
+```
+
+**理由:**
+- Linux環境で標準的に使用される
+- シンプルで軽量
+- 広くサポートされている
+
+#### Windows環境での作業
+
+**推奨: PowerShell**
+
+```powershell
+# Windows環境でのスクリプト例
+
+# ログファイルの分析
+Select-String "ERROR" C:\logs\app.log | Select-Object -Last 20
+
+# ファイルのバックアップ
+Compress-Archive -Path C:\www -DestinationPath "backup_$(Get-Date -Format 'yyyyMMdd').zip"
+
+# プロセスの監視
+Get-Process | Where-Object {$_.Name -eq "nginx"} | Select-Object Id, ProcessName
+```
+
+**理由:**
+- Windows環境で標準的に使用される
+- .NETとの統合
+- オブジェクトベースの処理
+
+### クロスプラットフォーム対応
+
+#### PowerShell Coreの活用
+
+**特徴:**
+- Windows、Linux、macOSで動作
+- オープンソース
+- .NET Coreベース
+
+**実践例:**
+
+```powershell
+# クロスプラットフォーム対応のスクリプト
+if ($IsLinux) {
+  $logPath = "/var/log/app.log"
+} elseif ($IsWindows) {
+  $logPath = "C:\logs\app.log"
+} elseif ($IsMacOS) {
+  $logPath = "/var/log/app.log"
+}
+
+# 環境に依存しない処理
+Select-String "ERROR" $logPath
+```
+
+#### シェルスクリプトの移植
+
+**Linux (bash) → PowerShell:**
+
+```bash
+# Linux (bash)
+#!/bin/bash
+files=$(ls *.txt)
+for file in $files; do
+  echo "Processing $file"
+done
+```
+
+```powershell
+# PowerShell
+$files = Get-ChildItem *.txt
+foreach ($file in $files) {
+  Write-Host "Processing $($file.Name)"
+}
+```
+
+### タスク別の使い分け
+
+#### テキスト処理
+
+**Linux (bash) - 推奨:**
+
+```bash
+# シンプルなテキスト処理
+grep "ERROR" file.txt | awk '{print $1}' | sort | uniq
+```
+
+**理由:**
+- テキストベースの処理に適している
+- 軽量で高速
+
+#### オブジェクト操作
+
+**PowerShell - 推奨:**
+
+```powershell
+# 複雑なオブジェクト操作
+Get-Process | Where-Object {$_.CPU -gt 100} | 
+  Select-Object Name, CPU, @{Name="MemoryMB";Expression={$_.WorkingSet64/1MB}} |
+  Sort-Object CPU -Descending
+```
+
+**理由:**
+- オブジェクトベースの処理に適している
+- プロパティへの直接アクセス
+
+#### システム管理
+
+**Linux環境:**
+
+```bash
+# システム管理タスク
+systemctl status nginx
+journalctl -u nginx -f
+```
+
+**Windows環境:**
+
+```powershell
+# システム管理タスク
+Get-Service nginx
+Get-EventLog -LogName Application -Source nginx -Newest 10
+```
+
+### 実践的なスクリプト例
+
+#### ログ分析スクリプト
+
+**Linux (bash):**
+
+```bash
+#!/bin/bash
+# ログ分析スクリプト
+
+LOG_FILE="/var/log/app.log"
+
+# エラーの数をカウント
+error_count=$(grep -c "ERROR" $LOG_FILE)
+echo "Error count: $error_count"
+
+# 最新のエラーを表示
+echo "Latest errors:"
+grep "ERROR" $LOG_FILE | tail -10
+
+# IPアドレスの統計
+echo "Top IP addresses:"
+awk '{print $1}' $LOG_FILE | sort | uniq -c | sort -rn | head -10
+```
+
+**PowerShell:**
+
+```powershell
+# ログ分析スクリプト
+$logFile = "C:\logs\app.log"
+
+# エラーの数をカウント
+$errorCount = (Select-String "ERROR" $logFile).Count
+Write-Host "Error count: $errorCount"
+
+# 最新のエラーを表示
+Write-Host "Latest errors:"
+Select-String "ERROR" $logFile | Select-Object -Last 10
+
+# IPアドレスの統計
+Write-Host "Top IP addresses:"
+Select-String -Pattern "^\d+\.\d+\.\d+\.\d+" $logFile | 
+  ForEach-Object {$_.Matches.Value} | 
+  Group-Object | 
+  Sort-Object Count -Descending | 
+  Select-Object -First 10
+```
+
+### まとめ
+
+実践的な使い分けのポイント：
+
+- **環境に応じた選択**: Linux環境ではbash、Windows環境ではPowerShell
+- **クロスプラットフォーム対応**: PowerShell Coreで対応可能
+- **タスク別の使い分け**: テキスト処理はbash、オブジェクト操作はPowerShell
+- **実践例**: ログ分析、システム管理、ファイル操作
+
+適切にシェルを使い分けることで、効率的な作業ができます。
+

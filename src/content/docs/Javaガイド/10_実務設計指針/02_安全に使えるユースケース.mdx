@@ -1,0 +1,189 @@
+---
+title: "安全に使えるユースケース"
+label: "安全に使えるユースケース"
+---
+
+## 安全に使えるユースケース
+
+Javaで安全に実装できるユースケースを詳しく解説します。
+
+### 1. トランザクション内でのデータベース操作
+
+#### 安全な実装
+
+```java
+@Service
+public class OrderService {
+    @Autowired
+    private OrderRepository orderRepository;
+    
+    @Autowired
+    private InventoryRepository inventoryRepository;
+    
+    @Transactional
+    public Order createOrder(OrderData orderData) {
+        // ✅ 安全: トランザクション内でのデータベース操作のみ
+        Order order = orderRepository.save(new Order(orderData));
+        
+        // ✅ 安全: 同じトランザクション内での在庫更新
+        for (OrderItem item : orderData.getItems()) {
+            inventoryRepository.reduceStock(item.getProductId(), item.getQuantity());
+        }
+        
+        return order;
+    }
+}
+```
+
+**なぜ安全か:**
+
+- **ACID特性**: トランザクションのACID特性が保証される
+- **ロールバック**: エラー時に自動的にロールバック
+- **一貫性**: データの一貫性が保たれる
+
+### 2. 短時間の同期処理
+
+#### 安全な実装
+
+```java
+@RestController
+public class UserController {
+    @Autowired
+    private UserService userService;
+    
+    @GetMapping("/users/{id}")
+    public ResponseEntity<User> getUser(@PathVariable Long id) {
+        // ✅ 安全: 短時間の同期処理
+        User user = userService.findById(id);
+        return ResponseEntity.ok(user);
+    }
+}
+```
+
+**なぜ安全か:**
+
+- **実行時間**: 短時間で完了する
+- **リソース使用**: リソースを長時間占有しない
+- **エラーハンドリング**: 簡単にエラーハンドリングできる
+
+### 3. バッチ処理（常駐プロセス環境）
+
+#### 安全な実装
+
+```java
+@Component
+public class OrderBatchProcessor {
+    @Autowired
+    private OrderRepository orderRepository;
+    
+    @Autowired
+    private PaymentService paymentService;
+    
+    @Scheduled(fixedRate = 60000) // 1分ごと
+    public void processPendingOrders() {
+        // ✅ 安全: 常駐プロセス環境でのバッチ処理
+        List<Order> pendingOrders = orderRepository.findByStatus("PENDING");
+        
+        for (Order order : pendingOrders) {
+            try {
+                paymentService.chargePayment(order.getId(), order.getAmount());
+                order.setStatus("PAID");
+                orderRepository.save(order);
+            } catch (Exception e) {
+                // エラーログを記録
+                log.error("Failed to process order: " + order.getId(), e);
+            }
+        }
+    }
+}
+```
+
+**なぜ安全か:**
+
+- **常駐プロセス**: 実行時間の制限がない
+- **エラーハンドリング**: 個別のエラーを処理できる
+- **リトライ**: 次回の実行で再試行可能
+
+### 4. メッセージキューとの連携
+
+#### 安全な実装
+
+```java
+@Service
+public class OrderService {
+    @Autowired
+    private OrderRepository orderRepository;
+    
+    @Autowired
+    private MessageQueue messageQueue;
+    
+    @Transactional
+    public Order createOrder(OrderData orderData) {
+        // ✅ 安全: トランザクション内で注文を作成
+        Order order = orderRepository.save(new Order(orderData));
+        
+        // ✅ 安全: トランザクションコミット後にメッセージを送信
+        TransactionSynchronizationManager.registerSynchronization(
+            new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    messageQueue.send("order.created", order.getId());
+                }
+            }
+        );
+        
+        return order;
+    }
+}
+```
+
+**なぜ安全か:**
+
+- **トランザクションコミット後**: トランザクションがコミットされた後にメッセージを送信
+- **一貫性**: 注文が確定した後にのみメッセージが送信される
+- **エラーハンドリング**: トランザクションがロールバックされた場合、メッセージは送信されない
+
+### 5. キャッシュの使用
+
+#### 安全な実装
+
+```java
+@Service
+public class ProductService {
+    @Autowired
+    private ProductRepository productRepository;
+    
+    @Cacheable(value = "products", key = "#id")
+    public Product getProduct(Long id) {
+        // ✅ 安全: キャッシュ可能な読み取り専用操作
+        return productRepository.findById(id)
+            .orElseThrow(() -> new ProductNotFoundException(id));
+    }
+    
+    @CacheEvict(value = "products", key = "#product.id")
+    @Transactional
+    public Product updateProduct(Product product) {
+        // ✅ 安全: 更新時にキャッシュを無効化
+        return productRepository.save(product);
+    }
+}
+```
+
+**なぜ安全か:**
+
+- **読み取り専用**: キャッシュ可能な読み取り専用操作
+- **キャッシュ無効化**: 更新時にキャッシュを無効化
+- **一貫性**: データの一貫性が保たれる
+
+### まとめ
+
+安全に使えるユースケースのポイント：
+
+- **トランザクション内でのデータベース操作**: ACID特性が保証される
+- **短時間の同期処理**: リソースを長時間占有しない
+- **バッチ処理（常駐プロセス環境）**: 実行時間の制限がない
+- **メッセージキューとの連携**: トランザクションコミット後にメッセージを送信
+- **キャッシュの使用**: 読み取り専用操作、更新時のキャッシュ無効化
+
+適切なユースケースの選択により、安全で信頼性の高いシステムを構築できます。
+

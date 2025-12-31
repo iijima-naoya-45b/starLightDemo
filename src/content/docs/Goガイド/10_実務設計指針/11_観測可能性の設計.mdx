@@ -1,0 +1,238 @@
+---
+title: "観測可能性の設計"
+label: "観測可能性の設計"
+---
+
+## 観測可能性の設計
+
+障害は「再現」ではなく「観測」で解決する。観測可能性を高める設計を詳しく解説します。
+
+### ログ設計
+
+各処理にトレースID（request_id）を通し、入出力境界ごとにJSON構造化ログを吐く。
+
+#### 実装例
+
+```go
+// ✅ 良い例: 構造化ログとトレースID
+import (
+    "github.com/google/uuid"
+    "go.uber.org/zap"
+)
+
+var logger *zap.Logger
+
+func init() {
+    logger, _ = zap.NewProduction()
+}
+
+func createOrderHandler(w http.ResponseWriter, r *http.Request) {
+    // トレースIDを生成（またはリクエストヘッダーから取得）
+    traceID := r.Header.Get("X-Trace-Id")
+    if traceID == "" {
+        traceID = uuid.New().String()
+    }
+    
+    // すべてのログにトレースIDを自動的に含める
+    log := logger.With(
+        zap.String("trace_id", traceID),
+        zap.String("user_id", getUserID(r)),
+    )
+    
+    var orderData OrderData
+    if err := json.NewDecoder(r.Body).Decode(&orderData); err != nil {
+        log.Error("Failed to decode request", zap.Error(err))
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
+    
+    // 入出力境界でログを出力
+    log.Info("Order creation started",
+        zap.Any("order_data", orderData),
+        zap.String("timestamp", time.Now().Format(time.RFC3339)),
+    )
+    
+    order, err := createOrder(orderData, traceID)
+    if err != nil {
+        log.Error("Order creation failed",
+            zap.Error(err),
+            zap.Stack("stack"),
+        )
+        http.Error(w, "Internal server error", http.StatusInternalServerError)
+        return
+    }
+    
+    log.Info("Order creation completed",
+        zap.Int64("order_id", order.ID),
+        zap.String("status", order.Status),
+        zap.Duration("duration", time.Since(startTime)),
+    )
+    
+    w.Header().Set("X-Trace-Id", traceID)
+    json.NewEncoder(w).Encode(order)
+}
+```
+
+**ログの出力例:**
+
+```json
+{
+  "level": "info",
+  "ts": 1704110400.0,
+  "trace_id": "abc123",
+  "user_id": "user456",
+  "order_data": {
+    "amount": 10000,
+    "items": [...]
+  },
+  "msg": "Order creation started"
+}
+```
+
+**なぜ重要か:**
+
+- **トレーサビリティ**: トレースIDでリクエスト全体を追跡可能
+- **構造化ログ**: JSON形式で検索・分析が容易
+- **コンテキスト**: ユーザーIDなどのコンテキストを自動的に含める
+
+### メトリクス設計
+
+成功率・レイテンシ・リトライ回数・プール使用率を定常監視する。
+
+#### 実装例
+
+```go
+// ✅ 良い例: Prometheusを使用したメトリクス収集
+import (
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+var (
+    orderCreationCounter = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "orders_created_total",
+            Help: "Total number of orders created",
+        },
+        []string{"status"},
+    )
+    
+    orderCreationDuration = prometheus.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name:    "orders_creation_duration_seconds",
+            Help:    "Order creation duration in seconds",
+            Buckets: []float64{0.1, 0.5, 1, 2, 5},
+        },
+        []string{"status"},
+    )
+    
+    connectionPoolGauge = prometheus.NewGauge(
+        prometheus.GaugeOpts{
+            Name: "db_connection_pool_active",
+            Help: "Active database connections",
+        },
+    )
+)
+
+func init() {
+    prometheus.MustRegister(orderCreationCounter)
+    prometheus.MustRegister(orderCreationDuration)
+    prometheus.MustRegister(connectionPoolGauge)
+}
+
+func createOrderHandler(w http.ResponseWriter, r *http.Request) {
+    timer := prometheus.NewTimer(orderCreationDuration.WithLabelValues("success"))
+    defer timer.ObserveDuration()
+    
+    order, err := createOrder(orderData, traceID)
+    if err != nil {
+        orderCreationCounter.WithLabelValues("failure").Inc()
+        http.Error(w, "Internal server error", http.StatusInternalServerError)
+        return
+    }
+    
+    orderCreationCounter.WithLabelValues("success").Inc()
+    json.NewEncoder(w).Encode(order)
+}
+
+// メトリクスエンドポイント
+func metricsHandler(w http.ResponseWriter, r *http.Request) {
+    promhttp.Handler().ServeHTTP(w, r)
+}
+```
+
+**監視すべきメトリクス:**
+
+- **成功率**: `orders_created_total{status="success"}` / `orders_created_total{status="failure"}`
+- **レイテンシ**: `orders_creation_duration_seconds` (p50, p95, p99)
+- **リトライ回数**: `orders_retry_total`
+- **プール使用率**: `db_connection_pool_active` / `db_connection_pool_max`
+
+### トレース設計
+
+外部API・DBアクセス単位にSpanを埋め、分散トレース可能にする。
+
+#### 実装例
+
+```go
+// ✅ 良い例: OpenTelemetryを使用した分散トレース
+import (
+    "go.opentelemetry.io/otel"
+    "go.opentelemetry.io/otel/trace"
+)
+
+var tracer trace.Tracer
+
+func init() {
+    tracer = otel.Tracer("order-service")
+}
+
+func createOrder(orderData OrderData, traceID string) (*Order, error) {
+    ctx, span := tracer.Start(context.Background(), "create-order")
+    defer span.End()
+    
+    span.SetAttributes(
+        attribute.String("order.amount", orderData.Amount.String()),
+        attribute.String("trace.id", traceID),
+    )
+    
+    // DB操作のSpan
+    ctx, dbSpan := tracer.Start(ctx, "db.save-order")
+    order, err := orderRepo.Save(orderData)
+    if err != nil {
+        dbSpan.RecordError(err)
+        dbSpan.End()
+        return nil, err
+    }
+    dbSpan.SetAttributes(attribute.Int64("order.id", order.ID))
+    dbSpan.End()
+    
+    return order, nil
+}
+```
+
+**トレースの出力例:**
+
+```
+Trace: abc123
+├─ Span: create-order (duration: 150ms)
+│  ├─ Span: db.save-order (duration: 50ms)
+│  └─ Span: payment-api.charge (duration: 100ms)
+```
+
+**なぜ重要か:**
+
+- **分散トレース**: 複数サービス間のリクエストフローを追跡可能
+- **ボトルネック特定**: どの処理が遅いかを特定可能
+- **エラー追跡**: エラーが発生した箇所を特定可能
+
+### まとめ
+
+観測可能性の設計のポイント：
+
+- **ログ**: トレースIDを通し、構造化ログを出力
+- **メトリクス**: 成功率・レイテンシ・リトライ回数・プール使用率を監視
+- **トレース**: 外部API・DBアクセス単位にSpanを埋め、分散トレース可能にする
+
+これらの設計により、障害を「再現」ではなく「観測」で解決できます。
+

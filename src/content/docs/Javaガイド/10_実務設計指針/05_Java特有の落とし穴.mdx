@@ -1,0 +1,255 @@
+---
+title: "Java特有の落とし穴"
+label: "Java特有の落とし穴"
+---
+
+## Java特有の落とし穴
+
+Java特有の落とし穴と、他言語との違いを詳しく解説します。
+
+### 1. チェック例外と非チェック例外
+
+#### Javaの例外処理の特徴
+
+**チェック例外（Checked Exception）:**
+
+```java
+// ✅ チェック例外: コンパイル時にチェックされる
+public void readFile(String filePath) throws IOException {
+    FileInputStream fis = new FileInputStream(filePath);
+    // IOExceptionが発生する可能性がある
+}
+
+// 呼び出し元で必ず処理する必要がある
+public void processFile(String filePath) {
+    try {
+        readFile(filePath);
+    } catch (IOException e) {
+        // 必ず処理する必要がある
+        log.error("File read error", e);
+    }
+}
+```
+
+**非チェック例外（Unchecked Exception）:**
+
+```java
+// ✅ 非チェック例外: コンパイル時にチェックされない
+public void divide(int a, int b) {
+    if (b == 0) {
+        throw new IllegalArgumentException("Division by zero");
+    }
+    return a / b;
+}
+
+// 呼び出し元で処理する必要はない（ただし推奨）
+public void calculate(int a, int b) {
+    try {
+        int result = divide(a, b);
+    } catch (IllegalArgumentException e) {
+        // 処理は任意
+        log.error("Calculation error", e);
+    }
+}
+```
+
+**他言語との比較:**
+
+```typescript
+// TypeScript: 例外のチェックがない
+function readFile(filePath: string): string {
+    // 例外が発生する可能性があるが、コンパイル時にチェックされない
+    return fs.readFileSync(filePath, 'utf8');
+}
+
+// 呼び出し元で処理する必要はない
+function processFile(filePath: string) {
+    const content = readFile(filePath); // エラーハンドリングは任意
+}
+```
+
+**落とし穴:**
+
+- **チェック例外の無視**: チェック例外を無視すると、エラーが隠蔽される
+- **非チェック例外の過剰使用**: 非チェック例外を過剰に使用すると、エラーハンドリングが困難になる
+
+### 2. ガベージコレクションの動作
+
+#### Javaのガベージコレクション
+
+**特徴:**
+
+```java
+// Java: ガベージコレクションが自動的にメモリを管理
+public void processData() {
+    List<String> data = new ArrayList<>();
+    // 大量のデータを処理
+    for (int i = 0; i < 1000000; i++) {
+        data.add("Item " + i);
+    }
+    // メソッド終了時にガベージコレクションが自動的にメモリを解放
+}
+```
+
+**他言語との比較:**
+
+```cpp
+// C++: 手動でメモリを管理する必要がある
+void processData() {
+    std::vector<std::string> data;
+    // 大量のデータを処理
+    for (int i = 0; i < 1000000; i++) {
+        data.push_back("Item " + std::to_string(i));
+    }
+    // メソッド終了時に手動でメモリを解放する必要がある
+    data.clear();
+}
+```
+
+**落とし穴:**
+
+- **メモリリーク**: 参照が保持されている場合、ガベージコレクションが動作しない
+- **GCの停止**: ガベージコレクションが動作すると、アプリケーションが一時停止する
+
+### 3. スレッドセーフティ
+
+#### Javaのマルチスレッド
+
+**特徴:**
+
+```java
+// Java: ネイティブスレッドサポート
+public class Counter {
+    private int count = 0;
+    
+    public void increment() {
+        count++; // 問題: スレッドセーフではない
+    }
+}
+```
+
+**他言語との比較:**
+
+```javascript
+// JavaScript: シングルスレッド（イベントループ）
+let count = 0;
+
+function increment() {
+    count++; // 問題: 非同期処理で競合状態が発生する可能性がある
+}
+```
+
+**落とし穴:**
+
+- **競合状態**: 複数のスレッドが同時にアクセスすると、競合状態が発生する
+- **可視性の問題**: あるスレッドでの変更が他のスレッドに反映されない可能性がある
+
+### 4. トランザクションの伝播
+
+#### Spring Frameworkのトランザクション伝播
+
+**特徴:**
+
+```java
+@Service
+public class OrderService {
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void createOrder(OrderData orderData) {
+        // トランザクション1が開始される
+        Order order = orderRepository.save(new Order(orderData));
+        
+        // 同じトランザクション内で呼び出される
+        processPayment(order.getId());
+    }
+    
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void processPayment(Long orderId) {
+        // 新しいトランザクションが開始される
+        // トランザクション1とは独立している
+    }
+}
+```
+
+**他言語との比較:**
+
+```python
+# Python (Django): トランザクションの伝播は明示的
+@transaction.atomic
+def create_order(order_data):
+    # トランザクション1が開始される
+    order = Order.objects.create(**order_data)
+    
+    # 同じトランザクション内で呼び出される
+    process_payment(order.id)
+
+@transaction.atomic
+def process_payment(order_id):
+    # 新しいトランザクションが開始される
+    # トランザクション1とは独立している
+```
+
+**落とし穴:**
+
+- **トランザクションの意図しない伝播**: `REQUIRED`により、意図せずトランザクションが伝播する
+- **ロールバックの影響**: 内側のトランザクションがロールバックされると、外側のトランザクションも影響を受ける可能性がある
+
+### 5. after_commit的な逃げ道
+
+#### Spring FrameworkのTransactionSynchronization
+
+**特徴:**
+
+```java
+@Service
+public class OrderService {
+    @Transactional
+    public Order createOrder(OrderData orderData) {
+        Order order = orderRepository.save(new Order(orderData));
+        
+        // ✅ after_commit的な逃げ道: トランザクションコミット後に処理を実行
+        TransactionSynchronizationManager.registerSynchronization(
+            new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    // トランザクションコミット後に実行される
+                    externalApi.call(order.getId());
+                }
+            }
+        );
+        
+        return order;
+    }
+}
+```
+
+**他言語との比較:**
+
+```ruby
+# Ruby (Rails): after_commitコールバック
+class Order < ApplicationRecord
+  after_commit :call_external_api
+  
+  def call_external_api
+    # トランザクションコミット後に実行される
+    ExternalApi.call(self.id)
+  end
+end
+```
+
+**落とし穴:**
+
+- **after_commitの失敗**: `after_commit`内でエラーが発生しても、トランザクションは既にコミットされている
+- **再実行の困難**: `after_commit`内の処理が失敗した場合、再実行が困難
+
+### まとめ
+
+Java特有の落とし穴のポイント：
+
+- **チェック例外と非チェック例外**: チェック例外は必ず処理する必要がある
+- **ガベージコレクション**: 自動メモリ管理だが、参照が保持されている場合は動作しない
+- **スレッドセーフティ**: マルチスレッド環境では適切な同期が必要
+- **トランザクションの伝播**: トランザクションの伝播動作を理解する必要がある
+- **after_commit的な逃げ道**: `TransactionSynchronization`により、トランザクションコミット後に処理を実行可能
+
+これらの落とし穴を理解することで、より安全なJavaアプリケーションを構築できます。
+

@@ -1,0 +1,104 @@
+---
+title: "ベストプラクティス"
+label: "ベストプラクティス"
+---
+
+## ベストプラクティス
+
+Djangoでの正しい構造とベストプラクティスを詳しく解説します。
+
+### 1. Outboxパターンの実装
+
+#### 正しい構造
+
+```python
+from django.db import models, transaction
+
+class OutboxEvent(models.Model):
+    event_type = models.CharField(max_length=100)
+    aggregate_id = models.CharField(max_length=100)
+    payload = models.JSONField()
+    status = models.CharField(max_length=50, default='PENDING')
+    retry_count = models.IntegerField(default=0)
+
+@transaction.atomic
+def create_order(order_data):
+    # ✅ 正しい: トランザクション内でOutboxに記録
+    order = Order.objects.create(**order_data)
+    
+    # Outboxテーブルに外部API呼び出しのタスクを記録
+    OutboxEvent.objects.create(
+        event_type='PAYMENT_CHARGE',
+        aggregate_id=str(order.id),
+        payload={
+            'orderId': order.id,
+            'amount': order_data['amount'],
+        },
+        status='PENDING',
+    )
+    
+    return order
+
+# 別のプロセス/ワーカーでOutboxを処理
+from celery import Celery
+
+celery_app = Celery('tasks', broker='redis://localhost:6379')
+
+@celery_app.task
+def process_outbox():
+    pending_events = OutboxEvent.objects.filter(status='PENDING')[:10]
+    
+    for event in pending_events:
+        try:
+            # 外部APIを呼ぶ（トランザクション外）
+            import requests
+            response = requests.post(
+                'https://payment-api.example.com/charge',
+                json=event.payload,
+            )
+            
+            if response.status_code == 200:
+                event.status = 'COMPLETED'
+                event.save()
+            else:
+                event.status = 'FAILED'
+                event.retry_count += 1
+                event.save()
+        except Exception as e:
+            event.status = 'FAILED'
+            event.retry_count += 1
+            event.save()
+```
+
+**なぜ正しいか:**
+
+- **トランザクションの短縮**: データベースのロック時間が短縮される
+- **外部障害の分離**: 外部APIの障害がトランザクションに影響しない
+- **再実行の容易さ**: Outboxテーブルから再実行可能
+
+### 2. select_related/prefetch_relatedの使用
+
+#### 正しい構造
+
+```python
+# ✅ 正しい: select_relatedを使用して関連データを事前に読み込む
+def get_orders(request):
+    orders = Order.objects.select_related('user').prefetch_related('items').all()
+    # 3回のクエリのみ: Order.objects.all(), User.where(id: ...), OrderItem.where(order_id: ...)
+    return render(request, 'orders.html', {'orders': orders})
+```
+
+**なぜ正しいか:**
+
+- **クエリ数の削減**: 関連データを事前に読み込むことで、クエリ数が削減される
+- **パフォーマンスの向上**: データベースへのアクセス回数が減少し、パフォーマンスが向上する
+
+### まとめ
+
+ベストプラクティスのポイント：
+
+- **Outboxパターン**: トランザクション内で外部API呼び出しを記録し、別プロセスで処理
+- **select_related/prefetch_related**: 関連データを事前に読み込む
+
+適切なベストプラクティスの実装により、安全で信頼性の高いDjangoアプリケーションを構築できます。
+

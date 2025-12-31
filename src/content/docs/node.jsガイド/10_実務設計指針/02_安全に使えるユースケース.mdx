@@ -1,0 +1,175 @@
+---
+title: "安全に使えるユースケース"
+label: "安全に使えるユースケース"
+---
+
+## 安全に使えるユースケース
+
+Node.jsで安全に実装できるユースケースを詳しく解説します。
+
+### 1. トランザクション内でのデータベース操作
+
+#### 安全な実装
+
+```typescript
+// Prismaでのトランザクション管理
+async function createOrder(orderData: OrderData): Promise<Order> {
+  return await prisma.$transaction(async (tx) => {
+    // ✅ 安全: トランザクション内でのデータベース操作のみ
+    const order = await tx.order.create({ data: orderData });
+    
+    // ✅ 安全: 同じトランザクション内での在庫更新
+    for (const item of orderData.items) {
+      await tx.inventory.update({
+        where: { productId: item.productId },
+        data: { stock: { decrement: item.quantity } },
+      });
+    }
+    
+    return order;
+  });
+}
+```
+
+**なぜ安全か:**
+
+- **ACID特性**: トランザクションのACID特性が保証される
+- **ロールバック**: エラー時に自動的にロールバック
+- **一貫性**: データの一貫性が保たれる
+
+### 2. 短時間の非同期処理
+
+#### 安全な実装
+
+```typescript
+// Express.jsでの実装
+app.get('/users/:id', async (req, res) => {
+  try {
+    // ✅ 安全: 短時間の非同期処理
+    const user = await prisma.user.findUnique({
+      where: { id: parseInt(req.params.id) },
+    });
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+```
+
+**なぜ安全か:**
+
+- **実行時間**: 短時間で完了する
+- **リソース使用**: リソースを長時間占有しない
+- **エラーハンドリング**: try-catchでエラーを処理できる
+
+### 3. メッセージキューとの連携
+
+#### 安全な実装
+
+```typescript
+// Bull/BullMQを使用
+import Queue from 'bull';
+
+const orderQueue = new Queue('order-processing', {
+  redis: {
+    host: process.env.REDIS_HOST,
+    port: parseInt(process.env.REDIS_PORT || '6379'),
+  },
+});
+
+async function createOrder(orderData: OrderData): Promise<Order> {
+  // ✅ 安全: トランザクション内で注文を作成
+  const order = await prisma.$transaction(async (tx) => {
+    return await tx.order.create({ data: orderData });
+  });
+  
+  // ✅ 安全: トランザクションコミット後にメッセージを送信
+  await orderQueue.add('process-order', {
+    orderId: order.id,
+    amount: orderData.amount,
+  });
+  
+  return order;
+}
+
+// ワーカーで処理
+orderQueue.process('process-order', async (job) => {
+  const { orderId, amount } = job.data;
+  
+  // 外部APIを呼ぶ（トランザクション外）
+  await paymentService.chargePayment(orderId, amount);
+});
+```
+
+**なぜ安全か:**
+
+- **トランザクションコミット後**: トランザクションがコミットされた後にメッセージを送信
+- **一貫性**: 注文が確定した後にのみメッセージが送信される
+- **エラーハンドリング**: メッセージキューのエラーハンドリングが可能
+
+### 4. キャッシュの使用
+
+#### 安全な実装
+
+```typescript
+import Redis from 'ioredis';
+
+const redis = new Redis(process.env.REDIS_URL);
+
+async function getProduct(id: number): Promise<Product> {
+  // ✅ 安全: キャッシュから取得を試みる
+  const cached = await redis.get(`product:${id}`);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+  
+  // キャッシュにない場合はデータベースから取得
+  const product = await prisma.product.findUnique({
+    where: { id },
+  });
+  
+  if (!product) {
+    throw new Error('Product not found');
+  }
+  
+  // キャッシュに保存（TTL: 1時間）
+  await redis.setex(`product:${id}`, 3600, JSON.stringify(product));
+  
+  return product;
+}
+
+async function updateProduct(id: number, data: Partial<Product>): Promise<Product> {
+  // ✅ 安全: 更新時にキャッシュを無効化
+  const product = await prisma.product.update({
+    where: { id },
+    data,
+  });
+  
+  await redis.del(`product:${id}`);
+  
+  return product;
+}
+```
+
+**なぜ安全か:**
+
+- **読み取り専用**: キャッシュ可能な読み取り専用操作
+- **キャッシュ無効化**: 更新時にキャッシュを無効化
+- **一貫性**: データの一貫性が保たれる
+
+### まとめ
+
+安全に使えるユースケースのポイント：
+
+- **トランザクション内でのデータベース操作**: ACID特性が保証される
+- **短時間の非同期処理**: リソースを長時間占有しない
+- **メッセージキューとの連携**: トランザクションコミット後にメッセージを送信
+- **キャッシュの使用**: 読み取り専用操作、更新時のキャッシュ無効化
+
+適切なユースケースの選択により、安全で信頼性の高いシステムを構築できます。
+

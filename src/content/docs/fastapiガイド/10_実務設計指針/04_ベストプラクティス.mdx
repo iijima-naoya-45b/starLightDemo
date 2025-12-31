@@ -1,0 +1,116 @@
+---
+title: "ベストプラクティス"
+label: "ベストプラクティス"
+---
+
+## ベストプラクティス
+
+FastAPIでの正しい構造とベストプラクティスを詳しく解説します。
+
+### 1. Outboxパターンの実装
+
+#### 正しい構造
+
+```python
+from sqlalchemy.orm import Session
+from sqlalchemy import Column, Integer, String, JSON
+
+class OutboxEvent(Base):
+    __tablename__ = "outbox"
+    
+    id = Column(Integer, primary_key=True)
+    event_type = Column(String)
+    aggregate_id = Column(String)
+    payload = Column(JSON)
+    status = Column(String)
+
+async def create_order(db: Session, order_data: OrderData) -> Order:
+    # ✅ 正しい: トランザクション内でOutboxに記録
+    order = Order(**order_data.dict())
+    db.add(order)
+    
+    # Outboxテーブルに外部API呼び出しのタスクを記録
+    event = OutboxEvent(
+        event_type="PAYMENT_CHARGE",
+        aggregate_id=str(order.id),
+        payload={
+            "orderId": order.id,
+            "amount": order_data.amount,
+        },
+        status="PENDING",
+    )
+    db.add(event)
+    
+    db.commit()
+    return order
+
+# 別のプロセス/ワーカーでOutboxを処理
+from celery import Celery
+
+celery_app = Celery('tasks', broker='redis://localhost:6379')
+
+@celery_app.task
+def process_outbox():
+    pending_events = db.query(OutboxEvent).filter_by(status="PENDING").limit(10).all()
+    
+    for event in pending_events:
+        try:
+            # 外部APIを呼ぶ（トランザクション外）
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://payment-api.example.com/charge",
+                    json=event.payload,
+                )
+            
+            if response.status_code == 200:
+                event.status = "COMPLETED"
+                db.commit()
+            else:
+                event.status = "FAILED"
+                event.retry_count += 1
+                db.commit()
+        except Exception as e:
+            event.status = "FAILED"
+            event.retry_count += 1
+            db.commit()
+```
+
+**なぜ正しいか:**
+
+- **トランザクションの短縮**: データベースのロック時間が短縮される
+- **外部障害の分離**: 外部APIの障害がトランザクションに影響しない
+- **再実行の容易さ**: Outboxテーブルから再実行可能
+
+### 2. 非同期HTTPクライアントの使用
+
+#### 正しい構造
+
+```python
+# ✅ 正しい: 非同期HTTPクライアントを使用
+import httpx
+
+@app.post("/orders")
+async def create_order(order_data: OrderData):
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://api.example.com/charge",
+            json=order_data.dict(),
+        )
+    return response.json()
+```
+
+**なぜ正しいか:**
+
+- **非ブロッキング**: イベントループがブロックされない
+- **パフォーマンス**: 他のリクエストを処理できる
+- **スケーラビリティ**: スケーラビリティが向上する
+
+### まとめ
+
+ベストプラクティスのポイント：
+
+- **Outboxパターン**: トランザクション内で外部API呼び出しを記録し、別プロセスで処理
+- **非同期HTTPクライアント**: httpx.AsyncClientなどの非同期HTTPクライアントを使用
+
+適切なベストプラクティスの実装により、安全で信頼性の高いFastAPIアプリケーションを構築できます。
+

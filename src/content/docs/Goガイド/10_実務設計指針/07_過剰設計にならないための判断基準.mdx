@@ -1,0 +1,93 @@
+---
+title: "過剰設計にならないための判断基準"
+label: "過剰設計にならないための判断基準"
+---
+
+## 過剰設計にならないための判断基準
+
+過剰設計を避け、適切な設計を行うための判断基準を詳しく解説します。
+
+### 判断基準1: Goroutineの使用
+
+#### シンプルなケース
+
+**条件:**
+
+- 処理時間が短い（1秒以内）
+- エラーが発生する可能性が低い
+- 並行処理が不要
+
+**実装:**
+
+```go
+// ✅ シンプルな実装で十分
+func getUser(userID int64) (*User, error) {
+    var user User
+    if err := db.Where("id = ?", userID).First(&user).Error; err != nil {
+        return nil, err
+    }
+    return &user, nil
+}
+```
+
+**判断基準:**
+
+- **Goroutineは不要**: 処理時間が短い、並行処理が不要
+
+#### 複雑なケース
+
+**条件:**
+
+- 処理時間が長い（5秒以上）
+- 複数の処理を並行して実行する必要がある
+- エラーが発生する可能性が高い
+
+**実装:**
+
+```go
+// ✅ 適切な設計が必要
+func processOrders(orderIDs []int64) error {
+    var wg sync.WaitGroup
+    semaphore := make(chan struct{}, 10)
+    errCh := make(chan error, len(orderIDs))
+    
+    for _, orderID := range orderIDs {
+        wg.Add(1)
+        go func(id int64) {
+            defer wg.Done()
+            semaphore <- struct{}{}
+            defer func() { <-semaphore }()
+            
+            if err := processOrder(id); err != nil {
+                errCh <- err
+            }
+        }(orderID)
+    }
+    
+    go func() {
+        wg.Wait()
+        close(errCh)
+    }()
+    
+    for err := range errCh {
+        if err != nil {
+            return err
+        }
+    }
+    
+    return nil
+}
+```
+
+**判断基準:**
+
+- **Goroutineが必要**: 処理時間が長い、並行処理が必要
+
+### まとめ
+
+過剰設計にならないための判断基準のポイント：
+
+- **Goroutineの使用**: 処理時間と並行処理の必要性に応じて判断
+
+適切な判断基準により、過剰設計を避け、効率的なシステムを構築できます。
+

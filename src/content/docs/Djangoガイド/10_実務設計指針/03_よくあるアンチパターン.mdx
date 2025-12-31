@@ -1,0 +1,204 @@
+---
+title: "よくあるアンチパターン"
+label: "よくあるアンチパターン"
+---
+
+## よくあるアンチパターン
+
+Djangoでよくあるアンチパターンと、実際に事故った構造を詳しく解説します。
+
+### A. リソースの「垂れ流し」
+
+#### 実際に事故った構造
+
+```python
+# ❌ アンチパターン: 例外を握りつぶしてファイルやDB接続を閉じない
+def process_file(file_path):
+    file = open(file_path, 'r')
+    try:
+        # ファイル処理...
+        pass
+    except Exception as e:
+        # 問題: 例外を握りつぶしてファイルを閉じない
+        logger.error(f"File processing failed: {e}")
+        # ファイルが閉じられず、ファイル記述子がリーク
+    # 問題: finallyブロックがないため、正常終了時もファイルが閉じられない
+```
+
+**なぜ事故るか:**
+
+1. **ファイル記述子の枯渇**: ファイルが閉じられず、OSのファイル記述子が枯渇する
+2. **接続リーク**: DB接続が閉じられず、接続プールが枯渇する
+3. **数時間後の停止**: リソースリークは数時間後にシステム全体を停止させる
+
+**設計レビューでの指摘文例:**
+
+```
+【指摘】リソースが適切に解放されていません。
+【問題】例外時にファイルやDB接続が閉じられず、リソースリークが発生します。
+【影響】ファイル記述子・接続プールの枯渇、数時間後のシステム停止
+【推奨】try-finallyブロックまたはwith文で確実にリソースを解放する
+```
+
+### B. 無防備な待機
+
+#### 実際に事故った構造
+
+```python
+# ❌ アンチパターン: 外部API呼び出しにタイムアウトを設定しない
+from django.db import transaction
+
+@transaction.atomic
+def create_order(order_data):
+    # 1. 注文を作成（データベースに保存）
+    order = Order.objects.create(**order_data)
+    
+    # 2. トランザクション内で外部APIを呼ぶ（問題）
+    # 問題: タイムアウトが設定されていない
+    # 問題: サーキットブレーカーがない
+    response = requests.post(
+        'https://payment-api.example.com/charge',
+        json={'order_id': order.id, 'amount': order_data['amount']},
+    )
+    
+    if response.status_code != 200:
+        raise PaymentError("Payment failed")
+    
+    # 3. 決済結果を保存
+    order.payment_status = "COMPLETED"
+    order.save()
+    
+    return order
+```
+
+**なぜ事故るか:**
+
+1. **トランザクションの長時間保持**: 外部APIの応答を待つ間、データベースのロックが保持される
+2. **外部障害の影響**: 外部APIの障害がデータベーストランザクションに影響する
+3. **ロールバックの困難**: 外部APIが成功した後にトランザクションが失敗した場合、外部APIのロールバックが困難
+4. **タイムアウトのリスク**: 外部APIの応答が遅い場合、トランザクションがタイムアウトする
+5. **スレッドプールの飽和**: 遅延が連鎖してスレッドプールが飽和し、全エンドポイントが応答不能に
+
+#### 実際に事故った構造
+
+```python
+# ❌ アンチパターン: トランザクション内で外部APIを呼ぶ
+from django.db import transaction
+import requests
+
+@transaction.atomic
+def create_order(order_data):
+    # 1. 注文を作成（データベースに保存）
+    order = Order.objects.create(**order_data)
+    
+    # 2. トランザクション内で外部APIを呼ぶ（問題）
+    response = requests.post("https://payment-api.example.com/charge", json={
+        "orderId": order.id,
+        "amount": order_data['amount'],
+    })
+    
+    if response.status_code != 200:
+        raise PaymentError("Payment failed")
+    
+    # 3. 決済結果を保存
+    order.payment_status = "COMPLETED"
+    order.save()
+    
+    return order
+```
+
+**なぜ事故るか:**
+
+1. **トランザクションの長時間保持**: 外部APIの応答を待つ間、データベースのロックが保持される
+2. **外部障害の影響**: 外部APIの障害がデータベーストランザクションに影響する
+3. **ロールバックの困難**: 外部APIが成功した後にトランザクションが失敗した場合、外部APIのロールバックが困難
+
+**設計レビューでの指摘文例:**
+
+```
+【指摘】トランザクション内で外部APIを呼んでいます。
+【問題】外部APIの応答を待つ間、データベースのロックが保持されます。
+【影響】パフォーマンスの低下、デッドロックの発生、タイムアウトのリスク
+【推奨】Outboxパターンを使用し、トランザクション外で外部APIを呼ぶ
+```
+
+### C. 非冪等な再試行
+
+#### 実際に事故った構造
+
+```python
+# ❌ アンチパターン: 再送時にデータが二重登録される
+def create_order(order_data):
+    # 問題: Idempotency Keyがない
+    # 問題: 再実行時に注文が二重作成される
+    return Order.objects.create(**order_data)
+
+# クライアント側でリトライ
+def create_order_with_retry(order_data):
+    for i in range(3):
+        try:
+            create_order(order_data)
+            return  # 成功
+        except Exception as e:
+            if i == 2:
+                raise  # 最終リトライ失敗
+            time.sleep(1 * (i + 1))  # リトライ
+```
+
+**なぜ事故るか:**
+
+1. **二重登録**: ネットワークエラーでクライアントが再送すると、注文が2つ作成される
+2. **データの不整合**: 同じ注文が複数存在し、在庫や決済に影響する
+3. **ビジネスロジックの破綻**: 重複データにより、ビジネスロジックが正しく動作しない
+
+**設計レビューでの指摘文例:**
+
+```
+【指摘】非冪等な再試行が実装されています。
+【問題】再送時にデータが二重登録され、データの不整合が発生します。
+【影響】データの不整合、ビジネスロジックの破綻
+【推奨】Idempotency Keyを使用して冪等性を保証する
+```
+
+### D. N+1クエリ問題
+
+#### 実際に事故った構造
+
+```python
+# ❌ アンチパターン: N+1クエリ問題
+def get_orders(request):
+    # 問題: 注文ごとにユーザーを取得（N+1クエリ）
+    orders = Order.objects.all()
+    # 1回のクエリ: Order.objects.all()
+    # N回のクエリ: for order in orders: order.user
+    return render(request, 'orders.html', {'orders': orders})
+```
+
+**なぜ事故るか:**
+
+1. **クエリ数の増加**: 注文が100件ある場合、101回のクエリが実行される
+2. **パフォーマンスの低下**: データベースへのアクセス回数が増加し、パフォーマンスが低下する
+3. **スケーラビリティの問題**: データが増えると、パフォーマンスがさらに低下する
+
+**設計レビューでの指摘文例:**
+
+```
+【指摘】N+1クエリ問題が発生しています。
+【問題】注文ごとにユーザーを取得するため、クエリ数が増加します。
+【影響】パフォーマンスの低下、データベースへの負荷増加
+【推奨】select_relatedまたはprefetch_relatedを使用して関連データを事前に読み込む
+```
+
+### まとめ
+
+よくあるアンチパターンのポイント：
+
+- **A. リソースの「垂れ流し」**: 例外を握りつぶしてファイルやDB接続を閉じない → 数時間後にシステム停止
+- **B. 無防備な待機**: 外部API呼び出しにタイムアウトを設定しない → スレッドプールの飽和、全エンドポイントの応答不能
+- **C. 非冪等な再試行**: 再送時にデータが二重登録される → データの不整合、ビジネスロジックの破綻
+- **D. N+1クエリ問題**: クエリ数の増加、パフォーマンスの低下
+
+これらのアンチパターンを避けることで、安全で信頼性の高いDjangoアプリケーションを構築できます。
+
+**重要な原則**: 「正常に動く」よりも「異常時に安全に壊れる」ことを優先する。
+

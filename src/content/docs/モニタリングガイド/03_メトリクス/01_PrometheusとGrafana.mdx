@@ -1,0 +1,77 @@
+---
+title: "PrometheusとGrafana"
+label: "PrometheusとGrafana"
+---
+
+## PrometheusとGrafana
+
+Prometheusは、メトリクスを収集・保存するシステムで、Grafanaは、メトリクスを可視化するツールです。この組み合わせにより、効果的なモニタリングができます。
+
+### Prometheusの基本
+
+#### メトリクスの種類
+
+**カウンター（Counter）:**
+
+```javascript
+// カウンター: 単調増加する値
+const httpRequestsTotal = new promClient.Counter({
+  name: 'http_requests_total',
+  help: 'Total number of HTTP requests',
+  labelNames: ['method', 'status']
+});
+
+httpRequestsTotal.inc({ method: 'GET', status: '200' });
+```
+
+**ゲージ（Gauge）:**
+
+```javascript
+// ゲージ: 増減する値
+const activeConnections = new promClient.Gauge({
+  name: 'active_connections',
+  help: 'Number of active connections'
+});
+
+activeConnections.set(100);
+activeConnections.inc();
+activeConnections.dec();
+```
+
+**ヒストグラム（Histogram）:**
+
+```javascript
+// ヒストグラム: 値の分布
+const requestDuration = new promClient.Histogram({
+  name: 'request_duration_seconds',
+  help: 'Request duration in seconds',
+  buckets: [0.1, 0.5, 1, 2, 5]
+});
+
+const end = requestDuration.startTimer();
+// 処理
+end();
+```
+
+### Grafanaでの可視化
+
+#### ダッシュボードの作成
+
+**重要なパネル:**
+
+- **グラフ**: 時系列データの可視化
+- **統計**: 現在の値の表示
+- **テーブル**: データの一覧表示
+- **アラート**: アラートの状態表示
+
+### まとめ
+
+PrometheusとGrafanaのポイント：
+
+- **Prometheus**: メトリクスの収集・保存
+- **Grafana**: メトリクスの可視化
+- **メトリクスの種類**: カウンター、ゲージ、ヒストグラム
+- **ダッシュボード**: 効果的な可視化
+
+PrometheusとGrafanaにより、効果的なモニタリングができます。
+

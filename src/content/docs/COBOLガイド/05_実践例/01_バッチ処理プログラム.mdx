@@ -1,0 +1,294 @@
+---
+title: "バッチ処理プログラム"
+label: "バッチ処理プログラム"
+---
+
+## バッチ処理プログラム
+
+COBOLでのバッチ処理プログラムの実装例を詳しく解説します。
+
+### マスターファイル更新プログラム
+
+#### プログラムの目的
+
+トランザクションファイルを使用してマスターファイルを更新します。
+
+**実装例:**
+
+```cobol
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. UPDATE-MASTER-FILE.
+       AUTHOR. YOUR-NAME.
+       DATE-WRITTEN. 2024-01-01.
+       
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT MASTER-FILE ASSIGN TO MASTER-KSDS
+               ORGANIZATION IS INDEXED
+               ACCESS MODE IS RANDOM
+               RECORD KEY IS MASTER-KEY
+               FILE STATUS IS WS-FILE-STATUS.
+           SELECT TRANSACTION-FILE ASSIGN TO TRANS-SEQ
+               ORGANIZATION IS SEQUENTIAL
+               ACCESS MODE IS SEQUENTIAL
+               FILE STATUS IS WS-FILE-STATUS.
+           SELECT ERROR-FILE ASSIGN TO ERROR-SEQ
+               ORGANIZATION IS SEQUENTIAL
+               ACCESS MODE IS SEQUENTIAL
+               FILE STATUS IS WS-FILE-STATUS.
+       
+       DATA DIVISION.
+       FILE SECTION.
+       FD MASTER-FILE.
+       01 MASTER-RECORD.
+           05 MASTER-KEY        PIC X(10).
+           05 MASTER-NAME       PIC X(30).
+           05 MASTER-BALANCE    PIC 9(10)V99.
+           05 MASTER-LAST-UPDATE PIC 9(8).
+       
+       FD TRANSACTION-FILE.
+       01 TRANSACTION-RECORD.
+           05 TRANS-KEY         PIC X(10).
+           05 TRANS-TYPE        PIC X(1).
+               88 TRANS-ADD     VALUE 'A'.
+               88 TRANS-UPDATE  VALUE 'U'.
+               88 TRANS-DELETE  VALUE 'D'.
+           05 TRANS-AMOUNT     PIC S9(10)V99.
+           05 TRANS-DATE        PIC 9(8).
+       
+       FD ERROR-FILE.
+       01 ERROR-RECORD          PIC X(80).
+       
+       WORKING-STORAGE SECTION.
+       01 WS-FILE-STATUS       PIC X(2).
+           88 WS-FILE-OK       VALUE '00'.
+           88 WS-FILE-EOF      VALUE '10'.
+           88 WS-FILE-NOT-FOUND VALUE '23'.
+           88 WS-FILE-ERROR    VALUE '99'.
+       01 WS-COUNTERS.
+           05 WS-TRANS-COUNT    PIC 9(5) VALUE ZERO.
+           05 WS-UPDATE-COUNT   PIC 9(5) VALUE ZERO.
+           05 WS-ADD-COUNT      PIC 9(5) VALUE ZERO.
+           05 WS-DELETE-COUNT   PIC 9(5) VALUE ZERO.
+           05 WS-ERROR-COUNT    PIC 9(5) VALUE ZERO.
+       01 WS-CURRENT-DATE      PIC 9(8).
+       
+       PROCEDURE DIVISION.
+       MAIN-PROCEDURE.
+           PERFORM INITIALIZE-PROGRAM
+           PERFORM PROCESS-TRANSACTIONS
+           PERFORM FINALIZE-PROGRAM
+           STOP RUN.
+       
+       INITIALIZE-PROGRAM.
+           OPEN I-O MASTER-FILE
+                INPUT TRANSACTION-FILE
+                OUTPUT ERROR-FILE
+           
+           IF WS-FILE-ERROR
+               DISPLAY "File open error: " WS-FILE-STATUS
+               STOP RUN
+           END-IF
+           
+           ACCEPT WS-CURRENT-DATE FROM DATE
+           
+           DISPLAY "Master file update started".
+       
+       PROCESS-TRANSACTIONS.
+           PERFORM UNTIL WS-FILE-EOF
+               READ TRANSACTION-FILE
+                   AT END SET WS-FILE-EOF TO TRUE
+                   NOT AT END
+                       ADD 1 TO WS-TRANS-COUNT
+                       EVALUATE TRUE
+                           WHEN TRANS-ADD
+                               PERFORM ADD-MASTER-RECORD
+                           WHEN TRANS-UPDATE
+                               PERFORM UPDATE-MASTER-RECORD
+                           WHEN TRANS-DELETE
+                               PERFORM DELETE-MASTER-RECORD
+                           WHEN OTHER
+                               PERFORM WRITE-ERROR-RECORD
+                       END-EVALUATE
+               END-READ
+           END-PERFORM.
+       
+       ADD-MASTER-RECORD.
+           MOVE TRANS-KEY TO MASTER-KEY
+           READ MASTER-FILE
+               INVALID KEY
+                   MOVE TRANS-KEY TO MASTER-KEY
+                   MOVE SPACES TO MASTER-NAME
+                   MOVE ZERO TO MASTER-BALANCE
+                   ADD TRANS-AMOUNT TO MASTER-BALANCE
+                   MOVE WS-CURRENT-DATE TO MASTER-LAST-UPDATE
+                   WRITE MASTER-RECORD
+                       INVALID KEY
+                           PERFORM WRITE-ERROR-RECORD
+                       NOT INVALID KEY
+                           ADD 1 TO WS-ADD-COUNT
+                   END-WRITE
+               NOT INVALID KEY
+                   STRING "Duplicate key: " TRANS-KEY
+                       DELIMITED BY SIZE
+                       INTO ERROR-RECORD
+                   WRITE ERROR-RECORD
+                   ADD 1 TO WS-ERROR-COUNT
+           END-READ.
+       
+       UPDATE-MASTER-RECORD.
+           MOVE TRANS-KEY TO MASTER-KEY
+           READ MASTER-FILE
+               INVALID KEY
+                   STRING "Master record not found: " TRANS-KEY
+                       DELIMITED BY SIZE
+                       INTO ERROR-RECORD
+                   WRITE ERROR-RECORD
+                   ADD 1 TO WS-ERROR-COUNT
+               NOT INVALID KEY
+                   ADD TRANS-AMOUNT TO MASTER-BALANCE
+                   MOVE WS-CURRENT-DATE TO MASTER-LAST-UPDATE
+                   REWRITE MASTER-RECORD
+                       INVALID KEY
+                           PERFORM WRITE-ERROR-RECORD
+                       NOT INVALID KEY
+                           ADD 1 TO WS-UPDATE-COUNT
+                   END-REWRITE
+           END-READ.
+       
+       DELETE-MASTER-RECORD.
+           MOVE TRANS-KEY TO MASTER-KEY
+           DELETE MASTER-FILE
+               INVALID KEY
+                   STRING "Master record not found: " TRANS-KEY
+                       DELIMITED BY SIZE
+                       INTO ERROR-RECORD
+                   WRITE ERROR-RECORD
+                   ADD 1 TO WS-ERROR-COUNT
+               NOT INVALID KEY
+                   ADD 1 TO WS-DELETE-COUNT
+           END-DELETE.
+       
+       WRITE-ERROR-RECORD.
+           STRING "Error processing transaction: " TRANS-KEY
+               " Status: " WS-FILE-STATUS
+               DELIMITED BY SIZE
+               INTO ERROR-RECORD
+           WRITE ERROR-RECORD
+           ADD 1 TO WS-ERROR-COUNT.
+       
+       FINALIZE-PROGRAM.
+           CLOSE MASTER-FILE
+                 TRANSACTION-FILE
+                 ERROR-FILE
+           
+           DISPLAY "Transaction processing completed"
+           DISPLAY "Total transactions: " WS-TRANS-COUNT
+           DISPLAY "Records added: " WS-ADD-COUNT
+           DISPLAY "Records updated: " WS-UPDATE-COUNT
+           DISPLAY "Records deleted: " WS-DELETE-COUNT
+           DISPLAY "Errors: " WS-ERROR-COUNT.
+```
+
+### レポート生成プログラム
+
+#### プログラムの目的
+
+マスターファイルからレポートを生成します。
+
+**実装例:**
+
+```cobol
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. GENERATE-REPORT.
+       
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT MASTER-FILE ASSIGN TO MASTER-KSDS
+               ORGANIZATION IS INDEXED
+               ACCESS MODE IS SEQUENTIAL
+               RECORD KEY IS MASTER-KEY
+               FILE STATUS IS WS-FILE-STATUS.
+           SELECT REPORT-FILE ASSIGN TO REPORT-SEQ
+               ORGANIZATION IS SEQUENTIAL
+               ACCESS MODE IS SEQUENTIAL
+               FILE STATUS IS WS-FILE-STATUS.
+       
+       DATA DIVISION.
+       FILE SECTION.
+       FD MASTER-FILE.
+       01 MASTER-RECORD.
+           05 MASTER-KEY        PIC X(10).
+           05 MASTER-NAME       PIC X(30).
+           05 MASTER-BALANCE    PIC 9(10)V99.
+       
+       FD REPORT-FILE.
+       01 REPORT-RECORD         PIC X(132).
+       
+       WORKING-STORAGE SECTION.
+       01 WS-FILE-STATUS       PIC X(2).
+           88 WS-FILE-OK       VALUE '00'.
+           88 WS-FILE-EOF      VALUE '10'.
+       01 WS-HEADER.
+           05 FILLER           PIC X(10) VALUE SPACES.
+           05 FILLER           PIC X(20) VALUE "CUSTOMER REPORT".
+           05 FILLER           PIC X(102) VALUE SPACES.
+       01 WS-DETAIL.
+           05 FILLER           PIC X(5) VALUE SPACES.
+           05 WS-KEY           PIC X(10).
+           05 FILLER           PIC X(5) VALUE SPACES.
+           05 WS-NAME          PIC X(30).
+           05 FILLER           PIC X(5) VALUE SPACES.
+           05 WS-BALANCE       PIC $,$$$,$$$,$$$.99.
+           05 FILLER           PIC X(72) VALUE SPACES.
+       01 WS-TOTAL-LINE.
+           05 FILLER           PIC X(5) VALUE SPACES.
+           05 FILLER           PIC X(10) VALUE "TOTAL: ".
+           05 WS-TOTAL-BALANCE PIC $,$$$,$$$,$$$.99.
+           05 FILLER           PIC X(102) VALUE SPACES.
+       01 WS-TOTAL-BALANCE     PIC 9(10)V99 VALUE ZERO.
+       01 WS-RECORD-COUNT      PIC 9(5) VALUE ZERO.
+       
+       PROCEDURE DIVISION.
+       MAIN-PROCEDURE.
+           OPEN INPUT MASTER-FILE
+                OUTPUT REPORT-FILE
+           
+           WRITE REPORT-RECORD FROM WS-HEADER
+           
+           PERFORM UNTIL WS-FILE-EOF
+               READ MASTER-FILE
+                   AT END SET WS-FILE-EOF TO TRUE
+                   NOT AT END
+                       MOVE MASTER-KEY TO WS-KEY
+                       MOVE MASTER-NAME TO WS-NAME
+                       MOVE MASTER-BALANCE TO WS-BALANCE
+                       WRITE REPORT-RECORD FROM WS-DETAIL
+                       ADD MASTER-BALANCE TO WS-TOTAL-BALANCE
+                       ADD 1 TO WS-RECORD-COUNT
+               END-READ
+           END-PERFORM
+           
+           MOVE WS-TOTAL-BALANCE TO WS-TOTAL-BALANCE
+           WRITE REPORT-RECORD FROM WS-TOTAL-LINE
+           
+           DISPLAY "Report generated: " WS-RECORD-COUNT " records"
+           
+           CLOSE MASTER-FILE
+                 REPORT-FILE
+           STOP RUN.
+```
+
+### まとめ
+
+バッチ処理プログラムのポイント：
+
+- **マスターファイル更新**: トランザクションファイルを使用してマスターファイルを更新
+- **エラーハンドリング**: エラーレコードの記録
+- **レポート生成**: マスターファイルからレポートを生成
+- **カウンター**: 処理件数の集計
+
+適切なバッチ処理プログラムにより、効率的で信頼性の高いデータ処理が可能になります。
+
