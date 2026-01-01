@@ -1,0 +1,53 @@
+---
+title: Oracle完全ガイド
+sidebar:
+    label: Oracle基礎
+---
+
+# Oracle完全ガイド
+
+Oracleの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Oracleとは
+
+### Oracleの特徴
+
+Oracleは、エンタープライズ向けの強力なリレーショナルデータベースです。
+
+```
+Oracleの特徴
+   ├─ エンタープライズ
+   ├─ スケーラビリティ
+   ├─ 可用性
+   └─ セキュリティ
+```
+
+## 2. 基本的な操作
+
+### SQLの実行
+
+```sql
+-- テーブルの作成
+CREATE TABLE users (
+  id NUMBER PRIMARY KEY,
+  name VARCHAR2(100),
+  email VARCHAR2(100)
+);
+
+-- データの挿入
+INSERT INTO users (id, name, email) VALUES (1, 'Alice', 'alice@example.com');
+
+-- データの取得
+SELECT * FROM users;
+```
+
+## まとめ
+
+Oracle完全ガイドのポイント：
+
+- **エンタープライズ**: エンタープライズ機能
+- **スケーラビリティ**: 高いスケーラビリティ
+- **可用性**: 高可用性
+
+適切なOracleの使用により、エンタープライズレベルのシステムを構築できます。
+

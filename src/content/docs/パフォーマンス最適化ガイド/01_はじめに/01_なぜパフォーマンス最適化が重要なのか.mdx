@@ -1,0 +1,70 @@
+---
+title: なぜパフォーマンス最適化が重要なのか
+sidebar:
+    label: はじめに
+---
+
+# なぜパフォーマンス最適化が重要なのか
+
+パフォーマンス最適化は、アプリケーションの応答速度とユーザー体験を向上させるための重要なプロセスです。
+
+## パフォーマンス最適化の重要性
+
+### パフォーマンスの問題
+
+**問題のあるアプリケーション:**
+
+```typescript
+// 遅いクエリ
+async function getUsers() {
+  const users = await db.query('SELECT * FROM users');
+  for (const user of users) {
+    user.orders = await db.query(`SELECT * FROM orders WHERE user_id = ${user.id}`);
+  }
+  return users;
+}
+
+// 問題点:
+// - N+1問題
+// - 応答時間が遅い
+// - ユーザー体験が悪い
+```
+
+### パフォーマンス最適化による解決
+
+**改善されたアプリケーション:**
+
+```typescript
+// 最適化されたクエリ
+async function getUsers() {
+  const users = await db.query('SELECT * FROM users');
+  const userIds = users.map(u => u.id);
+  const orders = await db.query(
+    'SELECT * FROM orders WHERE user_id IN (?)',
+    [userIds]
+  );
+  
+  const ordersByUserId = orders.reduce((acc, order) => {
+    if (!acc[order.user_id]) acc[order.user_id] = [];
+    acc[order.user_id].push(order);
+    return acc;
+  }, {});
+  
+  return users.map(user => ({
+    ...user,
+    orders: ordersByUserId[user.id] || []
+  }));
+}
+```
+
+## まとめ
+
+パフォーマンス最適化が重要な理由：
+
+- **ユーザー体験**: 応答速度の向上
+- **コスト削減**: サーバーリソースの効率的な使用
+- **スケーラビリティ**: より多くのユーザーに対応
+- **SEO**: 検索エンジンの評価向上
+
+適切なパフォーマンス最適化により、高速で効率的なアプリケーションを構築できます。
+

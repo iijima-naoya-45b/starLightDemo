@@ -1,0 +1,485 @@
+---
+title: テスト戦略完全ガイド
+sidebar:
+    label: テスト戦略
+---
+
+# テスト戦略完全ガイド
+
+テスト戦略の実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. テストピラミッド
+
+### テストピラミッドとは
+
+テストピラミッドは、テストの種類と量のバランスを示す概念です。
+
+```
+テストピラミッド
+   ├─ E2Eテスト（少ない）
+   ├─ 統合テスト（中程度）
+   └─ ユニットテスト（多い）
+```
+
+### テストピラミッドの実装
+
+```typescript
+// ユニットテスト（多い）
+describe('UserService', () => {
+  it('should create user', () => {
+    const user = userService.createUser({ name: 'Alice', email: 'alice@example.com' });
+    expect(user.name).toBe('Alice');
+  });
+});
+
+// 統合テスト（中程度）
+describe('User API', () => {
+  it('should create user via API', async () => {
+    const response = await request(app)
+      .post('/api/users')
+      .send({ name: 'Alice', email: 'alice@example.com' });
+    expect(response.status).toBe(201);
+  });
+});
+
+// E2Eテスト（少ない）
+describe('User Registration Flow', () => {
+  it('should register new user', async () => {
+    await page.goto('http://localhost:3000/register');
+    await page.fill('#name', 'Alice');
+    await page.fill('#email', 'alice@example.com');
+    await page.click('#submit');
+    await expect(page.locator('#success')).toBeVisible();
+  });
+});
+```
+
+## 2. ユニットテスト
+
+### 基本的なユニットテスト
+
+```typescript
+// userService.ts
+export class UserService {
+  constructor(private userRepository: UserRepository) {}
+  
+  async createUser(data: CreateUserInput): Promise<User> {
+    if (!data.email || !data.email.includes('@')) {
+      throw new Error('Invalid email');
+    }
+    
+    const user = new User(data);
+    return await this.userRepository.save(user);
+  }
+}
+
+// userService.test.ts
+import { UserService } from './userService';
+import { UserRepository } from './userRepository';
+
+describe('UserService', () => {
+  let userService: UserService;
+  let mockUserRepository: jest.Mocked<UserRepository>;
+  
+  beforeEach(() => {
+    mockUserRepository = {
+      save: jest.fn()
+    } as any;
+    
+    userService = new UserService(mockUserRepository);
+  });
+  
+  describe('createUser', () => {
+    it('should create user with valid data', async () => {
+      const userData = { name: 'Alice', email: 'alice@example.com' };
+      const expectedUser = { id: '1', ...userData };
+      
+      mockUserRepository.save.mockResolvedValue(expectedUser);
+      
+      const result = await userService.createUser(userData);
+      
+      expect(result).toEqual(expectedUser);
+      expect(mockUserRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining(userData)
+      );
+    });
+    
+    it('should throw error for invalid email', async () => {
+      const userData = { name: 'Alice', email: 'invalid-email' };
+      
+      await expect(userService.createUser(userData)).rejects.toThrow('Invalid email');
+      expect(mockUserRepository.save).not.toHaveBeenCalled();
+    });
+  });
+});
+```
+
+### モックとスタブ
+
+```typescript
+// モックの使用
+import { PaymentService } from './paymentService';
+
+jest.mock('./paymentService');
+
+describe('OrderService', () => {
+  it('should process order with payment', async () => {
+    const mockPaymentService = PaymentService as jest.MockedClass<typeof PaymentService>;
+    mockPaymentService.prototype.charge.mockResolvedValue({ success: true });
+    
+    const orderService = new OrderService(mockPaymentService.prototype);
+    const result = await orderService.createOrder({ amount: 100 });
+    
+    expect(result.status).toBe('paid');
+  });
+});
+
+// スタブの使用
+class StubUserRepository implements UserRepository {
+  private users: User[] = [];
+  
+  async save(user: User): Promise<User> {
+    user.id = 'stub-id';
+    this.users.push(user);
+    return user;
+  }
+  
+  async findById(id: string): Promise<User | null> {
+    return this.users.find(u => u.id === id) || null;
+  }
+}
+```
+
+## 3. 統合テスト
+
+### API統合テスト
+
+```typescript
+// api.test.ts
+import request from 'supertest';
+import app from './app';
+import { setupDatabase, teardownDatabase } from './test-utils';
+
+describe('User API', () => {
+  beforeAll(async () => {
+    await setupDatabase();
+  });
+  
+  afterAll(async () => {
+    await teardownDatabase();
+  });
+  
+  describe('POST /api/users', () => {
+    it('should create user', async () => {
+      const response = await request(app)
+        .post('/api/users')
+        .send({ name: 'Alice', email: 'alice@example.com' })
+        .expect(201);
+      
+      expect(response.body).toHaveProperty('id');
+      expect(response.body.name).toBe('Alice');
+    });
+    
+    it('should return 400 for invalid data', async () => {
+      const response = await request(app)
+        .post('/api/users')
+        .send({ name: 'Alice' }) // emailが欠けている
+        .expect(400);
+      
+      expect(response.body).toHaveProperty('error');
+    });
+  });
+  
+  describe('GET /api/users/:id', () => {
+    it('should get user by id', async () => {
+      // ユーザーを作成
+      const createResponse = await request(app)
+        .post('/api/users')
+        .send({ name: 'Alice', email: 'alice@example.com' });
+      
+      const userId = createResponse.body.id;
+      
+      // ユーザーを取得
+      const response = await request(app)
+        .get(`/api/users/${userId}`)
+        .expect(200);
+      
+      expect(response.body.name).toBe('Alice');
+    });
+  });
+});
+```
+
+### データベース統合テスト
+
+```typescript
+// database.test.ts
+import { DataSource } from 'typeorm';
+import { User } from './entities/User';
+
+describe('User Repository', () => {
+  let dataSource: DataSource;
+  
+  beforeAll(async () => {
+    dataSource = new DataSource({
+      type: 'postgres',
+      host: 'localhost',
+      port: 5432,
+      database: 'test_db',
+      entities: [User],
+      synchronize: true,
+      dropSchema: true
+    });
+    
+    await dataSource.initialize();
+  });
+  
+  afterAll(async () => {
+    await dataSource.destroy();
+  });
+  
+  beforeEach(async () => {
+    await dataSource.getRepository(User).clear();
+  });
+  
+  it('should save and retrieve user', async () => {
+    const userRepository = dataSource.getRepository(User);
+    
+    const user = new User();
+    user.name = 'Alice';
+    user.email = 'alice@example.com';
+    
+    const savedUser = await userRepository.save(user);
+    expect(savedUser.id).toBeDefined();
+    
+    const retrievedUser = await userRepository.findOne({ where: { id: savedUser.id } });
+    expect(retrievedUser?.name).toBe('Alice');
+  });
+});
+```
+
+## 4. E2Eテスト
+
+### PlaywrightでのE2Eテスト
+
+```typescript
+// e2e.test.ts
+import { test, expect } from '@playwright/test';
+
+test.describe('User Registration', () => {
+  test('should register new user', async ({ page }) => {
+    await page.goto('http://localhost:3000/register');
+    
+    await page.fill('#name', 'Alice');
+    await page.fill('#email', 'alice@example.com');
+    await page.fill('#password', 'password123');
+    await page.click('#submit');
+    
+    await expect(page.locator('#success-message')).toBeVisible();
+    await expect(page.locator('#success-message')).toHaveText('Registration successful');
+  });
+  
+  test('should show error for invalid email', async ({ page }) => {
+    await page.goto('http://localhost:3000/register');
+    
+    await page.fill('#name', 'Alice');
+    await page.fill('#email', 'invalid-email');
+    await page.fill('#password', 'password123');
+    await page.click('#submit');
+    
+    await expect(page.locator('#error-message')).toBeVisible();
+    await expect(page.locator('#error-message')).toHaveText('Invalid email format');
+  });
+});
+```
+
+## 5. テストカバレッジ
+
+### カバレッジの測定
+
+```json
+// package.json
+{
+  "scripts": {
+    "test": "jest",
+    "test:coverage": "jest --coverage"
+  },
+  "jest": {
+    "collectCoverageFrom": [
+      "src/**/*.{ts,tsx}",
+      "!src/**/*.d.ts",
+      "!src/**/*.test.{ts,tsx}"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 80,
+        "functions": 80,
+        "lines": 80,
+        "statements": 80
+      }
+    }
+  }
+}
+```
+
+```typescript
+// coverage設定
+// jest.config.js
+module.exports = {
+  collectCoverage: true,
+  coverageDirectory: 'coverage',
+  coverageReporters: ['text', 'lcov', 'html'],
+  coverageThreshold: {
+    global: {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80
+    }
+  }
+};
+```
+
+## 6. テストデータ管理
+
+### ファクトリーパターン
+
+```typescript
+// factories/userFactory.ts
+import { User } from './entities/User';
+
+export class UserFactory {
+  static create(overrides?: Partial<User>): User {
+    return {
+      id: '1',
+      name: 'Alice',
+      email: 'alice@example.com',
+      createdAt: new Date(),
+      ...overrides
+    };
+  }
+  
+  static createMany(count: number, overrides?: Partial<User>): User[] {
+    return Array.from({ length: count }, (_, i) => 
+      this.create({ ...overrides, id: `${i + 1}` })
+    );
+  }
+}
+
+// 使用例
+const user = UserFactory.create({ name: 'Bob' });
+const users = UserFactory.createMany(5);
+```
+
+### フィクスチャ
+
+```typescript
+// fixtures/users.json
+[
+  {
+    "id": "1",
+    "name": "Alice",
+    "email": "alice@example.com"
+  },
+  {
+    "id": "2",
+    "name": "Bob",
+    "email": "bob@example.com"
+  }
+]
+
+// 使用例
+import usersFixture from './fixtures/users.json';
+
+beforeEach(async () => {
+  await User.insertMany(usersFixture);
+});
+```
+
+## 7. テストのベストプラクティス
+
+### AAAパターン
+
+```typescript
+describe('UserService', () => {
+  it('should create user', async () => {
+    // Arrange（準備）
+    const userData = { name: 'Alice', email: 'alice@example.com' };
+    const mockRepository = createMockRepository();
+    const userService = new UserService(mockRepository);
+    
+    // Act（実行）
+    const result = await userService.createUser(userData);
+    
+    // Assert（検証）
+    expect(result.name).toBe('Alice');
+    expect(mockRepository.save).toHaveBeenCalled();
+  });
+});
+```
+
+### テストの独立性
+
+```typescript
+// ❌ 悪い例: テストが依存している
+let user: User;
+
+beforeAll(async () => {
+  user = await createUser();
+});
+
+it('should update user', async () => {
+  await updateUser(user.id, { name: 'Bob' });
+  // 他のテストに影響を与える可能性がある
+});
+
+// ✅ 良い例: テストが独立している
+it('should update user', async () => {
+  const user = await createUser();
+  await updateUser(user.id, { name: 'Bob' });
+  // 各テストが独立している
+});
+```
+
+## 8. よくある問題と解決方法
+
+### 問題1: テストが遅い
+
+```typescript
+// 解決: 並列実行とモックの使用
+// jest.config.js
+module.exports = {
+  maxWorkers: 4, // 並列実行
+  testTimeout: 10000
+};
+
+// モックの使用で外部依存を排除
+jest.mock('./externalService');
+```
+
+### 問題2: フレーキーテスト
+
+```typescript
+// 解決: タイムスタンプのモック
+jest.useFakeTimers();
+
+it('should handle timeout', () => {
+  jest.advanceTimersByTime(5000);
+  // 時間に依存しないテスト
+});
+```
+
+## まとめ
+
+テスト戦略完全ガイドのポイント：
+
+- **テストピラミッド**: ユニットテスト、統合テスト、E2Eテストのバランス
+- **ユニットテスト**: モックとスタブの使用
+- **統合テスト**: APIとデータベースのテスト
+- **E2Eテスト**: 実際のユーザーフローのテスト
+- **テストカバレッジ**: カバレッジの測定と目標設定
+- **テストデータ管理**: ファクトリーとフィクスチャの使用
+- **ベストプラクティス**: AAAパターン、テストの独立性
+
+適切なテスト戦略により、高品質なソフトウェアを構築できます。
+

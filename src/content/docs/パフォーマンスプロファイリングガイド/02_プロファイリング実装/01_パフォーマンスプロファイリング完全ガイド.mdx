@@ -1,0 +1,67 @@
+---
+title: パフォーマンスプロファイリング完全ガイド
+sidebar:
+    label: プロファイリング実装
+---
+
+# パフォーマンスプロファイリング完全ガイド
+
+パフォーマンスプロファイリングの実践的な手法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. プロファイリングとは
+
+### プロファイリングの種類
+
+```
+プロファイリングの種類
+   ├─ CPUプロファイリング
+   ├─ メモリプロファイリング
+   ├─ I/Oプロファイリング
+   └─ ネットワークプロファイリング
+```
+
+## 2. Node.jsのプロファイリング
+
+### Chrome DevTools
+
+```bash
+# Node.jsのプロファイリング
+node --inspect server.js
+
+# Chrome DevToolsで接続
+# chrome://inspect
+```
+
+### clinic.js
+
+```bash
+# clinic.jsのインストール
+npm install -g clinic
+
+# プロファイリング
+clinic doctor -- node server.js
+```
+
+## 3. ブラウザのプロファイリング
+
+### Performance API
+
+```typescript
+// Performance APIの使用
+const start = performance.now();
+// 処理
+const end = performance.now();
+console.log(`処理時間: ${end - start}ms`);
+```
+
+## まとめ
+
+パフォーマンスプロファイリング完全ガイドのポイント：
+
+- **CPUプロファイリング**: CPU使用率の分析
+- **メモリプロファイリング**: メモリ使用量の分析
+- **ツール**: Chrome DevTools、clinic.js
+- **計測**: Performance API
+
+適切なプロファイリングにより、高性能なシステムを構築できます。
+

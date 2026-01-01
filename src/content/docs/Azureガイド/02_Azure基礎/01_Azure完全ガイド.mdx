@@ -1,0 +1,131 @@
+---
+title: Azure完全ガイド
+sidebar:
+    label: Azure基礎
+---
+
+# Azure完全ガイド
+
+Azureの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Virtual Machines
+
+### VMの作成
+
+```bash
+# Azure CLIでのVM作成
+az vm create \
+  --resource-group myResourceGroup \
+  --name myVM \
+  --image UbuntuLTS \
+  --admin-username azureuser \
+  --generate-ssh-keys
+```
+
+### VMの管理
+
+```bash
+# VMの起動
+az vm start --resource-group myResourceGroup --name myVM
+
+# VMの停止
+az vm stop --resource-group myResourceGroup --name myVM
+
+# VMの削除
+az vm delete --resource-group myResourceGroup --name myVM
+```
+
+## 2. Blob Storage
+
+### ストレージアカウントの作成
+
+```bash
+# ストレージアカウントの作成
+az storage account create \
+  --name mystorageaccount \
+  --resource-group myResourceGroup \
+  --location japaneast \
+  --sku Standard_LRS
+```
+
+### ファイルのアップロード
+
+```typescript
+// Azure Blob Storageの使用
+import { BlobServiceClient } from '@azure/storage-blob';
+
+const blobServiceClient = BlobServiceClient.fromConnectionString(
+  process.env.AZURE_STORAGE_CONNECTION_STRING!
+);
+
+const containerClient = blobServiceClient.getContainerClient('mycontainer');
+const blockBlobClient = containerClient.getBlockBlobClient('myfile.txt');
+
+await blockBlobClient.upload('Hello World!', 'Hello World!'.length);
+```
+
+## 3. Azure Functions
+
+### 関数の作成
+
+```typescript
+// Azure Functionsの実装
+import { AzureFunction, Context, HttpRequest } from '@azure/functions';
+
+const httpTrigger: AzureFunction = async function (
+  context: Context,
+  req: HttpRequest
+): Promise<void> {
+  context.res = {
+    status: 200,
+    body: 'Hello World!'
+  };
+};
+
+export default httpTrigger;
+```
+
+## 4. Cosmos DB
+
+### データベースの作成
+
+```bash
+# Cosmos DBアカウントの作成
+az cosmosdb create \
+  --name mycosmosdb \
+  --resource-group myResourceGroup
+```
+
+### データの操作
+
+```typescript
+// Cosmos DBの使用
+import { CosmosClient } from '@azure/cosmos';
+
+const client = new CosmosClient({
+  endpoint: process.env.COSMOS_ENDPOINT!,
+  key: process.env.COSMOS_KEY!
+});
+
+const database = client.database('mydatabase');
+const container = database.container('mycontainer');
+
+// アイテムの作成
+await container.items.create({ id: '1', name: 'Alice' });
+
+// アイテムの読み取り
+const { resource } = await container.item('1').read();
+console.log(resource);
+```
+
+## まとめ
+
+Azure完全ガイドのポイント：
+
+- **Virtual Machines**: 仮想マシンの管理
+- **Blob Storage**: オブジェクトストレージ
+- **Azure Functions**: サーバーレス関数
+- **Cosmos DB**: NoSQLデータベース
+
+適切なAzureの使用により、エンタープライズレベルのシステムを構築できます。
+

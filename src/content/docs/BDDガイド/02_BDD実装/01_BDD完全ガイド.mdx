@@ -1,0 +1,65 @@
+---
+title: BDD完全ガイド
+sidebar:
+    label: BDD実装
+---
+
+# BDD完全ガイド
+
+BDDの実践的な手法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. BDDとは
+
+### BDDの特徴
+
+BDDは、振る舞いを記述してから実装する開発手法です。
+
+```
+BDDの特徴
+   ├─ Given-When-Then
+   ├─ 自然言語
+   ├─ 振る舞いの記述
+   └─ ドキュメントとしてのテスト
+```
+
+## 2. BDDの実践
+
+### Cucumberの使用
+
+```gherkin
+# features/user_authentication.feature
+Feature: ユーザー認証
+  Scenario: 有効な認証情報でログイン
+    Given ユーザーが登録されている
+    When 有効なメールアドレスとパスワードでログインする
+    Then ログインに成功する
+    And ダッシュボードにリダイレクトされる
+```
+
+```typescript
+// step_definitions/user_authentication.ts
+import { Given, When, Then } from '@cucumber/cucumber';
+
+Given('ユーザーが登録されている', async () => {
+  await createUser({ email: 'test@example.com', password: 'password' });
+});
+
+When('有効なメールアドレスとパスワードでログインする', async () => {
+  await login('test@example.com', 'password');
+});
+
+Then('ログインに成功する', async () => {
+  expect(await isLoggedIn()).toBe(true);
+});
+```
+
+## まとめ
+
+BDD完全ガイドのポイント：
+
+- **Given-When-Then**: BDDの構造
+- **自然言語**: 読みやすいテスト
+- **Cucumber**: BDDツール
+
+適切なBDDにより、要件が明確で保守しやすいコードを書けます。
+

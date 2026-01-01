@@ -1,0 +1,62 @@
+---
+title: なぜデータ構造とアルゴリズムが重要なのか
+sidebar:
+    label: はじめに
+---
+
+# なぜデータ構造とアルゴリズムが重要なのか
+
+データ構造とアルゴリズムは、効率的なプログラムを書くための基礎です。
+
+## データ構造とアルゴリズムの重要性
+
+### 適切でないデータ構造の問題
+
+**問題のあるコード:**
+
+```typescript
+// 配列で線形探索（O(n)）
+function findUser(users: User[], id: string): User | undefined {
+  for (const user of users) {
+    if (user.id === id) {
+      return user;
+    }
+  }
+  return undefined;
+}
+
+// 問題点:
+// - 大規模データで遅い
+// - 時間計算量がO(n)
+```
+
+### 適切なデータ構造による解決
+
+**改善されたコード:**
+
+```typescript
+// Mapで定数時間探索（O(1)）
+function createUserMap(users: User[]): Map<string, User> {
+  return new Map(users.map(user => [user.id, user]));
+}
+
+function findUser(userMap: Map<string, User>, id: string): User | undefined {
+  return userMap.get(id);
+}
+
+// メリット:
+// - 大規模データでも高速
+// - 時間計算量がO(1)
+```
+
+## まとめ
+
+データ構造とアルゴリズムが重要な理由：
+
+- **パフォーマンス**: 適切なデータ構造でパフォーマンスが向上
+- **スケーラビリティ**: 大規模データに対応できる
+- **メモリ効率**: メモリ使用量を最適化できる
+- **問題解決**: 適切なアルゴリズムで問題を解決できる
+
+適切なデータ構造とアルゴリズムにより、効率的なプログラムを書けます。
+

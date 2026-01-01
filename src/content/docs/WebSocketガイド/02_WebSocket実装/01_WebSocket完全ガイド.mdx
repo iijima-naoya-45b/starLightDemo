@@ -1,0 +1,324 @@
+---
+title: WebSocket完全ガイド
+sidebar:
+    label: WebSocket実装
+---
+
+# WebSocket完全ガイド
+
+WebSocketの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. WebSocketとは
+
+### WebSocketの特徴
+
+WebSocketは、リアルタイム双方向通信を実現するプロトコルです。
+
+```
+WebSocketの特徴
+   ├─ リアルタイム通信
+   ├─ 双方向通信
+   ├─ 低レイテンシ
+   └─ 効率的な通信
+```
+
+## 2. クライアント側の実装
+
+### 基本的な実装
+
+```typescript
+// WebSocketクライアントの実装
+class WebSocketClient {
+  private ws: WebSocket | null = null;
+  private url: string;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  
+  constructor(url: string) {
+    this.url = url;
+  }
+  
+  connect(): void {
+    this.ws = new WebSocket(this.url);
+    
+    this.ws.onopen = () => {
+      console.log('WebSocket connected');
+      this.reconnectAttempts = 0;
+    };
+    
+    this.ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      this.handleMessage(data);
+    };
+    
+    this.ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+    
+    this.ws.onclose = () => {
+      console.log('WebSocket closed');
+      this.reconnect();
+    };
+  }
+  
+  send(data: any): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(data));
+    }
+  }
+  
+  private handleMessage(data: any): void {
+    console.log('Received message:', data);
+  }
+  
+  private reconnect(): void {
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.reconnectAttempts++;
+      setTimeout(() => {
+        console.log(`Reconnecting... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+        this.connect();
+      }, 1000 * this.reconnectAttempts);
+    }
+  }
+  
+  disconnect(): void {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+}
+```
+
+## 3. サーバー側の実装（Node.js）
+
+### WebSocketサーバーの実装
+
+```typescript
+// Node.js + wsライブラリ
+import WebSocket, { WebSocketServer } from 'ws';
+
+const wss = new WebSocketServer({ port: 3000 });
+
+wss.on('connection', (ws: WebSocket) => {
+  console.log('Client connected');
+  
+  ws.on('message', (message: string) => {
+    const data = JSON.parse(message);
+    console.log('Received:', data);
+    
+    // メッセージを処理
+    handleMessage(ws, data);
+  });
+  
+  ws.on('close', () => {
+    console.log('Client disconnected');
+  });
+  
+  ws.on('error', (error) => {
+    console.error('WebSocket error:', error);
+  });
+  
+  // 接続時にメッセージを送信
+  ws.send(JSON.stringify({ type: 'welcome', message: 'Connected' }));
+});
+
+function handleMessage(ws: WebSocket, data: any): void {
+  switch (data.type) {
+    case 'ping':
+      ws.send(JSON.stringify({ type: 'pong' }));
+      break;
+    case 'message':
+      // メッセージをブロードキャスト
+      broadcast(data);
+      break;
+    default:
+      console.log('Unknown message type:', data.type);
+  }
+}
+
+function broadcast(data: any): void {
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify(data));
+    }
+  });
+}
+```
+
+## 4. Socket.ioの使用
+
+### Socket.ioクライアント
+
+```typescript
+// Socket.ioクライアント
+import io from 'socket.io-client';
+
+const socket = io('http://localhost:3000');
+
+socket.on('connect', () => {
+  console.log('Connected to server');
+});
+
+socket.on('message', (data) => {
+  console.log('Received message:', data);
+});
+
+socket.emit('message', { text: 'Hello, server!' });
+
+socket.on('disconnect', () => {
+  console.log('Disconnected from server');
+});
+```
+
+### Socket.ioサーバー
+
+```typescript
+// Socket.ioサーバー
+import { Server } from 'socket.io';
+import http from 'http';
+
+const server = http.createServer();
+const io = new Server(server, {
+  cors: {
+    origin: '*'
+  }
+});
+
+io.on('connection', (socket) => {
+  console.log('Client connected:', socket.id);
+  
+  socket.on('message', (data) => {
+    console.log('Received:', data);
+    // 全クライアントにブロードキャスト
+    io.emit('message', data);
+  });
+  
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+  });
+});
+
+server.listen(3000, () => {
+  console.log('Server listening on port 3000');
+});
+```
+
+## 5. 実践的なベストプラクティス
+
+### 接続管理
+
+```typescript
+class WebSocketManager {
+  private ws: WebSocket | null = null;
+  private heartbeatInterval: NodeJS.Timeout | null = null;
+  
+  connect(url: string): void {
+    this.ws = new WebSocket(url);
+    
+    this.ws.onopen = () => {
+      this.startHeartbeat();
+    };
+    
+    this.ws.onclose = () => {
+      this.stopHeartbeat();
+    };
+  }
+  
+  private startHeartbeat(): void {
+    this.heartbeatInterval = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 30000); // 30秒ごと
+  }
+  
+  private stopHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
+}
+```
+
+### エラーハンドリング
+
+```typescript
+class RobustWebSocket {
+  private ws: WebSocket | null = null;
+  private messageQueue: any[] = [];
+  
+  send(data: any): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(data));
+    } else {
+      // 接続が確立されていない場合はキューに保存
+      this.messageQueue.push(data);
+    }
+  }
+  
+  private flushQueue(): void {
+    while (this.messageQueue.length > 0) {
+      const message = this.messageQueue.shift();
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify(message));
+      }
+    }
+  }
+}
+```
+
+## 6. よくある問題と解決方法
+
+### 問題1: 接続が切れる
+
+```typescript
+// 解決: 自動再接続
+class AutoReconnectWebSocket {
+  private reconnect(): void {
+    // 指数バックオフで再接続
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+    setTimeout(() => {
+      this.connect();
+    }, delay);
+  }
+}
+```
+
+### 問題2: メッセージの順序
+
+```typescript
+// 解決: シーケンス番号
+interface Message {
+  sequence: number;
+  data: any;
+}
+
+class OrderedWebSocket {
+  private expectedSequence = 0;
+  private messageBuffer = new Map<number, Message>();
+  
+  handleMessage(message: Message): void {
+    if (message.sequence === this.expectedSequence) {
+      this.processMessage(message);
+      this.expectedSequence++;
+      this.processBufferedMessages();
+    } else {
+      this.messageBuffer.set(message.sequence, message);
+    }
+  }
+}
+```
+
+## まとめ
+
+WebSocket完全ガイドのポイント：
+
+- **クライアント側**: WebSocket API、自動再接続
+- **サーバー側**: WebSocketサーバー、Socket.io
+- **ベストプラクティス**: 接続管理、エラーハンドリング
+- **問題解決**: 自動再接続、メッセージの順序管理
+
+適切なWebSocketの使用により、リアルタイムアプリケーションを構築できます。
+

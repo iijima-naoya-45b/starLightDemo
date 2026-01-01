@@ -1,0 +1,69 @@
+---
+title: レイテンシ・スループット完全ガイド
+sidebar:
+    label: レイテンシ・スループット実装
+---
+
+# レイテンシ・スループット完全ガイド
+
+レイテンシとスループットの実践的な計測方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. レイテンシ・スループットとは
+
+### レイテンシ
+
+レイテンシは、リクエストの送信からレスポンスの受信までの時間です。
+
+```
+レイテンシの種類
+   ├─ ネットワークレイテンシ
+   ├─ アプリケーションレイテンシ
+   └─ データベースレイテンシ
+```
+
+### スループット
+
+スループットは、単位時間あたりに処理できるリクエスト数です。
+
+```
+スループットの単位
+   ├─ RPS (Requests Per Second)
+   ├─ TPS (Transactions Per Second)
+   └─ QPS (Queries Per Second)
+```
+
+## 2. レイテンシの計測
+
+```typescript
+// レイテンシの計測
+const start = performance.now();
+await processRequest();
+const end = performance.now();
+const latency = end - start;
+console.log(`Latency: ${latency}ms`);
+```
+
+## 3. スループットの計測
+
+```typescript
+// スループットの計測
+let requestCount = 0;
+const startTime = Date.now();
+
+setInterval(() => {
+  const elapsed = (Date.now() - startTime) / 1000;
+  const throughput = requestCount / elapsed;
+  console.log(`Throughput: ${throughput} RPS`);
+}, 1000);
+```
+
+## まとめ
+
+レイテンシ・スループット完全ガイドのポイント：
+
+- **レイテンシ**: レスポンス時間の計測
+- **スループット**: 処理能力の計測
+- **最適化**: 指標に基づく最適化
+
+適切な指標により、高性能なシステムを構築できます。
+

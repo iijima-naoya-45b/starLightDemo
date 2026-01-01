@@ -1,0 +1,422 @@
+---
+title: Angular完全ガイド
+sidebar:
+    label: Angular基礎
+---
+
+# Angular完全ガイド
+
+Angularの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Angularとは
+
+### Angularの特徴
+
+Angularは、TypeScriptベースのフロントエンドフレームワークで、大規模アプリケーションの開発に適しています。
+
+```
+Angularの特徴
+   ├─ TypeScriptベース
+   ├─ 依存性注入（DI）
+   ├─ RxJS統合
+   ├─ コンポーネントベース
+   └─ モジュールシステム
+```
+
+## 2. 環境構築
+
+### Angular CLIのインストール
+
+```bash
+# Angular CLIのインストール
+npm install -g @angular/cli
+
+# プロジェクトの作成
+ng new my-app
+
+# 開発サーバーの起動
+ng serve
+```
+
+### プロジェクト構造
+
+```
+my-app/
+├── src/
+│   ├── app/
+│   │   ├── components/
+│   │   ├── services/
+│   │   ├── models/
+│   │   └── app.module.ts
+│   ├── assets/
+│   └── index.html
+├── angular.json
+└── package.json
+```
+
+## 3. コンポーネント
+
+### コンポーネントの作成
+
+```typescript
+// app/components/user/user.component.ts
+import { Component } from '@angular/core';
+
+@Component({
+  selector: 'app-user',
+  templateUrl: './user.component.html',
+  styleUrls: ['./user.component.css']
+})
+export class UserComponent {
+  userName = 'Alice';
+  
+  onButtonClick(): void {
+    console.log('Button clicked');
+  }
+}
+```
+
+```html
+<!-- app/components/user/user.component.html -->
+<div>
+  <h1>Hello, {{ userName }}!</h1>
+  <button (click)="onButtonClick()">Click me</button>
+</div>
+```
+
+## 4. 依存性注入（DI）
+
+### サービスの作成
+
+```typescript
+// app/services/user.service.ts
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class UserService {
+  constructor(private http: HttpClient) {}
+  
+  getUser(id: string): Observable<User> {
+    return this.http.get<User>(`/api/users/${id}`);
+  }
+  
+  createUser(user: User): Observable<User> {
+    return this.http.post<User>('/api/users', user);
+  }
+}
+```
+
+### コンポーネントでの使用
+
+```typescript
+// app/components/user/user.component.ts
+import { Component, OnInit } from '@angular/core';
+import { UserService } from '../../services/user.service';
+import { User } from '../../models/user.model';
+
+@Component({
+  selector: 'app-user',
+  templateUrl: './user.component.html'
+})
+export class UserComponent implements OnInit {
+  user: User | null = null;
+  
+  constructor(private userService: UserService) {}
+  
+  ngOnInit(): void {
+    this.userService.getUser('1').subscribe(user => {
+      this.user = user;
+    });
+  }
+}
+```
+
+## 5. RxJS
+
+### Observableの使用
+
+```typescript
+// app/services/user.service.ts
+import { Observable, of } from 'rxjs';
+import { map, catchError } from 'rxjs/operators';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class UserService {
+  getUsers(): Observable<User[]> {
+    return this.http.get<User[]>('/api/users').pipe(
+      map(users => users.filter(user => user.active)),
+      catchError(error => {
+        console.error('Error fetching users', error);
+        return of([]);
+      })
+    );
+  }
+}
+```
+
+### Subjectの使用
+
+```typescript
+// app/services/user.service.ts
+import { Subject, BehaviorSubject } from 'rxjs';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class UserService {
+  private userSubject = new BehaviorSubject<User | null>(null);
+  public user$ = this.userSubject.asObservable();
+  
+  setUser(user: User): void {
+    this.userSubject.next(user);
+  }
+}
+```
+
+## 6. ルーティング
+
+### ルーティングの設定
+
+```typescript
+// app/app-routing.module.ts
+import { NgModule } from '@angular/core';
+import { RouterModule, Routes } from '@angular/router';
+import { UserListComponent } from './components/user-list/user-list.component';
+import { UserDetailComponent } from './components/user-detail/user-detail.component';
+
+const routes: Routes = [
+  { path: '', redirectTo: '/users', pathMatch: 'full' },
+  { path: 'users', component: UserListComponent },
+  { path: 'users/:id', component: UserDetailComponent }
+];
+
+@NgModule({
+  imports: [RouterModule.forRoot(routes)],
+  exports: [RouterModule]
+})
+export class AppRoutingModule { }
+```
+
+### ナビゲーション
+
+```typescript
+// app/components/user-list/user-list.component.ts
+import { Router } from '@angular/router';
+
+export class UserListComponent {
+  constructor(private router: Router) {}
+  
+  navigateToUser(id: string): void {
+    this.router.navigate(['/users', id]);
+  }
+}
+```
+
+## 7. フォーム
+
+### テンプレート駆動フォーム
+
+```typescript
+// app/components/user-form/user-form.component.ts
+import { Component } from '@angular/core';
+import { NgForm } from '@angular/forms';
+
+@Component({
+  selector: 'app-user-form',
+  templateUrl: './user-form.component.html'
+})
+export class UserFormComponent {
+  onSubmit(form: NgForm): void {
+    if (form.valid) {
+      console.log('Form data:', form.value);
+    }
+  }
+}
+```
+
+```html
+<!-- app/components/user-form/user-form.component.html -->
+<form #userForm="ngForm" (ngSubmit)="onSubmit(userForm)">
+  <input name="name" ngModel required>
+  <input name="email" ngModel required email>
+  <button type="submit" [disabled]="!userForm.valid">Submit</button>
+</form>
+```
+
+### リアクティブフォーム
+
+```typescript
+// app/components/user-form/user-form.component.ts
+import { Component, OnInit } from '@angular/core';
+import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+
+@Component({
+  selector: 'app-user-form',
+  templateUrl: './user-form.component.html'
+})
+export class UserFormComponent implements OnInit {
+  userForm: FormGroup;
+  
+  constructor(private fb: FormBuilder) {}
+  
+  ngOnInit(): void {
+    this.userForm = this.fb.group({
+      name: ['', Validators.required],
+      email: ['', [Validators.required, Validators.email]]
+    });
+  }
+  
+  onSubmit(): void {
+    if (this.userForm.valid) {
+      console.log('Form data:', this.userForm.value);
+    }
+  }
+}
+```
+
+## 8. HTTP通信
+
+### HTTPクライアントの設定
+
+```typescript
+// app/app.module.ts
+import { HttpClientModule } from '@angular/common/http';
+
+@NgModule({
+  imports: [HttpClientModule],
+  // ...
+})
+export class AppModule { }
+```
+
+### HTTPリクエスト
+
+```typescript
+// app/services/user.service.ts
+import { HttpClient, HttpParams } from '@angular/common/http';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class UserService {
+  constructor(private http: HttpClient) {}
+  
+  getUsers(page: number = 1, limit: number = 10): Observable<User[]> {
+    const params = new HttpParams()
+      .set('page', page.toString())
+      .set('limit', limit.toString());
+    
+    return this.http.get<User[]>('/api/users', { params });
+  }
+  
+  createUser(user: User): Observable<User> {
+    return this.http.post<User>('/api/users', user);
+  }
+  
+  updateUser(id: string, user: Partial<User>): Observable<User> {
+    return this.http.put<User>(`/api/users/${id}`, user);
+  }
+  
+  deleteUser(id: string): Observable<void> {
+    return this.http.delete<void>(`/api/users/${id}`);
+  }
+}
+```
+
+## 9. 実践的なベストプラクティス
+
+### モジュールの分割
+
+```typescript
+// app/features/users/user.module.ts
+import { NgModule } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { UserListComponent } from './components/user-list/user-list.component';
+import { UserDetailComponent } from './components/user-detail/user-detail.component';
+import { UserService } from './services/user.service';
+
+@NgModule({
+  declarations: [UserListComponent, UserDetailComponent],
+  imports: [CommonModule],
+  providers: [UserService],
+  exports: [UserListComponent, UserDetailComponent]
+})
+export class UserModule { }
+```
+
+### 共有モジュール
+
+```typescript
+// app/shared/shared.module.ts
+import { NgModule } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { ButtonComponent } from './components/button/button.component';
+import { CardComponent } from './components/card/card.component';
+
+@NgModule({
+  declarations: [ButtonComponent, CardComponent],
+  imports: [CommonModule],
+  exports: [ButtonComponent, CardComponent]
+})
+export class SharedModule { }
+```
+
+## 10. よくある問題と解決方法
+
+### 問題1: メモリリーク
+
+```typescript
+// 解決: Subscriptionの管理
+import { Component, OnDestroy } from '@angular/core';
+import { Subscription } from 'rxjs';
+
+export class UserComponent implements OnDestroy {
+  private subscriptions = new Subscription();
+  
+  ngOnInit(): void {
+    const sub = this.userService.getUsers().subscribe(users => {
+      this.users = users;
+    });
+    this.subscriptions.add(sub);
+  }
+  
+  ngOnDestroy(): void {
+    this.subscriptions.unsubscribe();
+  }
+}
+```
+
+### 問題2: パフォーマンス
+
+```typescript
+// 解決: OnPush変更検出戦略
+import { ChangeDetectionStrategy } from '@angular/core';
+
+@Component({
+  selector: 'app-user',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  // ...
+})
+export class UserComponent { }
+```
+
+## まとめ
+
+Angular完全ガイドのポイント：
+
+- **コンポーネント**: コンポーネントベースのアーキテクチャ
+- **依存性注入**: 強力なDIシステム
+- **RxJS**: リアクティブプログラミング
+- **ルーティング**: シングルページアプリケーション
+- **フォーム**: テンプレート駆動とリアクティブフォーム
+- **HTTP通信**: HttpClientによるAPI通信
+- **ベストプラクティス**: モジュール分割、共有モジュール
+
+適切なAngularの使用により、大規模で保守性の高いアプリケーションを構築できます。
+

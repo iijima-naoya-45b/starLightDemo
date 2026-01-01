@@ -1,0 +1,157 @@
+---
+title: SRE完全ガイド
+sidebar:
+    label: SRE
+---
+
+# SRE完全ガイド
+
+SRE（Site Reliability Engineering）の実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. SREとは
+
+### SREの定義
+
+SREは、Googleが提唱した、ソフトウェアシステムの信頼性を確保するためのエンジニアリング手法です。
+
+```
+SREの目的
+   ├─ 信頼性の確保
+   ├─ エラーバジェットの管理
+   ├─ トイルの削減
+   └─ 自動化の推進
+```
+
+## 2. SLA/SLO/SLI
+
+### SLA（Service Level Agreement）
+
+```typescript
+// SLAの定義例
+const sla = {
+  availability: 99.9, // 99.9%の可用性
+  responseTime: 200,  // 200ms以内の応答時間
+  errorRate: 0.1      // 0.1%以下のエラー率
+};
+```
+
+### SLO（Service Level Objective）
+
+```typescript
+// SLOの実装
+class SLOManager {
+  async checkSLO(metric: string, target: number): Promise<boolean> {
+    const currentValue = await this.getMetric(metric);
+    return currentValue >= target;
+  }
+  
+  async calculateAvailability(): Promise<number> {
+    const uptime = await this.getUptime();
+    const totalTime = await this.getTotalTime();
+    return (uptime / totalTime) * 100;
+  }
+}
+```
+
+### SLI（Service Level Indicator）
+
+```typescript
+// SLIの実装
+class SLIManager {
+  async calculateErrorRate(): Promise<number> {
+    const totalRequests = await this.getTotalRequests();
+    const errorRequests = await this.getErrorRequests();
+    return (errorRequests / totalRequests) * 100;
+  }
+  
+  async calculateLatency(): Promise<number> {
+    const latencies = await this.getLatencies();
+    return this.calculatePercentile(latencies, 99);
+  }
+}
+```
+
+## 3. エラーバジェット
+
+### エラーバジェットの管理
+
+```typescript
+// エラーバジェットの実装
+class ErrorBudgetManager {
+  async calculateErrorBudget(
+    slo: number,
+    timeWindow: number
+  ): Promise<number> {
+    // エラーバジェット = (100 - SLO) / 100 * 時間窓
+    return ((100 - slo) / 100) * timeWindow;
+  }
+  
+  async checkErrorBudget(
+    currentErrors: number,
+    errorBudget: number
+  ): Promise<{
+    remaining: number;
+    exhausted: boolean;
+  }> {
+    const remaining = errorBudget - currentErrors;
+    return {
+      remaining,
+      exhausted: remaining <= 0
+    };
+  }
+}
+```
+
+## 4. インシデント管理
+
+### インシデント対応
+
+```typescript
+// インシデント管理システム
+class IncidentManager {
+  async detectIncident(alert: Alert): Promise<Incident | null> {
+    const severity = this.assessSeverity(alert);
+    
+    if (severity >= 'high') {
+      const incident = await this.createIncident({
+        type: alert.type,
+        severity,
+        detectedAt: new Date()
+      });
+      
+      await this.notifyOnCall(incident);
+      return incident;
+    }
+    
+    return null;
+  }
+  
+  async respondToIncident(incidentId: string): Promise<void> {
+    const incident = await this.getIncident(incidentId);
+    
+    // 1. 封じ込め
+    await this.containIncident(incident);
+    
+    // 2. 根絶
+    await this.eradicateThreat(incident);
+    
+    // 3. 復旧
+    await this.recoverFromIncident(incident);
+    
+    // 4. 事後対応
+    await this.postIncidentReview(incident);
+  }
+}
+```
+
+## まとめ
+
+SRE完全ガイドのポイント：
+
+- **SLA/SLO/SLI**: サービスレベル目標の設定と管理
+- **エラーバジェット**: 可用性と機能開発のバランス
+- **インシデント管理**: 検知、対応、事後対応
+- **トイルの削減**: 手動作業の自動化
+
+適切なSREの実践により、システムの信頼性を確保できます。
+

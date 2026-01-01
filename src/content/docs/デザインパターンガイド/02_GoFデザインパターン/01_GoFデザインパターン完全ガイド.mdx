@@ -1,0 +1,370 @@
+---
+title: GoFデザインパターン完全ガイド
+sidebar:
+    label: GoFデザインパターン
+---
+
+# GoFデザインパターン完全ガイド
+
+GoF（Gang of Four）デザインパターンの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. 生成に関するパターン
+
+### Factory Pattern（ファクトリーパターン）
+
+```typescript
+// インターフェース
+interface Product {
+  getName(): string;
+}
+
+// 具象クラス
+class ConcreteProductA implements Product {
+  getName(): string {
+    return 'Product A';
+  }
+}
+
+class ConcreteProductB implements Product {
+  getName(): string {
+    return 'Product B';
+  }
+}
+
+// ファクトリー
+class ProductFactory {
+  createProduct(type: string): Product {
+    switch (type) {
+      case 'A':
+        return new ConcreteProductA();
+      case 'B':
+        return new ConcreteProductB();
+      default:
+        throw new Error('Unknown product type');
+    }
+  }
+}
+
+// 使用例
+const factory = new ProductFactory();
+const productA = factory.createProduct('A');
+console.log(productA.getName()); // "Product A"
+```
+
+### Singleton Pattern（シングルトンパターン）
+
+```typescript
+class DatabaseConnection {
+  private static instance: DatabaseConnection;
+  private connection: any;
+  
+  private constructor() {
+    this.connection = this.createConnection();
+  }
+  
+  public static getInstance(): DatabaseConnection {
+    if (!DatabaseConnection.instance) {
+      DatabaseConnection.instance = new DatabaseConnection();
+    }
+    return DatabaseConnection.instance;
+  }
+  
+  private createConnection(): any {
+    // データベース接続の作成
+    return { connected: true };
+  }
+  
+  public getConnection(): any {
+    return this.connection;
+  }
+}
+
+// 使用例
+const db1 = DatabaseConnection.getInstance();
+const db2 = DatabaseConnection.getInstance();
+console.log(db1 === db2); // true
+```
+
+### Builder Pattern（ビルダーパターン）
+
+```typescript
+class User {
+  constructor(
+    public name: string,
+    public email: string,
+    public age?: number,
+    public address?: string
+  ) {}
+}
+
+class UserBuilder {
+  private name: string = '';
+  private email: string = '';
+  private age?: number;
+  private address?: string;
+  
+  setName(name: string): UserBuilder {
+    this.name = name;
+    return this;
+  }
+  
+  setEmail(email: string): UserBuilder {
+    this.email = email;
+    return this;
+  }
+  
+  setAge(age: number): UserBuilder {
+    this.age = age;
+    return this;
+  }
+  
+  setAddress(address: string): UserBuilder {
+    this.address = address;
+    return this;
+  }
+  
+  build(): User {
+    return new User(this.name, this.email, this.age, this.address);
+  }
+}
+
+// 使用例
+const user = new UserBuilder()
+  .setName('Alice')
+  .setEmail('alice@example.com')
+  .setAge(30)
+  .setAddress('Tokyo')
+  .build();
+```
+
+## 2. 構造に関するパターン
+
+### Adapter Pattern（アダプターパターン）
+
+```typescript
+// 既存のインターフェース
+interface OldPaymentService {
+  pay(amount: number): void;
+}
+
+// 新しいインターフェース
+interface NewPaymentService {
+  processPayment(amount: number): Promise<void>;
+}
+
+// アダプター
+class PaymentAdapter implements NewPaymentService {
+  constructor(private oldService: OldPaymentService) {}
+  
+  async processPayment(amount: number): Promise<void> {
+    return new Promise((resolve) => {
+      this.oldService.pay(amount);
+      resolve();
+    });
+  }
+}
+
+// 使用例
+const oldService = new OldPaymentService();
+const adapter = new PaymentAdapter(oldService);
+await adapter.processPayment(100);
+```
+
+### Decorator Pattern（デコレーターパターン）
+
+```typescript
+interface Coffee {
+  getCost(): number;
+  getDescription(): string;
+}
+
+class SimpleCoffee implements Coffee {
+  getCost(): number {
+    return 100;
+  }
+  
+  getDescription(): string {
+    return 'Simple coffee';
+  }
+}
+
+class MilkDecorator implements Coffee {
+  constructor(private coffee: Coffee) {}
+  
+  getCost(): number {
+    return this.coffee.getCost() + 50;
+  }
+  
+  getDescription(): string {
+    return this.coffee.getDescription() + ', milk';
+  }
+}
+
+class SugarDecorator implements Coffee {
+  constructor(private coffee: Coffee) {}
+  
+  getCost(): number {
+    return this.coffee.getCost() + 20;
+  }
+  
+  getDescription(): string {
+    return this.coffee.getDescription() + ', sugar';
+  }
+}
+
+// 使用例
+let coffee: Coffee = new SimpleCoffee();
+coffee = new MilkDecorator(coffee);
+coffee = new SugarDecorator(coffee);
+console.log(coffee.getDescription()); // "Simple coffee, milk, sugar"
+console.log(coffee.getCost()); // 170
+```
+
+## 3. 振る舞いに関するパターン
+
+### Strategy Pattern（ストラテジーパターン）
+
+```typescript
+interface PaymentStrategy {
+  pay(amount: number): void;
+}
+
+class CreditCardPayment implements PaymentStrategy {
+  pay(amount: number): void {
+    console.log(`Paid ${amount} using credit card`);
+  }
+}
+
+class PayPalPayment implements PaymentStrategy {
+  pay(amount: number): void {
+    console.log(`Paid ${amount} using PayPal`);
+  }
+}
+
+class PaymentProcessor {
+  constructor(private strategy: PaymentStrategy) {}
+  
+  setStrategy(strategy: PaymentStrategy): void {
+    this.strategy = strategy;
+  }
+  
+  processPayment(amount: number): void {
+    this.strategy.pay(amount);
+  }
+}
+
+// 使用例
+const processor = new PaymentProcessor(new CreditCardPayment());
+processor.processPayment(100); // "Paid 100 using credit card"
+processor.setStrategy(new PayPalPayment());
+processor.processPayment(200); // "Paid 200 using PayPal"
+```
+
+### Observer Pattern（オブザーバーパターン）
+
+```typescript
+interface Observer {
+  update(data: any): void;
+}
+
+class Subject {
+  private observers: Observer[] = [];
+  
+  attach(observer: Observer): void {
+    this.observers.push(observer);
+  }
+  
+  detach(observer: Observer): void {
+    const index = this.observers.indexOf(observer);
+    if (index > -1) {
+      this.observers.splice(index, 1);
+    }
+  }
+  
+  notify(data: any): void {
+    this.observers.forEach(observer => observer.update(data));
+  }
+}
+
+class EmailObserver implements Observer {
+  update(data: any): void {
+    console.log(`Email sent: ${data.message}`);
+  }
+}
+
+class SMSObserver implements Observer {
+  update(data: any): void {
+    console.log(`SMS sent: ${data.message}`);
+  }
+}
+
+// 使用例
+const subject = new Subject();
+subject.attach(new EmailObserver());
+subject.attach(new SMSObserver());
+subject.notify({ message: 'Order created' });
+```
+
+## 4. 実践的なベストプラクティス
+
+### Repository Pattern（リポジトリパターン）
+
+```typescript
+interface UserRepository {
+  findById(id: string): Promise<User | null>;
+  findAll(): Promise<User[]>;
+  save(user: User): Promise<User>;
+  delete(id: string): Promise<void>;
+}
+
+class UserRepositoryImpl implements UserRepository {
+  async findById(id: string): Promise<User | null> {
+    return await User.findById(id);
+  }
+  
+  async findAll(): Promise<User[]> {
+    return await User.findAll();
+  }
+  
+  async save(user: User): Promise<User> {
+    return await user.save();
+  }
+  
+  async delete(id: string): Promise<void> {
+    await User.deleteOne({ id });
+  }
+}
+```
+
+### Service Pattern（サービスパターン）
+
+```typescript
+class UserService {
+  constructor(private userRepository: UserRepository) {}
+  
+  async getUser(id: string): Promise<User> {
+    const user = await this.userRepository.findById(id);
+    if (!user) {
+      throw new Error('User not found');
+    }
+    return user;
+  }
+  
+  async createUser(data: CreateUserInput): Promise<User> {
+    const user = new User(data);
+    return await this.userRepository.save(user);
+  }
+}
+```
+
+## まとめ
+
+GoFデザインパターン完全ガイドのポイント：
+
+- **生成パターン**: Factory、Singleton、Builder
+- **構造パターン**: Adapter、Decorator
+- **振る舞いパターン**: Strategy、Observer
+- **実践パターン**: Repository、Service
+
+適切なデザインパターンの使用により、保守性の高いコードを構築できます。
+

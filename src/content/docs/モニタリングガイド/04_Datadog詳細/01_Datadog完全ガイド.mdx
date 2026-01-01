@@ -1,0 +1,417 @@
+---
+title: Datadog完全ガイド
+sidebar:
+    label: Datadog詳細
+---
+
+# Datadog完全ガイド
+
+Datadogの実践的な使い方を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Datadogとは
+
+### Datadogの特徴
+
+Datadogは、クラウドベースのモニタリング・可観測性プラットフォームです。ログ、メトリクス、トレースを統合して監視します。
+
+```
+Datadogの特徴
+   ├─ 統合モニタリング（ログ、メトリクス、トレース）
+   ├─ 500以上のインテグレーション
+   ├─ リアルタイムダッシュボード
+   ├─ 自動アラート
+   └─ APM（Application Performance Monitoring）
+```
+
+### なぜDatadogを選ぶのか
+
+**Datadogを選ぶべき場合:**
+- 統合的なモニタリングが必要
+- 複数のクラウドプロバイダーを使用
+- 豊富なインテグレーションが必要
+- APM機能が必要
+
+## 2. Datadogのセットアップ
+
+### アカウントの作成
+
+1. [Datadog公式サイト](https://www.datadoghq.com/)でアカウントを作成
+2. APIキーとアプリケーションキーを取得
+
+### Agentのインストール
+
+```bash
+# Linuxでのインストール
+DD_API_KEY=your_api_key DD_SITE="datadoghq.com" bash -c "$(curl -L https://s3.amazonaws.com/dd-agent/scripts/install_script_agent7.sh)"
+
+# Dockerでのインストール
+docker run -d --name datadog-agent \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  -v /proc/:/host/proc/:ro \
+  -v /sys/fs/cgroup/:/host/sys/fs/cgroup:ro \
+  -e DD_API_KEY=your_api_key \
+  -e DD_SITE="datadoghq.com" \
+  datadog/agent:7
+```
+
+## 3. メトリクスの送信
+
+### Pythonの例
+
+```python
+from datadog import initialize, api, statsd
+
+# 初期化
+options = {
+    'api_key': 'your_api_key',
+    'app_key': 'your_app_key'
+}
+initialize(**options)
+
+# カウンター
+statsd.increment('myapp.requests', tags=['env:production', 'service:api'])
+
+# ゲージ
+statsd.gauge('myapp.active_users', 100, tags=['env:production'])
+
+# ヒストグラム
+statsd.histogram('myapp.request.duration', 0.5, tags=['endpoint:/api/users'])
+
+# タイマー
+with statsd.timed('myapp.process_time', tags=['operation:create']):
+    # 処理
+    pass
+```
+
+### Node.jsの例
+
+```javascript
+const StatsD = require('node-dogstatsd').StatsD;
+const client = new StatsD({
+  host: 'localhost',
+  port: 8125,
+  prefix: 'myapp.'
+});
+
+// カウンター
+client.increment('requests', 1, ['env:production', 'service:api']);
+
+// ゲージ
+client.gauge('active_users', 100, ['env:production']);
+
+// ヒストグラム
+client.histogram('request.duration', 0.5, ['endpoint:/api/users']);
+
+// タイマー
+const timer = client.timer('process_time', ['operation:create']);
+// 処理
+timer.stop();
+```
+
+## 4. ログの送信
+
+### Pythonの例
+
+```python
+import logging
+from datadog import DogStatsd
+
+# ロガーの設定
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# 構造化ログの送信
+import json
+from datadog import api
+
+log = {
+    'message': 'User logged in',
+    'user_id': '12345',
+    'timestamp': '2024-01-01T00:00:00Z',
+    'level': 'info',
+    'service': 'myapp',
+    'env': 'production'
+}
+
+api.Logs.send(message=json.dumps(log))
+```
+
+### HTTP APIでの送信
+
+```bash
+# ログの送信
+curl -X POST "https://http-intake.logs.datadoghq.com/v1/input/your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "User logged in",
+    "user_id": "12345",
+    "level": "info",
+    "service": "myapp",
+    "env": "production"
+  }'
+```
+
+## 5. APM（Application Performance Monitoring）
+
+### Pythonの例
+
+```python
+from ddtrace import patch_all, tracer
+
+# 自動インストルメンテーション
+patch_all()
+
+# カスタムトレース
+@tracer.wrap(service='myapp', resource='process_order')
+def process_order(order_id):
+    with tracer.trace('database.query') as span:
+        span.set_tag('db.query', 'SELECT * FROM orders')
+        # データベースクエリ
+        pass
+    
+    with tracer.trace('external_api.call') as span:
+        span.set_tag('http.url', 'https://api.example.com')
+        # 外部API呼び出し
+        pass
+```
+
+### Node.jsの例
+
+```javascript
+const tracer = require('dd-trace').init({
+  service: 'myapp',
+  env: 'production'
+});
+
+// カスタムトレース
+const span = tracer.startSpan('process_order');
+span.setTag('order_id', orderId);
+
+try {
+  // 処理
+  span.finish();
+} catch (error) {
+  span.setTag('error', true);
+  span.finish();
+}
+```
+
+## 6. ダッシュボードの作成
+
+### ダッシュボードの設定
+
+```python
+from datadog import api
+
+# ダッシュボードの作成
+dashboard = {
+    'title': 'My Application Dashboard',
+    'widgets': [
+        {
+            'definition': {
+                'type': 'timeseries',
+                'requests': [
+                    {
+                        'q': 'avg:myapp.requests{env:production}',
+                        'display_type': 'line'
+                    }
+                ],
+                'title': 'Request Rate'
+            }
+        },
+        {
+            'definition': {
+                'type': 'query_value',
+                'requests': [
+                    {
+                        'q': 'sum:myapp.active_users{env:production}',
+                        'aggregator': 'last'
+                    }
+                ],
+                'title': 'Active Users'
+            }
+        }
+    ]
+}
+
+api.Dashboard.create(**dashboard)
+```
+
+## 7. アラートの設定
+
+### アラートの作成
+
+```python
+from datadog import api
+
+# アラートの作成
+alert = {
+    'name': 'High Error Rate',
+    'query': 'avg(last_5m):avg:myapp.errors{env:production} > 10',
+    'message': 'Error rate is above threshold',
+    'options': {
+        'notify_no_data': False,
+        'notify_audit': False,
+        'silenced': {},
+        'timeout_h': 0,
+        'escalation_message': '',
+        'no_data_timeframe': None,
+        'include_tags': True,
+        'require_full_window': True,
+        'new_host_delay': 300,
+        'evaluation_delay': 0,
+        'thresholds': {
+            'critical': 10,
+            'warning': 5
+        }
+    },
+    'tags': ['env:production', 'service:api']
+}
+
+api.Monitor.create(**alert)
+```
+
+### アラートの通知
+
+```python
+# Slack通知の設定
+notification = {
+    'name': 'High Error Rate',
+    'query': 'avg(last_5m):avg:myapp.errors{env:production} > 10',
+    'message': '@slack-myteam Error rate is above threshold',
+    'options': {
+        'notify_audit': False,
+        'notify_no_data': False,
+        'silenced': {},
+        'timeout_h': 0,
+        'escalation_message': '',
+        'no_data_timeframe': None,
+        'include_tags': True,
+        'require_full_window': True,
+        'new_host_delay': 300,
+        'evaluation_delay': 0,
+        'thresholds': {
+            'critical': 10,
+            'warning': 5
+        }
+    }
+}
+
+api.Monitor.create(**notification)
+```
+
+## 8. ログ管理
+
+### ログの検索
+
+```python
+from datadog import api
+from datetime import datetime, timedelta
+
+# ログの検索
+end_time = datetime.now()
+start_time = end_time - timedelta(hours=1)
+
+logs = api.Logs.query(
+    start=start_time.isoformat(),
+    end=end_time.isoformat(),
+    query='service:myapp status:error'
+)
+
+for log in logs['logs']:
+    print(log['message'])
+```
+
+### ログの集約
+
+```python
+# ログの集約
+aggregates = api.Logs.aggregate(
+    start=start_time.isoformat(),
+    end=end_time.isoformat(),
+    query='service:myapp',
+    group_by=['status', 'service']
+)
+
+for aggregate in aggregates['buckets']:
+    print(f"{aggregate['by']}: {aggregate['count']}")
+```
+
+## 9. 実践的なベストプラクティス
+
+### タグの使用
+
+```python
+# タグのベストプラクティス
+tags = [
+    'env:production',      # 環境
+    'service:api',         # サービス名
+    'version:v1.0.0',      # バージョン
+    'team:backend',        # チーム
+    'region:us-east-1'     # リージョン
+]
+
+statsd.increment('requests', tags=tags)
+```
+
+### メトリクスの命名規則
+
+```python
+# 命名規則: service.metric_name[.unit]
+statsd.increment('myapp.requests.total')
+statsd.gauge('myapp.memory.usage.bytes')
+statsd.histogram('myapp.request.duration.seconds')
+```
+
+### サンプリング
+
+```python
+# 高頻度メトリクスのサンプリング
+sample_rate = 0.1  # 10%のサンプリング
+statsd.increment('high_frequency_metric', sample_rate=sample_rate)
+```
+
+## 10. よくある問題と解決方法
+
+### 問題1: メトリクスの欠損
+
+```python
+# 解決: デフォルト値の設定
+statsd.gauge('myapp.active_users', active_users or 0)
+```
+
+### 問題2: アラートの誤検知
+
+```python
+# 解決: 適切な閾値と評価期間の設定
+alert = {
+    'query': 'avg(last_15m):avg:myapp.errors{env:production} > 10',
+    'options': {
+        'require_full_window': True,
+        'evaluation_delay': 300  # 5分の遅延
+    }
+}
+```
+
+### 問題3: コストの増加
+
+```python
+# 解決: サンプリングとカーディナリティの削減
+# タグの数を制限
+tags = ['env:production', 'service:api']  # 必要最小限のタグ
+statsd.increment('requests', tags=tags)
+```
+
+## まとめ
+
+Datadog完全ガイドのポイント：
+
+- **統合モニタリング**: ログ、メトリクス、トレース
+- **APM**: アプリケーションパフォーマンス監視
+- **ダッシュボード**: リアルタイム可視化
+- **アラート**: 自動通知
+- **ログ管理**: 検索と集約
+- **ベストプラクティス**: タグ、命名規則、サンプリング
+
+適切なDatadogの使用により、包括的なモニタリングシステムを構築できます。
+

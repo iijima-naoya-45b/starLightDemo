@@ -1,0 +1,127 @@
+---
+title: JNI完全ガイド
+sidebar:
+    label: JNI完全ガイド
+---
+
+# JNI完全ガイド
+
+JNI（Java Native Interface）の仕組みと実践的な使用方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. JNIとは
+
+### JNIの役割
+
+JNIは、Javaコードからネイティブコード（C/C++）を呼び出すためのインターフェースです。
+
+```
+JNIの用途
+   ├─ 既存のC/C++ライブラリの利用
+   ├─ パフォーマンスクリティカルな処理
+   ├─ システムレベルの機能へのアクセス
+   └─ ハードウェア制御
+```
+
+### JNIの流れ
+
+```
+1. Java側でnativeメソッドを宣言
+2. javahでヘッダーファイルを生成
+3. C/C++で実装
+4. 共有ライブラリ（.so/.dll）をビルド
+5. Javaからロードして使用
+```
+
+## 2. Java側の実装
+
+### nativeメソッドの宣言
+
+```java
+public class NativeExample {
+    // ネイティブライブラリのロード
+    static {
+        System.loadLibrary("nativeexample");
+    }
+    
+    // nativeメソッドの宣言
+    public native int add(int a, int b);
+    public native String getMessage();
+    public native void setMessage(String message);
+}
+```
+
+## 3. C/C++側の実装
+
+### ヘッダーファイルの生成
+
+```bash
+# ヘッダーファイルの生成
+javac NativeExample.java
+javah -jni NativeExample
+
+# 生成されるヘッダーファイル: NativeExample.h
+```
+
+### C実装
+
+```c
+#include <jni.h>
+#include "NativeExample.h"
+
+JNIEXPORT jint JNICALL
+Java_NativeExample_add(JNIEnv *env, jobject obj, jint a, jint b) {
+    return a + b;
+}
+
+JNIEXPORT jstring JNICALL
+Java_NativeExample_getMessage(JNIEnv *env, jobject obj) {
+    return (*env)->NewStringUTF(env, "Hello from C!");
+}
+
+JNIEXPORT void JNICALL
+Java_NativeExample_setMessage(JNIEnv *env, jobject obj, jstring message) {
+    const char *str = (*env)->GetStringUTFChars(env, message, NULL);
+    // 処理
+    (*env)->ReleaseStringUTFChars(env, message, str);
+}
+```
+
+## 4. ビルドと実行
+
+### 共有ライブラリのビルド
+
+```bash
+# Linux/Mac
+gcc -shared -fpic -o libnativeexample.so \
+    -I$JAVA_HOME/include \
+    -I$JAVA_HOME/include/linux \
+    NativeExample.c
+
+# Windows
+cl /LD NativeExample.c /Fe:nativeexample.dll
+```
+
+### Javaからの使用
+
+```java
+public class Main {
+    public static void main(String[] args) {
+        NativeExample example = new NativeExample();
+        int result = example.add(10, 20);
+        System.out.println("Result: " + result);
+    }
+}
+```
+
+## まとめ
+
+JNI完全ガイドのポイント：
+
+- **JNI**: Javaとネイティブコードの連携
+- **nativeメソッド**: Java側での宣言
+- **C/C++実装**: ネイティブコードの実装
+- **共有ライブラリ**: .so/.dllのビルド
+- **ロード**: System.loadLibrary()によるロード
+
+適切なJNIの使用により、既存のC/C++ライブラリを活用できます。
+

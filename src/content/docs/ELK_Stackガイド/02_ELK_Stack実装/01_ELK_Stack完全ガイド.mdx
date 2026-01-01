@@ -1,0 +1,61 @@
+---
+title: ELK Stack完全ガイド
+sidebar:
+    label: ELK Stack実装
+---
+
+# ELK Stack完全ガイド
+
+ELK Stackの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. ELK Stackとは
+
+### ELK Stackの構成
+
+ELK Stackは、ログの収集、処理、可視化のためのツールセットです。
+
+```
+ELK Stackの構成
+   ├─ Elasticsearch（検索・分析）
+   ├─ Logstash（収集・処理）
+   └─ Kibana（可視化）
+```
+
+## 2. Logstashの設定
+
+### Logstash設定ファイル
+
+```ruby
+# logstash.conf
+input {
+  file {
+    path => "/var/log/app.log"
+    start_position => "beginning"
+  }
+}
+
+filter {
+  grok {
+    match => { "message" => "%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:level} %{GREEDYDATA:message}" }
+  }
+}
+
+output {
+  elasticsearch {
+    hosts => ["localhost:9200"]
+    index => "app-logs-%{+YYYY.MM.dd}"
+  }
+}
+```
+
+## まとめ
+
+ELK Stack完全ガイドのポイント：
+
+- **Elasticsearch**: ログの保存・検索
+- **Logstash**: ログの収集・処理
+- **Kibana**: ログの可視化
+- **Beats**: 軽量なログ収集
+
+適切なELK Stackの使用により、効率的なログ管理が可能になります。
+

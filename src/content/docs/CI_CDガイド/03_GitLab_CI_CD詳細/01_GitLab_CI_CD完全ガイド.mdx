@@ -1,0 +1,431 @@
+---
+title: GitLab CI/CD完全ガイド
+sidebar:
+    label: GitLab CI/CD詳細
+---
+
+# GitLab CI/CD完全ガイド
+
+GitLab CI/CDの実践的な使い方を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. GitLab CI/CDとは
+
+### GitLab CI/CDの特徴
+
+GitLab CI/CDは、GitLabに統合されたCI/CDプラットフォームです。単一プラットフォームで開発からデプロイまで完結できます。
+
+```
+GitLab CI/CDの特徴
+   ├─ GitLabに統合
+   ├─ YAMLベースの設定
+   ├─ Docker対応
+   ├─ 自動スケーリング
+   └─ 豊富なテンプレート
+```
+
+### なぜGitLab CI/CDを選ぶのか
+
+**GitLab CI/CDを選ぶべき場合:**
+- GitLabを使用している
+- 単一プラットフォームで完結したい
+- Dockerとの統合が必要
+- 自動スケーリングが必要
+
+## 2. GitLab CI/CDのセットアップ
+
+### GitLab Runnerのインストール
+
+```bash
+# Linuxでのインストール
+curl -L "https://packages.gitlab.com/install/repositories/runner/gitlab-runner/script.deb.sh" | sudo bash
+sudo apt-get install gitlab-runner
+
+# Runnerの登録
+sudo gitlab-runner register \
+  --url https://gitlab.com/ \
+  --registration-token your_token \
+  --executor docker \
+  --docker-image docker:latest \
+  --description "Docker Runner"
+```
+
+### Docker Executorの設定
+
+```toml
+# /etc/gitlab-runner/config.toml
+[[runners]]
+  name = "docker-runner"
+  url = "https://gitlab.com/"
+  token = "your_token"
+  executor = "docker"
+  [runners.docker]
+    image = "node:18"
+    privileged = false
+    volumes = ["/cache"]
+```
+
+## 3. .gitlab-ci.ymlの基本
+
+### 基本的なパイプライン
+
+```yaml
+# .gitlab-ci.yml
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  NODE_VERSION: "18"
+
+build:
+  stage: build
+  image: node:${NODE_VERSION}
+  script:
+    - npm ci
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+
+test:
+  stage: test
+  image: node:${NODE_VERSION}
+  script:
+    - npm ci
+    - npm test
+  coverage: '/Coverage: \d+\.\d+%/'
+
+deploy:
+  stage: deploy
+  image: node:${NODE_VERSION}
+  script:
+    - npm run deploy
+  only:
+    - main
+  when: manual
+```
+
+## 4. 高度なパイプライン設定
+
+### 並列実行
+
+```yaml
+# .gitlab-ci.yml
+stages:
+  - test
+
+test:unit:
+  stage: test
+  script:
+    - npm run test:unit
+
+test:integration:
+  stage: test
+  script:
+    - npm run test:integration
+
+test:e2e:
+  stage: test
+  script:
+    - npm run test:e2e
+```
+
+### 条件付き実行
+
+```yaml
+# .gitlab-ci.yml
+deploy:staging:
+  stage: deploy
+  script:
+    - npm run deploy:staging
+  only:
+    - develop
+  except:
+    - tags
+
+deploy:production:
+  stage: deploy
+  script:
+    - npm run deploy:production
+  only:
+    - main
+  when: manual
+  environment:
+    name: production
+    url: https://production.example.com
+```
+
+### キャッシュの使用
+
+```yaml
+# .gitlab-ci.yml
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - node_modules/
+    - .npm/
+
+build:
+  stage: build
+  script:
+    - npm ci --cache .npm --prefer-offline
+    - npm run build
+```
+
+## 5. Dockerの使用
+
+### Docker-in-Docker
+
+```yaml
+# .gitlab-ci.yml
+build:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+```
+
+### Docker Compose
+
+```yaml
+# .gitlab-ci.yml
+test:
+  stage: test
+  services:
+    - postgres:14
+    - redis:7
+  variables:
+    POSTGRES_DB: test_db
+    POSTGRES_USER: test_user
+    POSTGRES_PASSWORD: test_password
+  script:
+    - npm ci
+    - npm test
+```
+
+## 6. 環境とデプロイ
+
+### 環境の定義
+
+```yaml
+# .gitlab-ci.yml
+deploy:staging:
+  stage: deploy
+  script:
+    - npm run deploy:staging
+  environment:
+    name: staging
+    url: https://staging.example.com
+    on_stop: stop_staging
+
+stop_staging:
+  stage: deploy
+  script:
+    - npm run stop:staging
+  environment:
+    name: staging
+    action: stop
+  when: manual
+  only:
+    - develop
+```
+
+### デプロイ戦略
+
+```yaml
+# .gitlab-ci.yml
+deploy:production:
+  stage: deploy
+  script:
+    - npm run deploy:production
+  environment:
+    name: production
+    url: https://production.example.com
+    deployment_tier: production
+  only:
+    - main
+  when: manual
+```
+
+## 7. 変数とシークレット
+
+### CI/CD変数
+
+```yaml
+# .gitlab-ci.yml
+variables:
+  NODE_VERSION: "18"
+  DEPLOY_ENV: "production"
+
+build:
+  script:
+    - echo "Node version: $NODE_VERSION"
+    - echo "Deploy environment: $DEPLOY_ENV"
+```
+
+### シークレット変数
+
+```yaml
+# GitLab UIでの設定
+# Settings → CI/CD → Variables
+# Key: AWS_ACCESS_KEY_ID
+# Value: your_access_key
+# Protected: true
+# Masked: true
+
+# .gitlab-ci.ymlでの使用
+deploy:
+  script:
+    - aws s3 sync dist/ s3://my-bucket/ --access-key-id $AWS_ACCESS_KEY_ID --secret-access-key $AWS_SECRET_ACCESS_KEY
+```
+
+## 8. アーティファクト
+
+### アーティファクトの保存
+
+```yaml
+# .gitlab-ci.yml
+build:
+  stage: build
+  script:
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+    reports:
+      junit: test-results.xml
+```
+
+### アーティファクトの使用
+
+```yaml
+# .gitlab-ci.yml
+build:
+  stage: build
+  script:
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+
+deploy:
+  stage: deploy
+  script:
+    - ls -la dist/  # 前のジョブのアーティファクトが利用可能
+    - npm run deploy
+  dependencies:
+    - build
+```
+
+## 9. 実践的なベストプラクティス
+
+### テンプレートの使用
+
+```yaml
+# .gitlab-ci.yml
+include:
+  - template: Jobs/Code-Quality.gitlab-ci.yml
+  - template: Security/SAST.gitlab-ci.yml
+
+build:
+  extends: .build
+  script:
+    - npm run build
+```
+
+### ジョブの継承
+
+```yaml
+# .gitlab-ci.yml
+.base_job:
+  image: node:18
+  before_script:
+    - npm ci
+
+build:
+  extends: .base_job
+  script:
+    - npm run build
+
+test:
+  extends: .base_job
+  script:
+    - npm test
+```
+
+### パラレルマトリックス
+
+```yaml
+# .gitlab-ci.yml
+test:
+  parallel:
+    matrix:
+      - NODE_VERSION: ["16", "18", "20"]
+        OS: ["ubuntu-latest", "windows-latest"]
+  image: node:${NODE_VERSION}
+  script:
+    - npm test
+```
+
+## 10. よくある問題と解決方法
+
+### 問題1: パイプラインが遅い
+
+```yaml
+# 解決: 並列実行とキャッシュの使用
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - node_modules/
+
+test:
+  parallel: 3
+  script:
+    - npm test
+```
+
+### 問題2: 認証情報の漏洩
+
+```yaml
+# 解決: マスクされた変数の使用
+# GitLab UIで変数を設定: Settings → CI/CD → Variables
+# Masked: true を設定
+
+deploy:
+  script:
+    - echo $MASKED_VARIABLE  # ログに表示されない
+```
+
+### 問題3: パイプラインの複雑化
+
+```yaml
+# 解決: includeとextendsの使用
+include:
+  - local: '/templates/.build.yml'
+  - remote: 'https://example.com/ci-templates.gitlab-ci.yml'
+
+build:
+  extends: .build_template
+```
+
+## まとめ
+
+GitLab CI/CD完全ガイドのポイント：
+
+- **YAMLベース**: .gitlab-ci.ymlによる設定
+- **Docker統合**: Docker-in-Docker、Docker Compose
+- **環境管理**: 環境の定義とデプロイ戦略
+- **変数管理**: CI/CD変数とシークレット
+- **アーティファクト**: ビルド成果物の管理
+- **ベストプラクティス**: テンプレート、継承、並列実行
+
+適切なGitLab CI/CDの使用により、効率的で統合的なCI/CDシステムを構築できます。
+

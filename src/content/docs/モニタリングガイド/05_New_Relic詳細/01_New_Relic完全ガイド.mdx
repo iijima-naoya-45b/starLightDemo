@@ -1,0 +1,375 @@
+---
+title: New Relic完全ガイド
+sidebar:
+    label: New Relic詳細
+---
+
+# New Relic完全ガイド
+
+New Relicの実践的な使い方を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. New Relicとは
+
+### New Relicの特徴
+
+New Relicは、アプリケーションパフォーマンス監視（APM）とインフラ監視を提供するプラットフォームです。
+
+```
+New Relicの特徴
+   ├─ APM（Application Performance Monitoring）
+   ├─ インフラ監視
+   ├─ ログ管理
+   ├─ ブラウザ監視
+   └─ モバイル監視
+```
+
+### なぜNew Relicを選ぶのか
+
+**New Relicを選ぶべき場合:**
+- APM機能が必要
+- ブラウザとモバイルの監視が必要
+- 統合的な可観測性が必要
+- エンタープライズ機能が必要
+
+## 2. New Relicのセットアップ
+
+### アカウントの作成
+
+1. [New Relic公式サイト](https://newrelic.com/)でアカウントを作成
+2. ライセンスキーを取得
+
+### Agentのインストール
+
+```bash
+# Node.jsでのインストール
+npm install newrelic
+
+# Pythonでのインストール
+pip install newrelic
+```
+
+## 3. APMの設定
+
+### Node.jsの例
+
+```javascript
+// newrelic.js
+'use strict';
+
+exports.config = {
+  app_name: ['My Application'],
+  license_key: 'your_license_key',
+  logging: {
+    level: 'info'
+  },
+  allow_all_headers: true,
+  attributes: {
+    exclude: [
+      'request.headers.cookie',
+      'request.headers.authorization'
+    ]
+  }
+};
+```
+
+```javascript
+// app.js
+require('newrelic');
+
+const express = require('express');
+const app = express();
+
+app.get('/api/users', (req, res) => {
+  // 処理
+  res.json({ users: [] });
+});
+
+app.listen(3000);
+```
+
+### Pythonの例
+
+```python
+# newrelic.ini
+[newrelic]
+license_key = your_license_key
+app_name = My Application
+monitor_mode = true
+```
+
+```python
+# app.py
+import newrelic.agent
+newrelic.agent.initialize('newrelic.ini')
+
+from flask import Flask
+app = Flask(__name__)
+
+@app.route('/api/users')
+def get_users():
+    # 処理
+    return {'users': []}
+
+if __name__ == '__main__':
+    app.run()
+```
+
+## 4. カスタムメトリクス
+
+### Node.jsの例
+
+```javascript
+const newrelic = require('newrelic');
+
+// カスタムメトリクスの記録
+newrelic.recordMetric('Custom/ActiveUsers', 100);
+
+// カスタムイベントの記録
+newrelic.recordCustomEvent('OrderCreated', {
+  orderId: '12345',
+  amount: 100.00,
+  userId: 'user-123'
+});
+
+// カスタムトレース
+newrelic.startWebTransaction('/api/orders', function() {
+  const transaction = newrelic.getTransaction();
+  
+  newrelic.startSegment('database', true, function() {
+    // データベースクエリ
+  });
+  
+  newrelic.startSegment('external_api', true, function() {
+    // 外部API呼び出し
+  });
+});
+```
+
+### Pythonの例
+
+```python
+import newrelic.agent
+
+# カスタムメトリクスの記録
+newrelic.agent.record_custom_metric('Custom/ActiveUsers', 100)
+
+# カスタムイベントの記録
+newrelic.agent.record_custom_event('OrderCreated', {
+    'order_id': '12345',
+    'amount': 100.00,
+    'user_id': 'user-123'
+})
+
+# カスタムトレース
+@newrelic.agent.function_trace()
+def process_order(order_id):
+    with newrelic.agent.datastore_trace('MySQL', 'SELECT', 'orders'):
+        # データベースクエリ
+        pass
+    
+    with newrelic.agent.external_trace('https://api.example.com', 'GET'):
+        # 外部API呼び出し
+        pass
+```
+
+## 5. エラー追跡
+
+### Node.jsの例
+
+```javascript
+const newrelic = require('newrelic');
+
+try {
+  // 処理
+} catch (error) {
+  newrelic.noticeError(error, {
+    customAttribute: 'value'
+  });
+  throw error;
+}
+```
+
+### Pythonの例
+
+```python
+import newrelic.agent
+
+try:
+    # 処理
+    pass
+except Exception as e:
+    newrelic.agent.record_exception()
+    raise
+```
+
+## 6. ブラウザ監視
+
+### JavaScriptの設定
+
+```html
+<!-- HTMLに追加 -->
+<script type="text/javascript">
+  window.NREUM||(NREUM={});
+  NREUM.init={
+    distributed_tracing:{enabled:true},
+    privacy:{cookies_enabled:true}
+  };
+  NREUM.loader_config={accountID:"your_account_id",trustKey:"your_trust_key",agentID:"your_agent_id",licenseKey:"your_license_key",applicationID:"your_application_id"};
+  (function(){var a=document.createElement("script");a.src="https://js-agent.newrelic.com/nr-loader.min.js";a.type="text/javascript";document.getElementsByTagName("head")[0].appendChild(a);})();
+</script>
+```
+
+## 7. ダッシュボードの作成
+
+### NRQL（New Relic Query Language）
+
+```sql
+-- リクエスト数の確認
+SELECT count(*) FROM Transaction WHERE appName = 'My Application' SINCE 1 hour ago
+
+-- エラー率の確認
+SELECT percentage(count(*), WHERE error IS true) FROM Transaction WHERE appName = 'My Application' SINCE 1 hour ago
+
+-- レスポンスタイムの確認
+SELECT average(duration) FROM Transaction WHERE appName = 'My Application' SINCE 1 hour ago
+
+-- カスタムメトリクスの確認
+SELECT average(Custom/ActiveUsers) FROM Metric SINCE 1 hour ago
+```
+
+## 8. アラートの設定
+
+### アラートポリシーの作成
+
+```javascript
+// New Relic APIでのアラート作成
+const axios = require('axios');
+
+const alertPolicy = {
+  name: 'High Error Rate',
+  incident_preference: 'PER_POLICY'
+};
+
+const response = await axios.post(
+  'https://api.newrelic.com/v2/alerts_policies.json',
+  { policy: alertPolicy },
+  {
+    headers: {
+      'X-Api-Key': 'your_api_key'
+    }
+  }
+);
+```
+
+### アラート条件の設定
+
+```javascript
+const alertCondition = {
+  type: 'apm_app_metric',
+  name: 'Error Rate',
+  enabled: true,
+  metric: 'error_percentage',
+  condition_scope: 'application',
+  terms: [
+    {
+      duration: 5,
+      operator: 'above',
+      priority: 'critical',
+      threshold: 5,
+      time_function: 'all'
+    }
+  ]
+};
+```
+
+## 9. ログ管理
+
+### ログの送信
+
+```javascript
+const newrelic = require('newrelic');
+
+// ログの送信
+newrelic.recordLogEvent({
+  message: 'User logged in',
+  level: 'INFO',
+  attributes: {
+    user_id: '12345',
+    ip_address: '192.168.1.1'
+  }
+});
+```
+
+### ログの検索
+
+```sql
+-- ログの検索
+SELECT * FROM Log WHERE message LIKE '%error%' SINCE 1 hour ago
+
+-- ログの集約
+SELECT count(*) FROM Log WHERE level = 'ERROR' FACET service SINCE 1 hour ago
+```
+
+## 10. 実践的なベストプラクティス
+
+### トランザクション名の設定
+
+```javascript
+const newrelic = require('newrelic');
+
+// トランザクション名の設定
+newrelic.setTransactionName('/api/orders/:id');
+```
+
+### カスタム属性の追加
+
+```javascript
+// リクエスト属性の追加
+newrelic.addCustomAttribute('user_id', '12345');
+newrelic.addCustomAttribute('order_id', '67890');
+```
+
+### サンプリング
+
+```javascript
+// サンプリングの設定
+newrelic.setTransactionSamplingRate(0.1);  // 10%のサンプリング
+```
+
+## 11. よくある問題と解決方法
+
+### 問題1: パフォーマンスの低下
+
+```javascript
+// 解決: サンプリングの使用
+newrelic.setTransactionSamplingRate(0.1);
+```
+
+### 問題2: データの欠損
+
+```javascript
+// 解決: 適切な設定の確認
+// newrelic.jsでmonitor_modeがtrueになっているか確認
+```
+
+### 問題3: コストの増加
+
+```javascript
+// 解決: サンプリングとデータ保持期間の調整
+// 不要なカスタム属性を削除
+```
+
+## まとめ
+
+New Relic完全ガイドのポイント：
+
+- **APM**: アプリケーションパフォーマンス監視
+- **カスタムメトリクス**: ビジネスメトリクスの追跡
+- **エラー追跡**: エラーの詳細な分析
+- **ブラウザ監視**: フロントエンドの監視
+- **NRQL**: 強力なクエリ言語
+- **アラート**: 自動通知
+- **ログ管理**: 統合ログ管理
+
+適切なNew Relicの使用により、包括的なAPMシステムを構築できます。
+

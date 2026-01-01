@@ -1,0 +1,141 @@
+---
+title: テスト用語
+sidebar:
+    label: テスト用語
+---
+
+# テスト用語
+
+## ユニットテスト
+
+**定義:**
+ユニットテストは、個々の関数やメソッドを独立してテストする手法です。
+
+**なぜ重要なのか:**
+- **早期のバグ発見**: 開発の早期段階でバグを発見できる
+- **リファクタリングの安全性**: リファクタリング時に動作を保証できる
+- **ドキュメント**: コードの使用方法を示すドキュメントとして機能する
+
+**使用例:**
+```typescript
+describe('UserService', () => {
+  it('should create user', async () => {
+    const user = await userService.createUser({ name: 'Alice' });
+    expect(user.name).toBe('Alice');
+  });
+});
+```
+
+**関連用語:**
+- 統合テスト
+- E2Eテスト
+- テストカバレッジ
+
+---
+
+## 統合テスト
+
+**定義:**
+統合テストは、複数のコンポーネントを組み合わせてテストする手法です。
+
+**なぜ重要なのか:**
+- **コンポーネント間の連携**: コンポーネント間の連携を確認できる
+- **APIの動作確認**: APIの動作を確認できる
+- **データベースとの連携**: データベースとの連携を確認できる
+
+**使用例:**
+```typescript
+describe('User API', () => {
+  it('should create user via API', async () => {
+    const response = await request(app)
+      .post('/api/users')
+      .send({ name: 'Alice', email: 'alice@example.com' });
+    expect(response.status).toBe(201);
+  });
+});
+```
+
+**関連用語:**
+- ユニットテスト
+- E2Eテスト
+- APIテスト
+
+---
+
+## E2Eテスト（End-to-End Test）
+
+**定義:**
+E2Eテストは、アプリケーション全体をユーザーの視点でテストする手法です。
+
+**なぜ重要なのか:**
+- **ユーザーフローの確認**: 実際のユーザーフローを確認できる
+- **システム全体の動作**: システム全体の動作を確認できる
+- **回帰テスト**: 既存機能が壊れていないことを確認できる
+
+**使用例:**
+```typescript
+test('should register new user', async ({ page }) => {
+  await page.goto('http://localhost:3000/register');
+  await page.fill('#name', 'Alice');
+  await page.fill('#email', 'alice@example.com');
+  await page.click('#submit');
+  await expect(page.locator('#success')).toBeVisible();
+});
+```
+
+**関連用語:**
+- ユニットテスト
+- 統合テスト
+- ブラウザテスト
+
+---
+
+## モック
+
+**定義:**
+モックは、実際のオブジェクトの代わりに使用する偽のオブジェクトです。
+
+**なぜ重要なのか:**
+- **テストの独立性**: 外部依存を排除してテストを独立させられる
+- **テスト速度**: 外部サービスへのアクセスが不要で高速
+- **テストの安定性**: 外部サービスの状態に依存しない
+
+**使用例:**
+```typescript
+jest.mock('./paymentService');
+
+const mockPaymentService = PaymentService as jest.MockedClass<typeof PaymentService>;
+mockPaymentService.prototype.charge.mockResolvedValue({ success: true });
+```
+
+**関連用語:**
+- スタブ
+- スパイ
+- テストダブル
+
+---
+
+## スタブ
+
+**定義:**
+スタブは、実際のオブジェクトの代わりに使用する簡易的な実装です。
+
+**なぜ重要なのか:**
+- **テストの簡素化**: 複雑な実装を簡素化できる
+- **テストの速度**: 高速にテストを実行できる
+- **テストの独立性**: 外部依存を排除できる
+
+**使用例:**
+```typescript
+class StubUserRepository implements UserRepository {
+  async findById(id: string): Promise<User | null> {
+    return { id, name: 'Stub User' };
+  }
+}
+```
+
+**関連用語:**
+- モック
+- スパイ
+- テストダブル
+

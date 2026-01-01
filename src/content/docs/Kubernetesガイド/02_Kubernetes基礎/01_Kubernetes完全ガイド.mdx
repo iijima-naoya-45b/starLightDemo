@@ -1,0 +1,113 @@
+---
+title: Kubernetes完全ガイド
+sidebar:
+    label: Kubernetes基礎
+---
+
+# Kubernetes完全ガイド
+
+Kubernetesの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Kubernetesとは
+
+### Kubernetesの特徴
+
+Kubernetesは、コンテナオーケストレーションのデファクトスタンダードです。
+
+```
+Kubernetesの主要機能
+   ├─ コンテナの自動管理
+   ├─ 自動スケーリング
+   ├─ ロードバランシング
+   ├─ 自己修復
+   └─ ロールアウト/ロールバック
+```
+
+## 2. 基本的なリソース
+
+### Pod
+
+```yaml
+# pod.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-pod
+spec:
+  containers:
+  - name: nginx
+    image: nginx:latest
+    ports:
+    - containerPort: 80
+```
+
+### Deployment
+
+```yaml
+# deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+```
+
+### Service
+
+```yaml
+# service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+spec:
+  selector:
+    app: my-app
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
+  type: LoadBalancer
+```
+
+## 3. 実践的な使用例
+
+### アプリケーションのデプロイ
+
+```bash
+# Deploymentの作成
+kubectl apply -f deployment.yaml
+
+# Serviceの作成
+kubectl apply -f service.yaml
+
+# 状態の確認
+kubectl get pods
+kubectl get services
+```
+
+## まとめ
+
+Kubernetes完全ガイドのポイント：
+
+- **Pod**: コンテナの実行単位
+- **Deployment**: アプリケーションの管理
+- **Service**: ネットワークアクセス
+- **スケーリング**: 自動スケーリング
+
+適切なKubernetesの使用により、効率的なコンテナ運用が可能になります。
+

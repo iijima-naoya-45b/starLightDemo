@@ -1,0 +1,430 @@
+---
+title: ネットワークプログラミング完全ガイド
+sidebar:
+    label: ネットワークプログラミング完全ガイド
+---
+
+# ネットワークプログラミング完全ガイド
+
+Javaのネットワークプログラミングを、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. ネットワークプログラミングとは
+
+### ネットワーク通信の種類
+
+```
+ネットワーク通信
+   ├─ Socket通信（TCP/UDP）
+   ├─ HTTP通信
+   ├─ WebSocket通信
+   └─ NIO（Non-blocking I/O）
+```
+
+## 2. Socket通信（TCP）
+
+### サーバー側の実装
+
+```java
+import java.io.*;
+import java.net.*;
+
+public class TCPServer {
+    public void start(int port) throws IOException {
+        try (ServerSocket serverSocket = new ServerSocket(port)) {
+            System.out.println("Server started on port " + port);
+            
+            while (true) {
+                Socket clientSocket = serverSocket.accept();
+                // クライアントごとにスレッドを作成
+                new Thread(() -> handleClient(clientSocket)).start();
+            }
+        }
+    }
+    
+    private void handleClient(Socket socket) {
+        try (BufferedReader in = new BufferedReader(
+                new InputStreamReader(socket.getInputStream()));
+             PrintWriter out = new PrintWriter(
+                 socket.getOutputStream(), true)) {
+            
+            String inputLine;
+            while ((inputLine = in.readLine()) != null) {
+                System.out.println("Received: " + inputLine);
+                out.println("Echo: " + inputLine);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                socket.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+}
+```
+
+### クライアント側の実装
+
+```java
+import java.io.*;
+import java.net.*;
+
+public class TCPClient {
+    public void connect(String host, int port) throws IOException {
+        try (Socket socket = new Socket(host, port);
+             PrintWriter out = new PrintWriter(
+                 socket.getOutputStream(), true);
+             BufferedReader in = new BufferedReader(
+                 new InputStreamReader(socket.getInputStream()));
+             BufferedReader stdIn = new BufferedReader(
+                 new InputStreamReader(System.in))) {
+            
+            String userInput;
+            while ((userInput = stdIn.readLine()) != null) {
+                out.println(userInput);
+                String response = in.readLine();
+                System.out.println("Server: " + response);
+            }
+        }
+    }
+}
+```
+
+## 3. UDP通信
+
+### サーバー側の実装
+
+```java
+import java.net.*;
+
+public class UDPServer {
+    public void start(int port) throws IOException {
+        try (DatagramSocket socket = new DatagramSocket(port)) {
+            byte[] buffer = new byte[1024];
+            
+            while (true) {
+                DatagramPacket packet = new DatagramPacket(
+                    buffer, buffer.length);
+                socket.receive(packet);
+                
+                String received = new String(
+                    packet.getData(), 0, packet.getLength());
+                System.out.println("Received: " + received);
+                
+                // レスポンスを送信
+                InetAddress clientAddress = packet.getAddress();
+                int clientPort = packet.getPort();
+                String response = "Echo: " + received;
+                byte[] responseBytes = response.getBytes();
+                DatagramPacket responsePacket = new DatagramPacket(
+                    responseBytes, responseBytes.length,
+                    clientAddress, clientPort);
+                socket.send(responsePacket);
+            }
+        }
+    }
+}
+```
+
+### クライアント側の実装
+
+```java
+import java.net.*;
+
+public class UDPClient {
+    public void send(String host, int port, String message) 
+            throws IOException {
+        try (DatagramSocket socket = new DatagramSocket()) {
+            InetAddress address = InetAddress.getByName(host);
+            byte[] messageBytes = message.getBytes();
+            
+            DatagramPacket packet = new DatagramPacket(
+                messageBytes, messageBytes.length, address, port);
+            socket.send(packet);
+            
+            // レスポンスを受信
+            byte[] buffer = new byte[1024];
+            DatagramPacket responsePacket = new DatagramPacket(
+                buffer, buffer.length);
+            socket.receive(responsePacket);
+            
+            String response = new String(
+                responsePacket.getData(), 0, responsePacket.getLength());
+            System.out.println("Server: " + response);
+        }
+    }
+}
+```
+
+## 4. HTTP通信
+
+### HttpURLConnectionの使用
+
+```java
+import java.io.*;
+import java.net.*;
+
+public class HTTPClient {
+    public String get(String urlString) throws IOException {
+        URL url = new URL(urlString);
+        HttpURLConnection connection = 
+            (HttpURLConnection) url.openConnection();
+        
+        try {
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(5000);
+            
+            int responseCode = connection.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                try (BufferedReader in = new BufferedReader(
+                        new InputStreamReader(
+                            connection.getInputStream()))) {
+                    StringBuilder response = new StringBuilder();
+                    String line;
+                    while ((line = in.readLine()) != null) {
+                        response.append(line);
+                    }
+                    return response.toString();
+                }
+            } else {
+                throw new IOException("HTTP error: " + responseCode);
+            }
+        } finally {
+            connection.disconnect();
+        }
+    }
+    
+    public String post(String urlString, String data) 
+            throws IOException {
+        URL url = new URL(urlString);
+        HttpURLConnection connection = 
+            (HttpURLConnection) url.openConnection();
+        
+        try {
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", 
+                "application/json");
+            connection.setDoOutput(true);
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(5000);
+            
+            // データを送信
+            try (OutputStream os = connection.getOutputStream()) {
+                byte[] input = data.getBytes("utf-8");
+                os.write(input, 0, input.length);
+            }
+            
+            // レスポンスを読み取り
+            int responseCode = connection.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                try (BufferedReader in = new BufferedReader(
+                        new InputStreamReader(
+                            connection.getInputStream()))) {
+                    StringBuilder response = new StringBuilder();
+                    String line;
+                    while ((line = in.readLine()) != null) {
+                        response.append(line);
+                    }
+                    return response.toString();
+                }
+            } else {
+                throw new IOException("HTTP error: " + responseCode);
+            }
+        } finally {
+            connection.disconnect();
+        }
+    }
+}
+```
+
+### HttpClient（Java 11+）の使用
+
+```java
+import java.net.http.*;
+import java.net.URI;
+import java.time.Duration;
+
+public class ModernHTTPClient {
+    private final HttpClient client;
+    
+    public ModernHTTPClient() {
+        this.client = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(5))
+            .build();
+    }
+    
+    public String get(String url) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .timeout(Duration.ofSeconds(5))
+            .GET()
+            .build();
+        
+        HttpResponse<String> response = client.send(
+            request, HttpResponse.BodyHandlers.ofString());
+        
+        return response.body();
+    }
+    
+    public String post(String url, String data) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .timeout(Duration.ofSeconds(5))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(data))
+            .build();
+        
+        HttpResponse<String> response = client.send(
+            request, HttpResponse.BodyHandlers.ofString());
+        
+        return response.body();
+    }
+}
+```
+
+## 5. NIO（Non-blocking I/O）
+
+### NIOサーバーの実装
+
+```java
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.*;
+import java.util.Iterator;
+import java.util.Set;
+
+public class NIOServer {
+    public void start(int port) throws IOException {
+        ServerSocketChannel serverChannel = 
+            ServerSocketChannel.open();
+        serverChannel.bind(new InetSocketAddress(port));
+        serverChannel.configureBlocking(false);
+        
+        Selector selector = Selector.open();
+        serverChannel.register(selector, SelectionKey.OP_ACCEPT);
+        
+        while (true) {
+            selector.select();
+            Set<SelectionKey> selectedKeys = selector.selectedKeys();
+            Iterator<SelectionKey> keyIterator = selectedKeys.iterator();
+            
+            while (keyIterator.hasNext()) {
+                SelectionKey key = keyIterator.next();
+                
+                if (key.isAcceptable()) {
+                    handleAccept(serverChannel, selector);
+                } else if (key.isReadable()) {
+                    handleRead(key);
+                }
+                
+                keyIterator.remove();
+            }
+        }
+    }
+    
+    private void handleAccept(ServerSocketChannel serverChannel, 
+                              Selector selector) throws IOException {
+        SocketChannel clientChannel = serverChannel.accept();
+        clientChannel.configureBlocking(false);
+        clientChannel.register(selector, SelectionKey.OP_READ);
+    }
+    
+    private void handleRead(SelectionKey key) throws IOException {
+        SocketChannel channel = (SocketChannel) key.channel();
+        ByteBuffer buffer = ByteBuffer.allocate(1024);
+        
+        int bytesRead = channel.read(buffer);
+        if (bytesRead > 0) {
+            buffer.flip();
+            byte[] bytes = new byte[buffer.remaining()];
+            buffer.get(bytes);
+            String message = new String(bytes);
+            System.out.println("Received: " + message);
+            
+            // レスポンスを送信
+            ByteBuffer response = ByteBuffer.wrap(
+                ("Echo: " + message).getBytes());
+            channel.write(response);
+        } else if (bytesRead < 0) {
+            channel.close();
+        }
+    }
+}
+```
+
+## 6. 実践的なベストプラクティス
+
+### リソース管理
+
+```java
+// try-with-resourcesの使用（推奨）
+public class ResourceManagement {
+    public void connect(String host, int port) throws IOException {
+        try (Socket socket = new Socket(host, port);
+             BufferedReader in = new BufferedReader(
+                 new InputStreamReader(socket.getInputStream()));
+             PrintWriter out = new PrintWriter(
+                 socket.getOutputStream(), true)) {
+            // 処理
+        }
+    }
+}
+```
+
+### タイムアウトの設定
+
+```java
+public class TimeoutExample {
+    public void connectWithTimeout(String host, int port) 
+            throws IOException {
+        Socket socket = new Socket();
+        socket.connect(
+            new InetSocketAddress(host, port), 5000);  // 5秒のタイムアウト
+        socket.setSoTimeout(5000);  // 読み取りタイムアウト
+        
+        try (BufferedReader in = new BufferedReader(
+                new InputStreamReader(socket.getInputStream()));
+             PrintWriter out = new PrintWriter(
+                 socket.getOutputStream(), true)) {
+            // 処理
+        }
+    }
+}
+```
+
+### エラーハンドリング
+
+```java
+public class ErrorHandling {
+    public void connect(String host, int port) {
+        try {
+            Socket socket = new Socket(host, port);
+            // 処理
+        } catch (UnknownHostException e) {
+            System.err.println("Host not found: " + host);
+        } catch (IOException e) {
+            System.err.println("IO error: " + e.getMessage());
+        } catch (Exception e) {
+            System.err.println("Unexpected error: " + e.getMessage());
+        }
+    }
+}
+```
+
+## まとめ
+
+ネットワークプログラミング完全ガイドのポイント：
+
+- **Socket通信**: TCP/UDPによる通信
+- **HTTP通信**: HttpURLConnection、HttpClient
+- **NIO**: 非ブロッキングI/O
+- **リソース管理**: try-with-resources
+- **タイムアウト**: 接続・読み取りタイムアウト
+- **エラーハンドリング**: 適切な例外処理
+
+適切なネットワークプログラミングにより、効率的な通信を実現できます。
+

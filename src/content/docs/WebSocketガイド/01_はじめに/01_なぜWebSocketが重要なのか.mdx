@@ -1,0 +1,55 @@
+---
+title: なぜWebSocketが重要なのか
+sidebar:
+    label: はじめに
+---
+
+# なぜWebSocketが重要なのか
+
+WebSocketは、リアルタイム双方向通信を実現するプロトコルです。
+
+## WebSocketの重要性
+
+### WebSocketなしの問題
+
+**問題のある状況:**
+
+```typescript
+// ポーリングによる通信
+setInterval(async () => {
+  const data = await fetch('/api/messages');
+  // 問題点:
+  // - サーバーへの負荷が高い
+  // - リアルタイム性が低い
+  // - 無駄なリクエストが多い
+}, 1000);
+```
+
+### WebSocketによる解決
+
+**改善された状況:**
+
+```typescript
+// WebSocketによるリアルタイム通信
+const ws = new WebSocket('ws://localhost:3000');
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  // メリット:
+  // - サーバーへの負荷が低い
+  // - リアルタイム性が高い
+  // - 効率的な通信
+};
+```
+
+## まとめ
+
+WebSocketが重要な理由：
+
+- **リアルタイム性**: リアルタイム双方向通信
+- **効率性**: サーバーへの負荷が低い
+- **双方向通信**: クライアントとサーバーの双方向通信
+- **低レイテンシ**: 低レイテンシな通信
+
+適切なWebSocketの使用により、リアルタイムアプリケーションを構築できます。
+
