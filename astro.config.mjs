@@ -31,6 +31,12 @@ export default defineConfig({
                     badge: { text: '中級', variant: 'caution' },
                 },
                 {
+                    label: 'C#ガイド',
+                    collapsed: true,
+                    autogenerate: { directory: 'CSharpガイド' },
+                    badge: { text: '重要', variant: 'success' },
+                },
+                {
                     label: 'COBOLガイド',
                     collapsed: true,
                     autogenerate: { directory: 'COBOLガイド' },
