@@ -1,0 +1,71 @@
+---
+title: Apache Spark完全ガイド
+sidebar:
+    label: Apache Spark基礎
+---
+
+# Apache Spark完全ガイド
+
+Apache Sparkの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Apache Sparkとは
+
+### Apache Sparkの特徴
+
+Apache Sparkは、大規模データ処理のための分散処理フレームワークです。
+
+```
+Apache Sparkの主要機能
+   ├─ Spark Core
+   ├─ Spark SQL
+   ├─ Spark Streaming
+   ├─ MLlib
+   └─ GraphX
+```
+
+## 2. 基本的な使用
+
+### RDD（Resilient Distributed Dataset）
+
+```python
+from pyspark import SparkContext
+
+sc = SparkContext("local", "MyApp")
+
+# RDDの作成
+data = [1, 2, 3, 4, 5]
+rdd = sc.parallelize(data)
+
+# 変換操作
+result = rdd.map(lambda x: x * 2).collect()
+print(result)  # [2, 4, 6, 8, 10]
+```
+
+### DataFrame
+
+```python
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName("MyApp").getOrCreate()
+
+# DataFrameの作成
+df = spark.createDataFrame([
+    (1, "Alice", 25),
+    (2, "Bob", 30),
+    (3, "Charlie", 35)
+], ["id", "name", "age"])
+
+# クエリ
+df.filter(df.age > 25).show()
+```
+
+## まとめ
+
+Apache Spark完全ガイドのポイント：
+
+- **RDD**: 分散データセット
+- **DataFrame**: 構造化データの処理
+- **分散処理**: 大規模データの処理
+
+適切なApache Sparkの使用により、効率的な大規模データ処理が可能になります。
+

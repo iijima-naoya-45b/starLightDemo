@@ -1,0 +1,614 @@
+---
+title: MySQL完全ガイド
+sidebar:
+    label: MySQL詳細
+---
+
+# MySQL完全ガイド
+
+MySQLの実践的な使い方を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. MySQLとは
+
+### MySQLの特徴
+
+MySQLは、世界で最も広く使われているオープンソースのリレーショナルデータベース管理システム（RDBMS）です。
+
+```
+MySQLの特徴
+   ├─ オープンソース（無料）
+   ├─ シンプルで使いやすい
+   ├─ 高速なパフォーマンス
+   ├─ 豊富なドキュメントとコミュニティ
+   └─ 多くのホスティングサービスでサポート
+```
+
+### なぜMySQLを選ぶのか
+
+**MySQLを選ぶべき場合:**
+- シンプルなWebアプリケーション
+- 高速な読み書きが必要
+- 豊富なサポートが必要
+- WordPress、DrupalなどのCMSを使用
+
+**MySQLを選ばないべき場合:**
+- 複雑なデータ型が必要（PostgreSQLの方が適している）
+- 標準SQLへの準拠が重要（PostgreSQLの方が適している）
+
+## 2. MySQLのインストールとセットアップ
+
+### macOSでのインストール
+
+```bash
+# Homebrewを使用
+brew install mysql
+
+# サービスを開始
+brew services start mysql
+
+# MySQLに接続
+mysql -u root -p
+```
+
+### Linuxでのインストール
+
+```bash
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install mysql-server
+
+# サービスを開始
+sudo systemctl start mysql
+sudo systemctl enable mysql
+
+# セキュリティ設定
+sudo mysql_secure_installation
+
+# MySQLに接続
+sudo mysql -u root -p
+```
+
+### Windowsでのインストール
+
+1. [MySQL公式サイト](https://dev.mysql.com/downloads/mysql/)からインストーラーをダウンロード
+2. インストーラーを実行し、指示に従ってインストール
+3. MySQL Workbenchまたはコマンドプロンプトから接続
+
+### 初期設定
+
+```sql
+-- データベースの作成
+CREATE DATABASE myapp CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- ユーザーの作成
+CREATE USER 'myuser'@'localhost' IDENTIFIED BY 'mypassword';
+
+-- 権限の付与
+GRANT ALL PRIVILEGES ON myapp.* TO 'myuser'@'localhost';
+FLUSH PRIVILEGES;
+
+-- データベースの選択
+USE myapp;
+```
+
+## 3. ストレージエンジン
+
+### InnoDB（推奨）
+
+```sql
+-- InnoDBテーブルの作成
+CREATE TABLE users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+-- InnoDBの特徴
+-- - トランザクション対応
+-- - 外部キー制約対応
+-- - 行レベルロック
+-- - クラスタードインデックス
+```
+
+### MyISAM
+
+```sql
+-- MyISAMテーブルの作成
+CREATE TABLE logs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  message TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=MyISAM;
+
+-- MyISAMの特徴
+-- - 高速な読み取り
+-- - フルテキストインデックス
+-- - テーブルレベルロック
+-- - トランザクション非対応
+```
+
+### ストレージエンジンの比較
+
+| 特徴 | InnoDB | MyISAM |
+|------|--------|--------|
+| トランザクション | 対応 | 非対応 |
+| 外部キー | 対応 | 非対応 |
+| ロック | 行レベル | テーブルレベル |
+| クラッシュリカバリ | 対応 | 限定的 |
+| フルテキストインデックス | 対応（MySQL 5.6以降） | 対応 |
+| 使用例 | 一般的なアプリケーション | 読み取り専用、ログ |
+
+## 4. インデックスの最適化
+
+### 基本的なインデックス
+
+```sql
+-- 単一カラムインデックス
+CREATE INDEX idx_users_email ON users(email);
+
+-- 複合インデックス
+CREATE INDEX idx_orders_user_date ON orders(user_id, order_date);
+
+-- ユニークインデックス
+CREATE UNIQUE INDEX idx_users_email_unique ON users(email);
+
+-- フルテキストインデックス（MyISAMまたはInnoDB）
+CREATE FULLTEXT INDEX idx_articles_content ON articles(content);
+```
+
+### インデックスの確認
+
+```sql
+-- テーブルのインデックスを確認
+SHOW INDEX FROM users;
+
+-- インデックスの使用状況を確認
+EXPLAIN SELECT * FROM users WHERE email = 'user@example.com';
+
+-- 使用されていないインデックスの確認
+SELECT 
+  TABLE_NAME,
+  INDEX_NAME,
+  SEQ_IN_INDEX,
+  COLUMN_NAME
+FROM information_schema.STATISTICS
+WHERE TABLE_SCHEMA = 'myapp'
+AND INDEX_NAME != 'PRIMARY'
+AND CARDINALITY = 0;
+```
+
+## 5. パーティショニング
+
+### 範囲パーティショニング（Range Partitioning）
+
+```sql
+-- パーティショニングテーブルの作成
+CREATE TABLE orders (
+  id INT AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  order_date DATE NOT NULL,
+  amount DECIMAL(10, 2) NOT NULL,
+  PRIMARY KEY (id, order_date)
+) PARTITION BY RANGE (YEAR(order_date)) (
+  PARTITION p2022 VALUES LESS THAN (2023),
+  PARTITION p2023 VALUES LESS THAN (2024),
+  PARTITION p2024 VALUES LESS THAN (2025),
+  PARTITION p_future VALUES LESS THAN MAXVALUE
+);
+
+-- パーティションの追加
+ALTER TABLE orders ADD PARTITION (
+  PARTITION p2025 VALUES LESS THAN (2026)
+);
+
+-- パーティションの削除
+ALTER TABLE orders DROP PARTITION p2022;
+```
+
+### ハッシュパーティショニング（Hash Partitioning）
+
+```sql
+-- ハッシュパーティショニングテーブルの作成
+CREATE TABLE products (
+  id INT AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  category_id INT NOT NULL,
+  price DECIMAL(10, 2) NOT NULL,
+  PRIMARY KEY (id, category_id)
+) PARTITION BY HASH(category_id) PARTITIONS 4;
+```
+
+### リストパーティショニング（List Partitioning）
+
+```sql
+-- リストパーティショニングテーブルの作成
+CREATE TABLE users (
+  id INT AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  country VARCHAR(2) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  PRIMARY KEY (id, country)
+) PARTITION BY LIST (country) (
+  PARTITION p_jp VALUES IN ('JP'),
+  PARTITION p_us VALUES IN ('US'),
+  PARTITION p_uk VALUES IN ('UK'),
+  PARTITION p_other VALUES IN (DEFAULT)
+);
+```
+
+## 6. レプリケーション
+
+### マスター・スレーブレプリケーション
+
+```sql
+-- マスターサーバーの設定（my.cnf）
+[mysqld]
+server-id = 1
+log-bin = mysql-bin
+binlog-format = ROW
+
+-- レプリケーション用ユーザーの作成
+CREATE USER 'replicator'@'%' IDENTIFIED BY 'replicator_password';
+GRANT REPLICATION SLAVE ON *.* TO 'replicator'@'%';
+FLUSH PRIVILEGES;
+
+-- マスターの状態を確認
+SHOW MASTER STATUS;
+```
+
+```sql
+-- スレーブサーバーの設定（my.cnf）
+[mysqld]
+server-id = 2
+relay-log = mysql-relay-bin
+read-only = 1
+
+-- スレーブの設定
+CHANGE MASTER TO
+  MASTER_HOST='master_host',
+  MASTER_USER='replicator',
+  MASTER_PASSWORD='replicator_password',
+  MASTER_LOG_FILE='mysql-bin.000001',
+  MASTER_LOG_POS=154;
+
+-- スレーブの開始
+START SLAVE;
+
+-- スレーブの状態を確認
+SHOW SLAVE STATUS\G
+```
+
+### マスター・マスターレプリケーション
+
+```sql
+-- 両方のサーバーで設定
+[mysqld]
+server-id = 1  # サーバー1
+log-bin = mysql-bin
+binlog-format = ROW
+auto-increment-offset = 1
+auto-increment-increment = 2
+
+[mysqld]
+server-id = 2  # サーバー2
+log-bin = mysql-bin
+binlog-format = ROW
+auto-increment-offset = 2
+auto-increment-increment = 2
+```
+
+## 7. パフォーマンス最適化
+
+### EXPLAINの使用
+
+```sql
+-- クエリプランの確認
+EXPLAIN SELECT u.name, COUNT(o.id) AS order_count
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id
+WHERE u.created_at > '2024-01-01'
+GROUP BY u.id, u.name
+ORDER BY order_count DESC
+LIMIT 10;
+
+-- EXPLAINの結果の見方
+-- type: ALL（全テーブルスキャン）は避ける
+-- key: 使用されているインデックス
+-- rows: スキャンされる行数
+```
+
+### クエリキャッシュ（MySQL 5.7以前）
+
+```sql
+-- クエリキャッシュの設定（my.cnf）
+query_cache_type = 1
+query_cache_size = 64M
+
+-- クエリキャッシュの確認
+SHOW VARIABLES LIKE 'query_cache%';
+```
+
+**注意**: MySQL 8.0ではクエリキャッシュが削除されました。
+
+### 接続プール
+
+```sql
+-- 最大接続数の設定（my.cnf）
+max_connections = 200
+
+-- 現在の接続数を確認
+SHOW STATUS LIKE 'Threads_connected';
+
+-- 接続プールの使用を推奨（HikariCP、C3P0など）
+```
+
+## 8. トランザクションとロック
+
+### トランザクションの分離レベル
+
+```sql
+-- 分離レベルの設定
+SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+-- 分離レベルの確認
+SELECT @@transaction_isolation;
+
+-- トランザクションの開始
+START TRANSACTION;
+INSERT INTO users (name, email) VALUES ('Alice', 'alice@example.com');
+COMMIT;
+```
+
+### ロックの種類
+
+```sql
+-- 行レベルロック（InnoDB）
+START TRANSACTION;
+SELECT * FROM users WHERE id = 1 FOR UPDATE;
+-- 他のトランザクションはこの行を更新できない
+UPDATE users SET name = 'New Name' WHERE id = 1;
+COMMIT;
+
+-- 共有ロック
+START TRANSACTION;
+SELECT * FROM users WHERE id = 1 LOCK IN SHARE MODE;
+COMMIT;
+
+-- テーブルロック（MyISAM）
+LOCK TABLES users READ;
+SELECT * FROM users;
+UNLOCK TABLES;
+```
+
+## 9. バックアップとリストア
+
+### mysqldumpによるバックアップ
+
+```bash
+# データベース全体のバックアップ
+mysqldump -u root -p myapp > backup.sql
+
+# 特定のテーブルのみのバックアップ
+mysqldump -u root -p myapp users orders > tables.sql
+
+# スキーマのみのバックアップ
+mysqldump -u root -p --no-data myapp > schema.sql
+
+# データのみのバックアップ
+mysqldump -u root -p --no-create-info myapp > data.sql
+
+# 圧縮してバックアップ
+mysqldump -u root -p myapp | gzip > backup.sql.gz
+```
+
+### mysqlによるリストア
+
+```bash
+# SQLファイルからのリストア
+mysql -u root -p myapp < backup.sql
+
+# 圧縮ファイルからのリストア
+gunzip < backup.sql.gz | mysql -u root -p myapp
+```
+
+### バイナリログによるポイントインタイムリカバリ
+
+```sql
+-- バイナリログの有効化（my.cnf）
+[mysqld]
+log-bin = mysql-bin
+binlog-format = ROW
+
+-- バイナリログの確認
+SHOW BINARY LOGS;
+
+-- 特定の時点へのリカバリ
+mysqlbinlog --start-datetime="2024-01-01 00:00:00" \
+  --stop-datetime="2024-01-02 00:00:00" \
+  mysql-bin.000001 | mysql -u root -p myapp
+```
+
+## 10. セキュリティ
+
+### ユーザーと権限の管理
+
+```sql
+-- ユーザーの作成
+CREATE USER 'app_user'@'localhost' IDENTIFIED BY 'secure_password';
+
+-- 権限の付与
+GRANT SELECT, INSERT, UPDATE, DELETE ON myapp.* TO 'app_user'@'localhost';
+FLUSH PRIVILEGES;
+
+-- 権限の確認
+SHOW GRANTS FOR 'app_user'@'localhost';
+
+-- 権限の取り消し
+REVOKE DELETE ON myapp.* FROM 'app_user'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+### SSL接続
+
+```sql
+-- SSL接続の要求
+CREATE USER 'secure_user'@'%' IDENTIFIED BY 'password' REQUIRE SSL;
+
+-- SSL証明書の確認
+SHOW STATUS LIKE 'Ssl%';
+```
+
+## 11. 文字セットと照合順序
+
+### UTF8MB4の使用（推奨）
+
+```sql
+-- データベースの文字セット設定
+CREATE DATABASE myapp CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- テーブルの文字セット設定
+CREATE TABLE users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  email VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 接続時の文字セット設定
+SET NAMES utf8mb4;
+```
+
+**UTF8MB4 vs UTF8:**
+- **UTF8**: 最大3バイト、絵文字をサポートしない
+- **UTF8MB4**: 最大4バイト、絵文字を完全サポート（推奨）
+
+## 12. 実践的なベストプラクティス
+
+### 命名規則
+
+```sql
+-- テーブル名: 複数形、スネークケース
+CREATE TABLE user_profiles (...);
+
+-- カラム名: スネークケース
+CREATE TABLE users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  first_name VARCHAR(255),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- インデックス名: idx_テーブル名_カラム名
+CREATE INDEX idx_users_email ON users(email);
+```
+
+### マイグレーション管理
+
+```sql
+-- バージョン管理テーブルの作成
+CREATE TABLE schema_migrations (
+  version VARCHAR(255) PRIMARY KEY,
+  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+-- マイグレーションの適用
+START TRANSACTION;
+-- マイグレーションSQL
+INSERT INTO schema_migrations (version) VALUES ('001_create_users');
+COMMIT;
+```
+
+### 監視とログ
+
+```sql
+-- スロークエリのログ設定（my.cnf）
+slow_query_log = 1
+slow_query_log_file = /var/log/mysql/slow.log
+long_query_time = 1
+
+-- 接続数の確認
+SHOW STATUS LIKE 'Threads_connected';
+
+-- データベースサイズの確認
+SELECT 
+  table_schema AS 'Database',
+  ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'Size (MB)'
+FROM information_schema.tables
+WHERE table_schema = 'myapp'
+GROUP BY table_schema;
+
+-- テーブルサイズの確認
+SELECT 
+  table_name AS 'Table',
+  ROUND(((data_length + index_length) / 1024 / 1024), 2) AS 'Size (MB)'
+FROM information_schema.tables
+WHERE table_schema = 'myapp'
+ORDER BY (data_length + index_length) DESC;
+```
+
+## 13. よくある問題と解決方法
+
+### 問題1: 接続数が上限に達している
+
+```sql
+-- 接続数の確認
+SHOW STATUS LIKE 'Threads_connected';
+SHOW VARIABLES LIKE 'max_connections';
+
+-- 接続プールの使用を推奨
+```
+
+### 問題2: ディスク容量不足
+
+```sql
+-- データベースサイズの確認
+SELECT 
+  table_schema,
+  ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'Size (MB)'
+FROM information_schema.tables
+GROUP BY table_schema;
+
+-- 不要なデータの削除と最適化
+DELETE FROM old_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL 1 YEAR);
+OPTIMIZE TABLE old_logs;
+```
+
+### 問題3: クエリが遅い
+
+```sql
+-- スロークエリの確認
+SELECT * FROM mysql.slow_log ORDER BY start_time DESC LIMIT 10;
+
+-- インデックスの確認
+SHOW INDEX FROM users;
+
+-- クエリプランの確認
+EXPLAIN SELECT * FROM users WHERE email = 'user@example.com';
+```
+
+### 問題4: デッドロック
+
+```sql
+-- デッドロックの確認
+SHOW ENGINE INNODB STATUS;
+
+-- デッドロックの回避
+-- - トランザクションを短くする
+-- - 同じ順序でロックを取得する
+-- - インデックスを適切に使用する
+```
+
+## まとめ
+
+MySQL完全ガイドのポイント：
+
+- **ストレージエンジン**: InnoDB（推奨）とMyISAMの使い分け
+- **インデックス最適化**: パフォーマンスの向上
+- **パーティショニング**: 大規模データの効率的な管理
+- **レプリケーション**: 高可用性の実現
+- **パフォーマンス最適化**: EXPLAIN、クエリ最適化
+- **セキュリティ**: ユーザー管理、SSL接続
+- **バックアップ**: データ保護、ポイントインタイムリカバリ
+- **文字セット**: UTF8MB4の使用（推奨）
+
+適切なMySQLの使用により、高速で信頼性の高いアプリケーションを構築できます。
+

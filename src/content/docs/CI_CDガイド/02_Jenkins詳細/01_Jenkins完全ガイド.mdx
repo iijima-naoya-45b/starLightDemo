@@ -1,0 +1,577 @@
+---
+title: Jenkins完全ガイド
+sidebar:
+    label: Jenkins詳細
+---
+
+# Jenkins完全ガイド
+
+Jenkinsの実践的な使い方を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Jenkinsとは
+
+### Jenkinsの特徴
+
+Jenkinsは、オープンソースの自動化サーバーです。CI/CDパイプラインを構築・実行できます。
+
+```
+Jenkinsの特徴
+   ├─ オープンソース（無料）
+   ├─ 高い柔軟性
+   ├─ 豊富なプラグイン
+   ├─ 分散ビルド対応
+   └─ パイプライン as Code
+```
+
+### なぜJenkinsを選ぶのか
+
+**Jenkinsを選ぶべき場合:**
+- 高い柔軟性が必要
+- オンプレミス環境が必要
+- 豊富なプラグインが必要
+- カスタマイズ性が重要
+
+**Jenkinsを選ばないべき場合:**
+- シンプルなCI/CDが必要（GitHub Actionsの方が適している場合がある）
+- クラウドネイティブが必要（GitLab CI/CDの方が適している場合がある）
+
+## 2. Jenkinsのインストールとセットアップ
+
+### Dockerでのインストール
+
+```bash
+# Jenkinsの起動
+docker run -d \
+  --name jenkins \
+  -p 8080:8080 \
+  -p 50000:50000 \
+  -v jenkins_home:/var/jenkins_home \
+  jenkins/jenkins:lts
+
+# 初期パスワードの取得
+docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+```
+
+### Linuxでのインストール
+
+```bash
+# Ubuntu/Debian
+wget -q -O - https://pkg.jenkins.io/debian/jenkins.io-2023.key | sudo apt-key add -
+sudo sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
+sudo apt-get update
+sudo apt-get install jenkins
+
+# サービスを開始
+sudo systemctl start jenkins
+sudo systemctl enable jenkins
+```
+
+### 初期設定
+
+1. ブラウザで `http://localhost:8080` にアクセス
+2. 初期パスワードを入力
+3. 推奨プラグインをインストール
+4. 管理者アカウントを作成
+
+## 3. 基本的なジョブの作成
+
+### Freestyle Project
+
+```groovy
+// Jenkins UIでの設定
+// 1. 新しいアイテム → Freestyle project
+// 2. ソースコード管理: Git
+//    - Repository URL: https://github.com/user/repo.git
+// 3. ビルドステップ: Execute shell
+//    - Command:
+//      npm ci
+//      npm test
+//      npm run build
+```
+
+### Pipeline Project
+
+```groovy
+// Jenkinsfile
+pipeline {
+    agent any
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage('Install') {
+            steps {
+                sh 'npm ci'
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                sh 'npm test'
+            }
+        }
+        
+        stage('Build') {
+            steps {
+                sh 'npm run build'
+            }
+        }
+        
+        stage('Deploy') {
+            steps {
+                sh 'npm run deploy'
+            }
+        }
+    }
+    
+    post {
+        always {
+            junit 'test-results.xml'
+        }
+        success {
+            echo 'Pipeline succeeded!'
+        }
+        failure {
+            echo 'Pipeline failed!'
+        }
+    }
+}
+```
+
+## 4. Pipeline as Code
+
+### Declarative Pipeline
+
+```groovy
+// Jenkinsfile
+pipeline {
+    agent any
+    
+    environment {
+        NODE_VERSION = '18'
+        NPM_TOKEN = credentials('npm-token')
+    }
+    
+    options {
+        timeout(time: 1, unit: 'HOURS')
+        retry(3)
+        timestamps()
+    }
+    
+    triggers {
+        cron('H */4 * * *')  // 4時間ごと
+        pollSCM('H * * * *')  // 1時間ごと
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage('Install') {
+            steps {
+                sh '''
+                    nvm use ${NODE_VERSION}
+                    npm ci
+                '''
+            }
+        }
+        
+        stage('Test') {
+            parallel {
+                stage('Unit Tests') {
+                    steps {
+                        sh 'npm run test:unit'
+                    }
+                }
+                stage('Integration Tests') {
+                    steps {
+                        sh 'npm run test:integration'
+                    }
+                }
+            }
+        }
+        
+        stage('Build') {
+            steps {
+                sh 'npm run build'
+                archiveArtifacts artifacts: 'dist/**', fingerprint: true
+            }
+        }
+        
+        stage('Deploy') {
+            when {
+                branch 'main'
+            }
+            steps {
+                sh 'npm run deploy:production'
+            }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            emailext (
+                subject: "Pipeline Success: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
+                body: "Pipeline succeeded!",
+                to: "${env.CHANGE_AUTHOR_EMAIL}"
+            )
+        }
+        failure {
+            emailext (
+                subject: "Pipeline Failed: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
+                body: "Pipeline failed!",
+                to: "${env.CHANGE_AUTHOR_EMAIL}"
+            )
+        }
+    }
+}
+```
+
+### Scripted Pipeline
+
+```groovy
+// Jenkinsfile
+node {
+    stage('Checkout') {
+        checkout scm
+    }
+    
+    stage('Install') {
+        sh 'npm ci'
+    }
+    
+    stage('Test') {
+        def testResults = sh(
+            script: 'npm test',
+            returnStatus: true
+        )
+        
+        if (testResults != 0) {
+            error('Tests failed!')
+        }
+    }
+    
+    stage('Build') {
+        sh 'npm run build'
+    }
+    
+    stage('Deploy') {
+        if (env.BRANCH_NAME == 'main') {
+            sh 'npm run deploy:production'
+        }
+    }
+}
+```
+
+## 5. マルチブランチパイプライン
+
+### マルチブランチパイプラインの設定
+
+```groovy
+// Jenkinsfile
+pipeline {
+    agent any
+    
+    stages {
+        stage('Build') {
+            steps {
+                sh 'npm ci'
+                sh 'npm run build'
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                sh 'npm test'
+            }
+        }
+        
+        stage('Deploy') {
+            when {
+                branch 'main'
+            }
+            steps {
+                sh 'npm run deploy:production'
+            }
+        }
+    }
+}
+```
+
+```groovy
+// Jenkins UIでの設定
+// 1. 新しいアイテム → Multibranch Pipeline
+// 2. Branch Sources: Git
+//    - Project Repository: https://github.com/user/repo.git
+//    - Behaviors: Discover branches
+// 3. Build Configuration: Mode: by Jenkinsfile
+```
+
+## 6. 分散ビルド
+
+### Agentの設定
+
+```groovy
+// Jenkinsfile
+pipeline {
+    agent {
+        label 'linux && docker'
+    }
+    
+    stages {
+        stage('Build') {
+            steps {
+                sh 'npm run build'
+            }
+        }
+    }
+}
+```
+
+### Agentの追加
+
+```groovy
+// Jenkins UIでの設定
+// 1. Manage Jenkins → Manage Nodes and Clouds
+// 2. New Node
+// 3. Node名を入力
+// 4. Remote root directory: /home/jenkins
+// 5. Launch method: Launch agent agents via SSH
+//    - Host: agent-server-ip
+//    - Credentials: SSH認証情報
+```
+
+## 7. プラグイン
+
+### よく使われるプラグイン
+
+```groovy
+// 推奨プラグイン
+- Git Plugin
+- Pipeline Plugin
+- Docker Pipeline Plugin
+- Slack Notification Plugin
+- Email Extension Plugin
+- JUnit Plugin
+- HTML Publisher Plugin
+- Blue Ocean Plugin
+```
+
+### プラグインのインストール
+
+```bash
+# コマンドラインでのインストール
+jenkins-plugin-cli --plugins \
+  git \
+  pipeline-stage-view \
+  docker-workflow \
+  slack
+```
+
+## 8. 認証とセキュリティ
+
+### ユーザー管理
+
+```groovy
+// Jenkins UIでの設定
+// 1. Manage Jenkins → Configure Global Security
+// 2. Security Realm: Jenkins' own user database
+// 3. Authorization: Matrix-based security
+// 4. ユーザーに権限を付与
+```
+
+### 認証情報の管理
+
+```groovy
+// Jenkins UIでの設定
+// 1. Manage Jenkins → Credentials
+// 2. Add Credentials
+// 3. Kind: Secret text / Username with password / SSH Username with private key
+// 4. IDを設定（例: github-token）
+
+// Jenkinsfileでの使用
+withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
+    sh 'git push https://${GITHUB_TOKEN}@github.com/user/repo.git'
+}
+```
+
+## 9. 実践的なベストプラクティス
+
+### パイプラインの共有ライブラリ
+
+```groovy
+// vars/deploy.groovy
+def call(Map config) {
+    stage('Deploy') {
+        sh """
+            echo "Deploying to ${config.environment}"
+            npm run deploy:${config.environment}
+        """
+    }
+}
+
+// Jenkinsfileでの使用
+@Library('shared-library') _
+pipeline {
+    agent any
+    stages {
+        stage('Deploy') {
+            steps {
+                deploy environment: 'production'
+            }
+        }
+    }
+}
+```
+
+### パラメータ化ビルド
+
+```groovy
+// Jenkinsfile
+pipeline {
+    agent any
+    
+    parameters {
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['dev', 'staging', 'production'],
+            description: 'Deployment environment'
+        )
+        string(
+            name: 'VERSION',
+            defaultValue: '1.0.0',
+            description: 'Application version'
+        )
+    }
+    
+    stages {
+        stage('Deploy') {
+            steps {
+                sh "npm run deploy:${params.ENVIRONMENT} --version=${params.VERSION}"
+            }
+        }
+    }
+}
+```
+
+### 並列実行
+
+```groovy
+// Jenkinsfile
+pipeline {
+    agent any
+    
+    stages {
+        stage('Test') {
+            parallel {
+                stage('Unit Tests') {
+                    steps {
+                        sh 'npm run test:unit'
+                    }
+                }
+                stage('Integration Tests') {
+                    steps {
+                        sh 'npm run test:integration'
+                    }
+                }
+                stage('E2E Tests') {
+                    steps {
+                        sh 'npm run test:e2e'
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+## 10. よくある問題と解決方法
+
+### 問題1: ビルドが遅い
+
+```groovy
+// 解決: 並列実行とキャッシュの使用
+pipeline {
+    agent any
+    
+    options {
+        skipDefaultCheckout()
+    }
+    
+    stages {
+        stage('Cache') {
+            steps {
+                cache(maxCacheSize: 250, caches: [
+                    arbitraryFileCache(
+                        path: 'node_modules',
+                        fingerprint: [
+                            includes: 'package-lock.json'
+                        ]
+                    )
+                ]) {
+                    sh 'npm ci'
+                }
+            }
+        }
+    }
+}
+```
+
+### 問題2: 認証情報の漏洩
+
+```groovy
+// 解決: Credentials Binding Pluginの使用
+withCredentials([usernamePassword(credentialsId: 'db-credentials', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASS')]) {
+    sh 'echo $DB_USER:$DB_PASS'
+}
+```
+
+### 問題3: パイプラインの複雑化
+
+```groovy
+// 解決: 共有ライブラリの使用
+@Library('shared-library') _
+pipeline {
+    agent any
+    stages {
+        stage('Build') {
+            steps {
+                build()
+            }
+        }
+        stage('Test') {
+            steps {
+                test()
+            }
+        }
+        stage('Deploy') {
+            steps {
+                deploy()
+            }
+        }
+    }
+}
+```
+
+## まとめ
+
+Jenkins完全ガイドのポイント：
+
+- **Pipeline as Code**: Jenkinsfileによるパイプライン定義
+- **分散ビルド**: Agentによる並列実行
+- **プラグイン**: 豊富な機能拡張
+- **認証とセキュリティ**: ユーザー管理と認証情報管理
+- **ベストプラクティス**: 共有ライブラリ、パラメータ化、並列実行
+
+適切なJenkinsの使用により、柔軟で強力なCI/CDシステムを構築できます。
+

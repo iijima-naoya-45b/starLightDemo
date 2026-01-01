@@ -1,0 +1,77 @@
+---
+title: APIドキュメント作成完全ガイド
+sidebar:
+    label: APIドキュメント実装
+---
+
+# APIドキュメント作成完全ガイド
+
+APIドキュメント作成の実践的な手法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. APIドキュメントとは
+
+### APIドキュメントの要素
+
+```
+APIドキュメントの要素
+   ├─ エンドポイント
+   ├─ リクエスト/レスポンス
+   ├─ 認証
+   ├─ エラーハンドリング
+   └─ 使用例
+```
+
+## 2. OpenAPI/Swagger
+
+### OpenAPIの定義
+
+```yaml
+# openapi.yaml
+openapi: 3.0.0
+info:
+  title: User API
+  version: 1.0.0
+paths:
+  /users:
+    get:
+      summary: ユーザー一覧を取得
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+```
+
+## 3. Swagger UI
+
+```bash
+# Swagger UIの起動
+npx swagger-ui-serve openapi.yaml
+```
+
+## まとめ
+
+APIドキュメント作成完全ガイドのポイント：
+
+- **OpenAPI**: API仕様の定義
+- **Swagger UI**: インタラクティブなドキュメント
+- **使用例**: 実践的な使用例
+- **エラーハンドリング**: エラーの説明
+
+適切なAPIドキュメントにより、使いやすいAPIを提供できます。
+

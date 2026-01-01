@@ -1,0 +1,74 @@
+---
+title: なぜリファクタリングが重要なのか
+sidebar:
+    label: はじめに
+---
+
+# なぜリファクタリングが重要なのか
+
+リファクタリングは、コードの外部動作を変えずに内部構造を改善するプロセスです。
+
+## リファクタリングの重要性
+
+### リファクタリングなしの問題
+
+**問題のあるコード:**
+
+```typescript
+// リファクタリング前
+function processOrder(order) {
+  let total = 0;
+  for (let i = 0; i < order.items.length; i++) {
+    total += order.items[i].price * order.items[i].quantity;
+  }
+  if (order.customer.type === 'VIP') {
+    total = total * 0.9;
+  }
+  if (order.customer.type === 'PREMIUM') {
+    total = total * 0.85;
+  }
+  // 問題点:
+  // - 可読性が低い
+  // - テストが困難
+  // - 変更が困難
+  // - 重複コード
+}
+```
+
+### リファクタリングによる解決
+
+**改善されたコード:**
+
+```typescript
+// リファクタリング後
+function processOrder(order: Order): number {
+  const subtotal = calculateSubtotal(order.items);
+  const discount = calculateDiscount(order.customer, subtotal);
+  return subtotal - discount;
+}
+
+function calculateSubtotal(items: OrderItem[]): number {
+  return items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+}
+
+function calculateDiscount(customer: Customer, amount: number): number {
+  const discountRates = {
+    VIP: 0.1,
+    PREMIUM: 0.15
+  };
+  const rate = discountRates[customer.type] || 0;
+  return amount * rate;
+}
+```
+
+## まとめ
+
+リファクタリングが重要な理由：
+
+- **可読性の向上**: コードが理解しやすくなる
+- **保守性の向上**: 変更が容易になる
+- **バグの削減**: テストしやすいコードになる
+- **開発速度の向上**: 新機能の追加が速くなる
+
+適切なリファクタリングにより、保守性の高いコードを維持できます。
+

@@ -1,0 +1,313 @@
+---
+title: Supabase完全ガイド
+sidebar:
+    label: Supabase基礎
+---
+
+# Supabase完全ガイド
+
+Supabaseの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Supabaseとは
+
+### Supabaseの特徴
+
+Supabaseは、PostgreSQLベースのオープンソースBaaSプラットフォームです。
+
+```
+Supabaseの主要機能
+   ├─ Database（PostgreSQL）
+   ├─ Authentication（認証）
+   ├─ Storage（ストレージ）
+   ├─ Realtime（リアルタイム）
+   └─ Edge Functions（サーバーレス関数）
+```
+
+## 2. 環境構築
+
+### Supabaseクライアントの設定
+
+```typescript
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = 'https://your-project.supabase.co';
+const supabaseKey = 'your-anon-key';
+
+const supabase = createClient(supabaseUrl, supabaseKey);
+```
+
+## 3. Database（データベース）
+
+### データの操作
+
+```typescript
+// データの取得
+async function getUsers() {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*');
+  
+  if (error) {
+    console.error('Error fetching users:', error);
+    return null;
+  }
+  
+  return data;
+}
+
+// データの追加
+async function createUser(userData: { name: string; email: string }) {
+  const { data, error } = await supabase
+    .from('users')
+    .insert([userData]);
+  
+  if (error) {
+    console.error('Error creating user:', error);
+    return null;
+  }
+  
+  return data;
+}
+
+// データの更新
+async function updateUser(userId: string, updates: Partial<User>) {
+  const { data, error } = await supabase
+    .from('users')
+    .update(updates)
+    .eq('id', userId);
+  
+  if (error) {
+    console.error('Error updating user:', error);
+    return null;
+  }
+  
+  return data;
+}
+
+// データの削除
+async function deleteUser(userId: string) {
+  const { data, error } = await supabase
+    .from('users')
+    .delete()
+    .eq('id', userId);
+  
+  if (error) {
+    console.error('Error deleting user:', error);
+    return null;
+  }
+  
+  return data;
+}
+```
+
+### リアルタイムサブスクリプション
+
+```typescript
+// リアルタイムでデータを監視
+function subscribeToUsers(callback: (users: User[]) => void) {
+  const subscription = supabase
+    .channel('users')
+    .on('postgres_changes', 
+      { event: '*', schema: 'public', table: 'users' },
+      (payload) => {
+        console.log('Change received!', payload);
+        // データを再取得
+        getUsers().then(callback);
+      }
+    )
+    .subscribe();
+  
+  return subscription;
+}
+```
+
+## 4. Authentication（認証）
+
+### ユーザー登録
+
+```typescript
+async function signUp(email: string, password: string) {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password
+  });
+  
+  if (error) {
+    console.error('Sign up error:', error);
+    return null;
+  }
+  
+  return data;
+}
+```
+
+### ログイン
+
+```typescript
+async function signIn(email: string, password: string) {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password
+  });
+  
+  if (error) {
+    console.error('Sign in error:', error);
+    return null;
+  }
+  
+  return data;
+}
+```
+
+### セッション管理
+
+```typescript
+// 現在のセッションを取得
+async function getSession() {
+  const { data: { session }, error } = await supabase.auth.getSession();
+  
+  if (error) {
+    console.error('Error getting session:', error);
+    return null;
+  }
+  
+  return session;
+}
+
+// ログアウト
+async function signOut() {
+  const { error } = await supabase.auth.signOut();
+  
+  if (error) {
+    console.error('Sign out error:', error);
+    return false;
+  }
+  
+  return true;
+}
+```
+
+## 5. Storage（ストレージ）
+
+### ファイルのアップロード
+
+```typescript
+async function uploadFile(file: File, path: string) {
+  const { data, error } = await supabase.storage
+    .from('bucket-name')
+    .upload(path, file);
+  
+  if (error) {
+    console.error('Error uploading file:', error);
+    return null;
+  }
+  
+  return data;
+}
+```
+
+### ファイルのダウンロード
+
+```typescript
+async function downloadFile(path: string) {
+  const { data, error } = await supabase.storage
+    .from('bucket-name')
+    .download(path);
+  
+  if (error) {
+    console.error('Error downloading file:', error);
+    return null;
+  }
+  
+  return data;
+}
+```
+
+### 公開URLの取得
+
+```typescript
+function getPublicUrl(path: string): string {
+  const { data } = supabase.storage
+    .from('bucket-name')
+    .getPublicUrl(path);
+  
+  return data.publicUrl;
+}
+```
+
+## 6. Row Level Security（RLS）
+
+### RLSポリシーの設定
+
+```sql
+-- ユーザーは自分のデータのみアクセス可能
+CREATE POLICY "Users can view own data"
+ON users
+FOR SELECT
+USING (auth.uid() = id);
+
+-- ユーザーは自分のデータのみ更新可能
+CREATE POLICY "Users can update own data"
+ON users
+FOR UPDATE
+USING (auth.uid() = id);
+```
+
+## 7. 実践的なベストプラクティス
+
+### エラーハンドリング
+
+```typescript
+async function safeSupabaseOperation<T>(
+  operation: () => Promise<{ data: T | null; error: any }>
+): Promise<T | null> {
+  const { data, error } = await operation();
+  
+  if (error) {
+    console.error('Supabase operation failed:', error);
+    return null;
+  }
+  
+  return data;
+}
+```
+
+### 型安全性
+
+```typescript
+// 型定義
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  created_at: string;
+}
+
+// 型安全なクエリ
+async function getUsers(): Promise<User[] | null> {
+  const { data, error } = await supabase
+    .from<User>('users')
+    .select('*');
+  
+  if (error) {
+    console.error('Error:', error);
+    return null;
+  }
+  
+  return data;
+}
+```
+
+## まとめ
+
+Supabase完全ガイドのポイント：
+
+- **Database**: PostgreSQLによるデータ管理
+- **Authentication**: 認証システム
+- **Storage**: ファイルストレージ
+- **Realtime**: リアルタイム同期
+- **RLS**: Row Level Securityによるセキュリティ
+- **ベストプラクティス**: エラーハンドリング、型安全性
+
+適切なSupabaseの使用により、効率的な開発が可能になります。
+

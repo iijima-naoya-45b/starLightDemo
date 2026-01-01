@@ -1,0 +1,156 @@
+---
+title: セキュリティ用語
+sidebar:
+    label: セキュリティ用語
+---
+
+# セキュリティ用語
+
+## SQLインジェクション
+
+**定義:**
+SQLインジェクションは、悪意のあるSQLコードをアプリケーションに注入する攻撃手法です。
+
+**なぜ重要なのか:**
+- **データベースへの不正アクセス**: データベースの内容を読み取られる
+- **データの改ざん**: データが削除・変更される
+- **認証の回避**: 認証を回避してログインされる
+
+**問題のある実装:**
+```typescript
+// ❌ 悪い例
+const query = `SELECT * FROM users WHERE name = '${req.query.name}'`;
+```
+
+**解決方法:**
+```typescript
+// ✅ 良い例: パラメータ化クエリ
+const query = 'SELECT * FROM users WHERE name = ?';
+await db.query(query, [req.query.name]);
+```
+
+**関連用語:**
+- XSS
+- CSRF
+- インジェクション
+
+---
+
+## XSS（Cross-Site Scripting）
+
+**定義:**
+XSSは、悪意のあるJavaScriptコードをWebページに注入する攻撃手法です。
+
+**なぜ重要なのか:**
+- **セッションのハイジャック**: ユーザーのセッション情報が盗まれる
+- **個人情報の漏洩**: クッキーや個人情報が取得される
+- **フィッシング**: 偽のフォームで情報を入力させられる
+
+**問題のある実装:**
+```html
+<!-- ❌ 悪い例 -->
+<div><%= userInput %></div>
+```
+
+**解決方法:**
+```html
+<!-- ✅ 良い例: エスケープ -->
+<div><%= escapeHtml(userInput) %></div>
+```
+
+**関連用語:**
+- SQLインジェクション
+- CSRF
+- サニタイゼーション
+
+---
+
+## CSRF（Cross-Site Request Forgery）
+
+**定義:**
+CSRFは、ユーザーが意図しないリクエストを送信させる攻撃手法です。
+
+**なぜ重要なのか:**
+- **不正な操作**: ユーザーが意図しない操作が実行される
+- **データの改ざん**: データが不正に変更される
+- **アカウントの乗っ取り**: アカウント設定が変更される
+
+**解決方法:**
+```typescript
+// CSRFトークンの使用
+app.use(csrf({ cookie: true }));
+
+app.post('/api/users', (req, res) => {
+  // CSRFトークンの検証
+  if (!req.csrfToken()) {
+    return res.status(403).json({ error: 'Invalid CSRF token' });
+  }
+  // 処理
+});
+```
+
+**関連用語:**
+- XSS
+- SQLインジェクション
+- セキュリティトークン
+
+---
+
+## SSRF（Server-Side Request Forgery）
+
+**定義:**
+SSRFは、サーバーが信頼できないソースからのリクエストを実行する攻撃手法です。
+
+**なぜ重要なのか:**
+- **内部ネットワークへのアクセス**: 内部ネットワークにアクセスされる
+- **情報の漏洩**: 内部の情報が漏洩する
+- **サービス停止**: 内部サービスが攻撃される
+
+**解決方法:**
+```typescript
+// URLの検証とホワイトリスト
+const ALLOWED_HOSTS = ['api.example.com'];
+
+app.get('/api/fetch', (req, res) => {
+  const url = new URL(req.query.url);
+  if (!ALLOWED_HOSTS.includes(url.hostname)) {
+    return res.status(403).json({ error: 'Host not allowed' });
+  }
+  // 処理
+});
+```
+
+**関連用語:**
+- SQLインジェクション
+- XSS
+- セキュリティ設定
+
+---
+
+## OWASP Top 10
+
+**定義:**
+OWASP Top 10は、Webアプリケーションの最も重要なセキュリティリスクのリストです。
+
+**なぜ重要なのか:**
+- **セキュリティリスクの理解**: 主要なセキュリティリスクを理解できる
+- **対策の優先順位**: 対策の優先順位を決定できる
+- **セキュリティ意識の向上**: チーム全体のセキュリティ意識が向上する
+
+**OWASP Top 10 2021:**
+1. Broken Access Control（アクセス制御の不備）
+2. Cryptographic Failures（暗号化の失敗）
+3. Injection（インジェクション）
+4. Insecure Design（不安全な設計）
+5. Security Misconfiguration（セキュリティ設定の不備）
+6. Vulnerable and Outdated Components（脆弱で古いコンポーネント）
+7. Identification and Authentication Failures（認証と識別の失敗）
+8. Software and Data Integrity Failures（ソフトウェアとデータの整合性の失敗）
+9. Security Logging and Monitoring Failures（セキュリティログとモニタリングの失敗）
+10. Server-Side Request Forgery (SSRF)（サーバーサイドリクエスト偽造）
+
+**関連用語:**
+- セキュリティテスト
+- 脆弱性スキャン
+- ペネトレーションテスト
+

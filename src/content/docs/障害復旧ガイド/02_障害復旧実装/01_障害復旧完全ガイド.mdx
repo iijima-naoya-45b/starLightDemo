@@ -1,0 +1,756 @@
+---
+title: 障害復旧完全ガイド
+sidebar:
+    label: 障害復旧実装
+---
+
+# 障害復旧完全ガイド
+
+障害復旧の実践的な手法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. 障害復旧とは
+
+### 障害復旧の目的
+
+障害復旧は、システムの障害や災害から迅速に復旧し、ビジネスの継続性を確保するプロセスです。
+
+```
+障害復旧の目的
+   ├─ データの保護
+   ├─ 迅速な復旧
+   ├─ ビジネス継続性
+   ├─ リスクの最小化
+   └─ 信頼の維持
+```
+
+### 障害復旧のプロセス
+
+```mermaid
+graph LR
+    A[バックアップ] --> B[復旧計画]
+    B --> C[テスト]
+    C --> D[実行]
+    D --> E[検証]
+    E --> F[改善]
+    
+    style A fill:#e3f2fd
+    style B fill:#e3f2fd
+    style C fill:#e3f2fd
+    style D fill:#e3f2fd
+    style E fill:#e3f2fd
+    style F fill:#e3f2fd
+```
+
+## 2. RTOとRPO
+
+### RTO（Recovery Time Objective）
+
+RTOは、障害発生からシステムが復旧するまでの目標時間です。
+
+```markdown
+## RTOの設定例
+
+### システムの重要度によるRTO
+
+| システム | RTO | 理由 |
+|---------|-----|------|
+| 決済システム | 15分 | ビジネスへの影響が大きい |
+| 顧客管理システム | 1時間 | 重要な業務システム |
+| レポートシステム | 4時間 | 非リアルタイムシステム |
+| 開発環境 | 24時間 | 本番環境より優先度が低い |
+```
+
+### RPO（Recovery Point Objective）
+
+RPOは、許容できるデータ損失の最大時間です。
+
+```markdown
+## RPOの設定例
+
+### データの重要度によるRPO
+
+| データ | RPO | 理由 |
+|--------|-----|------|
+| 決済データ | 0分（リアルタイム） | データ損失が許容できない |
+| 顧客データ | 1時間 | 重要なデータ |
+| ログデータ | 24時間 | 分析用途のデータ |
+| バックアップデータ | 1週間 | アーカイブ用途のデータ |
+```
+
+### RTOとRPOの関係
+
+```markdown
+## RTOとRPOの関係
+
+### 厳しい要件
+- **RTO: 15分、RPO: 0分**: 決済システムなど
+- **要件**: リアルタイムレプリケーション、自動フェイルオーバー
+
+### 中程度の要件
+- **RTO: 1時間、RPO: 1時間**: 顧客管理システムなど
+- **要件**: 定期的なバックアップ、手動復旧
+
+### 緩い要件
+- **RTO: 24時間、RPO: 24時間**: 開発環境など
+- **要件**: 日次バックアップ、手動復旧
+```
+
+## 3. バックアップ戦略
+
+### バックアップの種類
+
+#### フルバックアップ
+
+```markdown
+## フルバックアップ
+
+### 特徴
+- すべてのデータをバックアップ
+- 復旧が簡単
+- 時間とストレージが必要
+
+### 実施頻度
+- 週次: 毎週日曜日に実施
+- 月次: 毎月1日に実施
+
+### 用途
+- 完全なシステム復旧
+- 長期アーカイブ
+```
+
+#### 増分バックアップ
+
+```markdown
+## 増分バックアップ
+
+### 特徴
+- 前回のバックアップ以降の変更のみをバックアップ
+- 時間とストレージを節約
+- 復旧にはフルバックアップとすべての増分バックアップが必要
+
+### 実施頻度
+- 日次: 毎日実施
+- 時間単位: 重要なシステムは1時間ごと
+
+### 復旧手順
+1. 最新のフルバックアップを復元
+2. フルバックアップ以降のすべての増分バックアップを順番に適用
+```
+
+#### 差分バックアップ
+
+```markdown
+## 差分バックアップ
+
+### 特徴
+- 前回のフルバックアップからの差分をバックアップ
+- 増分バックアップより復旧が簡単
+- 時間とストレージは増分バックアップより多い
+
+### 実施頻度
+- 日次: 毎日実施
+
+### 復旧手順
+1. 最新のフルバックアップを復元
+2. 最新の差分バックアップを適用
+```
+
+### バックアップの3-2-1ルール
+
+```markdown
+## 3-2-1ルール
+
+### ルール
+- **3**: データのコピーを3つ保持
+- **2**: 異なるメディアに2つ保存
+- **1**: 1つはオフサイトに保存
+
+### 実装例
+- **本番データ**: プライマリデータベース
+- **ローカルバックアップ**: 同じデータセンター内のストレージ
+- **オフサイトバックアップ**: 別のリージョンまたはクラウドストレージ
+```
+
+### バックアップの実装
+
+#### データベースのバックアップ
+
+```bash
+# PostgreSQLのバックアップ例
+# フルバックアップ
+pg_dump -h localhost -U postgres -d mydb -F c -f backup_$(date +%Y%m%d).dump
+
+# 増分バックアップ（WALアーカイブ）
+# postgresql.confの設定
+wal_level = replica
+archive_mode = on
+archive_command = 'cp %p /backup/wal/%f'
+
+# MySQLのバックアップ例
+# フルバックアップ
+mysqldump -u root -p --all-databases > backup_$(date +%Y%m%d).sql
+
+# 増分バックアップ（バイナリログ）
+# my.cnfの設定
+log-bin = /var/log/mysql/mysql-bin.log
+```
+
+#### ファイルシステムのバックアップ
+
+```bash
+# rsyncを使用したバックアップ
+rsync -avz --delete /source/directory/ /backup/directory/
+
+# tarを使用したバックアップ
+tar -czf backup_$(date +%Y%m%d).tar.gz /source/directory/
+
+# クラウドストレージへのバックアップ
+aws s3 sync /local/backup/ s3://my-backup-bucket/
+```
+
+#### クラウドサービスのバックアップ
+
+```markdown
+## クラウドサービスのバックアップ
+
+### AWS
+- **RDS**: 自動バックアップ、スナップショット
+- **EBS**: スナップショット
+- **S3**: バージョニング、ライフサイクルポリシー
+
+### GCP
+- **Cloud SQL**: 自動バックアップ、オンデマンドバックアップ
+- **Compute Engine**: スナップショット
+- **Cloud Storage**: バージョニング
+
+### Azure
+- **Azure SQL**: 自動バックアップ、ポイントインタイムリストア
+- **Virtual Machines**: スナップショット
+- **Blob Storage**: バージョニング
+```
+
+## 4. 復旧計画
+
+### 復旧計画の作成
+
+```markdown
+## 復旧計画の構成
+
+### 1. システム情報
+- **システム名**: ECサイト
+- **重要度**: 高
+- **RTO**: 1時間
+- **RPO**: 1時間
+
+### 2. バックアップ情報
+- **バックアップ方法**: 日次フルバックアップ + 時間単位増分バックアップ
+- **バックアップ場所**: S3（別リージョン）
+- **保持期間**: 30日
+
+### 3. 復旧手順
+1. バックアップの確認
+2. 復旧環境の準備
+3. データの復元
+4. アプリケーションの起動
+5. 動作確認
+
+### 4. 連絡先
+- **復旧担当者**: 田中（電話: 090-xxxx-xxxx）
+- **エスカレーション先**: 部門長（電話: 080-xxxx-xxxx）
+
+### 5. テスト計画
+- **テスト頻度**: 四半期ごと
+- **テスト内容**: 完全なシステム復旧
+```
+
+### 復旧手順の詳細
+
+#### データベースの復旧
+
+```markdown
+## PostgreSQLの復旧手順
+
+### 1. バックアップの確認
+```bash
+ls -lh /backup/database/
+```
+
+### 2. データベースの停止
+```bash
+systemctl stop postgresql
+```
+
+### 3. データディレクトリのバックアップ
+```bash
+cp -r /var/lib/postgresql/data /var/lib/postgresql/data.backup
+```
+
+### 4. データの復元
+```bash
+# フルバックアップの復元
+pg_restore -h localhost -U postgres -d mydb -c backup_20240315.dump
+
+# WALアーカイブの適用（ポイントインタイムリカバリ）
+# postgresql.confの設定
+restore_command = 'cp /backup/wal/%f %p'
+recovery_target_time = '2024-03-15 14:30:00'
+```
+
+### 5. データベースの起動
+```bash
+systemctl start postgresql
+```
+
+### 6. 動作確認
+```bash
+psql -U postgres -d mydb -c "SELECT COUNT(*) FROM users;"
+```
+```
+
+#### アプリケーションの復旧
+
+```markdown
+## アプリケーションの復旧手順
+
+### 1. コードの復元
+```bash
+# Gitから特定のコミットに戻す
+git checkout <commit-hash>
+
+# または、バックアップから復元
+tar -xzf backup_20240315.tar.gz -C /app/
+```
+
+### 2. 依存関係のインストール
+```bash
+npm install
+# または
+pip install -r requirements.txt
+```
+
+### 3. 設定ファイルの復元
+```bash
+cp /backup/config/app.config /app/config/
+```
+
+### 4. アプリケーションの起動
+```bash
+systemctl start myapp
+# または
+pm2 start app.js
+```
+
+### 5. 動作確認
+- ヘルスチェックエンドポイントの確認
+- 主要機能の動作確認
+```
+
+## 5. 災害復旧（DR）
+
+### DR戦略
+
+#### ホットスタンバイ
+
+```markdown
+## ホットスタンバイ
+
+### 特徴
+- 常に稼働しているスタンバイ環境
+- 自動フェイルオーバー
+- RTO: 数分
+- RPO: 0分（リアルタイムレプリケーション）
+
+### 実装例
+- **AWS RDS Multi-AZ**: 自動フェイルオーバー
+- **PostgreSQL Streaming Replication**: マスター-スレーブ構成
+- **Kubernetes**: 複数リージョンでのデプロイ
+```
+
+#### ウォームスタンバイ
+
+```markdown
+## ウォームスタンバイ
+
+### 特徴
+- 定期的に起動して同期するスタンバイ環境
+- 手動フェイルオーバー
+- RTO: 1-4時間
+- RPO: 1時間
+
+### 実装例
+- **定期的なスナップショット**: 日次スナップショット
+- **データレプリケーション**: 非同期レプリケーション
+```
+
+#### コールドスタンバイ
+
+```markdown
+## コールドスタンバイ
+
+### 特徴
+- バックアップのみ保持、必要時に起動
+- 手動復旧
+- RTO: 24時間以上
+- RPO: 24時間
+
+### 実装例
+- **バックアップからの復旧**: バックアップから復旧
+- **インフラの再構築**: Terraform、CloudFormation
+```
+
+### マルチリージョン構成
+
+```markdown
+## マルチリージョン構成
+
+### アクティブ-アクティブ
+- **特徴**: 複数のリージョンで同時に稼働
+- **メリット**: 高可用性、負荷分散
+- **デメリット**: コストが高い、データ同期が複雑
+
+### アクティブ-パッシブ
+- **特徴**: プライマリリージョンで稼働、セカンダリはスタンバイ
+- **メリット**: コスト効率、シンプル
+- **デメリット**: フェイルオーバーに時間がかかる
+```
+
+## 6. 復旧テスト
+
+### テストの種類
+
+#### フルテスト
+
+```markdown
+## フルテスト
+
+### 内容
+- 完全なシステム復旧のテスト
+- 本番環境と同等の環境で実施
+
+### 実施頻度
+- 年次: 年に1回実施
+
+### 手順
+1. テスト環境の準備
+2. バックアップからの復元
+3. アプリケーションの起動
+4. 動作確認
+5. パフォーマンステスト
+```
+
+#### 部分テスト
+
+```markdown
+## 部分テスト
+
+### 内容
+- 特定のコンポーネントの復旧テスト
+- データベース、アプリケーションなど
+
+### 実施頻度
+- 四半期ごと: 四半期に1回実施
+
+### 手順
+1. 対象コンポーネントの特定
+2. バックアップからの復元
+3. 動作確認
+```
+
+#### ドリルテスト
+
+```markdown
+## ドリルテスト
+
+### 内容
+- 復旧手順の確認
+- 実際の復旧は実施しない
+
+### 実施頻度
+- 月次: 毎月実施
+
+### 手順
+1. 復旧計画の確認
+2. 手順の確認
+3. 改善点の特定
+```
+
+### テストの実施
+
+```markdown
+## 復旧テストの実施
+
+### 1. テスト計画の作成
+- **テスト日時**: 2024/04/01 10:00-14:00
+- **テスト範囲**: データベース、アプリケーション
+- **参加者**: インフラチーム、開発チーム
+
+### 2. テストの実施
+- **バックアップの確認**: バックアップが存在することを確認
+- **復旧の実行**: 復旧手順に従って復旧を実行
+- **動作確認**: システムが正常に動作することを確認
+
+### 3. テスト結果の記録
+- **成功/失敗**: テストが成功したか失敗したか
+- **所要時間**: 復旧に要した時間
+- **問題点**: 発見された問題点
+- **改善点**: 改善すべき点
+
+### 4. 改善アクション
+- **問題点の修正**: 発見された問題点を修正
+- **手順の改善**: 復旧手順を改善
+- **ドキュメントの更新**: 復旧計画を更新
+```
+
+## 7. データ復旧
+
+### ポイントインタイムリカバリ（PITR）
+
+```markdown
+## ポイントインタイムリカバリ
+
+### PostgreSQLのPITR
+```bash
+# 1. ベースバックアップの復元
+pg_restore -h localhost -U postgres -d mydb backup_20240315.dump
+
+# 2. WALアーカイブの適用
+# postgresql.conf
+restore_command = 'cp /backup/wal/%f %p'
+recovery_target_time = '2024-03-15 14:30:00'
+
+# 3. データベースの起動
+systemctl start postgresql
+```
+
+### MySQLのPITR
+```bash
+# 1. フルバックアップの復元
+mysql -u root -p < backup_20240315.sql
+
+# 2. バイナリログの適用
+mysqlbinlog --start-datetime="2024-03-15 14:00:00" \
+            --stop-datetime="2024-03-15 14:30:00" \
+            mysql-bin.000001 | mysql -u root -p
+```
+```
+
+### ファイルレベルの復旧
+
+```markdown
+## ファイルレベルの復旧
+
+### 特定ファイルの復旧
+```bash
+# バックアップから特定のファイルを復元
+tar -xzf backup_20240315.tar.gz path/to/file.txt
+
+# クラウドストレージから復元
+aws s3 cp s3://my-backup-bucket/path/to/file.txt /restore/
+```
+```
+
+## 8. システム復旧
+
+### インフラの復旧
+
+#### Terraformを使用した復旧
+
+```hcl
+# main.tf
+resource "aws_instance" "web" {
+  ami           = "ami-0c55b159cbfafe1f0"
+  instance_type = "t3.micro"
+  
+  tags = {
+    Name = "WebServer"
+  }
+}
+
+resource "aws_db_instance" "main" {
+  identifier     = "mydb"
+  engine         = "postgres"
+  engine_version = "13.7"
+  instance_class = "db.t3.micro"
+  
+  backup_retention_period = 7
+  backup_window          = "03:00-04:00"
+}
+```
+
+#### CloudFormationを使用した復旧
+
+```yaml
+Resources:
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0c55b159cbfafe1f0
+      InstanceType: t3.micro
+      Tags:
+        - Key: Name
+          Value: WebServer
+```
+
+### アプリケーションの復旧
+
+```markdown
+## アプリケーションの復旧
+
+### 1. コンテナイメージの復元
+```bash
+# Dockerイメージの復元
+docker load < backup_image.tar
+
+# Kubernetesへのデプロイ
+kubectl apply -f deployment.yaml
+```
+
+### 2. 設定の復元
+```bash
+# 設定ファイルの復元
+kubectl create configmap app-config --from-file=config.yaml
+
+# シークレットの復元
+kubectl create secret generic app-secret --from-file=secret.yaml
+```
+
+### 3. データの復元
+```bash
+# PersistentVolumeの復元
+kubectl apply -f pv.yaml
+kubectl apply -f pvc.yaml
+
+# データの復元
+kubectl exec -it pod-name -- pg_restore -d mydb backup.dump
+```
+```
+
+## 9. 復旧の自動化
+
+### 自動復旧スクリプト
+
+```bash
+#!/bin/bash
+# restore.sh
+
+set -e
+
+# 設定
+BACKUP_DIR="/backup"
+RESTORE_DIR="/restore"
+DB_NAME="mydb"
+DB_USER="postgres"
+
+# バックアップの確認
+if [ ! -f "$BACKUP_DIR/backup_latest.dump" ]; then
+    echo "Error: Backup file not found"
+    exit 1
+fi
+
+# データベースの停止
+systemctl stop postgresql
+
+# データの復元
+pg_restore -h localhost -U $DB_USER -d $DB_NAME -c $BACKUP_DIR/backup_latest.dump
+
+# データベースの起動
+systemctl start postgresql
+
+# 動作確認
+psql -U $DB_USER -d $DB_NAME -c "SELECT COUNT(*) FROM users;"
+
+echo "Restore completed successfully"
+```
+
+### CI/CDパイプラインでの復旧
+
+```yaml
+# .github/workflows/restore.yml
+name: Disaster Recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_date:
+        description: 'Backup date (YYYYMMDD)'
+        required: true
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Download backup
+        run: |
+          aws s3 cp s3://my-backup-bucket/backup_${{ inputs.backup_date }}.dump ./backup.dump
+      
+      - name: Restore database
+        run: |
+          pg_restore -h ${{ secrets.DB_HOST }} -U ${{ secrets.DB_USER }} -d mydb backup.dump
+      
+      - name: Verify restore
+        run: |
+          psql -h ${{ secrets.DB_HOST }} -U ${{ secrets.DB_USER }} -d mydb -c "SELECT COUNT(*) FROM users;"
+```
+
+## 10. ベストプラクティス
+
+### バックアップのベストプラクティス
+
+```markdown
+## バックアップのベストプラクティス
+
+### 1. 自動化
+- **スケジュール**: 自動的にバックアップを実行
+- **検証**: バックアップの整合性を自動検証
+- **通知**: バックアップの成功/失敗を通知
+
+### 2. 暗号化
+- **転送時**: TLS/SSLで暗号化
+- **保存時**: 暗号化されたストレージに保存
+- **キー管理**: 適切なキー管理
+
+### 3. テスト
+- **定期的なテスト**: 定期的に復旧テストを実施
+- **自動テスト**: 自動的に復旧テストを実施
+- **ドキュメント**: テスト結果を記録
+```
+
+### 復旧のベストプラクティス
+
+```markdown
+## 復旧のベストプラクティス
+
+### 1. 準備
+- **ドキュメント**: 復旧手順を文書化
+- **ツール**: 必要なツールを準備
+- **訓練**: 定期的な訓練を実施
+
+### 2. 実行
+- **手順に従う**: 復旧手順に従って実行
+- **記録**: すべての操作を記録
+- **検証**: 各ステップで検証
+
+### 3. 事後
+- **振り返り**: 復旧プロセスの振り返り
+- **改善**: 改善点を特定し改善
+- **ドキュメント更新**: 復旧計画を更新
+```
+
+## まとめ
+
+障害復旧完全ガイドのポイント：
+
+- **RTO/RPO**: 適切なRTOとRPOの設定
+- **バックアップ戦略**: 3-2-1ルールに基づくバックアップ
+- **復旧計画**: 詳細な復旧計画の作成
+- **災害復旧**: ホット/ウォーム/コールドスタンバイ
+- **復旧テスト**: 定期的な復旧テストの実施
+- **データ復旧**: ポイントインタイムリカバリ
+- **システム復旧**: インフラとアプリケーションの復旧
+- **自動化**: 復旧プロセスの自動化
+- **ベストプラクティス**: 実践的なベストプラクティス
+
+適切な障害復旧計画により、可用性の高いシステムを維持できます。
+

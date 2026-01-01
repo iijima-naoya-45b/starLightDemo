@@ -1,0 +1,175 @@
+---
+title: DevOps完全ガイド
+sidebar:
+    label: DevOps
+---
+
+# DevOps完全ガイド
+
+DevOpsの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. DevOpsとは
+
+### DevOpsの定義
+
+DevOpsは、開発（Development）と運用（Operations）を統合し、ソフトウェア開発と運用の効率を向上させる文化とプラクティスです。
+
+```
+DevOpsの目的
+   ├─ 開発速度の向上
+   ├─ 品質の向上
+   ├─ 協働の促進
+   └─ 継続的な改善
+```
+
+## 2. CI/CD（継続的インテグレーション・デプロイ）
+
+### CI/CDパイプライン
+
+```yaml
+# GitHub ActionsのCI/CDパイプライン
+name: CI/CD Pipeline
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run tests
+        run: npm test
+      - name: Run linting
+        run: npm run lint
+  
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build
+        run: npm run build
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: build
+          path: dist/
+  
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Deploy to production
+        run: npm run deploy
+```
+
+## 3. インフラ as Code
+
+### Terraformの実装
+
+```hcl
+# main.tf
+provider "aws" {
+  region = "ap-northeast-1"
+}
+
+resource "aws_instance" "web" {
+  ami           = "ami-0c55b159cbfafe1f0"
+  instance_type = "t2.micro"
+  
+  tags = {
+    Name = "WebServer"
+  }
+}
+
+resource "aws_s3_bucket" "app" {
+  bucket = "my-app-bucket"
+  
+  versioning {
+    enabled = true
+  }
+}
+```
+
+## 4. モニタリングとロギング
+
+### モニタリングの実装
+
+```typescript
+// Prometheusメトリクスの実装
+import { register, Counter, Histogram } from 'prom-client';
+
+const httpRequestDuration = new Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests in seconds',
+  labelNames: ['method', 'route', 'status']
+});
+
+const httpRequestTotal = new Counter({
+  name: 'http_requests_total',
+  help: 'Total number of HTTP requests',
+  labelNames: ['method', 'route', 'status']
+});
+
+app.use((req, res, next) => {
+  const start = Date.now();
+  
+  res.on('finish', () => {
+    const duration = (Date.now() - start) / 1000;
+    httpRequestDuration.observe(
+      { method: req.method, route: req.route?.path, status: res.statusCode },
+      duration
+    );
+    httpRequestTotal.inc({
+      method: req.method,
+      route: req.route?.path,
+      status: res.statusCode
+    });
+  });
+  
+  next();
+});
+```
+
+## 5. 実践的なベストプラクティス
+
+### ブルーグリーンデプロイ
+
+```yaml
+# ブルーグリーンデプロイの実装
+deploy:
+  runs-on: ubuntu-latest
+  steps:
+    - name: Deploy to Green
+      run: |
+        kubectl set image deployment/app-green app=app:v1.1.0
+        kubectl rollout status deployment/app-green
+    
+    - name: Switch traffic to Green
+      run: |
+        kubectl patch service app-service -p '{"spec":{"selector":{"version":"green"}}}'
+    
+    - name: Verify Green
+      run: |
+        sleep 30
+        curl -f http://app-service/health || exit 1
+```
+
+## まとめ
+
+DevOps完全ガイドのポイント：
+
+- **CI/CD**: 継続的インテグレーション・デプロイ
+- **インフラ as Code**: Terraform、CloudFormation
+- **モニタリング**: Prometheus、Grafana
+- **ロギング**: ELK Stack、CloudWatch
+- **自動化**: 手動作業の自動化
+
+適切なDevOpsの実践により、開発速度と品質を向上できます。
+

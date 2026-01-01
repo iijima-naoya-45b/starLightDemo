@@ -1,0 +1,257 @@
+---
+title: ロギング完全ガイド
+sidebar:
+    label: ロギング
+---
+
+# ロギング完全ガイド
+
+ロギングの実践的な方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. ロギングとは
+
+### ロギングの役割
+
+ロギングは、アプリケーションの動作を記録する仕組みです。
+
+```
+ロギングの目的
+   ├─ 問題の追跡
+   ├─ パフォーマンスの監視
+   ├─ 監査ログ
+   └─ デバッグ
+```
+
+## 2. ログレベル
+
+### ログレベルの種類
+
+```
+ログレベル（重要度の高い順）
+   ├─ FATAL: システムが停止する致命的なエラー
+   ├─ ERROR: エラーが発生したが、処理は継続可能
+   ├─ WARN: 警告（潜在的な問題）
+   ├─ INFO: 情報（通常の動作）
+   ├─ DEBUG: デバッグ情報（開発時のみ）
+   └─ TRACE: 詳細なトレース情報（開発時のみ）
+```
+
+## 3. 構造化ロギング
+
+### JavaScript/TypeScriptの例
+
+```typescript
+// Winstonの例
+import winston from 'winston';
+
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.File({ filename: 'error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'combined.log' }),
+    new winston.transports.Console({
+      format: winston.format.simple()
+    })
+  ]
+});
+
+// 構造化ログの記録
+logger.info('User logged in', {
+  userId: '12345',
+  email: 'user@example.com',
+  ipAddress: '192.168.1.1',
+  timestamp: new Date().toISOString()
+});
+
+logger.error('Failed to process order', {
+  orderId: '67890',
+  userId: '12345',
+  error: error.message,
+  stack: error.stack
+});
+```
+
+### Pythonの例
+
+```python
+# structlogの例
+import structlog
+
+logger = structlog.get_logger()
+
+# 構造化ログの記録
+logger.info(
+    'user_logged_in',
+    user_id='12345',
+    email='user@example.com',
+    ip_address='192.168.1.1'
+)
+
+logger.error(
+    'failed_to_process_order',
+    order_id='67890',
+    user_id='12345',
+    error=str(error),
+    exc_info=True
+)
+```
+
+### Javaの例
+
+```java
+// Logbackの例
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import net.logstash.logback.argument.StructuredArguments;
+
+Logger logger = LoggerFactory.getLogger(MyClass.class);
+
+// 構造化ログの記録
+logger.info("User logged in",
+    StructuredArguments.keyValue("userId", "12345"),
+    StructuredArguments.keyValue("email", "user@example.com"),
+    StructuredArguments.keyValue("ipAddress", "192.168.1.1")
+);
+
+logger.error("Failed to process order",
+    StructuredArguments.keyValue("orderId", "67890"),
+    StructuredArguments.keyValue("userId", "12345"),
+    StructuredArguments.keyValue("error", error.getMessage()),
+    error
+);
+```
+
+## 4. ログの集約
+
+### ELK Stack
+
+```yaml
+# docker-compose.yml
+version: '3'
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.0.0
+    environment:
+      - discovery.type=single-node
+  
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.0.0
+    volumes:
+      - ./logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+  
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.0.0
+    ports:
+      - "5601:5601"
+```
+
+### Fluentd
+
+```ruby
+# fluentd.conf
+<source>
+  @type forward
+  port 24224
+</source>
+
+<match **>
+  @type elasticsearch
+  host elasticsearch
+  port 9200
+  index_name fluentd
+  type_name fluentd
+</match>
+```
+
+## 5. 実践的なベストプラクティス
+
+### ログの形式
+
+```typescript
+// JSON形式のログ（推奨）
+logger.info({
+  level: 'info',
+  message: 'User logged in',
+  userId: '12345',
+  timestamp: new Date().toISOString(),
+  service: 'auth-service',
+  environment: 'production'
+});
+```
+
+### 機密情報の除外
+
+```typescript
+// 機密情報の除外
+function sanitizeLog(data: any) {
+  const sensitiveFields = ['password', 'token', 'apiKey', 'secret'];
+  const sanitized = { ...data };
+  
+  for (const field of sensitiveFields) {
+    if (sanitized[field]) {
+      sanitized[field] = '***REDACTED***';
+    }
+  }
+  
+  return sanitized;
+}
+
+logger.info('User data', sanitizeLog(user));
+```
+
+### ログのサンプリング
+
+```typescript
+// 高頻度ログのサンプリング
+function shouldLog(level: string): boolean {
+  if (level === 'debug') {
+    return Math.random() < 0.1;  // 10%のサンプリング
+  }
+  return true;
+}
+
+if (shouldLog('debug')) {
+  logger.debug('Debug information', data);
+}
+```
+
+## 6. よくある問題と解決方法
+
+### 問題1: ログが多すぎる
+
+```typescript
+// 解決: ログレベルの調整とサンプリング
+logger.level = process.env.NODE_ENV === 'production' ? 'info' : 'debug';
+```
+
+### 問題2: ログの検索が困難
+
+```typescript
+// 解決: 構造化ログの使用
+logger.info({
+  event: 'user_login',
+  userId: '12345',
+  timestamp: new Date().toISOString()
+});
+```
+
+### 問題3: ログのコストが高い
+
+```typescript
+// 解決: ログの集約と保持期間の設定
+// 本番環境ではINFO以上のみ記録
+// ログの保持期間を設定（例: 30日）
+```
+
+## まとめ
+
+ロギング完全ガイドのポイント：
+
+- **ログレベル**: FATAL、ERROR、WARN、INFO、DEBUG、TRACE
+- **構造化ロギング**: JSON形式でのログ記録
+- **ログの集約**: ELK Stack、Fluentd
+- **ベストプラクティス**: ログの形式、機密情報の除外、サンプリング
+
+適切なロギングにより、効果的な監視とデバッグが可能になります。
+

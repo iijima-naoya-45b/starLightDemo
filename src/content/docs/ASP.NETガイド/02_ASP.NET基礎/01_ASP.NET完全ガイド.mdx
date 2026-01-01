@@ -1,0 +1,2443 @@
+---
+title: ASP.NET完全ガイド
+sidebar:
+    label: ASP.NET基礎
+---
+
+# ASP.NET完全ガイド
+
+ASP.NETの実践的な開発手法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. ASP.NETとは
+
+### ASP.NET Coreの概要
+
+ASP.NET Coreは、.NETプラットフォーム向けのモダンなWebアプリケーションフレームワークです。
+
+```
+ASP.NET Coreの特徴
+   ├─ クロスプラットフォーム
+   ├─ 高性能
+   ├─ 依存性注入
+   ├─ ミドルウェアパイプライン
+   └─ モジュラー設計
+```
+
+### ASP.NET Coreのバージョン
+
+- **ASP.NET Core 6.0+**: 最新のLTSバージョン
+- **.NET 6.0+**: 統一されたプラットフォーム
+- **最小限のAPI**: 軽量なAPI開発
+
+## 2. 環境構築
+
+### 必要なツール
+
+```bash
+# .NET SDKのインストール
+# https://dotnet.microsoft.com/download
+
+# バージョン確認
+dotnet --version
+
+# ASP.NET Coreランタイムの確認
+dotnet --list-runtimes
+```
+
+### プロジェクトの作成
+
+```bash
+# Webアプリケーション（MVC）の作成
+dotnet new mvc -n MyWebApp
+
+# Web APIの作成
+dotnet new webapi -n MyWebApi
+
+# Razor Pagesの作成
+dotnet new webapp -n MyRazorApp
+
+# Blazor Serverの作成
+dotnet new blazorserver -n MyBlazorApp
+
+# Blazor WebAssemblyの作成
+dotnet new blazorwasm -n MyBlazorWasm
+```
+
+### プロジェクト構造
+
+```csharp
+MyWebApp/
+├── Controllers/          // コントローラー
+├── Models/               // モデル
+├── Views/                // ビュー
+├── wwwroot/              // 静的ファイル
+├── Program.cs            // エントリーポイント
+└── appsettings.json      // 設定ファイル
+```
+
+## 3. MVCパターン
+
+### Model-View-Controller
+
+```csharp
+// Models/Product.cs
+public class Product
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public decimal Price { get; set; }
+}
+
+// Controllers/ProductController.cs
+public class ProductController : Controller
+{
+    private readonly IProductService _productService;
+
+    public ProductController(IProductService productService)
+    {
+        _productService = productService;
+    }
+
+    public IActionResult Index()
+    {
+        var products = _productService.GetAll();
+        return View(products);
+    }
+
+    [HttpGet]
+    public IActionResult Create()
+    {
+        return View();
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public IActionResult Create(Product product)
+    {
+        if (ModelState.IsValid)
+        {
+            _productService.Create(product);
+            return RedirectToAction(nameof(Index));
+        }
+        return View(product);
+    }
+}
+
+// Views/Product/Index.cshtml
+@model IEnumerable<Product>
+
+<h1>商品一覧</h1>
+<table>
+    @foreach (var product in Model)
+    {
+        <tr>
+            <td>@product.Name</td>
+            <td>@product.Price</td>
+        </tr>
+    }
+</table>
+```
+
+### ルーティング
+
+```csharp
+// Program.cs
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
+
+// 属性ルーティング
+[Route("api/[controller]")]
+[ApiController]
+public class ProductController : ControllerBase
+{
+    [HttpGet("{id}")]
+    public IActionResult Get(int id)
+    {
+        // ...
+    }
+}
+```
+
+## 4. Web API
+
+### RESTful APIの構築
+
+```csharp
+// Controllers/ProductApiController.cs
+[ApiController]
+[Route("api/[controller]")]
+public class ProductApiController : ControllerBase
+{
+    private readonly IProductService _productService;
+
+    public ProductApiController(IProductService productService)
+    {
+        _productService = productService;
+    }
+
+    [HttpGet]
+    public ActionResult<IEnumerable<Product>> Get()
+    {
+        return Ok(_productService.GetAll());
+    }
+
+    [HttpGet("{id}")]
+    public ActionResult<Product> Get(int id)
+    {
+        var product = _productService.GetById(id);
+        if (product == null)
+        {
+            return NotFound();
+        }
+        return Ok(product);
+    }
+
+    [HttpPost]
+    public ActionResult<Product> Create(Product product)
+    {
+        var created = _productService.Create(product);
+        return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
+    }
+
+    [HttpPut("{id}")]
+    public IActionResult Update(int id, Product product)
+    {
+        if (id != product.Id)
+        {
+            return BadRequest();
+        }
+        _productService.Update(product);
+        return NoContent();
+    }
+
+    [HttpDelete("{id}")]
+    public IActionResult Delete(int id)
+    {
+        _productService.Delete(id);
+        return NoContent();
+    }
+}
+```
+
+### APIバージョニング
+
+```csharp
+// Program.cs
+builder.Services.AddApiVersioning(options =>
+{
+    options.DefaultApiVersion = new ApiVersion(1, 0);
+    options.AssumeDefaultVersionWhenUnspecified = true;
+    options.ReportApiVersions = true;
+});
+
+// Controllers/ProductV1Controller.cs
+[ApiVersion("1.0")]
+[Route("api/v{version:apiVersion}/[controller]")]
+public class ProductV1Controller : ControllerBase
+{
+    // ...
+}
+
+// Controllers/ProductV2Controller.cs
+[ApiVersion("2.0")]
+[Route("api/v{version:apiVersion}/[controller]")]
+public class ProductV2Controller : ControllerBase
+{
+    // ...
+}
+```
+
+## 5. 依存性注入
+
+### サービスの登録
+
+```csharp
+// Program.cs
+builder.Services.AddScoped<IProductService, ProductService>();
+builder.Services.AddSingleton<ICacheService, CacheService>();
+builder.Services.AddTransient<IEmailService, EmailService>();
+
+// インターフェースと実装
+public interface IProductService
+{
+    IEnumerable<Product> GetAll();
+    Product GetById(int id);
+    Product Create(Product product);
+    void Update(Product product);
+    void Delete(int id);
+}
+
+public class ProductService : IProductService
+{
+    private readonly IProductRepository _repository;
+
+    public ProductService(IProductRepository repository)
+    {
+        _repository = repository;
+    }
+
+    public IEnumerable<Product> GetAll()
+    {
+        return _repository.GetAll();
+    }
+
+    // ...
+}
+```
+
+### オプションパターン
+
+```csharp
+// appsettings.json
+{
+  "DatabaseOptions": {
+    "ConnectionString": "Server=localhost;Database=MyDb;",
+    "Timeout": 30
+  }
+}
+
+// Models/DatabaseOptions.cs
+public class DatabaseOptions
+{
+    public string ConnectionString { get; set; }
+    public int Timeout { get; set; }
+}
+
+// Program.cs
+builder.Services.Configure<DatabaseOptions>(
+    builder.Configuration.GetSection("DatabaseOptions"));
+
+// サービスの使用
+public class DatabaseService
+{
+    private readonly DatabaseOptions _options;
+
+    public DatabaseService(IOptions<DatabaseOptions> options)
+    {
+        _options = options.Value;
+    }
+}
+```
+
+## 6. ミドルウェア
+
+### ミドルウェアパイプライン
+
+```csharp
+// Program.cs
+var app = builder.Build();
+
+// ミドルウェアの順序が重要
+app.UseExceptionHandler("/Error");
+app.UseHsts();
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+
+app.Run();
+```
+
+### カスタムミドルウェア
+
+```csharp
+// Middleware/RequestLoggingMiddleware.cs
+public class RequestLoggingMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<RequestLoggingMiddleware> _logger;
+
+    public RequestLoggingMiddleware(
+        RequestDelegate next,
+        ILogger<RequestLoggingMiddleware> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        var startTime = DateTime.UtcNow;
+        
+        _logger.LogInformation(
+            "Request {Method} {Path} started",
+            context.Request.Method,
+            context.Request.Path);
+
+        await _next(context);
+
+        var duration = DateTime.UtcNow - startTime;
+        _logger.LogInformation(
+            "Request {Method} {Path} completed in {Duration}ms",
+            context.Request.Method,
+            context.Request.Path,
+            duration.TotalMilliseconds);
+    }
+}
+
+// Program.cs
+app.UseMiddleware<RequestLoggingMiddleware>();
+
+// または拡張メソッド
+public static class RequestLoggingMiddlewareExtensions
+{
+    public static IApplicationBuilder UseRequestLogging(
+        this IApplicationBuilder builder)
+    {
+        return builder.UseMiddleware<RequestLoggingMiddleware>();
+    }
+}
+
+app.UseRequestLogging();
+```
+
+## 7. 認証・認可
+
+### JWT認証
+
+```csharp
+// Program.cs
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+        };
+    });
+
+// Controllers/AuthController.cs
+[ApiController]
+[Route("api/[controller]")]
+public class AuthController : ControllerBase
+{
+    private readonly IConfiguration _configuration;
+
+    public AuthController(IConfiguration configuration)
+    {
+        _configuration = configuration;
+    }
+
+    [HttpPost("login")]
+    public IActionResult Login(LoginRequest request)
+    {
+        // ユーザー認証のロジック
+        // ...
+
+        var token = GenerateJwtToken(request.Username);
+        return Ok(new { token });
+    }
+
+    private string GenerateJwtToken(string username)
+    {
+        var key = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
+        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+        var token = new JwtSecurityToken(
+            issuer: _configuration["Jwt:Issuer"],
+            audience: _configuration["Jwt:Audience"],
+            claims: new[] { new Claim(ClaimTypes.Name, username) },
+            expires: DateTime.Now.AddHours(1),
+            signingCredentials: creds);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+}
+
+// 認証が必要なエンドポイント
+[Authorize]
+[HttpGet("protected")]
+public IActionResult Protected()
+{
+    return Ok("This is a protected endpoint");
+}
+```
+
+### ポリシーベースの認可
+
+```csharp
+// Program.cs
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy =>
+        policy.RequireRole("Admin"));
+    
+    options.AddPolicy("Over18", policy =>
+        policy.RequireClaim("Age", "18"));
+});
+
+// コントローラーでの使用
+[Authorize(Policy = "AdminOnly")]
+public class AdminController : ControllerBase
+{
+    // ...
+}
+```
+
+## 8. データベースアクセス
+
+### Entity Framework Core
+
+```csharp
+// Models/ApplicationDbContext.cs
+public class ApplicationDbContext : DbContext
+{
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+        : base(options)
+    {
+    }
+
+    public DbSet<Product> Products { get; set; }
+    public DbSet<Category> Categories { get; set; }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Product>()
+            .HasKey(p => p.Id);
+        
+        modelBuilder.Entity<Product>()
+            .HasOne(p => p.Category)
+            .WithMany(c => c.Products)
+            .HasForeignKey(p => p.CategoryId);
+    }
+}
+
+// Program.cs
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// リポジトリパターン
+public interface IProductRepository
+{
+    Task<IEnumerable<Product>> GetAllAsync();
+    Task<Product> GetByIdAsync(int id);
+    Task<Product> CreateAsync(Product product);
+    Task UpdateAsync(Product product);
+    Task DeleteAsync(int id);
+}
+
+public class ProductRepository : IProductRepository
+{
+    private readonly ApplicationDbContext _context;
+
+    public ProductRepository(ApplicationDbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<IEnumerable<Product>> GetAllAsync()
+    {
+        return await _context.Products
+            .Include(p => p.Category)
+            .ToListAsync();
+    }
+
+    public async Task<Product> GetByIdAsync(int id)
+    {
+        return await _context.Products
+            .Include(p => p.Category)
+            .FirstOrDefaultAsync(p => p.Id == id);
+    }
+
+    public async Task<Product> CreateAsync(Product product)
+    {
+        _context.Products.Add(product);
+        await _context.SaveChangesAsync();
+        return product;
+    }
+
+    // ...
+}
+```
+
+## 9. エラーハンドリング
+
+### グローバルエラーハンドラー
+
+```csharp
+// Middleware/GlobalExceptionHandler.cs
+public class GlobalExceptionHandler
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<GlobalExceptionHandler> _logger;
+
+    public GlobalExceptionHandler(
+        RequestDelegate next,
+        ILogger<GlobalExceptionHandler> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
+        {
+            await _next(context);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An unhandled exception occurred");
+            await HandleExceptionAsync(context, ex);
+        }
+    }
+
+    private static Task HandleExceptionAsync(HttpContext context, Exception exception)
+    {
+        context.Response.ContentType = "application/json";
+        context.Response.StatusCode = exception switch
+        {
+            NotFoundException => StatusCodes.Status404NotFound,
+            ValidationException => StatusCodes.Status400BadRequest,
+            UnauthorizedException => StatusCodes.Status401Unauthorized,
+            _ => StatusCodes.Status500InternalServerError
+        };
+
+        var response = new
+        {
+            error = new
+            {
+                message = exception.Message,
+                statusCode = context.Response.StatusCode
+            }
+        };
+
+        return context.Response.WriteAsJsonAsync(response);
+    }
+}
+
+// カスタム例外
+public class NotFoundException : Exception
+{
+    public NotFoundException(string message) : base(message) { }
+}
+
+public class ValidationException : Exception
+{
+    public ValidationException(string message) : base(message) { }
+}
+```
+
+### 問題詳細（Problem Details）
+
+```csharp
+// Program.cs
+builder.Services.AddProblemDetails();
+
+// コントローラーでの使用
+[ApiController]
+public class ProductController : ControllerBase
+{
+    [HttpGet("{id}")]
+    public IActionResult Get(int id)
+    {
+        var product = _productService.GetById(id);
+        if (product == null)
+        {
+            return Problem(
+                title: "Product not found",
+                detail: $"Product with ID {id} was not found.",
+                statusCode: 404);
+        }
+        return Ok(product);
+    }
+}
+```
+
+## 10. ロギング
+
+### ロギングの設定
+
+```csharp
+// Program.cs
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
+builder.Logging.AddEventSourceLogger();
+
+// appsettings.json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft": "Warning",
+      "Microsoft.Hosting.Lifetime": "Information"
+    }
+  }
+}
+
+// サービスの使用
+public class ProductService
+{
+    private readonly ILogger<ProductService> _logger;
+
+    public ProductService(ILogger<ProductService> logger)
+    {
+        _logger = logger;
+    }
+
+    public void ProcessProduct(Product product)
+    {
+        _logger.LogInformation("Processing product {ProductId}", product.Id);
+        
+        try
+        {
+            // 処理
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing product {ProductId}", product.Id);
+            throw;
+        }
+    }
+}
+```
+
+## 11. キャッシング
+
+### メモリキャッシュ
+
+```csharp
+// Program.cs
+builder.Services.AddMemoryCache();
+
+// サービスの使用
+public class ProductService
+{
+    private readonly IMemoryCache _cache;
+    private readonly IProductRepository _repository;
+
+    public ProductService(
+        IMemoryCache cache,
+        IProductRepository repository)
+    {
+        _cache = cache;
+        _repository = repository;
+    }
+
+    public async Task<Product> GetByIdAsync(int id)
+    {
+        var cacheKey = $"product_{id}";
+        
+        if (!_cache.TryGetValue(cacheKey, out Product product))
+        {
+            product = await _repository.GetByIdAsync(id);
+            
+            var cacheOptions = new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5),
+                SlidingExpiration = TimeSpan.FromMinutes(2)
+            };
+            
+            _cache.Set(cacheKey, product, cacheOptions);
+        }
+        
+        return product;
+    }
+}
+```
+
+### 分散キャッシュ（Redis）
+
+```csharp
+// Program.cs
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = builder.Configuration.GetConnectionString("Redis");
+});
+
+// サービスの使用
+public class ProductService
+{
+    private readonly IDistributedCache _cache;
+    private readonly IProductRepository _repository;
+
+    public ProductService(
+        IDistributedCache cache,
+        IProductRepository repository)
+    {
+        _cache = cache;
+        _repository = repository;
+    }
+
+    public async Task<Product> GetByIdAsync(int id)
+    {
+        var cacheKey = $"product_{id}";
+        var cached = await _cache.GetStringAsync(cacheKey);
+        
+        if (cached != null)
+        {
+            return JsonSerializer.Deserialize<Product>(cached);
+        }
+        
+        var product = await _repository.GetByIdAsync(id);
+        
+        var options = new DistributedCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5)
+        };
+        
+        await _cache.SetStringAsync(
+            cacheKey,
+            JsonSerializer.Serialize(product),
+            options);
+        
+        return product;
+    }
+}
+```
+
+## 12. バリデーション
+
+### モデルバリデーション
+
+```csharp
+// Models/Product.cs
+public class Product
+{
+    [Required(ErrorMessage = "商品名は必須です")]
+    [StringLength(100, ErrorMessage = "商品名は100文字以内で入力してください")]
+    public string Name { get; set; }
+
+    [Range(0.01, 10000, ErrorMessage = "価格は0.01から10000の間で入力してください")]
+    public decimal Price { get; set; }
+
+    [EmailAddress(ErrorMessage = "有効なメールアドレスを入力してください")]
+    public string ContactEmail { get; set; }
+}
+
+// コントローラーでの使用
+[HttpPost]
+public IActionResult Create(Product product)
+{
+    if (!ModelState.IsValid)
+    {
+        return View(product);
+    }
+    
+    _productService.Create(product);
+    return RedirectToAction(nameof(Index));
+}
+
+// カスタムバリデーション属性
+public class ValidPriceAttribute : ValidationAttribute
+{
+    protected override ValidationResult IsValid(
+        object value,
+        ValidationContext validationContext)
+    {
+        if (value is decimal price)
+        {
+            if (price <= 0)
+            {
+                return new ValidationResult("価格は0より大きい値である必要があります");
+            }
+        }
+        return ValidationResult.Success;
+    }
+}
+```
+
+## 13. テスト
+
+### 単体テスト
+
+```csharp
+// Tests/ProductServiceTests.cs
+public class ProductServiceTests
+{
+    private readonly Mock<IProductRepository> _mockRepository;
+    private readonly ProductService _service;
+
+    public ProductServiceTests()
+    {
+        _mockRepository = new Mock<IProductRepository>();
+        _service = new ProductService(_mockRepository.Object);
+    }
+
+    [Fact]
+    public void GetAll_ReturnsAllProducts()
+    {
+        // Arrange
+        var products = new List<Product>
+        {
+            new Product { Id = 1, Name = "Product 1" },
+            new Product { Id = 2, Name = "Product 2" }
+        };
+        _mockRepository.Setup(r => r.GetAll()).Returns(products);
+
+        // Act
+        var result = _service.GetAll();
+
+        // Assert
+        Assert.Equal(2, result.Count());
+        _mockRepository.Verify(r => r.GetAll(), Times.Once);
+    }
+}
+```
+
+### 統合テスト
+
+```csharp
+// Tests/ProductApiTests.cs
+public class ProductApiTests : IClassFixture<WebApplicationFactory<Program>>
+{
+    private readonly WebApplicationFactory<Program> _factory;
+    private readonly HttpClient _client;
+
+    public ProductApiTests(WebApplicationFactory<Program> factory)
+    {
+        _factory = factory;
+        _client = _factory.CreateClient();
+    }
+
+    [Fact]
+    public async Task Get_ReturnsSuccessStatusCode()
+    {
+        // Act
+        var response = await _client.GetAsync("/api/product");
+
+        // Assert
+        response.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task Post_CreatesProduct()
+    {
+        // Arrange
+        var product = new Product { Name = "Test Product", Price = 10.99m };
+        var content = new StringContent(
+            JsonSerializer.Serialize(product),
+            Encoding.UTF8,
+            "application/json");
+
+        // Act
+        var response = await _client.PostAsync("/api/product", content);
+
+        // Assert
+        response.EnsureSuccessStatusCode();
+        var created = await response.Content.ReadFromJsonAsync<Product>();
+        Assert.NotNull(created);
+        Assert.Equal("Test Product", created.Name);
+    }
+}
+```
+
+## 14. デプロイメント
+
+### Docker化
+
+```dockerfile
+# Dockerfile
+FROM mcr.microsoft.com/dotnet/aspnet:6.0 AS base
+WORKDIR /app
+EXPOSE 80
+EXPOSE 443
+
+FROM mcr.microsoft.com/dotnet/sdk:6.0 AS build
+WORKDIR /src
+COPY ["MyWebApp.csproj", "./"]
+RUN dotnet restore "MyWebApp.csproj"
+COPY . .
+WORKDIR "/src"
+RUN dotnet build "MyWebApp.csproj" -c Release -o /app/build
+
+FROM build AS publish
+RUN dotnet publish "MyWebApp.csproj" -c Release -o /app/publish
+
+FROM base AS final
+WORKDIR /app
+COPY --from=publish /app/publish .
+ENTRYPOINT ["dotnet", "MyWebApp.dll"]
+```
+
+### Azureへのデプロイ
+
+```bash
+# Azure CLIでのデプロイ
+az webapp create --resource-group myResourceGroup \
+    --plan myAppServicePlan \
+    --name myWebApp \
+    --runtime "DOTNET|6.0"
+
+# デプロイ
+az webapp deployment source config-zip \
+    --resource-group myResourceGroup \
+    --name myWebApp \
+    --src deploy.zip
+```
+
+## 15. Razor Pages
+
+### Razor Pagesの概要
+
+Razor Pagesは、ページベースのアプリケーション開発モデルです。MVCよりもシンプルで、小規模から中規模のアプリケーションに適しています。
+
+```csharp
+// Pages/Products/Index.cshtml.cs
+public class IndexModel : PageModel
+{
+    private readonly IProductService _productService;
+
+    public IndexModel(IProductService productService)
+    {
+        _productService = productService;
+    }
+
+    public List<Product> Products { get; set; }
+
+    public async Task OnGetAsync()
+    {
+        Products = await _productService.GetAllAsync();
+    }
+
+    public async Task<IActionResult> OnPostDeleteAsync(int id)
+    {
+        await _productService.DeleteAsync(id);
+        return RedirectToPage();
+    }
+}
+
+// Pages/Products/Index.cshtml
+@page
+@model IndexModel
+
+<h1>商品一覧</h1>
+
+<table>
+    @foreach (var product in Model.Products)
+    {
+        <tr>
+            <td>@product.Name</td>
+            <td>@product.Price</td>
+            <td>
+                <form method="post" asp-page-handler="Delete" asp-route-id="@product.Id">
+                    <button type="submit">削除</button>
+                </form>
+            </td>
+        </tr>
+    }
+</table>
+```
+
+### Razor Pagesのルーティング
+
+```csharp
+// Program.cs
+app.MapRazorPages();
+
+// カスタムルート
+// Pages/Products/Index.cshtml.cs
+[Page("/products")]
+public class IndexModel : PageModel
+{
+    // ...
+}
+```
+
+## 16. Blazor
+
+### Blazor Server
+
+Blazor Serverは、サーバー側でC#コードを実行し、SignalRでリアルタイムにUIを更新します。
+
+```csharp
+// Pages/Counter.razor
+@page "/counter"
+
+<PageTitle>Counter</PageTitle>
+
+<h1>Counter</h1>
+
+<p role="status">Current count: @currentCount</p>
+
+<button class="btn btn-primary" @onclick="IncrementCount">Click me</button>
+
+@code {
+    private int currentCount = 0;
+
+    private void IncrementCount()
+    {
+        currentCount++;
+    }
+}
+```
+
+### Blazor WebAssembly
+
+Blazor WebAssemblyは、ブラウザでC#コードを実行します。
+
+```csharp
+// Program.cs (Blazor WebAssembly)
+var builder = WebAssemblyHostBuilder.CreateDefault(args);
+builder.RootComponents.Add<App>("#app");
+builder.RootComponents.Add<HeadOutlet>("head::after");
+
+builder.Services.AddScoped(sp => new HttpClient 
+{ 
+    BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) 
+});
+
+await builder.Build().RunAsync();
+```
+
+### Blazorコンポーネント
+
+```csharp
+// Components/ProductCard.razor
+<div class="card">
+    <div class="card-body">
+        <h5 class="card-title">@Product.Name</h5>
+        <p class="card-text">@Product.Price.ToString("C")</p>
+        <button class="btn btn-primary" @onclick="OnAddToCart">カートに追加</button>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public Product Product { get; set; }
+
+    [Parameter]
+    public EventCallback<Product> OnProductAdded { get; set; }
+
+    private async Task OnAddToCart()
+    {
+        await OnProductAdded.InvokeAsync(Product);
+    }
+}
+
+// 使用例
+<ProductCard Product="@product" OnProductAdded="HandleProductAdded" />
+```
+
+## 17. SignalR（リアルタイム通信）
+
+### SignalRの設定
+
+```csharp
+// Program.cs
+builder.Services.AddSignalR();
+
+var app = builder.Build();
+app.MapHub<ChatHub>("/chathub");
+app.Run();
+
+// Hubs/ChatHub.cs
+public class ChatHub : Hub
+{
+    public async Task SendMessage(string user, string message)
+    {
+        await Clients.All.SendAsync("ReceiveMessage", user, message);
+    }
+
+    public async Task JoinGroup(string groupName)
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
+    }
+
+    public async Task SendMessageToGroup(string groupName, string user, string message)
+    {
+        await Clients.Group(groupName).SendAsync("ReceiveMessage", user, message);
+    }
+}
+```
+
+### クライアント側の実装
+
+```javascript
+// JavaScriptクライアント
+const connection = new signalR.HubConnectionBuilder()
+    .withUrl("/chathub")
+    .build();
+
+connection.on("ReceiveMessage", (user, message) => {
+    const msg = `${user}: ${message}`;
+    const li = document.createElement("li");
+    li.textContent = msg;
+    document.getElementById("messagesList").appendChild(li);
+});
+
+connection.start().then(() => {
+    document.getElementById("sendButton").disabled = false;
+}).catch(err => console.error(err.toString()));
+
+document.getElementById("sendButton").addEventListener("click", (event) => {
+    const user = document.getElementById("userInput").value;
+    const message = document.getElementById("messageInput").value;
+    connection.invoke("SendMessage", user, message).catch(err => console.error(err.toString()));
+    event.preventDefault();
+});
+```
+
+## 18. 最小限のAPI
+
+### 最小限のAPIの使用
+
+```csharp
+// Program.cs
+var app = builder.Build();
+
+// GET
+app.MapGet("/products", async (IProductService service) =>
+{
+    return Results.Ok(await service.GetAllAsync());
+});
+
+// GET with parameter
+app.MapGet("/products/{id}", async (int id, IProductService service) =>
+{
+    var product = await service.GetByIdAsync(id);
+    return product == null ? Results.NotFound() : Results.Ok(product);
+});
+
+// POST
+app.MapPost("/products", async (Product product, IProductService service) =>
+{
+    var created = await service.CreateAsync(product);
+    return Results.Created($"/products/{created.Id}", created);
+});
+
+// PUT
+app.MapPut("/products/{id}", async (int id, Product product, IProductService service) =>
+{
+    if (id != product.Id)
+    {
+        return Results.BadRequest();
+    }
+    await service.UpdateAsync(product);
+    return Results.NoContent();
+});
+
+// DELETE
+app.MapDelete("/products/{id}", async (int id, IProductService service) =>
+{
+    await service.DeleteAsync(id);
+    return Results.NoContent();
+});
+
+app.Run();
+```
+
+### バリデーションとエラーハンドリング
+
+```csharp
+// 最小限のAPIでのバリデーション
+app.MapPost("/products", async (Product product, IProductService service, IValidator<Product> validator) =>
+{
+    var validationResult = await validator.ValidateAsync(product);
+    if (!validationResult.IsValid)
+    {
+        return Results.ValidationProblem(validationResult.ToDictionary());
+    }
+    
+    var created = await service.CreateAsync(product);
+    return Results.Created($"/products/{created.Id}", created);
+});
+
+// エラーハンドリング
+app.MapGet("/products/{id}", async (int id, IProductService service) =>
+{
+    try
+    {
+        var product = await service.GetByIdAsync(id);
+        return product == null ? Results.NotFound() : Results.Ok(product);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(
+            title: "An error occurred",
+            detail: ex.Message,
+            statusCode: 500);
+    }
+});
+```
+
+## 19. ヘルスチェック
+
+### ヘルスチェックの設定
+
+```csharp
+// Program.cs
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database")
+    .AddCheck<RedisHealthCheck>("redis")
+    .AddCheck("external-api", () =>
+    {
+        // 外部APIのヘルスチェック
+        return HealthCheckResult.Healthy();
+    });
+
+var app = builder.Build();
+app.MapHealthChecks("/health");
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready")
+});
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false
+});
+
+// カスタムヘルスチェック
+public class DatabaseHealthCheck : IHealthCheck
+{
+    private readonly ApplicationDbContext _context;
+
+    public DatabaseHealthCheck(ApplicationDbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _context.Database.CanConnectAsync(cancellationToken);
+            return HealthCheckResult.Healthy("Database is available");
+        }
+        catch (Exception ex)
+        {
+            return HealthCheckResult.Unhealthy("Database is unavailable", ex);
+        }
+    }
+}
+```
+
+## 20. バックグラウンドサービス
+
+### ホストサービスの実装
+
+```csharp
+// Services/BackgroundTaskService.cs
+public class BackgroundTaskService : BackgroundService
+{
+    private readonly ILogger<BackgroundTaskService> _logger;
+    private readonly IServiceProvider _serviceProvider;
+
+    public BackgroundTaskService(
+        ILogger<BackgroundTaskService> logger,
+        IServiceProvider serviceProvider)
+    {
+        _logger = logger;
+        _serviceProvider = serviceProvider;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("Background task running at: {time}", DateTimeOffset.Now);
+            
+            // スコープサービスの使用
+            using (var scope = _serviceProvider.CreateScope())
+            {
+                var productService = scope.ServiceProvider.GetRequiredService<IProductService>();
+                // バックグラウンド処理
+                await productService.ProcessExpiredProductsAsync();
+            }
+            
+            await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+        }
+    }
+}
+
+// Program.cs
+builder.Services.AddHostedService<BackgroundTaskService>();
+```
+
+### スコープサービスの使用
+
+```csharp
+// Services/ScopedProcessingService.cs
+public class ScopedProcessingService : IScopedProcessingService
+{
+    private readonly ILogger<ScopedProcessingService> _logger;
+
+    public ScopedProcessingService(ILogger<ScopedProcessingService> logger)
+    {
+        _logger = logger;
+    }
+
+    public async Task DoWorkAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("Scoped processing service is working");
+            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+        }
+    }
+}
+
+// Services/ConsumeScopedServiceHostedService.cs
+public class ConsumeScopedServiceHostedService : BackgroundService
+{
+    private readonly IServiceProvider _serviceProvider;
+
+    public ConsumeScopedServiceHostedService(IServiceProvider serviceProvider)
+    {
+        _serviceProvider = serviceProvider;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        await DoWork(stoppingToken);
+    }
+
+    private async Task DoWork(CancellationToken stoppingToken)
+    {
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var scopedProcessingService = scope.ServiceProvider
+                .GetRequiredService<IScopedProcessingService>();
+            
+            await scopedProcessingService.DoWorkAsync(stoppingToken);
+        }
+    }
+}
+```
+
+## 21. ファイルアップロードとダウンロード
+
+### ファイルアップロード
+
+```csharp
+// Controllers/FileController.cs
+[ApiController]
+[Route("api/[controller]")]
+public class FileController : ControllerBase
+{
+    private readonly IWebHostEnvironment _environment;
+    private readonly ILogger<FileController> _logger;
+
+    public FileController(
+        IWebHostEnvironment environment,
+        ILogger<FileController> logger)
+    {
+        _environment = environment;
+        _logger = logger;
+    }
+
+    [HttpPost("upload")]
+    [RequestSizeLimit(10_000_000)] // 10MB
+    public async Task<IActionResult> UploadFile(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+        {
+            return BadRequest("File is required");
+        }
+
+        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".pdf" };
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        
+        if (!allowedExtensions.Contains(extension))
+        {
+            return BadRequest("Invalid file type");
+        }
+
+        var uploadsFolder = Path.Combine(_environment.WebRootPath, "uploads");
+        if (!Directory.Exists(uploadsFolder))
+        {
+            Directory.CreateDirectory(uploadsFolder);
+        }
+
+        var uniqueFileName = $"{Guid.NewGuid()}{extension}";
+        var filePath = Path.Combine(uploadsFolder, uniqueFileName);
+
+        using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            await file.CopyToAsync(stream);
+        }
+
+        return Ok(new { fileName = uniqueFileName, size = file.Length });
+    }
+
+    [HttpPost("upload-multiple")]
+    public async Task<IActionResult> UploadFiles(List<IFormFile> files)
+    {
+        var uploadedFiles = new List<object>();
+
+        foreach (var file in files)
+        {
+            if (file.Length > 0)
+            {
+                var uniqueFileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
+                var filePath = Path.Combine(_environment.WebRootPath, "uploads", uniqueFileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await file.CopyToAsync(stream);
+                }
+
+                uploadedFiles.Add(new { fileName = uniqueFileName, size = file.Length });
+            }
+        }
+
+        return Ok(uploadedFiles);
+    }
+}
+```
+
+### ファイルダウンロード
+
+```csharp
+[HttpGet("download/{fileName}")]
+public IActionResult DownloadFile(string fileName)
+{
+    var filePath = Path.Combine(_environment.WebRootPath, "uploads", fileName);
+    
+    if (!System.IO.File.Exists(filePath))
+    {
+        return NotFound();
+    }
+
+    var fileBytes = System.IO.File.ReadAllBytes(filePath);
+    var contentType = GetContentType(filePath);
+    
+    return File(fileBytes, contentType, fileName);
+}
+
+[HttpGet("stream/{fileName}")]
+public IActionResult StreamFile(string fileName)
+{
+    var filePath = Path.Combine(_environment.WebRootPath, "uploads", fileName);
+    
+    if (!System.IO.File.Exists(filePath))
+    {
+        return NotFound();
+    }
+
+    var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+    var contentType = GetContentType(filePath);
+    
+    return File(fileStream, contentType, fileName);
+}
+
+private string GetContentType(string path)
+{
+    var extension = Path.GetExtension(path).ToLowerInvariant();
+    return extension switch
+    {
+        ".pdf" => "application/pdf",
+        ".jpg" or ".jpeg" => "image/jpeg",
+        ".png" => "image/png",
+        _ => "application/octet-stream"
+    };
+}
+```
+
+## 22. セッション管理
+
+### セッションの設定
+
+```csharp
+// Program.cs
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromMinutes(20);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+});
+
+var app = builder.Build();
+app.UseSession();
+
+// コントローラーでの使用
+public class CartController : Controller
+{
+    private const string CartSessionKey = "Cart";
+
+    [HttpPost]
+    public IActionResult AddToCart(int productId)
+    {
+        var cart = HttpContext.Session.Get<List<CartItem>>(CartSessionKey) ?? new List<CartItem>();
+        
+        var existingItem = cart.FirstOrDefault(item => item.ProductId == productId);
+        if (existingItem != null)
+        {
+            existingItem.Quantity++;
+        }
+        else
+        {
+            cart.Add(new CartItem { ProductId = productId, Quantity = 1 });
+        }
+        
+        HttpContext.Session.Set(CartSessionKey, cart);
+        return Ok();
+    }
+
+    [HttpGet]
+    public IActionResult GetCart()
+    {
+        var cart = HttpContext.Session.Get<List<CartItem>>(CartSessionKey) ?? new List<CartItem>();
+        return Ok(cart);
+    }
+}
+
+// セッション拡張メソッド
+public static class SessionExtensions
+{
+    public static void Set<T>(this ISession session, string key, T value)
+    {
+        session.SetString(key, JsonSerializer.Serialize(value));
+    }
+
+    public static T Get<T>(this ISession session, string key)
+    {
+        var value = session.GetString(key);
+        return value == null ? default(T) : JsonSerializer.Deserialize<T>(value);
+    }
+}
+```
+
+## 23. CORS設定
+
+### CORSの設定
+
+```csharp
+// Program.cs
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowSpecificOrigin", policy =>
+    {
+        policy.WithOrigins("https://example.com", "https://www.example.com")
+              .AllowAnyMethod()
+              .AllowAnyHeader()
+              .AllowCredentials();
+    });
+
+    options.AddPolicy("AllowAnyOrigin", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.WithOrigins(builder.Configuration.GetSection("AllowedOrigins").Get<string[]>())
+              .AllowAnyMethod()
+              .AllowAnyHeader()
+              .AllowCredentials();
+    });
+});
+
+var app = builder.Build();
+app.UseCors("AllowSpecificOrigin");
+// または
+app.UseCors(); // デフォルトポリシーを使用
+
+// コントローラーでの使用
+[ApiController]
+[Route("api/[controller]")]
+[EnableCors("AllowSpecificOrigin")]
+public class ProductController : ControllerBase
+{
+    // ...
+}
+
+// アクションでの使用
+[HttpGet]
+[EnableCors("AllowSpecificOrigin")]
+public IActionResult Get()
+{
+    return Ok();
+}
+```
+
+## 24. レート制限
+
+### レート制限の実装
+
+```csharp
+// NuGet: AspNetCoreRateLimit
+
+// Program.cs
+builder.Services.AddMemoryCache();
+builder.Services.Configure<IpRateLimitOptions>(builder.Configuration.GetSection("IpRateLimiting"));
+builder.Services.AddInMemoryRateLimiting();
+builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
+
+var app = builder.Build();
+app.UseIpRateLimiting();
+
+// appsettings.json
+{
+  "IpRateLimiting": {
+    "EnableEndpointRateLimiting": true,
+    "StackBlockedRequests": false,
+    "RealIpHeader": "X-Real-IP",
+    "ClientIdHeader": "X-ClientId",
+    "HttpStatusCode": 429,
+    "GeneralRules": [
+      {
+        "Endpoint": "*",
+        "Period": "1m",
+        "Limit": 100
+      },
+      {
+        "Endpoint": "POST:/api/products",
+        "Period": "1m",
+        "Limit": 10
+      }
+    ]
+  }
+}
+
+// カスタムレート制限ミドルウェア
+public class RateLimitMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly IMemoryCache _cache;
+
+    public RateLimitMiddleware(RequestDelegate next, IMemoryCache cache)
+    {
+        _next = next;
+        _cache = cache;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        var key = context.Connection.RemoteIpAddress?.ToString();
+        var cacheKey = $"rate_limit_{key}";
+
+        if (_cache.TryGetValue(cacheKey, out int requestCount))
+        {
+            if (requestCount >= 100) // 1分間に100リクエスト
+            {
+                context.Response.StatusCode = 429;
+                await context.Response.WriteAsync("Rate limit exceeded");
+                return;
+            }
+            _cache.Set(cacheKey, requestCount + 1, TimeSpan.FromMinutes(1));
+        }
+        else
+        {
+            _cache.Set(cacheKey, 1, TimeSpan.FromMinutes(1));
+        }
+
+        await _next(context);
+    }
+}
+```
+
+## 25. パフォーマンス最適化
+
+### レスポンスキャッシング
+
+```csharp
+// Program.cs
+builder.Services.AddResponseCaching();
+
+var app = builder.Build();
+app.UseResponseCaching();
+
+// コントローラーでの使用
+[ResponseCache(Duration = 60, Location = ResponseCacheLocation.Any)]
+public class ProductController : ControllerBase
+{
+    [HttpGet]
+    [ResponseCache(Duration = 300, VaryByQueryKeys = new[] { "page", "pageSize" })]
+    public IActionResult Get(int page = 1, int pageSize = 10)
+    {
+        // ...
+    }
+}
+
+// 出力キャッシング（.NET 7+）
+builder.Services.AddOutputCache(options =>
+{
+    options.AddBasePolicy(builder => builder.Expire(TimeSpan.FromMinutes(5)));
+    options.AddPolicy("ShortCache", builder => builder.Expire(TimeSpan.FromSeconds(30)));
+});
+
+var app = builder.Build();
+app.UseOutputCache();
+
+[HttpGet]
+[OutputCache(PolicyName = "ShortCache")]
+public IActionResult Get()
+{
+    return Ok();
+}
+```
+
+### 非同期処理の最適化
+
+```csharp
+// ✅ 良い例: 非同期処理
+public async Task<IActionResult> GetProductsAsync()
+{
+    var products = await _productService.GetAllAsync();
+    return Ok(products);
+}
+
+// ❌ 悪い例: 同期処理でブロック
+public IActionResult GetProducts()
+{
+    var products = _productService.GetAllAsync().Result; // デッドロックの可能性
+    return Ok(products);
+}
+
+// ✅ 良い例: ConfigureAwait(false)
+public async Task<List<Product>> GetAllAsync()
+{
+    return await _context.Products
+        .ToListAsync()
+        .ConfigureAwait(false);
+}
+```
+
+### データベースクエリの最適化
+
+```csharp
+// ✅ 良い例: Includeで関連データを事前読み込み
+public async Task<Product> GetByIdAsync(int id)
+{
+    return await _context.Products
+        .Include(p => p.Category)
+        .Include(p => p.Reviews)
+        .FirstOrDefaultAsync(p => p.Id == id);
+}
+
+// ✅ 良い例: Selectで必要な列のみ取得
+public async Task<List<ProductDto>> GetProductsAsync()
+{
+    return await _context.Products
+        .Select(p => new ProductDto
+        {
+            Id = p.Id,
+            Name = p.Name,
+            Price = p.Price
+        })
+        .ToListAsync();
+}
+
+// ✅ 良い例: ページネーション
+public async Task<PagedResult<Product>> GetProductsAsync(int page, int pageSize)
+{
+    var totalCount = await _context.Products.CountAsync();
+    var products = await _context.Products
+        .Skip((page - 1) * pageSize)
+        .Take(pageSize)
+        .ToListAsync();
+    
+    return new PagedResult<Product>
+    {
+        Items = products,
+        TotalCount = totalCount,
+        Page = page,
+        PageSize = pageSize
+    };
+}
+```
+
+## 26. セキュリティのベストプラクティス
+
+### セキュリティヘッダー
+
+```csharp
+// Program.cs
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Add("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.Add("X-Frame-Options", "DENY");
+    context.Response.Headers.Add("X-XSS-Protection", "1; mode=block");
+    context.Response.Headers.Add("Referrer-Policy", "strict-origin-when-cross-origin");
+    context.Response.Headers.Add("Content-Security-Policy", "default-src 'self'");
+    await next();
+});
+
+// または、NWebsecを使用
+// NuGet: NWebsec.AspNetCore.Middleware
+app.UseXContentTypeOptions();
+app.UseXfo(options => options.Deny());
+app.UseXXssProtection(options => options.EnabledWithBlockMode());
+app.UseReferrerPolicy(options => options.NoReferrer());
+```
+
+### 入力サニタイゼーション
+
+```csharp
+// HTMLサニタイゼーション
+// NuGet: HtmlSanitizer
+
+public class SanitizeInputAttribute : ActionFilterAttribute
+{
+    public override void OnActionExecuting(ActionExecutingContext context)
+    {
+        foreach (var parameter in context.ActionDescriptor.Parameters)
+        {
+            if (context.ActionArguments.ContainsKey(parameter.Name))
+            {
+                var value = context.ActionArguments[parameter.Name];
+                if (value is string stringValue)
+                {
+                    var sanitizer = new HtmlSanitizer();
+                    context.ActionArguments[parameter.Name] = sanitizer.Sanitize(stringValue);
+                }
+            }
+        }
+        base.OnActionExecuting(context);
+    }
+}
+
+// 使用例
+[HttpPost]
+[SanitizeInput]
+public IActionResult CreateComment(Comment comment)
+{
+    // comment.Contentは既にサニタイズされている
+    // ...
+}
+```
+
+### SQLインジェクション対策
+
+```csharp
+// ✅ 良い例: パラメータ化クエリ（Entity Framework Core）
+public async Task<Product> GetByIdAsync(int id)
+{
+    return await _context.Products
+        .FromSqlRaw("SELECT * FROM Products WHERE Id = {0}", id)
+        .FirstOrDefaultAsync();
+}
+
+// ✅ 良い例: パラメータ化クエリ（ADO.NET）
+using (var command = connection.CreateCommand())
+{
+    command.CommandText = "SELECT * FROM Products WHERE Id = @id";
+    command.Parameters.Add(new SqlParameter("@id", id));
+    // ...
+}
+
+// ❌ 悪い例: 文字列連結
+var query = $"SELECT * FROM Products WHERE Id = {id}"; // SQLインジェクションのリスク
+```
+
+## 27. ロギングの詳細
+
+### 構造化ロギング
+
+```csharp
+// 構造化ロギングの使用
+public class ProductService
+{
+    private readonly ILogger<ProductService> _logger;
+
+    public ProductService(ILogger<ProductService> logger)
+    {
+        _logger = logger;
+    }
+
+    public async Task<Product> CreateAsync(Product product)
+    {
+        _logger.LogInformation(
+            "Creating product {ProductId} with name {ProductName}",
+            product.Id,
+            product.Name);
+
+        try
+        {
+            // 処理
+            _logger.LogInformation(
+                "Product {ProductId} created successfully",
+                product.Id);
+            
+            return product;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error creating product {ProductId}",
+                product.Id);
+            throw;
+        }
+    }
+}
+
+// Serilogの使用
+// NuGet: Serilog.AspNetCore
+
+// Program.cs
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .WriteTo.File("logs/app.log", rollingInterval: RollingInterval.Day)
+    .CreateLogger();
+
+builder.Host.UseSerilog();
+
+// appsettings.json
+{
+  "Serilog": {
+    "Using": ["Serilog.Sinks.Console", "Serilog.Sinks.File"],
+    "MinimumLevel": "Information",
+    "WriteTo": [
+      { "Name": "Console" },
+      {
+        "Name": "File",
+        "Args": {
+          "path": "logs/app.log",
+          "rollingInterval": "Day"
+        }
+      }
+    ]
+  }
+}
+```
+
+### ログレベルとフィルタリング
+
+```csharp
+// appsettings.json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft": "Warning",
+      "Microsoft.AspNetCore": "Warning",
+      "Microsoft.EntityFrameworkCore": "Information",
+      "MyApp": "Debug"
+    }
+  }
+}
+
+// コードでのフィルタリング
+builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
+builder.Logging.AddFilter((category, level) =>
+{
+    if (category.Contains("MyApp"))
+    {
+        return level >= LogLevel.Debug;
+    }
+    return level >= LogLevel.Information;
+});
+```
+
+## 28. 設定管理の詳細
+
+### 設定の階層
+
+```csharp
+// appsettings.json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=localhost;Database=MyDb;"
+  },
+  "DatabaseOptions": {
+    "ConnectionString": "Server=localhost;Database=MyDb;",
+    "Timeout": 30,
+    "RetryCount": 3
+  },
+  "ExternalServices": {
+    "PaymentService": {
+      "BaseUrl": "https://api.payment.com",
+      "ApiKey": "your-api-key",
+      "Timeout": 30
+    }
+  }
+}
+
+// appsettings.Development.json
+{
+  "DatabaseOptions": {
+    "ConnectionString": "Server=localhost;Database=MyDb_Dev;"
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Debug"
+    }
+  }
+}
+
+// appsettings.Production.json
+{
+  "DatabaseOptions": {
+    "ConnectionString": "Server=prod-server;Database=MyDb_Prod;"
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Warning"
+    }
+  }
+}
+```
+
+### 設定の読み込み
+
+```csharp
+// Program.cs
+builder.Configuration
+    .SetBasePath(builder.Environment.ContentRootPath)
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true)
+    .AddEnvironmentVariables()
+    .AddCommandLine(args)
+    .AddUserSecrets<Program>();
+
+// 環境変数からの読み込み
+// ASPNETCORE_ENVIRONMENT=Production
+// ConnectionStrings__DefaultConnection=Server=prod;Database=MyDb;
+
+// ユーザーシークレット（開発環境）
+// dotnet user-secrets set "DatabaseOptions:ConnectionString" "Server=localhost;Database=MyDb;"
+
+// 設定の使用
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+var timeout = builder.Configuration.GetValue<int>("DatabaseOptions:Timeout");
+var paymentServiceUrl = builder.Configuration["ExternalServices:PaymentService:BaseUrl"];
+```
+
+## 29. 実践的なベストプラクティス
+
+### アーキテクチャパターン
+
+```markdown
+## クリーンアーキテクチャ
+
+### レイヤー構造
+```
+Presentation Layer (Controllers, Views)
+    ↓
+Application Layer (Services, Use Cases)
+    ↓
+Domain Layer (Entities, Value Objects)
+    ↓
+Infrastructure Layer (Data Access, External Services)
+```
+
+### 依存性の方向
+- **外側から内側**: 外側のレイヤーが内側のレイヤーに依存
+- **インターフェース**: 依存性はインターフェース経由
+- **依存性逆転**: 抽象に依存、具象に依存しない
+```
+
+### リポジトリパターン
+
+```csharp
+// リポジトリインターフェース
+public interface IRepository<T> where T : class
+{
+    Task<T> GetByIdAsync(int id);
+    Task<IEnumerable<T>> GetAllAsync();
+    Task<T> AddAsync(T entity);
+    Task UpdateAsync(T entity);
+    Task DeleteAsync(int id);
+}
+
+// 汎用リポジトリ
+public class Repository<T> : IRepository<T> where T : class
+{
+    protected readonly ApplicationDbContext _context;
+    protected readonly DbSet<T> _dbSet;
+
+    public Repository(ApplicationDbContext context)
+    {
+        _context = context;
+        _dbSet = context.Set<T>();
+    }
+
+    public virtual async Task<T> GetByIdAsync(int id)
+    {
+        return await _dbSet.FindAsync(id);
+    }
+
+    public virtual async Task<IEnumerable<T>> GetAllAsync()
+    {
+        return await _dbSet.ToListAsync();
+    }
+
+    public virtual async Task<T> AddAsync(T entity)
+    {
+        await _dbSet.AddAsync(entity);
+        await _context.SaveChangesAsync();
+        return entity;
+    }
+
+    public virtual async Task UpdateAsync(T entity)
+    {
+        _dbSet.Update(entity);
+        await _context.SaveChangesAsync();
+    }
+
+    public virtual async Task DeleteAsync(int id)
+    {
+        var entity = await GetByIdAsync(id);
+        if (entity != null)
+        {
+            _dbSet.Remove(entity);
+            await _context.SaveChangesAsync();
+        }
+    }
+}
+
+// カスタムリポジトリ
+public interface IProductRepository : IRepository<Product>
+{
+    Task<IEnumerable<Product>> GetByCategoryAsync(int categoryId);
+    Task<IEnumerable<Product>> SearchAsync(string searchTerm);
+}
+
+public class ProductRepository : Repository<Product>, IProductRepository
+{
+    public ProductRepository(ApplicationDbContext context) : base(context)
+    {
+    }
+
+    public async Task<IEnumerable<Product>> GetByCategoryAsync(int categoryId)
+    {
+        return await _dbSet
+            .Where(p => p.CategoryId == categoryId)
+            .ToListAsync();
+    }
+
+    public async Task<IEnumerable<Product>> SearchAsync(string searchTerm)
+    {
+        return await _dbSet
+            .Where(p => p.Name.Contains(searchTerm))
+            .ToListAsync();
+    }
+}
+```
+
+### ユニットオブワークパターン
+
+```csharp
+// IUnitOfWorkインターフェース
+public interface IUnitOfWork : IDisposable
+{
+    IProductRepository Products { get; }
+    ICategoryRepository Categories { get; }
+    Task<int> SaveChangesAsync();
+    Task BeginTransactionAsync();
+    Task CommitTransactionAsync();
+    Task RollbackTransactionAsync();
+}
+
+// UnitOfWork実装
+public class UnitOfWork : IUnitOfWork
+{
+    private readonly ApplicationDbContext _context;
+    private IDbContextTransaction _transaction;
+
+    public UnitOfWork(ApplicationDbContext context)
+    {
+        _context = context;
+        Products = new ProductRepository(_context);
+        Categories = new CategoryRepository(_context);
+    }
+
+    public IProductRepository Products { get; }
+    public ICategoryRepository Categories { get; }
+
+    public async Task<int> SaveChangesAsync()
+    {
+        return await _context.SaveChangesAsync();
+    }
+
+    public async Task BeginTransactionAsync()
+    {
+        _transaction = await _context.Database.BeginTransactionAsync();
+    }
+
+    public async Task CommitTransactionAsync()
+    {
+        try
+        {
+            await SaveChangesAsync();
+            await _transaction.CommitAsync();
+        }
+        catch
+        {
+            await RollbackTransactionAsync();
+            throw;
+        }
+    }
+
+    public async Task RollbackTransactionAsync()
+    {
+        await _transaction.RollbackAsync();
+    }
+
+    public void Dispose()
+    {
+        _transaction?.Dispose();
+        _context.Dispose();
+    }
+}
+
+// サービスの使用
+public class ProductService
+{
+    private readonly IUnitOfWork _unitOfWork;
+
+    public ProductService(IUnitOfWork unitOfWork)
+    {
+        _unitOfWork = unitOfWork;
+    }
+
+    public async Task<Product> CreateProductWithCategoryAsync(Product product, Category category)
+    {
+        await _unitOfWork.BeginTransactionAsync();
+        try
+        {
+            await _unitOfWork.Categories.AddAsync(category);
+            product.CategoryId = category.Id;
+            var created = await _unitOfWork.Products.AddAsync(product);
+            await _unitOfWork.CommitTransactionAsync();
+            return created;
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync();
+            throw;
+        }
+    }
+}
+```
+
+## 30. よくある問題と解決方法
+
+### 問題1: デッドロック
+
+```csharp
+// ❌ 悪い例: 同期メソッドで非同期を呼び出す
+public void ProcessData()
+{
+    var result = GetDataAsync().Result; // デッドロックの可能性
+}
+
+// ✅ 良い例: 非同期メソッドを使用
+public async Task ProcessDataAsync()
+{
+    var result = await GetDataAsync();
+}
+
+// ✅ 良い例: ConfigureAwait(false)を使用
+public async Task<List<Product>> GetAllAsync()
+{
+    return await _context.Products
+        .ToListAsync()
+        .ConfigureAwait(false);
+}
+```
+
+### 問題2: メモリリーク
+
+```csharp
+// ❌ 悪い例: イベントハンドラーの登録解除を忘れる
+public class EventSubscriber
+{
+    public EventSubscriber(EventPublisher publisher)
+    {
+        publisher.Event += HandleEvent; // 登録解除が必要
+    }
+}
+
+// ✅ 良い例: IDisposableで登録解除
+public class EventSubscriber : IDisposable
+{
+    private readonly EventPublisher _publisher;
+
+    public EventSubscriber(EventPublisher publisher)
+    {
+        _publisher = publisher;
+        _publisher.Event += HandleEvent;
+    }
+
+    public void Dispose()
+    {
+        _publisher.Event -= HandleEvent;
+    }
+
+    private void HandleEvent(object sender, EventArgs e)
+    {
+        // ...
+    }
+}
+```
+
+### 問題3: パフォーマンスの問題
+
+```csharp
+// ❌ 悪い例: N+1問題
+public async Task<List<ProductDto>> GetProductsAsync()
+{
+    var products = await _context.Products.ToListAsync();
+    var result = new List<ProductDto>();
+    
+    foreach (var product in products)
+    {
+        var category = await _context.Categories
+            .FirstOrDefaultAsync(c => c.Id == product.CategoryId); // N+1問題
+        result.Add(new ProductDto { Product = product, Category = category });
+    }
+    
+    return result;
+}
+
+// ✅ 良い例: Includeで事前読み込み
+public async Task<List<ProductDto>> GetProductsAsync()
+{
+    var products = await _context.Products
+        .Include(p => p.Category)
+        .ToListAsync();
+    
+    return products.Select(p => new ProductDto 
+    { 
+        Product = p, 
+        Category = p.Category 
+    }).ToList();
+}
+```
+
+## まとめ
+
+ASP.NET完全ガイドのポイント：
+
+- **ASP.NET Core**: クロスプラットフォーム、高性能、モダンなWebフレームワーク
+- **MVCパターン**: Model-View-Controllerアーキテクチャ
+- **Web API**: RESTful APIの構築、APIバージョニング
+- **Razor Pages**: ページベースのアプリケーション開発
+- **Blazor**: C#でフロントエンド開発（Server/WebAssembly）
+- **SignalR**: リアルタイム通信
+- **最小限のAPI**: 軽量なAPI開発
+- **依存性注入**: 疎結合な設計、ライフサイクル管理
+- **ミドルウェア**: リクエストパイプラインのカスタマイズ
+- **認証・認可**: JWT認証、ポリシーベースの認可
+- **Entity Framework Core**: データベースアクセス、リポジトリパターン、ユニットオブワーク
+- **エラーハンドリング**: グローバルエラーハンドラー、Problem Details
+- **ロギング**: 構造化ロギング、Serilog
+- **キャッシング**: メモリキャッシュ、分散キャッシュ（Redis）
+- **バリデーション**: モデルバリデーション、カスタムバリデーション
+- **ヘルスチェック**: アプリケーションと依存サービスのヘルスチェック
+- **バックグラウンドサービス**: ホストサービス、スコープサービス
+- **ファイル操作**: アップロード、ダウンロード
+- **セッション管理**: セッションの設定と使用
+- **CORS**: クロスオリジンリソース共有の設定
+- **レート制限**: APIレート制限の実装
+- **パフォーマンス最適化**: レスポンスキャッシング、非同期処理、クエリ最適化
+- **セキュリティ**: セキュリティヘッダー、入力サニタイゼーション、SQLインジェクション対策
+- **設定管理**: 階層的な設定、環境変数、ユーザーシークレット
+- **テスト**: 単体テスト、統合テスト
+- **デプロイメント**: Docker化、Azureへのデプロイ
+- **ベストプラクティス**: クリーンアーキテクチャ、リポジトリパターン、ユニットオブワーク
+- **よくある問題**: デッドロック、メモリリーク、パフォーマンス問題
+
+適切なASP.NETの使用により、効率的で高性能なWebアプリケーション開発が可能になります。
+

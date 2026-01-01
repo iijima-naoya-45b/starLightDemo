@@ -1,0 +1,70 @@
+---
+title: C#完全ガイド
+sidebar:
+    label: C#基礎
+---
+
+# C#完全ガイド
+
+C#の実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. C#とは
+
+### C#の特徴
+
+C#は、.NETプラットフォーム向けのモダンなプログラミング言語です。
+
+```
+C#の特徴
+   ├─ オブジェクト指向
+   ├─ LINQ
+   ├─ async/await
+   └─ ジェネリクス
+```
+
+## 2. 基本的な構文
+
+### クラス
+
+```csharp
+using System;
+
+public class Person
+{
+    private string name;
+    private int age;
+    
+    public Person(string name, int age)
+    {
+        this.name = name;
+        this.age = age;
+    }
+    
+    public void Introduce()
+    {
+        Console.WriteLine($"Name: {name}, Age: {age}");
+    }
+}
+```
+
+### LINQ
+
+```csharp
+using System;
+using System.Linq;
+
+var numbers = new[] { 1, 2, 3, 4, 5 };
+var evenNumbers = numbers.Where(n => n % 2 == 0);
+```
+
+## まとめ
+
+C#完全ガイドのポイント：
+
+- **オブジェクト指向**: クラス、継承
+- **LINQ**: 統合言語クエリ
+- **async/await**: 非同期処理
+- **ジェネリクス**: 型安全性
+
+適切なC#の使用により、効率的な.NETアプリケーション開発が可能になります。
+

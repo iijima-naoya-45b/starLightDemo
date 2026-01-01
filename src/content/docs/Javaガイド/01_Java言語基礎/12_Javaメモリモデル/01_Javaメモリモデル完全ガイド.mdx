@@ -1,0 +1,414 @@
+---
+title: Javaメモリモデル完全ガイド
+sidebar:
+    label: Javaメモリモデル完全ガイド
+---
+
+# Javaメモリモデル完全ガイド
+
+Javaメモリモデル（JMM）の仕組みと並行処理における動作原理を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Javaメモリモデルとは
+
+### JMMの役割
+
+Javaメモリモデルは、マルチスレッド環境でのメモリアクセスの動作を定義する仕様です。
+
+```
+Javaメモリモデルの目的
+   ├─ 可視性（Visibility）
+   ├─ 順序性（Ordering）
+   └─ 原子性（Atomicity）
+```
+
+### なぜメモリモデルが必要か
+
+```java
+// 問題のあるコード: 可視性の問題
+public class VisibilityProblem {
+    private boolean flag = false;  // メインスレッドで変更
+    
+    public void thread1() {
+        flag = true;  // メインスレッドで変更
+    }
+    
+    public void thread2() {
+        while (!flag) {  // 別スレッドで読み取り
+            // 無限ループになる可能性がある
+            // flagの変更が可視化されない
+        }
+    }
+}
+```
+
+## 2. 可視性（Visibility）
+
+### 可視性の問題
+
+```java
+// 問題のあるコード
+public class VisibilityIssue {
+    private int count = 0;  // 共有変数
+    
+    public void increment() {
+        count++;  // スレッド1で変更
+    }
+    
+    public int getCount() {
+        return count;  // スレッド2で読み取り
+        // 変更が可視化されない可能性がある
+    }
+}
+```
+
+### volatileによる解決
+
+```java
+// volatileによる可視性の保証
+public class VisibilitySolution {
+    private volatile boolean flag = false;
+    private volatile int count = 0;
+    
+    public void thread1() {
+        flag = true;  // volatileにより、変更が即座に可視化される
+        count = 100;
+    }
+    
+    public void thread2() {
+        while (!flag) {  // volatileにより、最新の値が読み取られる
+            // 待機
+        }
+        System.out.println(count);  // 100が保証される
+    }
+}
+```
+
+### synchronizedによる解決
+
+```java
+// synchronizedによる可視性の保証
+public class SynchronizedVisibility {
+    private boolean flag = false;
+    private int count = 0;
+    
+    public synchronized void setFlag(boolean value) {
+        flag = value;  // synchronizedにより、変更が可視化される
+        count = 100;
+    }
+    
+    public synchronized boolean getFlag() {
+        return flag;  // synchronizedにより、最新の値が読み取られる
+    }
+    
+    public synchronized int getCount() {
+        return count;  // 100が保証される
+    }
+}
+```
+
+## 3. 順序性（Ordering）
+
+### 命令の並び替え
+
+```java
+// コンパイラやプロセッサによる命令の並び替え
+public class ReorderingExample {
+    private int x = 0;
+    private int y = 0;
+    private boolean ready = false;
+    
+    // スレッド1
+    public void thread1() {
+        x = 1;        // 1
+        y = 2;        // 2
+        ready = true; // 3
+        // 実際の実行順序は1,2,3とは限らない
+    }
+    
+    // スレッド2
+    public void thread2() {
+        if (ready) {
+            System.out.println("x=" + x + ", y=" + y);
+            // x=0, y=2 のような結果になる可能性がある
+        }
+    }
+}
+```
+
+### happens-before関係
+
+```java
+// happens-before関係による順序保証
+public class HappensBeforeExample {
+    private int x = 0;
+    private volatile boolean ready = false;
+    
+    // スレッド1
+    public void thread1() {
+        x = 1;        // 1
+        ready = true; // 2: volatile書き込み
+        // 1 happens-before 2
+    }
+    
+    // スレッド2
+    public void thread2() {
+        if (ready) {  // 3: volatile読み込み
+            System.out.println(x);  // 4
+            // 3 happens-before 4
+            // 2 happens-before 3 (volatile)
+            // したがって、1 happens-before 4
+            // x = 1が保証される
+        }
+    }
+}
+```
+
+## 4. 原子性（Atomicity）
+
+### 非原子操作の問題
+
+```java
+// 問題のあるコード: 非原子操作
+public class AtomicityIssue {
+    private int count = 0;
+    
+    public void increment() {
+        count++;  // 非原子操作
+        // 実際には以下の3つの操作:
+        // 1. countの値を読み取る
+        // 2. 値を1増やす
+        // 3. 値を書き込む
+        // 複数スレッドで実行すると、値が失われる可能性がある
+    }
+}
+```
+
+### AtomicIntegerによる解決
+
+```java
+// AtomicIntegerによる原子性の保証
+import java.util.concurrent.atomic.AtomicInteger;
+
+public class AtomicitySolution {
+    private AtomicInteger count = new AtomicInteger(0);
+    
+    public void increment() {
+        count.incrementAndGet();  // 原子操作
+    }
+    
+    public int getCount() {
+        return count.get();  // 原子操作
+    }
+}
+```
+
+### synchronizedによる解決
+
+```java
+// synchronizedによる原子性の保証
+public class SynchronizedAtomicity {
+    private int count = 0;
+    
+    public synchronized void increment() {
+        count++;  // synchronizedにより、原子操作として実行される
+    }
+    
+    public synchronized int getCount() {
+        return count;
+    }
+}
+```
+
+## 5. メモリバリア
+
+### メモリバリアの種類
+
+```java
+// volatileによるメモリバリア
+public class MemoryBarrierExample {
+    private volatile int x = 0;
+    private int y = 0;
+    
+    public void thread1() {
+        y = 1;      // 通常の書き込み
+        x = 1;      // volatile書き込み（メモリバリア）
+        // xの書き込み前に、yの書き込みが完了することが保証される
+    }
+    
+    public void thread2() {
+        if (x == 1) {  // volatile読み込み（メモリバリア）
+            System.out.println(y);  // y = 1が保証される
+        }
+    }
+}
+```
+
+## 6. finalフィールドの可視性
+
+### finalフィールドの保証
+
+```java
+// finalフィールドの可視性保証
+public class FinalFieldExample {
+    private final int value;  // finalフィールド
+    private int nonFinal;
+    
+    public FinalFieldExample(int value) {
+        this.value = value;     // finalフィールドの初期化
+        this.nonFinal = value;  // 非finalフィールド
+    }
+    
+    public int getValue() {
+        return value;  // finalフィールドは、コンストラクタ完了後に可視化される
+    }
+    
+    public int getNonFinal() {
+        return nonFinal;  // 非finalフィールドは、可視化が保証されない
+    }
+}
+```
+
+## 7. 実践的なベストプラクティス
+
+### volatileの使用例
+
+```java
+// volatileが適切な場合
+public class VolatileExample {
+    private volatile boolean shutdown = false;
+    
+    public void shutdown() {
+        shutdown = true;  // 単一の書き込み
+    }
+    
+    public void run() {
+        while (!shutdown) {  // 単一の読み取り
+            // 処理
+        }
+    }
+}
+```
+
+### synchronizedの使用例
+
+```java
+// synchronizedが適切な場合
+public class SynchronizedExample {
+    private int count = 0;
+    
+    public synchronized void increment() {
+        count++;  // 複合操作（読み取り-変更-書き込み）
+    }
+    
+    public synchronized int getCount() {
+        return count;  // 一貫性のある読み取り
+    }
+}
+```
+
+### AtomicIntegerの使用例
+
+```java
+// AtomicIntegerが適切な場合
+import java.util.concurrent.atomic.AtomicInteger;
+
+public class AtomicExample {
+    private AtomicInteger count = new AtomicInteger(0);
+    
+    public void increment() {
+        count.incrementAndGet();  // 単純な原子操作
+    }
+    
+    public int getCount() {
+        return count.get();
+    }
+    
+    // 複合操作も可能
+    public int addAndGet(int delta) {
+        return count.addAndGet(delta);
+    }
+}
+```
+
+## 8. よくある問題と解決策
+
+### 問題1: ダブルチェックロッキング
+
+```java
+// 問題のあるコード
+public class DoubleCheckLocking {
+    private static Singleton instance;
+    
+    public static Singleton getInstance() {
+        if (instance == null) {  // 1回目のチェック
+            synchronized (DoubleCheckLocking.class) {
+                if (instance == null) {  // 2回目のチェック
+                    instance = new Singleton();  // 問題: 初期化の可視性が保証されない
+                }
+            }
+        }
+        return instance;
+    }
+}
+
+// 解決策1: volatileの使用
+public class DoubleCheckLockingFixed {
+    private static volatile Singleton instance;
+    
+    public static Singleton getInstance() {
+        if (instance == null) {
+            synchronized (DoubleCheckLockingFixed.class) {
+                if (instance == null) {
+                    instance = new Singleton();  // volatileにより可視化される
+                }
+            }
+        }
+        return instance;
+    }
+}
+
+// 解決策2: 初期化オンデマンドホルダー
+public class InitializationOnDemandHolder {
+    private static class Holder {
+        private static final Singleton INSTANCE = new Singleton();
+    }
+    
+    public static Singleton getInstance() {
+        return Holder.INSTANCE;  // クラス初期化時に作成される
+    }
+}
+```
+
+### 問題2: 不変オブジェクトの共有
+
+```java
+// 不変オブジェクトは安全に共有できる
+public final class ImmutablePoint {
+    private final int x;
+    private final int y;
+    
+    public ImmutablePoint(int x, int y) {
+        this.x = x;
+        this.y = y;
+    }
+    
+    public int getX() { return x; }
+    public int getY() { return y; }
+    
+    // 不変オブジェクトは同期なしで安全に共有できる
+}
+```
+
+## まとめ
+
+Javaメモリモデル完全ガイドのポイント：
+
+- **可視性**: volatile、synchronizedによる可視性の保証
+- **順序性**: happens-before関係による順序保証
+- **原子性**: AtomicInteger、synchronizedによる原子性の保証
+- **メモリバリア**: volatileによるメモリバリア
+- **finalフィールド**: finalフィールドの可視性保証
+- **ベストプラクティス**: volatile、synchronized、AtomicIntegerの適切な使用
+
+適切なメモリモデルの理解により、安全な並行処理を実装できます。
+

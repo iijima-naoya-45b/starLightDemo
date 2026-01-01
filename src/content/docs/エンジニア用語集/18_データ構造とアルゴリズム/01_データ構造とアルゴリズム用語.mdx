@@ -1,0 +1,284 @@
+---
+title: データ構造とアルゴリズム用語
+sidebar:
+    label: データ構造とアルゴリズム用語
+---
+
+# データ構造とアルゴリズム用語
+
+## 配列（Array）
+
+**定義:**
+配列は、同じ型のデータを連続したメモリ領域に格納するデータ構造です。
+
+**なぜ重要なのか:**
+- **高速アクセス**: インデックスでO(1)でアクセス
+- **メモリ効率**: 連続したメモリ領域を使用
+- **基本的なデータ構造**: 多くのアルゴリズムの基礎
+
+**使用例:**
+
+```typescript
+// 配列の操作
+const arr = [1, 2, 3, 4, 5];
+
+// アクセス: O(1)
+const first = arr[0];
+
+// 検索: O(n)
+const index = arr.indexOf(3);
+
+// 挿入: O(n)
+arr.splice(2, 0, 10); // [1, 2, 10, 3, 4, 5]
+```
+
+**関連用語:**
+- リスト
+- スタック
+- キュー
+
+---
+
+## 連結リスト（Linked List）
+
+**定義:**
+連結リストは、各要素が次の要素への参照を持つデータ構造です。
+
+**なぜ重要なのか:**
+- **動的なサイズ**: サイズを動的に変更できる
+- **挿入・削除**: O(1)で挿入・削除が可能
+- **メモリ効率**: 必要な分だけメモリを使用
+
+**使用例:**
+
+```typescript
+class ListNode {
+  constructor(public value: number, public next: ListNode | null = null) {}
+}
+
+class LinkedList {
+  private head: ListNode | null = null;
+  
+  append(value: number): void {
+    const node = new ListNode(value);
+    if (!this.head) {
+      this.head = node;
+      return;
+    }
+    let current = this.head;
+    while (current.next) {
+      current = current.next;
+    }
+    current.next = node;
+  }
+}
+```
+
+**関連用語:**
+- 配列
+- スタック
+- キュー
+
+---
+
+## スタック（Stack）
+
+**定義:**
+スタックは、LIFO（Last In First Out）のデータ構造です。
+
+**なぜ重要なのか:**
+- **関数呼び出し**: 関数呼び出しの管理
+- **式の評価**: 数式の評価
+- **バックトラッキング**: 探索アルゴリズム
+
+**使用例:**
+
+```typescript
+class Stack<T> {
+  private items: T[] = [];
+  
+  push(item: T): void {
+    this.items.push(item);
+  }
+  
+  pop(): T | undefined {
+    return this.items.pop();
+  }
+  
+  peek(): T | undefined {
+    return this.items[this.items.length - 1];
+  }
+}
+```
+
+**関連用語:**
+- キュー
+- 再帰
+- バックトラッキング
+
+---
+
+## キュー（Queue）
+
+**定義:**
+キューは、FIFO（First In First Out）のデータ構造です。
+
+**なぜ重要なのか:**
+- **タスク管理**: タスクの順序管理
+- **メッセージキュー**: 非同期処理
+- **幅優先探索**: グラフ探索アルゴリズム
+
+**使用例:**
+
+```typescript
+class Queue<T> {
+  private items: T[] = [];
+  
+  enqueue(item: T): void {
+    this.items.push(item);
+  }
+  
+  dequeue(): T | undefined {
+    return this.items.shift();
+  }
+  
+  front(): T | undefined {
+    return this.items[0];
+  }
+}
+```
+
+**関連用語:**
+- スタック
+- メッセージキュー
+- 幅優先探索
+
+---
+
+## ハッシュテーブル（Hash Table）
+
+**定義:**
+ハッシュテーブルは、キーと値のペアを効率的に格納・検索するデータ構造です。
+
+**なぜ重要なのか:**
+- **高速検索**: O(1)の平均検索時間
+- **実用的**: 多くのアプリケーションで使用
+- **効率的**: メモリと時間のバランスが良い
+
+**使用例:**
+
+```typescript
+// JavaScriptのMap（ハッシュテーブルの実装）
+const map = new Map<string, number>();
+
+// 挿入: O(1)
+map.set('key1', 100);
+map.set('key2', 200);
+
+// 検索: O(1)
+const value = map.get('key1');
+
+// 削除: O(1)
+map.delete('key1');
+```
+
+**関連用語:**
+- ハッシュ関数
+- 衝突解決
+- 辞書
+
+---
+
+## 二分探索木（Binary Search Tree）
+
+**定義:**
+二分探索木は、各ノードが最大2つの子を持ち、左の子は親より小さく、右の子は親より大きいデータ構造です。
+
+**なぜ重要なのか:**
+- **高速検索**: O(log n)の検索時間
+- **ソート**: 順序を維持
+- **範囲検索**: 範囲検索が効率的
+
+**使用例:**
+
+```typescript
+class TreeNode {
+  constructor(
+    public value: number,
+    public left: TreeNode | null = null,
+    public right: TreeNode | null = null
+  ) {}
+}
+
+class BinarySearchTree {
+  private root: TreeNode | null = null;
+  
+  insert(value: number): void {
+    this.root = this.insertNode(this.root, value);
+  }
+  
+  private insertNode(node: TreeNode | null, value: number): TreeNode {
+    if (!node) {
+      return new TreeNode(value);
+    }
+    
+    if (value < node.value) {
+      node.left = this.insertNode(node.left, value);
+    } else {
+      node.right = this.insertNode(node.right, value);
+    }
+    
+    return node;
+  }
+}
+```
+
+**関連用語:**
+- 木構造
+- 平衡二分探索木
+- 探索アルゴリズム
+
+---
+
+## 時間計算量（Time Complexity）
+
+**定義:**
+時間計算量は、アルゴリズムの実行時間が入力サイズに対してどのように変化するかを表します。
+
+**なぜ重要なのか:**
+- **パフォーマンス**: アルゴリズムの効率を評価
+- **スケーラビリティ**: 大規模データでの動作を予測
+- **最適化**: 最適なアルゴリズムを選択
+
+**時間計算量の表記:**
+```
+O(1): 定数時間
+O(log n): 対数時間
+O(n): 線形時間
+O(n log n): 線形対数時間
+O(n²): 二次時間
+O(2ⁿ): 指数時間
+```
+
+**関連用語:**
+- 空間計算量
+- ビッグオー記法
+- アルゴリズム
+
+---
+
+## 空間計算量（Space Complexity）
+
+**定義:**
+空間計算量は、アルゴリズムが使用するメモリ量が入力サイズに対してどのように変化するかを表します。
+
+**なぜ重要なのか:**
+- **メモリ効率**: メモリ使用量を評価
+- **リソース管理**: リソースの最適化
+- **スケーラビリティ**: 大規模データでの動作を予測
+
+**関連用語:**
+- 時間計算量
+- メモリ管理
+- アルゴリズム
+

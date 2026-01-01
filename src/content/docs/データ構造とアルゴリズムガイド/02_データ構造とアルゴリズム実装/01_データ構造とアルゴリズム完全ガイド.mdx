@@ -1,0 +1,478 @@
+---
+title: データ構造とアルゴリズム完全ガイド
+sidebar:
+    label: データ構造とアルゴリズム実装
+---
+
+# データ構造とアルゴリズム完全ガイド
+
+データ構造とアルゴリズムの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. データ構造
+
+### 配列（Array）
+
+```typescript
+// 配列の基本操作
+const arr = [1, 2, 3, 4, 5];
+
+// アクセス: O(1)
+const first = arr[0];
+
+// 検索: O(n)
+const index = arr.indexOf(3);
+
+// 挿入: O(n)
+arr.splice(2, 0, 10); // [1, 2, 10, 3, 4, 5]
+
+// 削除: O(n)
+arr.splice(2, 1); // [1, 2, 3, 4, 5]
+```
+
+### 連結リスト（Linked List）
+
+```typescript
+class ListNode {
+  constructor(
+    public value: number,
+    public next: ListNode | null = null
+  ) {}
+}
+
+class LinkedList {
+  private head: ListNode | null = null;
+  
+  append(value: number): void {
+    const node = new ListNode(value);
+    if (!this.head) {
+      this.head = node;
+      return;
+    }
+    let current = this.head;
+    while (current.next) {
+      current = current.next;
+    }
+    current.next = node;
+  }
+  
+  find(value: number): ListNode | null {
+    let current = this.head;
+    while (current) {
+      if (current.value === value) {
+        return current;
+      }
+      current = current.next;
+    }
+    return null;
+  }
+}
+```
+
+### スタック（Stack）
+
+```typescript
+class Stack<T> {
+  private items: T[] = [];
+  
+  push(item: T): void {
+    this.items.push(item);
+  }
+  
+  pop(): T | undefined {
+    return this.items.pop();
+  }
+  
+  peek(): T | undefined {
+    return this.items[this.items.length - 1];
+  }
+  
+  isEmpty(): boolean {
+    return this.items.length === 0;
+  }
+}
+
+// 使用例: 括弧のマッチング
+function isValidParentheses(s: string): boolean {
+  const stack = new Stack<string>();
+  const pairs: Record<string, string> = {
+    ')': '(',
+    '}': '{',
+    ']': '['
+  };
+  
+  for (const char of s) {
+    if (char in pairs) {
+      if (stack.isEmpty() || stack.pop() !== pairs[char]) {
+        return false;
+      }
+    } else {
+      stack.push(char);
+    }
+  }
+  
+  return stack.isEmpty();
+}
+```
+
+### キュー（Queue）
+
+```typescript
+class Queue<T> {
+  private items: T[] = [];
+  
+  enqueue(item: T): void {
+    this.items.push(item);
+  }
+  
+  dequeue(): T | undefined {
+    return this.items.shift();
+  }
+  
+  front(): T | undefined {
+    return this.items[0];
+  }
+  
+  isEmpty(): boolean {
+    return this.items.length === 0;
+  }
+}
+```
+
+### ハッシュテーブル（Hash Table）
+
+```typescript
+// JavaScriptのMapを使用
+class HashTable<K, V> {
+  private map = new Map<K, V>();
+  
+  set(key: K, value: V): void {
+    this.map.set(key, value);
+  }
+  
+  get(key: K): V | undefined {
+    return this.map.get(key);
+  }
+  
+  delete(key: K): boolean {
+    return this.map.delete(key);
+  }
+  
+  has(key: K): boolean {
+    return this.map.has(key);
+  }
+}
+
+// 使用例: 文字列の出現回数
+function countCharacters(s: string): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const char of s) {
+    map.set(char, (map.get(char) || 0) + 1);
+  }
+  return map;
+}
+```
+
+### 二分探索木（Binary Search Tree）
+
+```typescript
+class TreeNode {
+  constructor(
+    public value: number,
+    public left: TreeNode | null = null,
+    public right: TreeNode | null = null
+  ) {}
+}
+
+class BinarySearchTree {
+  private root: TreeNode | null = null;
+  
+  insert(value: number): void {
+    this.root = this.insertNode(this.root, value);
+  }
+  
+  private insertNode(node: TreeNode | null, value: number): TreeNode {
+    if (!node) {
+      return new TreeNode(value);
+    }
+    
+    if (value < node.value) {
+      node.left = this.insertNode(node.left, value);
+    } else {
+      node.right = this.insertNode(node.right, value);
+    }
+    
+    return node;
+  }
+  
+  search(value: number): boolean {
+    return this.searchNode(this.root, value);
+  }
+  
+  private searchNode(node: TreeNode | null, value: number): boolean {
+    if (!node) {
+      return false;
+    }
+    
+    if (value === node.value) {
+      return true;
+    }
+    
+    if (value < node.value) {
+      return this.searchNode(node.left, value);
+    } else {
+      return this.searchNode(node.right, value);
+    }
+  }
+}
+```
+
+## 2. アルゴリズム
+
+### ソートアルゴリズム
+
+#### バブルソート
+
+```typescript
+function bubbleSort(arr: number[]): number[] {
+  const result = [...arr];
+  for (let i = 0; i < result.length; i++) {
+    for (let j = 0; j < result.length - i - 1; j++) {
+      if (result[j] > result[j + 1]) {
+        [result[j], result[j + 1]] = [result[j + 1], result[j]];
+      }
+    }
+  }
+  return result;
+}
+```
+
+#### クイックソート
+
+```typescript
+function quickSort(arr: number[]): number[] {
+  if (arr.length <= 1) {
+    return arr;
+  }
+  
+  const pivot = arr[Math.floor(arr.length / 2)];
+  const left = arr.filter(x => x < pivot);
+  const middle = arr.filter(x => x === pivot);
+  const right = arr.filter(x => x > pivot);
+  
+  return [...quickSort(left), ...middle, ...quickSort(right)];
+}
+```
+
+### 探索アルゴリズム
+
+#### 線形探索
+
+```typescript
+function linearSearch(arr: number[], target: number): number {
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i] === target) {
+      return i;
+    }
+  }
+  return -1;
+}
+```
+
+#### 二分探索
+
+```typescript
+function binarySearch(arr: number[], target: number): number {
+  let left = 0;
+  let right = arr.length - 1;
+  
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2);
+    
+    if (arr[mid] === target) {
+      return mid;
+    } else if (arr[mid] < target) {
+      left = mid + 1;
+    } else {
+      right = mid - 1;
+    }
+  }
+  
+  return -1;
+}
+```
+
+### 動的プログラミング
+
+#### フィボナッチ数列
+
+```typescript
+// メモ化を使用したフィボナッチ
+function fibonacci(n: number, memo: Map<number, number> = new Map()): number {
+  if (n <= 1) {
+    return n;
+  }
+  
+  if (memo.has(n)) {
+    return memo.get(n)!;
+  }
+  
+  const result = fibonacci(n - 1, memo) + fibonacci(n - 2, memo);
+  memo.set(n, result);
+  return result;
+}
+```
+
+#### 最長共通部分列
+
+```typescript
+function longestCommonSubsequence(s1: string, s2: string): number {
+  const m = s1.length;
+  const n = s2.length;
+  const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+  
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (s1[i - 1] === s2[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+  
+  return dp[m][n];
+}
+```
+
+## 3. 時間計算量と空間計算量
+
+### 時間計算量
+
+```typescript
+// O(1): 定数時間
+function getFirst(arr: number[]): number {
+  return arr[0];
+}
+
+// O(n): 線形時間
+function findMax(arr: number[]): number {
+  let max = arr[0];
+  for (const num of arr) {
+    if (num > max) {
+      max = num;
+    }
+  }
+  return max;
+}
+
+// O(n²): 二次時間
+function bubbleSort(arr: number[]): number[] {
+  // 実装は上記参照
+}
+
+// O(log n): 対数時間
+function binarySearch(arr: number[], target: number): number {
+  // 実装は上記参照
+}
+```
+
+### 空間計算量
+
+```typescript
+// O(1): 定数空間
+function swap(a: number, b: number): [number, number] {
+  return [b, a];
+}
+
+// O(n): 線形空間
+function copyArray(arr: number[]): number[] {
+  return [...arr];
+}
+
+// O(n²): 二次空間
+function createMatrix(n: number): number[][] {
+  return Array(n).fill(null).map(() => Array(n).fill(0));
+}
+```
+
+## 4. 実践的なベストプラクティス
+
+### データ構造の選択
+
+```markdown
+## データ構造の選択ガイド
+
+- **配列**: インデックスアクセスが必要な場合
+- **連結リスト**: 頻繁な挿入・削除が必要な場合
+- **スタック**: LIFOが必要な場合
+- **キュー**: FIFOが必要な場合
+- **ハッシュテーブル**: 高速な検索が必要な場合
+- **二分探索木**: ソートされたデータの検索が必要な場合
+```
+
+### アルゴリズムの選択
+
+```markdown
+## アルゴリズムの選択ガイド
+
+- **ソート**: データサイズに応じて選択
+  - 小規模: バブルソート、挿入ソート
+  - 中規模: クイックソート、マージソート
+  - 大規模: ヒープソート、外部ソート
+
+- **探索**: データ構造に応じて選択
+  - 未ソート配列: 線形探索
+  - ソート済み配列: 二分探索
+  - ハッシュテーブル: O(1)アクセス
+```
+
+## 5. よくある問題と解決方法
+
+### 問題1: パフォーマンスが悪い
+
+```typescript
+// 解決: 適切なデータ構造の選択
+// ❌ 悪い例: 配列で線形探索
+function findUser(users: User[], id: string): User | undefined {
+  return users.find(user => user.id === id);
+}
+
+// ✅ 良い例: Mapで定数時間探索
+function findUser(userMap: Map<string, User>, id: string): User | undefined {
+  return userMap.get(id);
+}
+```
+
+### 問題2: メモリ使用量が多い
+
+```typescript
+// 解決: 適切なアルゴリズムの選択
+// ❌ 悪い例: 再帰的な実装（スタックオーバーフローのリスク）
+function fibonacci(n: number): number {
+  if (n <= 1) return n;
+  return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+// ✅ 良い例: 反復的な実装
+function fibonacci(n: number): number {
+  if (n <= 1) return n;
+  let a = 0, b = 1;
+  for (let i = 2; i <= n; i++) {
+    [a, b] = [b, a + b];
+  }
+  return b;
+}
+```
+
+## まとめ
+
+データ構造とアルゴリズム完全ガイドのポイント：
+
+- **データ構造**: 配列、連結リスト、スタック、キュー、ハッシュテーブル、二分探索木
+- **アルゴリズム**: ソート、探索、動的プログラミング
+- **計算量**: 時間計算量、空間計算量
+- **ベストプラクティス**: データ構造とアルゴリズムの選択
+- **問題解決**: パフォーマンスとメモリの最適化
+
+適切なデータ構造とアルゴリズムにより、効率的なプログラムを書けます。
+

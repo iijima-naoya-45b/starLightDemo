@@ -1,0 +1,150 @@
+---
+title: Svelte完全ガイド
+sidebar:
+    label: Svelte基礎
+---
+
+# Svelte完全ガイド
+
+Svelteの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Svelteとは
+
+### Svelteの特徴
+
+Svelteは、コンパイル時に最適化を行う軽量なフロントエンドフレームワークです。
+
+```
+Svelteの特徴
+   ├─ コンパイル時最適化
+   ├─ ランタイム不要
+   ├─ 軽量
+   └─ シンプルな構文
+```
+
+## 2. 環境構築
+
+### プロジェクトの作成
+
+```bash
+# Svelteプロジェクトの作成
+npx degit sveltejs/template my-app
+cd my-app
+npm install
+npm run dev
+```
+
+## 3. コンポーネント
+
+### 基本的なコンポーネント
+
+```svelte
+<!-- App.svelte -->
+<script>
+  let name = 'Svelte';
+  let count = 0;
+  
+  function increment() {
+    count += 1;
+  }
+</script>
+
+<h1>Hello {name}!</h1>
+<button on:click={increment}>
+  Count: {count}
+</button>
+```
+
+### リアクティブな宣言
+
+```svelte
+<script>
+  let count = 0;
+  
+  $: doubled = count * 2;
+  $: if (count > 10) {
+    console.log('Count is greater than 10');
+  }
+</script>
+
+<p>Count: {count}</p>
+<p>Doubled: {doubled}</p>
+```
+
+## 4. プロップス
+
+```svelte
+<!-- User.svelte -->
+<script>
+  export let name;
+  export let age = 0;
+</script>
+
+<div>
+  <h2>{name}</h2>
+  <p>Age: {age}</p>
+</div>
+```
+
+```svelte
+<!-- App.svelte -->
+<script>
+  import User from './User.svelte';
+</script>
+
+<User name="Alice" age={30} />
+```
+
+## 5. イベントハンドリング
+
+```svelte
+<script>
+  function handleClick(event) {
+    console.log('Button clicked', event);
+  }
+  
+  function handleInput(event) {
+    console.log('Input value:', event.target.value);
+  }
+</script>
+
+<button on:click={handleClick}>Click me</button>
+<input on:input={handleInput} />
+```
+
+## 6. ストア
+
+```javascript
+// stores.js
+import { writable } from 'svelte/store';
+
+export const count = writable(0);
+```
+
+```svelte
+<!-- App.svelte -->
+<script>
+  import { count } from './stores.js';
+  
+  function increment() {
+    count.update(n => n + 1);
+  }
+</script>
+
+<button on:click={increment}>
+  Count: {$count}
+</button>
+```
+
+## まとめ
+
+Svelte完全ガイドのポイント：
+
+- **コンポーネント**: シンプルなコンポーネント構文
+- **リアクティブ**: リアクティブな宣言
+- **プロップス**: プロップスの受け渡し
+- **イベント**: イベントハンドリング
+- **ストア**: 状態管理
+
+適切なSvelteの使用により、軽量で高速なアプリケーションを構築できます。
+

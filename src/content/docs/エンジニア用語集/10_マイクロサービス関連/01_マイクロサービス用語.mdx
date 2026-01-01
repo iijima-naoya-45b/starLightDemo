@@ -1,0 +1,93 @@
+---
+title: マイクロサービス用語
+sidebar:
+    label: マイクロサービス用語
+---
+
+# マイクロサービス用語
+
+## サービスディスカバリ
+
+**定義:**
+サービスディスカバリは、マイクロサービス間でサービスを見つける仕組みです。
+
+**なぜ重要なのか:**
+- **動的なサービス管理**: サービスの追加・削除が容易
+- **負荷分散**: 複数のインスタンスに負荷を分散できる
+- **可用性の向上**: 障害が発生したサービスを自動的に除外できる
+
+**実装例:**
+- **Consul**: HashiCorpが開発したサービスディスカバリツール
+- **Eureka**: Netflixが開発したサービスディスカバリツール
+- **Kubernetes**: 組み込みのサービスディスカバリ機能
+
+**関連用語:**
+- マイクロサービス
+- サービスメッシュ
+- ロードバランシング
+
+---
+
+## Circuit Breaker（サーキットブレーカー）
+
+**定義:**
+Circuit Breakerは、障害が発生したサービスへのリクエストを遮断するパターンです。
+
+**なぜ重要なのか:**
+- **障害の伝播防止**: 障害が他のサービスに伝播するのを防ぐ
+- **リソースの保護**: 無駄なリクエストを防ぐ
+- **迅速な復旧**: サービスが復旧したら自動的に再開する
+
+**Circuit Breakerの状態:**
+1. **Closed（閉）**: 正常に動作している状態
+2. **Open（開）**: 障害が発生し、リクエストを遮断している状態
+3. **Half-Open（半開）**: 復旧を試みている状態
+
+**使用例:**
+```typescript
+const breaker = new CircuitBreaker(paymentService.charge, {
+  timeout: 3000,
+  errorThresholdPercentage: 50,
+  resetTimeout: 30000
+});
+```
+
+**関連用語:**
+- マイクロサービス
+- 障害処理
+- リトライ
+
+---
+
+## Sagaパターン
+
+**定義:**
+Sagaパターンは、分散トランザクションを複数のローカルトランザクションに分割するパターンです。
+
+**なぜ重要なのか:**
+- **分散トランザクションの回避**: 分散トランザクションを避けられる
+- **スケーラビリティ**: 各サービスが独立してスケールできる
+- **可用性**: サービス障害の影響を最小化できる
+
+**Sagaパターンの種類:**
+1. **Choreography（コレオグラフィー）**: 各サービスがイベントを発行
+2. **Orchestration（オーケストレーション）**: 中央のオーケストレーターが制御
+
+**使用例:**
+```typescript
+// Saga Orchestrator
+class OrderSaga {
+  async execute(orderData) {
+    const order = await this.orderService.createOrder(orderData);
+    const payment = await this.paymentService.charge(order.id, orderData.amount);
+    await this.inventoryService.reserve(order.id, orderData.items);
+    return order;
+  }
+}
+```
+
+**関連用語:**
+- マイクロサービス
+- 分散トランザクション
+- イベントソーシング
+

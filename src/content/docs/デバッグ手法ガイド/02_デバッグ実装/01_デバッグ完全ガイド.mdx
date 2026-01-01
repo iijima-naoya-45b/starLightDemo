@@ -1,0 +1,249 @@
+---
+title: デバッグ完全ガイド
+sidebar:
+    label: デバッグ実装
+---
+
+# デバッグ完全ガイド
+
+デバッグの実践的な手法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. デバッグとは
+
+### デバッグの定義
+
+デバッグは、バグを特定し、修正するプロセスです。
+
+```
+デバッグのプロセス
+   ├─ 問題の再現
+   ├─ 原因の特定
+   ├─ 修正の実装
+   └─ 検証
+```
+
+## 2. デバッグの基本手法
+
+### ログの活用
+
+```typescript
+// ログの追加
+function processOrder(order: Order): number {
+  console.log('Processing order:', order.id);
+  console.log('Order items:', order.items);
+  
+  let total = 0;
+  for (const item of order.items) {
+    console.log('Processing item:', item);
+    total += item.price * item.quantity;
+    console.log('Current total:', total);
+  }
+  
+  console.log('Final total:', total);
+  return total;
+}
+```
+
+### ブレークポイント
+
+```typescript
+// ブレークポイントの設定
+function processOrder(order: Order): number {
+  debugger; // ブレークポイント
+  let total = 0;
+  for (const item of order.items) {
+    total += item.price * item.quantity;
+  }
+  return total;
+}
+```
+
+### 条件付きブレークポイント
+
+```typescript
+// 条件付きブレークポイント
+function processOrder(order: Order): number {
+  let total = 0;
+  for (const item of order.items) {
+    // item.price > 100 の時だけブレーク
+    if (item.price > 100) {
+      debugger;
+    }
+    total += item.price * item.quantity;
+  }
+  return total;
+}
+```
+
+## 3. デバッグツール
+
+### Chrome DevTools
+
+```markdown
+## Chrome DevToolsの使い方
+
+1. **Sourcesタブ**: ソースコードの確認
+2. **Consoleタブ**: ログの確認
+3. **Networkタブ**: ネットワークリクエストの確認
+4. **Applicationタブ**: ストレージの確認
+```
+
+### VS Codeデバッガー
+
+```json
+// .vscode/launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Node.js",
+      "program": "${workspaceFolder}/src/index.js",
+      "console": "integratedTerminal"
+    }
+  ]
+}
+```
+
+## 4. デバッグのテクニック
+
+### 二分探索
+
+```typescript
+// 二分探索による原因の特定
+function findBuggyCode() {
+  // 1. 問題が発生する範囲を特定
+  const start = 0;
+  const end = 100;
+  
+  // 2. 中間点でテスト
+  const mid = Math.floor((start + end) / 2);
+  
+  // 3. 問題が発生する側を特定
+  if (testCode(mid)) {
+    // 問題は後半
+    findBuggyCodeInRange(mid, end);
+  } else {
+    // 問題は前半
+    findBuggyCodeInRange(start, mid);
+  }
+}
+```
+
+### 最小再現例の作成
+
+```typescript
+// 最小再現例の作成
+function minimalReproduction() {
+  // 問題を再現する最小のコード
+  const order = {
+    items: [
+      { price: 100, quantity: 2 }
+    ]
+  };
+  
+  const result = processOrder(order);
+  console.assert(result === 200, 'Expected 200, got ' + result);
+}
+```
+
+## 5. エラーハンドリング
+
+### エラーの捕捉
+
+```typescript
+try {
+  const result = processOrder(order);
+  console.log('Success:', result);
+} catch (error) {
+  console.error('Error:', error);
+  console.error('Stack:', error.stack);
+  console.error('Order:', order);
+}
+```
+
+### エラーログの記録
+
+```typescript
+function logError(error: Error, context: any) {
+  console.error('Error occurred:', {
+    message: error.message,
+    stack: error.stack,
+    context: context,
+    timestamp: new Date().toISOString()
+  });
+  
+  // エラーログをサーバーに送信
+  sendErrorLog({
+    error: error.message,
+    stack: error.stack,
+    context: context
+  });
+}
+```
+
+## 6. 実践的なベストプラクティス
+
+### デバッグのチェックリスト
+
+```markdown
+## デバッグのチェックリスト
+
+- [ ] 問題を再現できるか
+- [ ] 最小再現例を作成したか
+- [ ] ログを確認したか
+- [ ] ブレークポイントを設定したか
+- [ ] 変数の値を確認したか
+- [ ] エラーメッセージを確認したか
+- [ ] スタックトレースを確認したか
+```
+
+### デバッグの心構え
+
+```markdown
+## デバッグの心構え
+
+1. **冷静である**: パニックにならない
+2. **体系的である**: 体系的にアプローチする
+3. **仮説を立てる**: 仮説を立てて検証する
+4. **記録する**: デバッグの過程を記録する
+5. **学ぶ**: デバッグから学ぶ
+```
+
+## 7. よくある問題と解決方法
+
+### 問題1: バグが再現しない
+
+```markdown
+## 解決策
+
+1. **環境の確認**: 環境が同じか確認
+2. **データの確認**: 入力データが同じか確認
+3. **タイミングの確認**: タイミングの問題か確認
+4. **ログの追加**: より詳細なログを追加
+```
+
+### 問題2: 原因が分からない
+
+```markdown
+## 解決策
+
+1. **最小再現例の作成**: 最小再現例を作成
+2. **二分探索**: 二分探索で原因を特定
+3. **ログの追加**: より詳細なログを追加
+4. **他の人に相談**: 他の人に相談する
+```
+
+## まとめ
+
+デバッグ完全ガイドのポイント：
+
+- **基本手法**: ログ、ブレークポイント、条件付きブレークポイント
+- **ツール**: Chrome DevTools、VS Codeデバッガー
+- **テクニック**: 二分探索、最小再現例の作成
+- **エラーハンドリング**: エラーの捕捉、ログの記録
+- **ベストプラクティス**: チェックリスト、心構え
+
+適切なデバッグにより、バグを迅速に特定・修正できます。
+

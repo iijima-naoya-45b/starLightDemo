@@ -1,0 +1,668 @@
+---
+title: PostgreSQL完全ガイド
+sidebar:
+    label: PostgreSQL詳細
+---
+
+# PostgreSQL完全ガイド
+
+PostgreSQLの実践的な使い方を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. PostgreSQLとは
+
+### PostgreSQLの特徴
+
+PostgreSQLは、オープンソースのリレーショナルデータベース管理システム（RDBMS）です。
+
+```
+PostgreSQLの特徴
+   ├─ オープンソース（無料）
+   ├─ 標準SQLへの準拠が高い
+   ├─ 高度な機能（JSON型、配列型、全文検索など）
+   ├─ 拡張性が高い（拡張機能が豊富）
+   └─ ACID特性を完全にサポート
+```
+
+### なぜPostgreSQLを選ぶのか
+
+**PostgreSQLを選ぶべき場合:**
+- 複雑なデータ型が必要（JSON、配列、全文検索など）
+- 標準SQLへの準拠が重要
+- オープンソースを希望
+- 高度な機能が必要
+
+**PostgreSQLを選ばないべき場合:**
+- シンプルなWebアプリケーション（MySQLの方が適している場合がある）
+- メモリ使用量を最小限に抑えたい場合
+
+## 2. PostgreSQLのインストールとセットアップ
+
+### macOSでのインストール
+
+```bash
+# Homebrewを使用
+brew install postgresql@15
+
+# サービスを開始
+brew services start postgresql@15
+
+# PostgreSQLに接続
+psql postgres
+```
+
+### Linuxでのインストール
+
+```bash
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install postgresql postgresql-contrib
+
+# サービスを開始
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+
+# PostgreSQLに接続
+sudo -u postgres psql
+```
+
+### Windowsでのインストール
+
+1. [PostgreSQL公式サイト](https://www.postgresql.org/download/windows/)からインストーラーをダウンロード
+2. インストーラーを実行し、指示に従ってインストール
+3. pgAdminまたはコマンドプロンプトから接続
+
+### 初期設定
+
+```sql
+-- データベースの作成
+CREATE DATABASE myapp;
+
+-- ユーザーの作成
+CREATE USER myuser WITH PASSWORD 'mypassword';
+
+-- 権限の付与
+GRANT ALL PRIVILEGES ON DATABASE myapp TO myuser;
+
+-- データベースに接続
+\c myapp
+```
+
+## 3. PostgreSQLの高度なデータ型
+
+### JSON型とJSONB型
+
+PostgreSQLは、JSONデータをネイティブにサポートしています。
+
+```sql
+-- JSON型のテーブル作成
+CREATE TABLE products (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  attributes JSONB,
+  metadata JSON
+);
+
+-- JSONデータの挿入
+INSERT INTO products (name, attributes, metadata)
+VALUES (
+  'Laptop',
+  '{"color": "black", "weight": 2.5, "specs": {"cpu": "Intel i7", "ram": "16GB"}}',
+  '{"tags": ["electronics", "computers"], "rating": 4.5}'
+);
+
+-- JSONクエリ
+-- JSONB型の方が高速（バイナリ形式）
+SELECT 
+  name,
+  attributes->>'color' AS color,
+  attributes->'specs'->>'cpu' AS cpu,
+  metadata->'tags'->>0 AS first_tag
+FROM products
+WHERE attributes->>'color' = 'black';
+
+-- JSONBのインデックス作成（GINインデックス）
+CREATE INDEX idx_attributes ON products USING GIN (attributes);
+```
+
+**JSON型 vs JSONB型:**
+- **JSON型**: テキスト形式、挿入が高速、クエリが低速
+- **JSONB型**: バイナリ形式、挿入が低速、クエリが高速、インデックス対応
+
+### 配列型
+
+```sql
+-- 配列型のテーブル作成
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  tags TEXT[],
+  scores INTEGER[]
+);
+
+-- 配列データの挿入
+INSERT INTO users (name, email, tags, scores)
+VALUES (
+  'Alice',
+  'alice@example.com',
+  ARRAY['developer', 'designer'],
+  ARRAY[85, 90, 88]
+);
+
+-- 配列クエリ
+-- 特定の要素を含む配列を検索
+SELECT * FROM users
+WHERE 'developer' = ANY(tags);
+
+-- 配列の要素数を取得
+SELECT name, array_length(tags, 1) AS tag_count
+FROM users;
+
+-- 配列の結合
+SELECT name, array_to_string(tags, ', ') AS tags_string
+FROM users;
+```
+
+### 全文検索（Full-Text Search）
+
+```sql
+-- 全文検索用のテーブル作成
+CREATE TABLE articles (
+  id SERIAL PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  content TEXT NOT NULL,
+  search_vector tsvector
+);
+
+-- tsvectorカラムの自動更新（トリガー）
+CREATE OR REPLACE FUNCTION update_search_vector()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.search_vector := 
+    setweight(to_tsvector('english', COALESCE(NEW.title, '')), 'A') ||
+    setweight(to_tsvector('english', COALESCE(NEW.content, '')), 'B');
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tsvectorupdate BEFORE INSERT OR UPDATE
+ON articles FOR EACH ROW
+EXECUTE FUNCTION update_search_vector();
+
+-- データの挿入
+INSERT INTO articles (title, content)
+VALUES (
+  'PostgreSQL Guide',
+  'This is a comprehensive guide to PostgreSQL database management.'
+);
+
+-- 全文検索クエリ
+SELECT title, content
+FROM articles
+WHERE search_vector @@ to_tsquery('english', 'guide & database');
+
+-- GINインデックスの作成（全文検索の高速化）
+CREATE INDEX idx_search_vector ON articles USING GIN (search_vector);
+```
+
+## 4. パーティショニング
+
+### 範囲パーティショニング（Range Partitioning）
+
+```sql
+-- 親テーブルの作成
+CREATE TABLE orders (
+  id SERIAL,
+  user_id INTEGER NOT NULL,
+  order_date DATE NOT NULL,
+  amount DECIMAL(10, 2) NOT NULL,
+  PRIMARY KEY (id, order_date)
+) PARTITION BY RANGE (order_date);
+
+-- パーティションの作成
+CREATE TABLE orders_2024_q1 PARTITION OF orders
+FOR VALUES FROM ('2024-01-01') TO ('2024-04-01');
+
+CREATE TABLE orders_2024_q2 PARTITION OF orders
+FOR VALUES FROM ('2024-04-01') TO ('2024-07-01');
+
+CREATE TABLE orders_2024_q3 PARTITION OF orders
+FOR VALUES FROM ('2024-07-01') TO ('2024-10-01');
+
+CREATE TABLE orders_2024_q4 PARTITION OF orders
+FOR VALUES FROM ('2024-10-01') TO ('2025-01-01');
+
+-- データの挿入（自動的に適切なパーティションに挿入される）
+INSERT INTO orders (user_id, order_date, amount)
+VALUES (1, '2024-02-15', 100.00);
+
+-- パーティションの確認
+SELECT * FROM orders_2024_q1;
+```
+
+### リストパーティショニング（List Partitioning）
+
+```sql
+-- 親テーブルの作成
+CREATE TABLE users (
+  id SERIAL,
+  name VARCHAR(255) NOT NULL,
+  country VARCHAR(2) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  PRIMARY KEY (id, country)
+) PARTITION BY LIST (country);
+
+-- パーティションの作成
+CREATE TABLE users_jp PARTITION OF users
+FOR VALUES IN ('JP');
+
+CREATE TABLE users_us PARTITION OF users
+FOR VALUES IN ('US');
+
+CREATE TABLE users_uk PARTITION OF users
+FOR VALUES IN ('UK');
+
+-- デフォルトパーティション（その他の国）
+CREATE TABLE users_other PARTITION OF users
+DEFAULT;
+```
+
+### ハッシュパーティショニング（Hash Partitioning）
+
+```sql
+-- 親テーブルの作成
+CREATE TABLE products (
+  id SERIAL,
+  name VARCHAR(255) NOT NULL,
+  category_id INTEGER NOT NULL,
+  price DECIMAL(10, 2) NOT NULL,
+  PRIMARY KEY (id, category_id)
+) PARTITION BY HASH (category_id);
+
+-- パーティションの作成（4つのパーティション）
+CREATE TABLE products_0 PARTITION OF products
+FOR VALUES WITH (MODULUS 4, REMAINDER 0);
+
+CREATE TABLE products_1 PARTITION OF products
+FOR VALUES WITH (MODULUS 4, REMAINDER 1);
+
+CREATE TABLE products_2 PARTITION OF products
+FOR VALUES WITH (MODULUS 4, REMAINDER 2);
+
+CREATE TABLE products_3 PARTITION OF products
+FOR VALUES WITH (MODULUS 4, REMAINDER 3);
+```
+
+## 5. レプリケーション
+
+### ストリーミングレプリケーション（Streaming Replication）
+
+```bash
+# マスターサーバーの設定（postgresql.conf）
+wal_level = replica
+max_wal_senders = 3
+max_replication_slots = 3
+
+# pg_hba.confにレプリケーション設定を追加
+host replication replicator 192.168.1.100/32 md5
+```
+
+```bash
+# レプリカサーバーの設定
+# 1. ベースバックアップの取得
+pg_basebackup -h master_host -D /var/lib/postgresql/data -U replicator -v -P -W
+
+# 2. recovery.confの作成（PostgreSQL 12以降はpostgresql.confに設定）
+primary_conninfo = 'host=master_host port=5432 user=replicator password=replicator_password'
+```
+
+### 論理レプリケーション（Logical Replication）
+
+```sql
+-- パブリッシャーの設定
+CREATE PUBLICATION my_publication FOR TABLE users, orders;
+
+-- サブスクライバーの設定
+CREATE SUBSCRIPTION my_subscription
+CONNECTION 'host=publisher_host port=5432 dbname=mydb user=replicator password=password'
+PUBLICATION my_publication;
+```
+
+## 6. インデックスの最適化
+
+### B-treeインデックス
+
+```sql
+-- 基本的なB-treeインデックス
+CREATE INDEX idx_users_email ON users(email);
+
+-- 複合インデックス
+CREATE INDEX idx_orders_user_date ON orders(user_id, order_date);
+
+-- 部分インデックス（条件付きインデックス）
+CREATE INDEX idx_active_users ON users(email)
+WHERE status = 'active';
+```
+
+### GINインデックス（Generalized Inverted Index）
+
+```sql
+-- JSONB型のインデックス
+CREATE INDEX idx_products_attributes ON products USING GIN (attributes);
+
+-- 配列型のインデックス
+CREATE INDEX idx_users_tags ON users USING GIN (tags);
+
+-- 全文検索のインデックス
+CREATE INDEX idx_articles_search ON articles USING GIN (search_vector);
+```
+
+### GiSTインデックス（Generalized Search Tree）
+
+```sql
+-- 空間データのインデックス（PostGIS拡張を使用）
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+CREATE TABLE locations (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255),
+  location GEOGRAPHY(POINT, 4326)
+);
+
+CREATE INDEX idx_locations_geo ON locations USING GIST (location);
+```
+
+## 7. パフォーマンス最適化
+
+### EXPLAIN ANALYZEの使用
+
+```sql
+-- クエリプランの確認
+EXPLAIN ANALYZE
+SELECT u.name, COUNT(o.id) AS order_count
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id
+WHERE u.created_at > '2024-01-01'
+GROUP BY u.id, u.name
+ORDER BY order_count DESC
+LIMIT 10;
+```
+
+### 統計情報の更新
+
+```sql
+-- 統計情報の手動更新
+ANALYZE users;
+ANALYZE orders;
+
+-- 特定のカラムの統計情報を更新
+ANALYZE users (email, created_at);
+```
+
+### バキューム（VACUUM）
+
+```sql
+-- 通常のバキューム
+VACUUM users;
+
+-- 完全なバキューム（テーブルをロック）
+VACUUM FULL users;
+
+-- バキュームとアナライズを同時に実行
+VACUUM ANALYZE users;
+
+-- 自動バキュームの設定（postgresql.conf）
+autovacuum = on
+autovacuum_naptime = 1min
+```
+
+## 8. 拡張機能（Extensions）
+
+### よく使われる拡張機能
+
+```sql
+-- UUID生成
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+SELECT uuid_generate_v4();
+
+-- 全文検索（日本語対応）
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX idx_users_name_trgm ON users USING GIN (name gin_trgm_ops);
+
+-- 空間データ（PostGIS）
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+-- 統計情報の拡張
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+-- 暗号化
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+```
+
+## 9. トランザクションとロック
+
+### トランザクションの分離レベル
+
+```sql
+-- 分離レベルの設定
+BEGIN TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+-- 読み取り専用トランザクション
+BEGIN TRANSACTION READ ONLY;
+
+-- デフォルトの分離レベル（READ COMMITTED）
+BEGIN;
+SELECT * FROM users WHERE id = 1;
+COMMIT;
+```
+
+### ロックの種類
+
+```sql
+-- 行レベルロック
+BEGIN;
+SELECT * FROM users WHERE id = 1 FOR UPDATE;
+-- 他のトランザクションはこの行を更新できない
+UPDATE users SET name = 'New Name' WHERE id = 1;
+COMMIT;
+
+-- 共有ロック（読み取り専用）
+BEGIN;
+SELECT * FROM users WHERE id = 1 FOR SHARE;
+COMMIT;
+
+-- テーブルロック
+LOCK TABLE users IN EXCLUSIVE MODE;
+```
+
+## 10. バックアップとリストア
+
+### pg_dumpによるバックアップ
+
+```bash
+# データベース全体のバックアップ
+pg_dump -h localhost -U postgres -d mydb -F c -f backup.dump
+
+# テーブルのみのバックアップ
+pg_dump -h localhost -U postgres -d mydb -t users -t orders -f tables.dump
+
+# スキーマのみのバックアップ
+pg_dump -h localhost -U postgres -d mydb -s -f schema.dump
+
+# データのみのバックアップ
+pg_dump -h localhost -U postgres -d mydb -a -f data.dump
+```
+
+### pg_restoreによるリストア
+
+```bash
+# カスタム形式のリストア
+pg_restore -h localhost -U postgres -d mydb -c backup.dump
+
+# テーブルのリストア
+pg_restore -h localhost -U postgres -d mydb -t users backup.dump
+```
+
+### 継続的アーカイブ（WALアーカイブ）
+
+```bash
+# postgresql.confの設定
+wal_level = replica
+archive_mode = on
+archive_command = 'cp %p /path/to/archive/%f'
+```
+
+## 11. セキュリティ
+
+### ユーザーとロールの管理
+
+```sql
+-- ロールの作成
+CREATE ROLE app_user WITH LOGIN PASSWORD 'secure_password';
+
+-- 権限の付与
+GRANT SELECT, INSERT, UPDATE, DELETE ON users TO app_user;
+GRANT USAGE, SELECT ON SEQUENCE users_id_seq TO app_user;
+
+-- スキーマへのアクセス権限
+GRANT USAGE ON SCHEMA public TO app_user;
+
+-- 権限の取り消し
+REVOKE DELETE ON users FROM app_user;
+```
+
+### 行レベルセキュリティ（RLS）
+
+```sql
+-- RLSの有効化
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+
+-- ポリシーの作成
+CREATE POLICY user_policy ON users
+FOR ALL
+TO app_user
+USING (user_id = current_user_id());
+
+-- ポリシーの確認
+SELECT * FROM pg_policies WHERE tablename = 'users';
+```
+
+## 12. 実践的なベストプラクティス
+
+### 命名規則
+
+```sql
+-- テーブル名: 複数形、スネークケース
+CREATE TABLE user_profiles (...);
+
+-- カラム名: スネークケース
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  first_name VARCHAR(255),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- インデックス名: idx_テーブル名_カラム名
+CREATE INDEX idx_users_email ON users(email);
+```
+
+### マイグレーション管理
+
+```sql
+-- バージョン管理テーブルの作成
+CREATE TABLE schema_migrations (
+  version VARCHAR(255) PRIMARY KEY,
+  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- マイグレーションの適用
+BEGIN;
+-- マイグレーションSQL
+INSERT INTO schema_migrations (version) VALUES ('001_create_users');
+COMMIT;
+```
+
+### 監視とログ
+
+```sql
+-- スロークエリのログ設定（postgresql.conf）
+log_min_duration_statement = 1000  -- 1秒以上かかるクエリをログ
+
+-- 接続数の確認
+SELECT count(*) FROM pg_stat_activity;
+
+-- データベースサイズの確認
+SELECT pg_size_pretty(pg_database_size('mydb'));
+
+-- テーブルサイズの確認
+SELECT 
+  schemaname,
+  tablename,
+  pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size
+FROM pg_tables
+WHERE schemaname = 'public'
+ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
+```
+
+## 13. よくある問題と解決方法
+
+### 問題1: 接続数が上限に達している
+
+```sql
+-- 接続数の確認
+SELECT count(*) FROM pg_stat_activity;
+
+-- 最大接続数の確認
+SHOW max_connections;
+
+-- 接続プールの使用を推奨（PgBouncerなど）
+```
+
+### 問題2: ディスク容量不足
+
+```sql
+-- データベースサイズの確認
+SELECT pg_size_pretty(pg_database_size('mydb'));
+
+-- 不要なデータの削除とバキューム
+DELETE FROM old_logs WHERE created_at < NOW() - INTERVAL '1 year';
+VACUUM FULL old_logs;
+```
+
+### 問題3: クエリが遅い
+
+```sql
+-- スロークエリの確認
+SELECT 
+  query,
+  calls,
+  total_time,
+  mean_time
+FROM pg_stat_statements
+ORDER BY mean_time DESC
+LIMIT 10;
+
+-- インデックスの確認
+SELECT 
+  tablename,
+  indexname,
+  idx_scan
+FROM pg_stat_user_indexes
+WHERE idx_scan = 0;  -- 使用されていないインデックス
+```
+
+## まとめ
+
+PostgreSQL完全ガイドのポイント：
+
+- **高度なデータ型**: JSON、配列、全文検索など
+- **パーティショニング**: 大規模データの効率的な管理
+- **レプリケーション**: 高可用性の実現
+- **インデックス最適化**: パフォーマンスの向上
+- **拡張機能**: 豊富な機能拡張
+- **セキュリティ**: ユーザー管理、RLS
+- **バックアップ**: データ保護
+- **監視**: パフォーマンス管理
+
+適切なPostgreSQLの使用により、スケーラブルで信頼性の高いアプリケーションを構築できます。
+

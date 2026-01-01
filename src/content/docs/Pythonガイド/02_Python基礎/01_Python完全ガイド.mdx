@@ -1,0 +1,292 @@
+---
+title: Python完全ガイド
+sidebar:
+    label: Python基礎
+---
+
+# Python完全ガイド
+
+Pythonの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Pythonとは
+
+### Pythonの特徴
+
+Pythonは、シンプルで読みやすく、多様な用途に使えるプログラミング言語です。
+
+```
+Pythonの特徴
+   ├─ 読みやすさ
+   ├─ 多用途
+   ├─ 豊富なライブラリ
+   └─ 大規模コミュニティ
+```
+
+## 2. 基本構文
+
+### 変数と型
+
+```python
+# 変数の定義
+name = "Alice"
+age = 30
+height = 165.5
+is_active = True
+
+# 型の確認
+print(type(name))  # <class 'str'>
+print(type(age))   # <class 'int'>
+print(type(height))  # <class 'float'>
+print(type(is_active))  # <class 'bool'>
+```
+
+### データ構造
+
+```python
+# リスト
+fruits = ["apple", "banana", "orange"]
+fruits.append("grape")
+print(fruits[0])  # apple
+
+# タプル
+point = (10, 20)
+x, y = point
+
+# 辞書
+user = {
+    "name": "Alice",
+    "age": 30,
+    "email": "alice@example.com"
+}
+print(user["name"])  # Alice
+
+# セット
+unique_numbers = {1, 2, 3, 3, 4}
+print(unique_numbers)  # {1, 2, 3, 4}
+```
+
+### 関数
+
+```python
+def greet(name: str, age: int = 0) -> str:
+    """名前と年齢を受け取り、挨拶を返す"""
+    if age > 0:
+        return f"Hello, {name}! You are {age} years old."
+    return f"Hello, {name}!"
+
+result = greet("Alice", 30)
+print(result)  # Hello, Alice! You are 30 years old.
+```
+
+### クラス
+
+```python
+class User:
+    def __init__(self, name: str, email: str):
+        self.name = name
+        self.email = email
+    
+    def get_info(self) -> str:
+        return f"{self.name} ({self.email})"
+
+user = User("Alice", "alice@example.com")
+print(user.get_info())  # Alice (alice@example.com)
+```
+
+## 3. リスト内包表記
+
+```python
+# リスト内包表記
+numbers = [1, 2, 3, 4, 5]
+squared = [x ** 2 for x in numbers]
+print(squared)  # [1, 4, 9, 16, 25]
+
+# 条件付きリスト内包表記
+even_squared = [x ** 2 for x in numbers if x % 2 == 0]
+print(even_squared)  # [4, 16]
+```
+
+## 4. ジェネレータ
+
+```python
+# ジェネレータ関数
+def fibonacci(n: int):
+    a, b = 0, 1
+    for _ in range(n):
+        yield a
+        a, b = b, a + b
+
+# 使用例
+for num in fibonacci(10):
+    print(num)
+```
+
+## 5. デコレータ
+
+```python
+from functools import wraps
+from typing import Callable
+
+def timing_decorator(func: Callable) -> Callable:
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        import time
+        start = time.time()
+        result = func(*args, **kwargs)
+        end = time.time()
+        print(f"{func.__name__} took {end - start:.2f} seconds")
+        return result
+    return wrapper
+
+@timing_decorator
+def slow_function():
+    import time
+    time.sleep(1)
+    return "Done"
+
+slow_function()  # slow_function took 1.00 seconds
+```
+
+## 6. コンテキストマネージャー
+
+```python
+# with文の使用
+with open("file.txt", "r") as f:
+    content = f.read()
+
+# カスタムコンテキストマネージャー
+from contextlib import contextmanager
+
+@contextmanager
+def custom_context():
+    print("Entering context")
+    try:
+        yield
+    finally:
+        print("Exiting context")
+
+with custom_context():
+    print("Inside context")
+```
+
+## 7. エラーハンドリング
+
+```python
+try:
+    result = 10 / 0
+except ZeroDivisionError as e:
+    print(f"Error: {e}")
+except Exception as e:
+    print(f"Unexpected error: {e}")
+else:
+    print("No errors occurred")
+finally:
+    print("This always executes")
+```
+
+## 8. 型ヒント
+
+```python
+from typing import List, Dict, Optional, Union
+
+def process_users(users: List[Dict[str, str]]) -> List[str]:
+    return [user["name"] for user in users]
+
+def get_user(id: int) -> Optional[Dict[str, str]]:
+    if id > 0:
+        return {"id": id, "name": "Alice"}
+    return None
+
+def process_value(value: Union[int, str]) -> str:
+    return str(value)
+```
+
+## 9. 実践的なベストプラクティス
+
+### PEP 8準拠
+
+```python
+# 良い例
+def calculate_total(items: list[dict]) -> float:
+    """商品リストから合計金額を計算する"""
+    return sum(item["price"] * item["quantity"] for item in items)
+
+# 悪い例
+def calcTotal(items):
+    total=0
+    for item in items:
+        total+=item['price']*item['quantity']
+    return total
+```
+
+### ドキュメント文字列
+
+```python
+def divide(a: float, b: float) -> float:
+    """
+    2つの数値を割り算する
+    
+    Args:
+        a: 被除数
+        b: 除数
+    
+    Returns:
+        割り算の結果
+    
+    Raises:
+        ZeroDivisionError: 除数が0の場合
+    """
+    if b == 0:
+        raise ZeroDivisionError("Cannot divide by zero")
+    return a / b
+```
+
+## 10. よくある問題と解決方法
+
+### 問題1: ミュータブルなデフォルト引数
+
+```python
+# ❌ 悪い例
+def add_item(item, items=[]):
+    items.append(item)
+    return items
+
+# ✅ 良い例
+def add_item(item, items=None):
+    if items is None:
+        items = []
+    items.append(item)
+    return items
+```
+
+### 問題2: グローバル変数の使用
+
+```python
+# ❌ 悪い例
+counter = 0
+
+def increment():
+    global counter
+    counter += 1
+
+# ✅ 良い例
+class Counter:
+    def __init__(self):
+        self.value = 0
+    
+    def increment(self):
+        self.value += 1
+```
+
+## まとめ
+
+Python完全ガイドのポイント：
+
+- **基本構文**: 変数、型、データ構造、関数、クラス
+- **高度な機能**: リスト内包表記、ジェネレータ、デコレータ、コンテキストマネージャー
+- **エラーハンドリング**: try-except-finally
+- **型ヒント**: 型安全性の向上
+- **ベストプラクティス**: PEP 8準拠、ドキュメント文字列
+
+適切なPythonの使用により、効率的な開発が可能になります。
+

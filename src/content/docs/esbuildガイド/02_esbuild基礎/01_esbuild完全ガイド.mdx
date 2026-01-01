@@ -1,0 +1,57 @@
+---
+title: esbuild完全ガイド
+sidebar:
+    label: esbuild基礎
+---
+
+# esbuild完全ガイド
+
+esbuildの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. esbuildとは
+
+### esbuildの特徴
+
+esbuildは、Goで実装された高速なJavaScriptバンドラーです。
+
+```
+esbuildの特徴
+   ├─ 高速
+   ├─ Go実装
+   ├─ TypeScript
+   └─ 軽量
+```
+
+## 2. 環境構築
+
+### esbuildのインストール
+
+```bash
+# esbuildのインストール
+npm install -D esbuild
+```
+
+## 3. 基本的な使用
+
+```javascript
+// build.js
+const esbuild = require('esbuild');
+
+esbuild.build({
+  entryPoints: ['src/index.js'],
+  bundle: true,
+  outfile: 'dist/bundle.js',
+  minify: true
+}).catch(() => process.exit(1));
+```
+
+## まとめ
+
+esbuild完全ガイドのポイント：
+
+- **高速**: 優れたパフォーマンス
+- **TypeScript**: TypeScriptサポート
+- **バンドリング**: 効率的なバンドリング
+
+適切なesbuildの使用により、高速なビルドが可能になります。
+

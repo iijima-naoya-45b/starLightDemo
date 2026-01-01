@@ -1,0 +1,62 @@
+---
+title: なぜコードレビューが重要なのか
+sidebar:
+    label: はじめに
+---
+
+# なぜコードレビューが重要なのか
+
+コードレビューは、コードの品質を向上させ、バグを早期に発見する重要なプロセスです。
+
+## コードレビューの重要性
+
+### コードレビューなしの問題
+
+**問題のあるコード:**
+
+```typescript
+// レビューなしのコード
+function processOrder(order) {
+  let total = 0;
+  for (let i = 0; i < order.items.length; i++) {
+    total += order.items[i].price * order.items[i].quantity;
+  }
+  // 問題点:
+  // - エラーハンドリングがない
+  // - テストがない
+  // - 可読性が低い
+  return total;
+}
+```
+
+### コードレビューによる解決
+
+**改善されたコード:**
+
+```typescript
+// レビュー後のコード
+function processOrder(order: Order): number {
+  if (!order || !order.items || order.items.length === 0) {
+    throw new Error('Invalid order');
+  }
+  
+  return order.items.reduce((total, item) => {
+    if (item.price < 0 || item.quantity < 0) {
+      throw new Error('Invalid item data');
+    }
+    return total + item.price * item.quantity;
+  }, 0);
+}
+```
+
+## まとめ
+
+コードレビューが重要な理由：
+
+- **品質の向上**: コードの品質を向上させる
+- **バグの早期発見**: バグを早期に発見できる
+- **知識の共有**: チーム内で知識を共有できる
+- **一貫性**: コードスタイルの一貫性を保つ
+
+適切なコードレビューにより、高品質なコードを維持できます。
+

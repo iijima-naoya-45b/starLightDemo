@@ -1,0 +1,59 @@
+---
+title: Prometheus詳細完全ガイド
+sidebar:
+    label: Prometheus実装
+---
+
+# Prometheus詳細完全ガイド
+
+Prometheusの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Prometheusとは
+
+### Prometheusの特徴
+
+Prometheusは、メトリクス収集とモニタリングのためのツールです。
+
+```
+Prometheusの特徴
+   ├─ 時系列データベース
+   ├─ Pull型メトリクス収集
+   ├─ PromQL
+   └─ アラートマネージャー
+```
+
+## 2. メトリクスの収集
+
+### Exporter
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['localhost:9100']
+```
+
+## 3. PromQL
+
+### 基本的なクエリ
+
+```promql
+# CPU使用率
+100 - (avg(irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+
+# メモリ使用率
+(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100
+```
+
+## まとめ
+
+Prometheus詳細完全ガイドのポイント：
+
+- **メトリクス収集**: Exporterによる収集
+- **PromQL**: クエリ言語
+- **アラート**: アラートの設定
+- **可視化**: Grafanaとの統合
+
+適切なPrometheusの使用により、効率的なモニタリングが可能になります。
+
