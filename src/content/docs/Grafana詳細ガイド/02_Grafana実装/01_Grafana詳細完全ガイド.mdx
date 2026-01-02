@@ -1,0 +1,52 @@
+---
+title: Grafana詳細完全ガイド
+sidebar:
+    label: Grafana実装
+---
+
+# Grafana詳細完全ガイド
+
+Grafanaの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Grafanaとは
+
+### Grafanaの特徴
+
+Grafanaは、メトリクスとログの可視化ツールです。
+
+```
+Grafanaの特徴
+   ├─ ダッシュボード
+   ├─ データソース
+   ├─ アラート
+   └─ プラグイン
+```
+
+## 2. ダッシュボードの作成
+
+### パネルの追加
+
+```json
+{
+  "targets": [
+    {
+      "expr": "rate(http_requests_total[5m])",
+      "legendFormat": "{{method}}"
+    }
+  ],
+  "type": "graph"
+}
+```
+
+## まとめ
+
+Grafana詳細完全ガイドのポイント：
+
+- **ダッシュボード**: カスタムダッシュボード
+- **データソース**: Prometheus、InfluxDBなど
+- **アラート**: アラートの設定
+- **プラグイン**: 拡張機能
+
+適切なGrafanaの使用により、効率的な可視化が可能になります。
+
+

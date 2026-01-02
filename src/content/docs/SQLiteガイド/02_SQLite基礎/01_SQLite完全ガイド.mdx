@@ -1,0 +1,60 @@
+---
+title: SQLite完全ガイド
+sidebar:
+    label: SQLite基礎
+---
+
+# SQLite完全ガイド
+
+SQLiteの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. SQLiteとは
+
+### SQLiteの特徴
+
+SQLiteは、軽量で組み込み可能なリレーショナルデータベースです。
+
+```
+SQLiteの特徴
+   ├─ 軽量
+   ├─ 組み込み
+   ├─ ファイルベース
+   └─ SQL
+```
+
+## 2. 基本的な使用
+
+### Node.jsでの使用
+
+```typescript
+// sqlite3の使用
+import sqlite3 from 'sqlite3';
+
+const db = new sqlite3.Database('./database.db');
+
+db.serialize(() => {
+  db.run('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT)');
+  
+  const stmt = db.prepare('INSERT INTO users (name, email) VALUES (?, ?)');
+  stmt.run('Alice', 'alice@example.com');
+  stmt.finalize();
+  
+  db.each('SELECT * FROM users', (err, row) => {
+    console.log(row);
+  });
+});
+
+db.close();
+```
+
+## まとめ
+
+SQLite完全ガイドのポイント：
+
+- **軽量**: リソース使用量が少ない
+- **組み込み**: アプリケーションに組み込み可能
+- **SQL**: 標準SQLをサポート
+
+適切なSQLiteの使用により、軽量なアプリケーションを構築できます。
+
+

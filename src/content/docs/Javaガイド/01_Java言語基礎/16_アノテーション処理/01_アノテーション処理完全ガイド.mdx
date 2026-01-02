@@ -1,0 +1,239 @@
+---
+title: アノテーション処理完全ガイド
+sidebar:
+    label: アノテーション処理完全ガイド
+---
+
+# アノテーション処理完全ガイド
+
+Javaのアノテーション処理（Annotation Processing）の仕組みと実践的な使用方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. アノテーション処理とは
+
+### アノテーション処理の役割
+
+アノテーション処理は、コンパイル時にアノテーションを処理し、コードを生成する仕組みです。
+
+```
+アノテーション処理の用途
+   ├─ コード生成
+   ├─ バリデーション
+   ├─ ボイラープレートコードの削減
+   └─ メタデータの処理
+```
+
+### アノテーション処理の流れ
+
+```
+1. ソースコードの解析
+2. アノテーションの検出
+3. アノテーションプロセッサの実行
+4. コード生成
+5. コンパイル
+```
+
+## 2. カスタムアノテーションの作成
+
+### 基本的なアノテーション
+
+```java
+import java.lang.annotation.*;
+
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface Loggable {
+    String value() default "";
+}
+```
+
+### アノテーションの属性
+
+```java
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.SOURCE)
+public @interface Builder {
+    String className() default "";
+    boolean fluent() default true;
+}
+```
+
+## 3. アノテーションプロセッサの実装
+
+### 基本的なプロセッサ
+
+```java
+import javax.annotation.processing.*;
+import javax.lang.model.SourceVersion;
+import javax.lang.model.element.*;
+import javax.tools.Diagnostic;
+import java.util.Set;
+
+@SupportedAnnotationTypes("com.example.Loggable")
+@SupportedSourceVersion(SourceVersion.RELEASE_11)
+public class LoggableProcessor extends AbstractProcessor {
+    
+    @Override
+    public boolean process(Set<? extends TypeElement> annotations, 
+                           RoundEnvironment roundEnv) {
+        for (Element element : roundEnv.getElementsAnnotatedWith(
+                Loggable.class)) {
+            if (element.getKind() == ElementKind.METHOD) {
+                ExecutableElement method = (ExecutableElement) element;
+                processMethod(method);
+            }
+        }
+        return true;
+    }
+    
+    private void processMethod(ExecutableElement method) {
+        String methodName = method.getSimpleName().toString();
+        processingEnv.getMessager().printMessage(
+            Diagnostic.Kind.NOTE,
+            "Processing method: " + methodName);
+    }
+}
+```
+
+## 4. コード生成
+
+### JavaFileObjectの使用
+
+```java
+import javax.annotation.processing.*;
+import javax.lang.model.element.*;
+import javax.tools.JavaFileObject;
+import java.io.IOException;
+import java.io.Writer;
+
+public class CodeGenerator {
+    private final ProcessingEnvironment processingEnv;
+    
+    public CodeGenerator(ProcessingEnvironment processingEnv) {
+        this.processingEnv = processingEnv;
+    }
+    
+    public void generateBuilder(TypeElement typeElement) 
+            throws IOException {
+        String className = typeElement.getSimpleName().toString();
+        String builderClassName = className + "Builder";
+        String packageName = getPackageName(typeElement);
+        
+        JavaFileObject builderFile = processingEnv.getFiler()
+            .createSourceFile(packageName + "." + builderClassName);
+        
+        try (Writer writer = builderFile.openWriter()) {
+            writer.write("package " + packageName + ";\n\n");
+            writer.write("public class " + builderClassName + " {\n");
+            writer.write("    // Builder implementation\n");
+            writer.write("}\n");
+        }
+    }
+    
+    private String getPackageName(TypeElement typeElement) {
+        return processingEnv.getElementUtils()
+            .getPackageOf(typeElement).getQualifiedName().toString();
+    }
+}
+```
+
+## 5. 実践的な使用例
+
+### Lombok風のGetter/Setter生成
+
+```java
+// アノテーション
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.SOURCE)
+public @interface Data {
+}
+
+// プロセッサ
+@SupportedAnnotationTypes("com.example.Data")
+@SupportedSourceVersion(SourceVersion.RELEASE_11)
+public class DataProcessor extends AbstractProcessor {
+    
+    @Override
+    public boolean process(Set<? extends TypeElement> annotations, 
+                           RoundEnvironment roundEnv) {
+        for (Element element : roundEnv.getElementsAnnotatedWith(
+                Data.class)) {
+            if (element.getKind() == ElementKind.CLASS) {
+                TypeElement classElement = (TypeElement) element;
+                generateGettersAndSetters(classElement);
+            }
+        }
+        return true;
+    }
+    
+    private void generateGettersAndSetters(TypeElement classElement) {
+        // Getter/Setterの生成ロジック
+    }
+}
+```
+
+### バリデーションアノテーション
+
+```java
+// アノテーション
+@Target(ElementType.FIELD)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface NotNull {
+    String message() default "Field cannot be null";
+}
+
+// プロセッサ
+@SupportedAnnotationTypes("com.example.NotNull")
+@SupportedSourceVersion(SourceVersion.RELEASE_11)
+public class ValidationProcessor extends AbstractProcessor {
+    
+    @Override
+    public boolean process(Set<? extends TypeElement> annotations, 
+                           RoundEnvironment roundEnv) {
+        for (Element element : roundEnv.getElementsAnnotatedWith(
+                NotNull.class)) {
+            if (element.getKind() == ElementKind.FIELD) {
+                VariableElement field = (VariableElement) element;
+                validateField(field);
+            }
+        }
+        return true;
+    }
+    
+    private void validateField(VariableElement field) {
+        // バリデーションロジックの生成
+    }
+}
+```
+
+## 6. メタアノテーション
+
+### メタアノテーションの使用
+
+```java
+import java.lang.annotation.*;
+
+@Target(ElementType.ANNOTATION_TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface MetaAnnotation {
+}
+
+@MetaAnnotation
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface CustomAnnotation {
+}
+```
+
+## まとめ
+
+アノテーション処理完全ガイドのポイント：
+
+- **アノテーション処理**: コンパイル時のコード生成
+- **カスタムアノテーション**: 独自アノテーションの作成
+- **アノテーションプロセッサ**: プロセッサの実装
+- **コード生成**: JavaFileObjectによるコード生成
+- **実践例**: Getter/Setter生成、バリデーション
+
+適切なアノテーション処理により、ボイラープレートコードを削減できます。
+
+

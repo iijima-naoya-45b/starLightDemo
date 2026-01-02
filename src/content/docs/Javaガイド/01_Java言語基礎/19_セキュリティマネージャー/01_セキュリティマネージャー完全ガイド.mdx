@@ -1,0 +1,132 @@
+---
+title: セキュリティマネージャー完全ガイド
+sidebar:
+    label: セキュリティマネージャー完全ガイド
+---
+
+# セキュリティマネージャー完全ガイド
+
+Javaのセキュリティマネージャーの仕組みと実践的な使用方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. セキュリティマネージャーとは
+
+### セキュリティマネージャーの役割
+
+セキュリティマネージャーは、Javaアプリケーションのセキュリティポリシーを強制する仕組みです。
+
+```
+セキュリティマネージャーの用途
+   ├─ ファイルアクセスの制御
+   ├─ ネットワークアクセスの制御
+   ├─ システムプロパティの制御
+   └─ サンドボックス環境の実現
+```
+
+### セキュリティマネージャーの有効化
+
+```java
+// セキュリティマネージャーの設定
+System.setSecurityManager(new SecurityManager());
+
+// または、起動時に設定
+// java -Djava.security.manager MyApp
+```
+
+## 2. セキュリティポリシーファイル
+
+### ポリシーファイルの作成
+
+```java
+// policy.policy
+grant {
+    // ファイル読み取り権限
+    permission java.io.FilePermission "/tmp/*", "read";
+    
+    // ファイル書き込み権限
+    permission java.io.FilePermission "/tmp/*", "write";
+    
+    // ネットワークアクセス権限
+    permission java.net.SocketPermission "localhost:8080", "connect";
+    
+    // システムプロパティ読み取り権限
+    permission java.util.PropertyPermission "user.home", "read";
+};
+```
+
+### ポリシーファイルの適用
+
+```bash
+# ポリシーファイルを指定して起動
+java -Djava.security.manager \
+     -Djava.security.policy=policy.policy \
+     MyApp
+```
+
+## 3. カスタムセキュリティマネージャー
+
+### カスタムマネージャーの実装
+
+```java
+import java.security.*;
+
+public class CustomSecurityManager extends SecurityManager {
+    @Override
+    public void checkRead(String file) {
+        if (file.startsWith("/etc/")) {
+            throw new SecurityException(
+                "Access denied to /etc/ directory");
+        }
+    }
+    
+    @Override
+    public void checkWrite(String file) {
+        if (file.startsWith("/etc/")) {
+            throw new SecurityException(
+                "Write access denied to /etc/ directory");
+        }
+    }
+    
+    @Override
+    public void checkConnect(String host, int port) {
+        if (port < 1024) {
+            throw new SecurityException(
+                "Cannot connect to privileged ports");
+        }
+    }
+}
+```
+
+## 4. 実践的な使用例
+
+### サンドボックス環境
+
+```java
+public class SandboxExample {
+    public static void main(String[] args) {
+        // セキュリティマネージャーを設定
+        System.setSecurityManager(new SecurityManager());
+        
+        // 制限された環境でコードを実行
+        try {
+            // ファイルアクセス
+            File file = new File("/tmp/test.txt");
+            file.createNewFile();  // ポリシーによっては失敗する可能性
+        } catch (SecurityException e) {
+            System.err.println("Security violation: " + e.getMessage());
+        }
+    }
+}
+```
+
+## まとめ
+
+セキュリティマネージャー完全ガイドのポイント：
+
+- **セキュリティマネージャー**: セキュリティポリシーの強制
+- **ポリシーファイル**: 権限の定義
+- **カスタムマネージャー**: 独自のセキュリティチェック
+- **サンドボックス**: 制限された環境での実行
+
+適切なセキュリティマネージャーの使用により、安全なアプリケーションを構築できます。
+
+

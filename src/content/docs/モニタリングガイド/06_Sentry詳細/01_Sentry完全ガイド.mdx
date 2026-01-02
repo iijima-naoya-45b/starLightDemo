@@ -1,0 +1,470 @@
+---
+title: Sentry完全ガイド
+sidebar:
+    label: Sentry詳細
+---
+
+# Sentry完全ガイド
+
+Sentryの実践的な使い方を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Sentryとは
+
+### Sentryの特徴
+
+Sentryは、エラー追跡とパフォーマンス監視を提供するプラットフォームです。
+
+```
+Sentryの特徴
+   ├─ エラー追跡
+   ├─ パフォーマンス監視
+   ├─ リリース追跡
+   ├─ ユーザーコンテキスト
+   └─ 統合通知
+```
+
+### なぜSentryを選ぶのか
+
+**Sentryを選ぶべき場合:**
+- エラー追跡が重要
+- パフォーマンス監視が必要
+- リリース追跡が必要
+- ユーザーコンテキストが必要
+
+## 2. Sentryのセットアップ
+
+### アカウントの作成
+
+1. [Sentry公式サイト](https://sentry.io/)でアカウントを作成
+2. プロジェクトを作成し、DSNを取得
+
+### Node.jsでのインストール
+
+```bash
+npm install @sentry/node @sentry/tracing
+```
+
+```javascript
+// app.js
+const Sentry = require('@sentry/node');
+const Tracing = require('@sentry/tracing');
+
+Sentry.init({
+  dsn: 'your_dsn',
+  environment: 'production',
+  tracesSampleRate: 1.0,
+  integrations: [
+    new Tracing.Integrations.Express({ app }),
+  ],
+});
+
+const express = require('express');
+const app = express();
+
+app.use(Sentry.Handlers.requestHandler());
+app.use(Sentry.Handlers.tracingHandler());
+
+app.get('/api/users', (req, res) => {
+  // 処理
+  res.json({ users: [] });
+});
+
+app.use(Sentry.Handlers.errorHandler());
+
+app.listen(3000);
+```
+
+### Pythonでのインストール
+
+```bash
+pip install sentry-sdk
+```
+
+```python
+# app.py
+import sentry_sdk
+from sentry_sdk.integrations.flask import FlaskIntegration
+
+sentry_sdk.init(
+    dsn='your_dsn',
+    integrations=[FlaskIntegration()],
+    traces_sample_rate=1.0,
+    environment='production'
+)
+
+from flask import Flask
+app = Flask(__name__)
+
+@app.route('/api/users')
+def get_users():
+    # 処理
+    return {'users': []}
+
+if __name__ == '__main__':
+    app.run()
+```
+
+## 3. エラー追跡
+
+### 手動でのエラー報告
+
+```javascript
+// Node.jsの例
+const Sentry = require('@sentry/node');
+
+try {
+  // 処理
+} catch (error) {
+  Sentry.captureException(error, {
+    tags: {
+      section: 'order_processing',
+      user_id: '12345'
+    },
+    extra: {
+      order_id: '67890',
+      amount: 100.00
+    }
+  });
+  throw error;
+}
+```
+
+```python
+# Pythonの例
+import sentry_sdk
+
+try:
+    # 処理
+    pass
+except Exception as e:
+    sentry_sdk.capture_exception(e, {
+        'tags': {
+            'section': 'order_processing',
+            'user_id': '12345'
+        },
+        'extra': {
+            'order_id': '67890',
+            'amount': 100.00
+        }
+    })
+    raise
+```
+
+### メッセージの報告
+
+```javascript
+// メッセージの報告
+Sentry.captureMessage('Something went wrong', {
+  level: 'warning',
+  tags: {
+    component: 'payment'
+  }
+});
+```
+
+## 4. パフォーマンス監視
+
+### トランザクションの追跡
+
+```javascript
+// Node.jsの例
+const transaction = Sentry.startTransaction({
+  op: 'process_order',
+  name: 'Process Order'
+});
+
+const span = transaction.startChild({
+  op: 'database',
+  description: 'Query orders'
+});
+
+// データベースクエリ
+span.finish();
+
+transaction.finish();
+```
+
+```python
+# Pythonの例
+import sentry_sdk
+
+with sentry_sdk.start_transaction(op='process_order', name='Process Order'):
+    with sentry_sdk.start_span(op='database', description='Query orders'):
+        # データベースクエリ
+        pass
+```
+
+### カスタムインストルメンテーション
+
+```javascript
+// カスタムスパンの作成
+const span = Sentry.getCurrentHub().getScope().getSpan();
+const childSpan = span.startChild({
+  op: 'external_api',
+  description: 'Call payment API'
+});
+
+// 外部API呼び出し
+childSpan.finish();
+```
+
+## 5. ユーザーコンテキスト
+
+### ユーザー情報の設定
+
+```javascript
+// Node.jsの例
+Sentry.setUser({
+  id: '12345',
+  email: 'user@example.com',
+  username: 'alice',
+  ip_address: '192.168.1.1'
+});
+```
+
+```python
+# Pythonの例
+import sentry_sdk
+
+sentry_sdk.set_user({
+    'id': '12345',
+    'email': 'user@example.com',
+    'username': 'alice',
+    'ip_address': '192.168.1.1'
+})
+```
+
+### コンテキストの追加
+
+```javascript
+// コンテキストの追加
+Sentry.setContext('order', {
+  order_id: '12345',
+  amount: 100.00,
+  status: 'processing'
+});
+```
+
+## 6. リリース追跡
+
+### リリースの設定
+
+```javascript
+// Node.jsの例
+Sentry.init({
+  dsn: 'your_dsn',
+  release: 'myapp@1.0.0',
+  environment: 'production'
+});
+```
+
+```python
+# Pythonの例
+sentry_sdk.init(
+    dsn='your_dsn',
+    release='myapp@1.0.0',
+    environment='production'
+)
+```
+
+### リリースのデプロイ
+
+```bash
+# Sentry CLIでのデプロイ記録
+sentry-cli releases new 1.0.0
+sentry-cli releases set-commits 1.0.0 --auto
+sentry-cli releases finalize 1.0.0
+sentry-cli releases deploys 1.0.0 new -e production
+```
+
+## 7. パフォーマンス最適化
+
+### サンプリング
+
+```javascript
+// トランザクションのサンプリング
+Sentry.init({
+  dsn: 'your_dsn',
+  tracesSampleRate: 0.1,  // 10%のサンプリング
+  beforeSend(event, hint) {
+    // イベントのフィルタリング
+    if (event.exception) {
+      const error = hint.originalException;
+      if (error && error.statusCode === 404) {
+        return null;  // 404エラーは無視
+      }
+    }
+    return event;
+  }
+});
+```
+
+### パフォーマンスバジェット
+
+```javascript
+// パフォーマンスバジェットの設定
+Sentry.init({
+  dsn: 'your_dsn',
+  tracesSampleRate: 1.0,
+  beforeSendTransaction(event) {
+    // 遅いトランザクションのみ記録
+    if (event.transaction && event.transaction.duration > 1000) {
+      return event;
+    }
+    return null;
+  }
+});
+```
+
+## 8. アラートの設定
+
+### アラートルールの作成
+
+```javascript
+// Sentry APIでのアラート作成
+const axios = require('axios');
+
+const alertRule = {
+  name: 'High Error Rate',
+  conditions: [
+    {
+      id: 'sentry.rules.conditions.event_frequency.EventFrequencyCondition',
+      interval: '1m',
+      value: 10
+    }
+  ],
+  actions: [
+    {
+      id: 'sentry.rules.actions.notify_event_service.NotifyEventServiceAction',
+      service: 'slack',
+      channel: '#alerts'
+    }
+  ]
+};
+
+const response = await axios.post(
+  `https://sentry.io/api/0/projects/${org}/${project}/alert-rules/`,
+  alertRule,
+  {
+    headers: {
+      'Authorization': `Bearer ${api_token}`
+    }
+  }
+);
+```
+
+## 9. 統合
+
+### Slack統合
+
+```javascript
+// Slack通知の設定
+// SentryのWeb UIで設定
+// Settings → Integrations → Slack
+```
+
+### GitHub統合
+
+```javascript
+// GitHub統合の設定
+// Settings → Integrations → GitHub
+// コミット情報が自動的にリンクされる
+```
+
+## 10. 実践的なベストプラクティス
+
+### エラーの分類
+
+```javascript
+// エラーの分類
+Sentry.captureException(error, {
+  tags: {
+    error_type: 'database',
+    severity: 'high'
+  },
+  fingerprint: ['database-error', '{{ default }}']
+});
+```
+
+### コンテキストの管理
+
+```javascript
+// スコープの使用
+Sentry.withScope((scope) => {
+  scope.setTag('section', 'payment');
+  scope.setLevel('warning');
+  Sentry.captureMessage('Payment processing slow');
+});
+```
+
+### パフォーマンスの最適化
+
+```javascript
+// 不要なデータの除外
+Sentry.init({
+  dsn: 'your_dsn',
+  beforeSend(event, hint) {
+    // 機密情報の除外
+    if (event.request) {
+      delete event.request.cookies;
+      delete event.request.headers['Authorization'];
+    }
+    return event;
+  }
+});
+```
+
+## 11. よくある問題と解決方法
+
+### 問題1: エラーが記録されない
+
+```javascript
+// 解決: DSNと環境設定の確認
+Sentry.init({
+  dsn: 'your_dsn',
+  environment: 'production',
+  debug: true  // デバッグモードで確認
+});
+```
+
+### 問題2: パフォーマンスの低下
+
+```javascript
+// 解決: サンプリングの使用
+Sentry.init({
+  dsn: 'your_dsn',
+  tracesSampleRate: 0.1  // 10%のサンプリング
+});
+```
+
+### 問題3: コストの増加
+
+```javascript
+// 解決: イベントのフィルタリング
+Sentry.init({
+  dsn: 'your_dsn',
+  beforeSend(event, hint) {
+    // 不要なイベントを除外
+    if (event.level === 'info') {
+      return null;
+    }
+    return event;
+  }
+});
+```
+
+## まとめ
+
+Sentry完全ガイドのポイント：
+
+- **エラー追跡**: 詳細なエラー情報の収集
+- **パフォーマンス監視**: トランザクションとスパンの追跡
+- **ユーザーコンテキスト**: ユーザー情報の追加
+- **リリース追跡**: リリースとデプロイの追跡
+- **アラート**: 自動通知
+- **統合**: Slack、GitHubなどとの統合
+- **ベストプラクティス**: サンプリング、フィルタリング
+
+適切なSentryの使用により、効果的なエラー追跡とパフォーマンス監視システムを構築できます。
+
+

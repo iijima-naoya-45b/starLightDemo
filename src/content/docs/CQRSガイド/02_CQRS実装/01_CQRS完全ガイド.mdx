@@ -1,0 +1,127 @@
+---
+title: CQRS完全ガイド
+sidebar:
+    label: CQRS実装
+---
+
+# CQRS完全ガイド
+
+CQRSの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. CQRSとは
+
+### CQRSの定義
+
+CQRS（Command Query Responsibility Segregation）は、読み取りと書き込みを分離するアーキテクチャパターンです。
+
+```
+CQRSの特徴
+   ├─ コマンド（書き込み）
+   ├─ クエリ（読み取り）
+   ├─ 分離されたモデル
+   └─ 独立したスケーリング
+```
+
+## 2. コマンド（書き込み）
+
+### コマンドの実装
+
+```typescript
+// コマンド
+interface CreateOrderCommand {
+  userId: string;
+  items: OrderItem[];
+}
+
+// コマンドハンドラー
+class CreateOrderCommandHandler {
+  async handle(command: CreateOrderCommand): Promise<string> {
+    const orderId = this.generateOrderId();
+    
+    // 書き込みモデルに保存
+    await this.writeRepository.save({
+      id: orderId,
+      userId: command.userId,
+      items: command.items,
+      status: 'Pending'
+    });
+    
+    // イベントを発行
+    await this.eventBus.publish({
+      type: 'OrderCreated',
+      orderId,
+      userId: command.userId,
+      items: command.items
+    });
+    
+    return orderId;
+  }
+}
+```
+
+## 3. クエリ（読み取り）
+
+### クエリの実装
+
+```typescript
+// クエリ
+interface GetOrderQuery {
+  orderId: string;
+}
+
+// クエリハンドラー
+class GetOrderQueryHandler {
+  async handle(query: GetOrderQuery): Promise<OrderView> {
+    // 読み取り最適化されたモデルから取得
+    return await this.readRepository.find(query.orderId);
+  }
+}
+
+// 読み取りモデル
+interface OrderView {
+  id: string;
+  userId: string;
+  items: OrderItemView[];
+  total: number;
+  status: string;
+  createdAt: Date;
+}
+```
+
+## 4. 読み取りモデルの更新
+
+### イベント駆動の更新
+
+```typescript
+// イベントハンドラー
+class OrderCreatedEventHandler {
+  async handle(event: OrderCreatedEvent): Promise<void> {
+    // 読み取りモデルを更新
+    await this.readRepository.save({
+      id: event.orderId,
+      userId: event.userId,
+      items: event.items.map(item => ({
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity
+      })),
+      total: this.calculateTotal(event.items),
+      status: 'Pending',
+      createdAt: new Date()
+    });
+  }
+}
+```
+
+## まとめ
+
+CQRS完全ガイドのポイント：
+
+- **コマンド**: 書き込み操作の処理
+- **クエリ**: 読み取り操作の処理
+- **分離**: 読み取りと書き込みの分離
+- **最適化**: それぞれを最適化
+
+適切なCQRSにより、高性能でスケーラブルなシステムを構築できます。
+
+

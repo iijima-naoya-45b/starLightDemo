@@ -1,0 +1,64 @@
+---
+title: なぜオブザーバビリティが重要なのか
+sidebar:
+    label: はじめに
+---
+
+# なぜオブザーバビリティが重要なのか
+
+オブザーバビリティは、システムの内部状態を外部から観測できる能力です。
+
+## オブザーバビリティの重要性
+
+### オブザーバビリティなしの問題
+
+**問題のあるシステム:**
+
+```typescript
+// ログがない
+function processOrder(orderData: OrderData) {
+  // 処理
+  // 問題点:
+  // - 何が起きているか分からない
+  // - エラーの原因が特定できない
+  // - パフォーマンスの問題が分からない
+}
+```
+
+### オブザーバビリティによる解決
+
+**改善されたシステム:**
+
+```typescript
+// ログ、メトリクス、トレースがある
+function processOrder(orderData: OrderData) {
+  logger.info('Processing order', { orderId: orderData.id });
+  const startTime = Date.now();
+  
+  try {
+    // 処理
+    metrics.increment('orders.processed');
+    logger.info('Order processed', { orderId: orderData.id });
+  } catch (error) {
+    metrics.increment('orders.failed');
+    logger.error('Order processing failed', { orderId: orderData.id, error });
+    throw error;
+  } finally {
+    const duration = Date.now() - startTime;
+    metrics.histogram('order.processing.duration', duration);
+  }
+}
+```
+
+## まとめ
+
+オブザーバビリティが重要な理由：
+
+- **問題の特定**: 問題を迅速に特定できる
+- **パフォーマンスの監視**: システムのパフォーマンスを監視
+- **デバッグ**: 問題の原因を特定しやすい
+- **予測**: 問題を予測できる
+
+適切なオブザーバビリティにより、システムの状態を把握できます。
+
+

@@ -1,0 +1,368 @@
+---
+title: アーキテクチャ用語
+sidebar:
+    label: アーキテクチャ用語
+---
+
+# アーキテクチャ用語
+
+## モノリス
+
+**定義:**
+モノリスは、すべての機能が1つのアプリケーションに含まれるアーキテクチャです。
+
+**なぜ重要なのか:**
+- **開発速度**: 開発速度が速い
+- **デプロイの簡単さ**: デプロイが簡単
+- **デバッグの容易さ**: デバッグが容易
+
+**メリット:**
+- 開発速度が速い
+- デプロイが簡単
+- デバッグが容易
+- トランザクション管理が簡単
+
+**デメリット:**
+- スケーラビリティの制限
+- 技術スタックの変更が困難
+- チーム間の競合
+
+**使用例:**
+
+```typescript
+// モノリスの例
+// 1つのアプリケーションにすべての機能を含む
+// - ユーザー管理
+// - 商品管理
+// - 注文管理
+// - 決済処理
+
+// すべてが1つのコードベース
+```
+
+**関連用語:**
+- マイクロサービス
+- モジュラーモノリス
+- アーキテクチャパターン
+
+---
+
+## マイクロサービス
+
+**定義:**
+マイクロサービスは、アプリケーションを小さな独立したサービスに分割するアーキテクチャです。
+
+**なぜ重要なのか:**
+- **独立したデプロイ**: サービスごとに独立してデプロイできる
+- **技術の選択**: サービスごとに最適な技術を選択できる
+- **スケーラビリティ**: サービスごとに独立してスケールできる
+
+**メリット:**
+- 独立したデプロイ
+- 技術スタックの選択の自由
+- スケーラビリティ
+- チームの独立性
+
+**デメリット:**
+- 複雑性の増加
+- 運用コストの増加
+- デバッグの困難
+- トランザクション管理の困難
+
+**使用例:**
+
+```typescript
+// マイクロサービスの例
+// 1. ユーザーサービス
+// 2. 商品サービス
+// 3. 注文サービス
+// 4. 決済サービス
+
+// 各サービスは独立してデプロイ可能
+// API Gateway経由で通信
+```
+
+**関連用語:**
+- モノリス
+- サービスディスカバリ
+- API Gateway
+
+---
+
+## レイヤードアーキテクチャ（Layered Architecture）
+
+**定義:**
+レイヤードアーキテクチャは、アプリケーションを複数の層に分割するアーキテクチャパターンです。
+
+**なぜ重要なのか:**
+- **関心の分離**: 各層の責任が明確
+- **保守性**: コードの保守性が向上する
+- **テスト**: 各層を独立してテストできる
+
+**使用例:**
+
+```typescript
+// レイヤードアーキテクチャの例
+// 1. Presentation Layer（プレゼンテーション層）
+//    - UIコンポーネント
+//    - ルーティング
+//
+// 2. Application Layer（アプリケーション層）
+//    - ユースケース
+//    - ビジネスロジック
+//
+// 3. Domain Layer（ドメイン層）
+//    - エンティティ
+//    - ドメインロジック
+//
+// 4. Infrastructure Layer（インフラストラクチャ層）
+//    - データベース
+//    - 外部API
+```
+
+**関連用語:**
+- Clean Architecture
+- Hexagonal Architecture
+- Onion Architecture
+
+---
+
+## クリーンアーキテクチャ（Clean Architecture）
+
+**定義:**
+クリーンアーキテクチャは、依存関係の方向を制御するアーキテクチャパターンです。
+
+**なぜ重要なのか:**
+- **独立性**: フレームワークやデータベースから独立
+- **テスト**: テストが容易
+- **保守性**: コードの保守性が向上する
+
+**使用例:**
+
+```typescript
+// クリーンアーキテクチャの例
+// 依存関係の方向: 外側 → 内側
+
+// 1. Entities（エンティティ）
+//    - ビジネスルール
+//
+// 2. Use Cases（ユースケース）
+//    - アプリケーションのビジネスルール
+//
+// 3. Interface Adapters（インターフェースアダプター）
+//    - コントローラー
+//    - プレゼンター
+//
+// 4. Frameworks & Drivers（フレームワークとドライバー）
+//    - Webフレームワーク
+//    - データベース
+```
+
+**関連用語:**
+- Layered Architecture
+- Hexagonal Architecture
+- Onion Architecture
+
+---
+
+## ヘキサゴナルアーキテクチャ（Hexagonal Architecture）
+
+**定義:**
+ヘキサゴナルアーキテクチャは、「ポートとアダプター」アーキテクチャとも呼ばれ、アプリケーションのコアを外部から分離するパターンです。
+
+**なぜ重要なのか:**
+- **独立性**: 外部システムから独立
+- **テスト**: モックを使用してテストできる
+- **柔軟性**: 外部システムを変更しても影響が少ない
+
+**使用例:**
+
+```typescript
+// ヘキサゴナルアーキテクチャの例
+// 1. ポート（Port）
+//    - インターフェース
+//
+// 2. アダプター（Adapter）
+//    - 実装
+//
+// 例: データベースアダプター
+interface UserRepository {
+  findById(id: string): Promise<User>;
+}
+
+class PostgreSQLUserRepository implements UserRepository {
+  async findById(id: string): Promise<User> {
+    // PostgreSQLの実装
+  }
+}
+
+class MongoDBUserRepository implements UserRepository {
+  async findById(id: string): Promise<User> {
+    // MongoDBの実装
+  }
+}
+```
+
+**関連用語:**
+- Clean Architecture
+- Port and Adapters
+- Onion Architecture
+
+---
+
+## API Gateway
+
+**定義:**
+API Gatewayは、クライアントとバックエンドサービス間の単一のエントリーポイントを提供するパターンです。
+
+**なぜ重要なのか:**
+- **統一インターフェース**: クライアントに統一されたインターフェースを提供
+- **認証・認可**: 認証・認可を一元管理
+- **ルーティング**: リクエストを適切なサービスにルーティング
+
+**使用例:**
+
+```typescript
+// API Gatewayの例
+// クライアント → API Gateway → マイクロサービス
+
+// API Gatewayの機能:
+// 1. ルーティング
+// 2. 認証・認可
+// 3. レート制限
+// 4. ログ記録
+// 5. モニタリング
+```
+
+**関連用語:**
+- Microservices
+- Service Mesh
+- Load Balancer
+
+---
+
+## Service Mesh
+
+**定義:**
+Service Meshは、マイクロサービス間の通信を管理するインフラストラクチャレイヤーです。
+
+**なぜ重要なのか:**
+- **通信の管理**: サービス間の通信を管理
+- **セキュリティ**: サービス間の通信をセキュアにする
+- **可観測性**: サービス間の通信を可視化
+
+**使用例:**
+
+```typescript
+// Service Meshの例
+// 各マイクロサービスにサイドカーを配置
+// サイドカーが通信を管理
+
+// Service Meshの機能:
+// 1. サービスディスカバリー
+// 2. ロードバランシング
+// 3. リトライ
+// 4. サーキットブレーカー
+// 5. 分散トレーシング
+```
+
+**関連用語:**
+- Microservices
+- API Gateway
+- Sidecar Pattern
+
+---
+
+## イベント駆動アーキテクチャ
+
+**定義:**
+イベント駆動アーキテクチャは、イベントの発生に基づいてシステムが動作するアーキテクチャです。
+
+**なぜ重要なのか:**
+- **疎結合**: サービス間の結合が疎になる
+- **スケーラビリティ**: イベントベースでスケールできる
+- **リアルタイム性**: リアルタイムでイベントを処理できる
+
+**使用例:**
+
+```typescript
+// イベントの発行
+await eventBus.publish('order.created', {
+  orderId: order.id,
+  userId: order.userId,
+  amount: order.amount
+});
+
+// イベントの購読
+eventBus.subscribe('order.created', async (event) => {
+  await paymentService.charge(event.orderId, event.amount);
+});
+```
+
+**関連用語:**
+- マイクロサービス
+- メッセージキュー
+- Pub/Sub
+
+---
+
+## CQRS（Command Query Responsibility Segregation）
+
+**定義:**
+CQRSは、読み取りと書き込みを分離するアーキテクチャパターンです。
+
+**なぜ重要なのか:**
+- **パフォーマンスの最適化**: 読み取りと書き込みを最適化できる
+- **スケーラビリティ**: 読み取りと書き込みを独立してスケールできる
+- **柔軟性**: 読み取りと書き込みで異なるデータモデルを使用できる
+
+**使用例:**
+
+```typescript
+// 書き込みモデル
+class WriteModel {
+  async createOrder(orderData) {
+    await this.eventStore.append(new OrderCreatedEvent(orderData));
+  }
+}
+
+// 読み取りモデル
+class ReadModel {
+  async getOrder(orderId) {
+    return await this.readRepository.find(orderId);
+  }
+}
+```
+
+**関連用語:**
+- イベントソーシング
+- 読み取り最適化
+- 書き込み最適化
+
+---
+
+## Event Sourcing（イベントソーシング）
+
+**定義:**
+Event Sourcingは、状態の変更をイベントとして保存するパターンです。
+
+**なぜ重要なのか:**
+- **監査ログ**: すべての変更が記録される
+- **タイムトラベル**: 過去の状態を再現できる
+- **デバッグ**: 問題の原因を特定しやすい
+
+**使用例:**
+
+```typescript
+// イベントの保存
+await eventStore.append(new OrderCreatedEvent(orderData));
+
+// 状態の再現
+const events = await eventStore.getByOrderId(orderId);
+const order = events.reduce((state, event) => applyEvent(state, event), initialState);
+```
+
+**関連用語:**
+- CQRS
+- イベントストア
+- イベントリプレイ

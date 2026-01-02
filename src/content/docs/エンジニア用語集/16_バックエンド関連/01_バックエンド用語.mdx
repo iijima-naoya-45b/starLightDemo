@@ -1,0 +1,186 @@
+---
+title: バックエンド用語
+sidebar:
+    label: バックエンド用語
+---
+
+# バックエンド用語
+
+## API（Application Programming Interface）
+
+**定義:**
+APIは、アプリケーション間でデータや機能を共有するためのインターフェースです。
+
+**なぜ重要なのか:**
+- **再利用性**: 既存の機能を再利用できる
+- **分離**: フロントエンドとバックエンドを分離
+- **スケーラビリティ**: 独立してスケールできる
+
+**APIの種類:**
+```
+- REST API: HTTPメソッドを使用
+- GraphQL: クエリ言語を使用
+- gRPC: Protocol Buffersを使用
+- WebSocket: リアルタイム通信
+```
+
+**関連用語:**
+- REST
+- GraphQL
+- gRPC
+
+---
+
+## REST（Representational State Transfer）
+
+**定義:**
+RESTは、Webサービスの設計原則で、HTTPメソッドを使用してリソースを操作します。
+
+**なぜ重要なのか:**
+- **シンプル**: 理解しやすい
+- **標準的**: HTTP標準を使用
+- **スケーラブル**: スケーラブルな設計
+
+**RESTの原則:**
+```
+- ステートレス: 各リクエストは独立
+- 統一インターフェース: 標準的なHTTPメソッド
+- リソースベース: リソースを中心に設計
+- キャッシュ可能: レスポンスをキャッシュ可能
+```
+
+**関連用語:**
+- API
+- HTTP
+- リソース
+
+---
+
+## エンドポイント（Endpoint）
+
+**定義:**
+エンドポイントは、APIの特定のURLパスで、特定のリソースや操作を表します。
+
+**なぜ重要なのか:**
+- **明確性**: APIの機能が明確
+- **構造化**: APIが構造化される
+- **保守性**: 保守が容易
+
+**使用例:**
+
+```typescript
+// エンドポイントの例
+GET    /api/users          // ユーザー一覧を取得
+GET    /api/users/:id      // 特定のユーザーを取得
+POST   /api/users          // ユーザーを作成
+PUT    /api/users/:id      // ユーザーを更新
+DELETE /api/users/:id      // ユーザーを削除
+```
+
+**関連用語:**
+- API
+- REST
+- ルーティング
+
+---
+
+## ミドルウェア（Middleware）
+
+**定義:**
+ミドルウェアは、リクエストとレスポンスの間で実行される処理です。
+
+**なぜ重要なのか:**
+- **共通処理**: 認証、ロギングなどの共通処理
+- **再利用性**: 複数のルートで再利用
+- **関心の分離**: 処理を分離
+
+**使用例:**
+
+```typescript
+// Express.jsのミドルウェア
+app.use((req, res, next) => {
+  // 認証チェック
+  if (!req.headers.authorization) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+});
+
+app.use((req, res, next) => {
+  // ロギング
+  console.log(`${req.method} ${req.path}`);
+  next();
+});
+```
+
+**関連用語:**
+- ルーティング
+- 認証
+- ロギング
+
+---
+
+## ORM（Object-Relational Mapping）
+
+**定義:**
+ORMは、オブジェクト指向言語とリレーショナルデータベースの間のマッピングです。
+
+**なぜ重要なのか:**
+- **開発効率**: SQLを書かずにデータベース操作
+- **型安全性**: 型安全なデータベース操作
+- **保守性**: データベース変更への対応が容易
+
+**使用例:**
+
+```typescript
+// TypeORMの例
+@Entity()
+class User {
+  @PrimaryGeneratedColumn()
+  id: number;
+  
+  @Column()
+  name: string;
+  
+  @Column()
+  email: string;
+}
+
+// 使用
+const user = await userRepository.findOne({ where: { id: 1 } });
+```
+
+**関連用語:**
+- データベース
+- エンティティ
+- リポジトリ
+
+---
+
+## トランザクション（Transaction）
+
+**定義:**
+トランザクションは、複数のデータベース操作を1つの単位として扱う仕組みです。
+
+**なぜ重要なのか:**
+- **整合性**: データの整合性を保証
+- **原子性**: すべて成功するか、すべて失敗する
+- **一貫性**: データの一貫性を保つ
+
+**使用例:**
+
+```typescript
+// トランザクションの例
+await db.transaction(async (trx) => {
+  await trx('users').insert({ name: 'Alice' });
+  await trx('orders').insert({ userId: 1, amount: 100 });
+  // すべて成功した場合のみコミット
+});
+```
+
+**関連用語:**
+- ACID
+- データベース
+- ロールバック
+
+

@@ -1,0 +1,121 @@
+---
+title: NestJS完全ガイド
+sidebar:
+    label: NestJS基礎
+---
+
+# NestJS完全ガイド
+
+NestJSの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. NestJSとは
+
+### NestJSの特徴
+
+NestJSは、Node.jsのエンタープライズ向けフレームワークです。
+
+```
+NestJSの特徴
+   ├─ TypeScript
+   ├─ 依存性注入
+   ├─ モジュール
+   └─ デコレータ
+```
+
+## 2. 環境構築
+
+### プロジェクトの作成
+
+```bash
+# NestJS CLIのインストール
+npm i -g @nestjs/cli
+
+# プロジェクトの作成
+nest new my-app
+
+# 開発サーバーの起動
+npm run start:dev
+```
+
+## 3. コントローラー
+
+```typescript
+// user.controller.ts
+import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { UserService } from './user.service';
+
+@Controller('users')
+export class UserController {
+  constructor(private readonly userService: UserService) {}
+  
+  @Get()
+  findAll() {
+    return this.userService.findAll();
+  }
+  
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.userService.findOne(id);
+  }
+  
+  @Post()
+  create(@Body() createUserDto: CreateUserDto) {
+    return this.userService.create(createUserDto);
+  }
+}
+```
+
+## 4. サービス
+
+```typescript
+// user.service.ts
+import { Injectable } from '@nestjs/common';
+
+@Injectable()
+export class UserService {
+  private users = [];
+  
+  findAll() {
+    return this.users;
+  }
+  
+  findOne(id: string) {
+    return this.users.find(user => user.id === id);
+  }
+  
+  create(createUserDto: CreateUserDto) {
+    const user = { id: Date.now().toString(), ...createUserDto };
+    this.users.push(user);
+    return user;
+  }
+}
+```
+
+## 5. モジュール
+
+```typescript
+// user.module.ts
+import { Module } from '@nestjs/common';
+import { UserController } from './user.controller';
+import { UserService } from './user.service';
+
+@Module({
+  controllers: [UserController],
+  providers: [UserService],
+  exports: [UserService]
+})
+export class UserModule {}
+```
+
+## まとめ
+
+NestJS完全ガイドのポイント：
+
+- **コントローラー**: REST APIの実装
+- **サービス**: ビジネスロジックの実装
+- **モジュール**: モジュールベースのアーキテクチャ
+- **依存性注入**: DIによる依存関係の管理
+
+適切なNestJSの使用により、大規模で保守性の高いアプリケーションを構築できます。
+
+

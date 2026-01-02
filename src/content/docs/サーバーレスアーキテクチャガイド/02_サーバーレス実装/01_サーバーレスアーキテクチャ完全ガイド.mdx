@@ -1,0 +1,81 @@
+---
+title: サーバーレスアーキテクチャ完全ガイド
+sidebar:
+    label: サーバーレス実装
+---
+
+# サーバーレスアーキテクチャ完全ガイド
+
+サーバーレスアーキテクチャの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. サーバーレスアーキテクチャとは
+
+### サーバーレスの特徴
+
+サーバーレスは、サーバーの管理が不要で、自動スケーリングが可能なアーキテクチャです。
+
+```
+サーバーレスの特徴
+   ├─ サーバー管理不要
+   ├─ 自動スケーリング
+   ├─ イベント駆動
+   └─ 使用量ベースの課金
+```
+
+## 2. AWS Lambda
+
+### Lambda関数の実装
+
+```typescript
+// lambda.ts
+export const handler = async (event: any) => {
+  console.log('Event:', JSON.stringify(event));
+  
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      message: 'Hello from Lambda!'
+    })
+  };
+};
+```
+
+## 3. イベントソース
+
+### API Gateway
+
+```yaml
+# serverless.yml
+functions:
+  hello:
+    handler: handler.hello
+    events:
+      - http:
+          path: hello
+          method: get
+```
+
+### S3イベント
+
+```yaml
+functions:
+  processFile:
+    handler: handler.processFile
+    events:
+      - s3:
+          bucket: my-bucket
+          event: s3:ObjectCreated:*
+```
+
+## まとめ
+
+サーバーレスアーキテクチャ完全ガイドのポイント：
+
+- **Lambda**: サーバーレス関数
+- **イベントソース**: API Gateway、S3、DynamoDB
+- **自動スケーリング**: 自動スケーリング
+- **コスト**: 使用量ベースの課金
+
+適切なサーバーレスアーキテクチャにより、運用負荷の低いシステムを構築できます。
+
+

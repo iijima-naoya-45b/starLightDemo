@@ -1,0 +1,66 @@
+---
+title: C++完全ガイド
+sidebar:
+    label: C++基礎
+---
+
+# C++完全ガイド
+
+C++の実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. C++とは
+
+### C++の特徴
+
+C++は、システムプログラミングや高性能アプリケーション開発に使用される言語です。
+
+```
+C++の特徴
+   ├─ オブジェクト指向
+   ├─ テンプレート
+   ├─ STL
+   └─ メモリ管理
+```
+
+## 2. 基本的な構文
+
+### クラス
+
+```cpp
+#include <iostream>
+#include <string>
+
+class Person {
+private:
+    std::string name;
+    int age;
+
+public:
+    Person(const std::string& name, int age) 
+        : name(name), age(age) {}
+    
+    void introduce() const {
+        std::cout << "Name: " << name 
+                  << ", Age: " << age << std::endl;
+    }
+};
+
+int main() {
+    Person person("Alice", 25);
+    person.introduce();
+    return 0;
+}
+```
+
+## まとめ
+
+C++完全ガイドのポイント：
+
+- **オブジェクト指向**: クラス、継承
+- **テンプレート**: ジェネリックプログラミング
+- **STL**: 標準ライブラリ
+- **メモリ管理**: ポインタ、スマートポインタ
+
+適切なC++の使用により、高性能なアプリケーションを構築できます。
+
+

@@ -1,0 +1,641 @@
+---
+title: Redis完全ガイド
+sidebar:
+    label: Redis詳細
+---
+
+# Redis完全ガイド
+
+Redisの実践的な使い方を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Redisとは
+
+### Redisの特徴
+
+Redis（Remote Dictionary Server）は、インメモリデータストアです。高速な読み書きが可能で、キャッシュ、セッション管理、メッセージキューなどに使用されます。
+
+```
+Redisの特徴
+   ├─ インメモリデータストア（高速）
+   ├─ 豊富なデータ型（String、List、Set、Hash、Sorted Setなど）
+   ├─ 永続化オプション（RDB、AOF）
+   ├─ レプリケーション対応
+   └─ クラスタリング対応
+```
+
+### なぜRedisを選ぶのか
+
+**Redisを選ぶべき場合:**
+- 高速なキャッシュが必要
+- セッション管理が必要
+- リアルタイムデータ処理が必要
+- メッセージキューが必要
+
+**Redisを選ばないべき場合:**
+- 大容量データの永続保存が必要（データベースの方が適している）
+- 複雑なクエリが必要（データベースの方が適している）
+
+## 2. Redisのインストールとセットアップ
+
+### macOSでのインストール
+
+```bash
+# Homebrewを使用
+brew install redis
+
+# サービスを開始
+brew services start redis
+
+# Redisに接続
+redis-cli
+```
+
+### Linuxでのインストール
+
+```bash
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install redis-server
+
+# サービスを開始
+sudo systemctl start redis-server
+sudo systemctl enable redis-server
+
+# Redisに接続
+redis-cli
+```
+
+### Windowsでのインストール
+
+1. [Redis公式サイト](https://redis.io/download)からインストーラーをダウンロード
+2. インストーラーを実行し、指示に従ってインストール
+3. Redis CLIまたはRedis Desktop Managerから接続
+
+### 初期設定
+
+```bash
+# Redis設定ファイルの編集（redis.conf）
+# パスワードの設定
+requirepass mypassword
+
+# 永続化の設定
+save 900 1
+save 300 10
+save 60 10000
+
+# メモリ制限の設定
+maxmemory 256mb
+maxmemory-policy allkeys-lru
+```
+
+## 3. データ型と基本操作
+
+### String（文字列）
+
+```bash
+# 値の設定
+SET user:1:name "Alice"
+SET user:1:email "alice@example.com"
+
+# 値の取得
+GET user:1:name
+
+# 値の存在確認
+EXISTS user:1:name
+
+# 値の削除
+DEL user:1:name
+
+# 値のインクリメント
+INCR user:1:views
+INCRBY user:1:views 10
+
+# 値のデクリメント
+DECR user:1:views
+DECRBY user:1:views 5
+
+# 有効期限の設定
+SET user:1:session "session_token" EX 3600
+TTL user:1:session
+```
+
+### Hash（ハッシュ）
+
+```bash
+# ハッシュの設定
+HSET user:1 name "Alice" email "alice@example.com" age 30
+
+# ハッシュの取得
+HGET user:1 name
+HGETALL user:1
+
+# ハッシュの更新
+HSET user:1 age 31
+
+# ハッシュの削除
+HDEL user:1 email
+
+# ハッシュの存在確認
+HEXISTS user:1 name
+
+# ハッシュのすべてのキーを取得
+HKEYS user:1
+
+# ハッシュのすべての値を取得
+HVALS user:1
+```
+
+### List（リスト）
+
+```bash
+# リストの先頭に追加
+LPUSH tasks "task1" "task2" "task3"
+
+# リストの末尾に追加
+RPUSH tasks "task4" "task5"
+
+# リストの取得
+LRANGE tasks 0 -1
+
+# リストの先頭から取得（削除）
+LPOP tasks
+
+# リストの末尾から取得（削除）
+RPOP tasks
+
+# リストの長さを取得
+LLEN tasks
+
+# リストの特定の位置の値を取得
+LINDEX tasks 0
+
+# リストの特定の位置の値を設定
+LSET tasks 0 "new_task"
+```
+
+### Set（集合）
+
+```bash
+# セットへの追加
+SADD tags "redis" "database" "cache"
+
+# セットの取得
+SMEMBERS tags
+
+# セットの要素数の取得
+SCARD tags
+
+# セットの要素の存在確認
+SISMEMBER tags "redis"
+
+# セットからの削除
+SREM tags "cache"
+
+# セットの和集合
+SUNION tags1 tags2
+
+# セットの積集合
+SINTER tags1 tags2
+
+# セットの差集合
+SDIFF tags1 tags2
+```
+
+### Sorted Set（順序付き集合）
+
+```bash
+# ソート済みセットへの追加
+ZADD leaderboard 100 "Alice" 200 "Bob" 150 "Charlie"
+
+# ソート済みセットの取得（昇順）
+ZRANGE leaderboard 0 -1 WITHSCORES
+
+# ソート済みセットの取得（降順）
+ZREVRANGE leaderboard 0 -1 WITHSCORES
+
+# スコアの取得
+ZSCORE leaderboard "Alice"
+
+# ランクの取得
+ZRANK leaderboard "Alice"
+ZREVRANK leaderboard "Alice"
+
+# スコア範囲での取得
+ZRANGEBYSCORE leaderboard 100 200
+
+# スコアの更新
+ZINCRBY leaderboard 50 "Alice"
+```
+
+## 4. 高度な機能
+
+### Pub/Sub（パブリッシュ/サブスクライブ）
+
+```bash
+# チャンネルの購読
+SUBSCRIBE notifications
+
+# チャンネルへのメッセージ送信（別のクライアントから）
+PUBLISH notifications "New message"
+
+# パターンマッチングでの購読
+PSUBSCRIBE notifications:*
+
+# チャンネルの購読解除
+UNSUBSCRIBE notifications
+```
+
+### トランザクション
+
+```bash
+# トランザクションの開始
+MULTI
+
+# コマンドの追加
+SET key1 "value1"
+SET key2 "value2"
+INCR counter
+
+# トランザクションの実行
+EXEC
+
+# トランザクションのキャンセル
+DISCARD
+```
+
+### パイプライン
+
+```bash
+# パイプラインの使用（複数のコマンドを一度に送信）
+# クライアントライブラリで実装
+# Pythonの例:
+import redis
+r = redis.Redis()
+pipe = r.pipeline()
+pipe.set('key1', 'value1')
+pipe.set('key2', 'value2')
+pipe.execute()
+```
+
+## 5. 永続化
+
+### RDB（Redis Database）
+
+```bash
+# redis.confの設定
+save 900 1      # 900秒以内に1回以上の変更があれば保存
+save 300 10     # 300秒以内に10回以上の変更があれば保存
+save 60 10000   # 60秒以内に10000回以上の変更があれば保存
+
+# 手動でのRDB保存
+BGSAVE
+
+# 同期的なRDB保存（ブロッキング）
+SAVE
+```
+
+### AOF（Append Only File）
+
+```bash
+# redis.confの設定
+appendonly yes
+appendfsync everysec  # always, everysec, no
+
+# AOFファイルの書き換え
+BGREWRITEAOF
+```
+
+### RDB vs AOF
+
+| 特徴 | RDB | AOF |
+|------|-----|-----|
+| データ損失 | 最後の保存時点まで | 最小限 |
+| パフォーマンス | 高速 | やや低速 |
+| ファイルサイズ | 小さい | 大きい |
+| リカバリ速度 | 高速 | やや低速 |
+
+## 6. レプリケーション
+
+### マスター・スレーブレプリケーション
+
+```bash
+# スレーブサーバーの設定（redis.conf）
+replicaof 192.168.1.100 6379
+masterauth mypassword
+
+# レプリケーションの状態確認
+INFO replication
+
+# レプリケーションの開始
+REPLICAOF 192.168.1.100 6379
+
+# レプリケーションの停止
+REPLICAOF NO ONE
+```
+
+### センチネル（Sentinel）
+
+```bash
+# sentinel.confの設定
+sentinel monitor mymaster 192.168.1.100 6379 2
+sentinel auth-pass mymaster mypassword
+sentinel down-after-milliseconds mymaster 5000
+sentinel failover-timeout mymaster 10000
+
+# センチネルの起動
+redis-sentinel sentinel.conf
+```
+
+## 7. クラスタリング
+
+### Redis Clusterの設定
+
+```bash
+# 各ノードの設定（redis.conf）
+cluster-enabled yes
+cluster-config-file nodes.conf
+cluster-node-timeout 5000
+
+# クラスタの作成
+redis-cli --cluster create \
+  127.0.0.1:7000 127.0.0.1:7001 127.0.0.1:7002 \
+  127.0.0.1:7003 127.0.0.1:7004 127.0.0.1:7005 \
+  --cluster-replicas 1
+
+# クラスタの状態確認
+redis-cli -c -p 7000 CLUSTER NODES
+```
+
+### クラスタの操作
+
+```bash
+# クラスタモードでの接続
+redis-cli -c -p 7000
+
+# クラスタの情報取得
+CLUSTER INFO
+
+# スロットの確認
+CLUSTER SLOTS
+```
+
+## 8. パフォーマンス最適化
+
+### メモリ最適化
+
+```bash
+# メモリ使用量の確認
+INFO memory
+
+# メモリ制限の設定
+maxmemory 256mb
+maxmemory-policy allkeys-lru  # allkeys-lru, volatile-lru, allkeys-random, volatile-random, volatile-ttl, noeviction
+
+# メモリ使用量の削減
+MEMORY DOCTOR
+```
+
+### 接続プール
+
+```bash
+# 最大接続数の設定（redis.conf）
+maxclients 10000
+
+# 接続数の確認
+INFO clients
+```
+
+### パイプラインとバッチ処理
+
+```python
+# Pythonの例
+import redis
+r = redis.Redis()
+
+# パイプラインの使用
+pipe = r.pipeline()
+for i in range(1000):
+    pipe.set(f'key{i}', f'value{i}')
+pipe.execute()
+```
+
+## 9. セキュリティ
+
+### 認証
+
+```bash
+# パスワードの設定（redis.conf）
+requirepass mypassword
+
+# 認証の実行
+AUTH mypassword
+
+# 認証付きでの接続
+redis-cli -a mypassword
+```
+
+### ACL（Access Control List）
+
+```bash
+# ユーザーの作成
+ACL SETUSER alice on >password123 ~cached:* +get +set
+
+# ユーザーの確認
+ACL LIST
+
+# ユーザーでの接続
+redis-cli --user alice --pass password123
+```
+
+### TLS/SSL
+
+```bash
+# TLSの設定（redis.conf）
+tls-port 6380
+tls-cert-file /path/to/cert.pem
+tls-key-file /path/to/key.pem
+tls-ca-cert-file /path/to/ca.pem
+
+# TLS接続
+redis-cli --tls --cert /path/to/cert.pem --key /path/to/key.pem
+```
+
+## 10. 実践的な使用例
+
+### キャッシュ
+
+```python
+# Pythonの例
+import redis
+import json
+
+r = redis.Redis(host='localhost', port=6379, db=0)
+
+def get_user(user_id):
+    cache_key = f'user:{user_id}'
+    cached_user = r.get(cache_key)
+    
+    if cached_user:
+        return json.loads(cached_user)
+    
+    # データベースから取得
+    user = db.get_user(user_id)
+    
+    # キャッシュに保存（1時間）
+    r.setex(cache_key, 3600, json.dumps(user))
+    
+    return user
+```
+
+### セッション管理
+
+```python
+# Pythonの例
+import redis
+import uuid
+
+r = redis.Redis(host='localhost', port=6379, db=0)
+
+def create_session(user_id):
+    session_id = str(uuid.uuid4())
+    session_key = f'session:{session_id}'
+    
+    r.setex(session_key, 3600, user_id)  # 1時間
+    
+    return session_id
+
+def get_session(session_id):
+    session_key = f'session:{session_id}'
+    user_id = r.get(session_key)
+    
+    if user_id:
+        r.expire(session_key, 3600)  # 有効期限を延長
+    
+    return user_id
+```
+
+### レート制限
+
+```python
+# Pythonの例
+import redis
+import time
+
+r = redis.Redis(host='localhost', port=6379, db=0)
+
+def rate_limit(user_id, limit=100, window=3600):
+    key = f'rate_limit:{user_id}'
+    current = r.incr(key)
+    
+    if current == 1:
+        r.expire(key, window)
+    
+    if current > limit:
+        return False
+    
+    return True
+```
+
+### リアルタイムランキング
+
+```python
+# Pythonの例
+import redis
+
+r = redis.Redis(host='localhost', port=6379, db=0)
+
+def update_score(user_id, score):
+    r.zadd('leaderboard', {user_id: score})
+
+def get_top_users(limit=10):
+    return r.zrevrange('leaderboard', 0, limit-1, withscores=True)
+```
+
+## 11. 監視とログ
+
+### 情報の取得
+
+```bash
+# サーバー情報の取得
+INFO
+
+# 特定のセクションの情報取得
+INFO memory
+INFO stats
+INFO replication
+
+# クライアント情報の取得
+CLIENT LIST
+
+# スロークエリの確認
+SLOWLOG GET 10
+```
+
+### メトリクスの監視
+
+```bash
+# メモリ使用量
+INFO memory | grep used_memory_human
+
+# 接続数
+INFO clients | grep connected_clients
+
+# コマンド統計
+INFO stats | grep total_commands_processed
+```
+
+## 12. よくある問題と解決方法
+
+### 問題1: メモリ不足
+
+```bash
+# メモリ使用量の確認
+INFO memory
+
+# メモリ制限の設定
+CONFIG SET maxmemory 256mb
+CONFIG SET maxmemory-policy allkeys-lru
+
+# 大きなキーの確認
+redis-cli --bigkeys
+```
+
+### 問題2: パフォーマンスの低下
+
+```bash
+# スロークエリの確認
+SLOWLOG GET 10
+
+# スロークエリの設定
+CONFIG SET slowlog-log-slower-than 10000
+
+# メモリフラグメンテーションの確認
+MEMORY STATS
+```
+
+### 問題3: レプリケーションの遅延
+
+```bash
+# レプリケーションの状態確認
+INFO replication
+
+# レプリケーションの遅延確認
+redis-cli --latency -h replica_host -p 6379
+```
+
+## まとめ
+
+Redis完全ガイドのポイント：
+
+- **データ型**: String、Hash、List、Set、Sorted Set
+- **高度な機能**: Pub/Sub、トランザクション、パイプライン
+- **永続化**: RDB、AOF
+- **レプリケーション**: マスター・スレーブ、センチネル
+- **クラスタリング**: 水平スケーリング
+- **パフォーマンス最適化**: メモリ最適化、接続プール
+- **セキュリティ**: 認証、ACL、TLS/SSL
+- **実践例**: キャッシュ、セッション管理、レート制限
+
+適切なRedisの使用により、高速でスケーラブルなアプリケーションを構築できます。
+
+

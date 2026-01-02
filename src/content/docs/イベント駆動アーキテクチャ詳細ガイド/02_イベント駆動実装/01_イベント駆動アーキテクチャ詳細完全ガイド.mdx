@@ -1,0 +1,76 @@
+---
+title: イベント駆動アーキテクチャ詳細完全ガイド
+sidebar:
+    label: イベント駆動実装
+---
+
+# イベント駆動アーキテクチャ詳細完全ガイド
+
+イベント駆動アーキテクチャの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. イベント駆動アーキテクチャとは
+
+### イベント駆動の特徴
+
+イベント駆動アーキテクチャは、イベントの発生に基づいてシステムが動作するアーキテクチャです。
+
+```
+イベント駆動の特徴
+   ├─ イベントの発行
+   ├─ イベントの購読
+   ├─ 疎結合
+   └─ 非同期処理
+```
+
+## 2. イベントバス
+
+### イベントバスの実装
+
+```typescript
+// イベントバス
+class EventBus {
+  private subscribers = new Map<string, Function[]>();
+  
+  subscribe(eventType: string, handler: Function): void {
+    const handlers = this.subscribers.get(eventType) || [];
+    handlers.push(handler);
+    this.subscribers.set(eventType, handlers);
+  }
+  
+  publish(eventType: string, data: any): void {
+    const handlers = this.subscribers.get(eventType) || [];
+    handlers.forEach(handler => handler(data));
+  }
+}
+```
+
+## 3. イベントの使用
+
+```typescript
+// イベントの発行
+await eventBus.publish('order.created', {
+  orderId: order.id,
+  userId: order.userId,
+  amount: order.amount
+});
+
+// イベントの購読
+eventBus.subscribe('order.created', async (event) => {
+  await paymentService.charge(event.orderId, event.amount);
+  await inventoryService.update(event.orderId);
+  await notificationService.send(event.userId);
+});
+```
+
+## まとめ
+
+イベント駆動アーキテクチャ詳細完全ガイドのポイント：
+
+- **イベントバス**: イベントの管理
+- **イベントの発行**: イベントの発行
+- **イベントの購読**: イベントの購読
+- **疎結合**: サービス間の疎結合
+
+適切なイベント駆動アーキテクチャにより、スケーラブルで柔軟なシステムを構築できます。
+
+

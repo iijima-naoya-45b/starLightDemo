@@ -1,0 +1,161 @@
+---
+title: Rust完全ガイド
+sidebar:
+    label: Rust基礎
+---
+
+# Rust完全ガイド
+
+Rustの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Rustとは
+
+### Rustの特徴
+
+Rustは、メモリ安全性とパフォーマンスを両立するシステムプログラミング言語です。
+
+```
+Rustの特徴
+   ├─ メモリ安全性
+   ├─ パフォーマンス
+   ├─ 並行性
+   └─ 型システム
+```
+
+## 2. 基本構文
+
+### 変数と型
+
+```rust
+// 変数の定義
+let name = "Alice";
+let age = 30;
+let height = 165.5;
+let is_active = true;
+
+// 可変変数
+let mut count = 0;
+count += 1;
+
+// 型の明示
+let age: i32 = 30;
+let height: f64 = 165.5;
+```
+
+### データ構造
+
+```rust
+// ベクター
+let mut fruits = vec!["apple", "banana", "orange"];
+fruits.push("grape");
+println!("{}", fruits[0]);  // apple
+
+// ハッシュマップ
+use std::collections::HashMap;
+let mut user = HashMap::new();
+user.insert("name", "Alice");
+user.insert("age", "30");
+```
+
+### 関数
+
+```rust
+fn greet(name: &str, age: Option<i32>) -> String {
+    match age {
+        Some(a) => format!("Hello, {}! You are {} years old.", name, a),
+        None => format!("Hello, {}!", name),
+    }
+}
+
+let result = greet("Alice", Some(30));
+println!("{}", result);
+```
+
+### 構造体
+
+```rust
+struct User {
+    name: String,
+    email: String,
+    age: u32,
+}
+
+impl User {
+    fn new(name: String, email: String, age: u32) -> Self {
+        User { name, email, age }
+    }
+    
+    fn info(&self) -> String {
+        format!("{} ({})", self.name, self.email)
+    }
+}
+
+let user = User::new("Alice".to_string(), "alice@example.com".to_string(), 30);
+println!("{}", user.info());
+```
+
+## 3. 所有権と借用
+
+### 所有権
+
+```rust
+let s1 = String::from("hello");
+let s2 = s1;  // s1の所有権がs2に移動
+// println!("{}", s1);  // エラー: s1は使用できない
+```
+
+### 借用
+
+```rust
+fn calculate_length(s: &String) -> usize {
+    s.len()
+}
+
+let s = String::from("hello");
+let len = calculate_length(&s);
+println!("{}", s);  // OK: 借用なので所有権は移動しない
+```
+
+## 4. エラーハンドリング
+
+```rust
+use std::fs::File;
+use std::io::Error;
+
+fn read_file(path: &str) -> Result<String, Error> {
+    match File::open(path) {
+        Ok(mut file) => {
+            use std::io::Read;
+            let mut contents = String::new();
+            file.read_to_string(&mut contents)?;
+            Ok(contents)
+        },
+        Err(e) => Err(e),
+    }
+}
+```
+
+## 5. 並行プログラミング
+
+```rust
+use std::thread;
+
+let handle = thread::spawn(|| {
+    println!("Hello from thread!");
+});
+
+handle.join().unwrap();
+```
+
+## まとめ
+
+Rust完全ガイドのポイント：
+
+- **基本構文**: 変数、型、データ構造、関数、構造体
+- **所有権と借用**: メモリ安全性の保証
+- **エラーハンドリング**: Result型によるエラーハンドリング
+- **並行プログラミング**: 安全な並行プログラミング
+
+適切なRustの使用により、安全で高速なシステムを構築できます。
+
+

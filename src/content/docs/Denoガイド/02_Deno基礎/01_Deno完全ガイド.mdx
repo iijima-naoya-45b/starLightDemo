@@ -1,0 +1,74 @@
+---
+title: Deno完全ガイド
+sidebar:
+    label: Deno基礎
+---
+
+# Deno完全ガイド
+
+Denoの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Denoとは
+
+### Denoの特徴
+
+Denoは、Node.jsの代替となるモダンなJavaScript/TypeScriptランタイムです。
+
+```
+Denoの特徴
+   ├─ TypeScriptネイティブ
+   ├─ セキュリティ
+   ├─ 標準ライブラリ
+   └─ ES Modules
+```
+
+## 2. 環境構築
+
+### Denoのインストール
+
+```bash
+# Denoのインストール
+curl -fsSL https://deno.land/install.sh | sh
+
+# バージョンの確認
+deno --version
+```
+
+## 3. 基本的な使用
+
+### HTTPサーバー
+
+```typescript
+// server.ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+
+serve((req) => {
+  return new Response('Hello, Deno!', {
+    headers: { 'content-type': 'text/plain' },
+  });
+}, { port: 8000 });
+```
+
+### ファイル操作
+
+```typescript
+// ファイルの読み込み
+const text = await Deno.readTextFile('./file.txt');
+console.log(text);
+
+// ファイルの書き込み
+await Deno.writeTextFile('./output.txt', 'Hello, Deno!');
+```
+
+## まとめ
+
+Deno完全ガイドのポイント：
+
+- **TypeScript**: ネイティブでTypeScriptをサポート
+- **セキュリティ**: パーミッションベースのセキュリティ
+- **標準ライブラリ**: 豊富な標準ライブラリ
+- **ES Modules**: ES Modulesを標準サポート
+
+適切なDenoの使用により、モダンでセキュアなアプリケーションを構築できます。
+
+

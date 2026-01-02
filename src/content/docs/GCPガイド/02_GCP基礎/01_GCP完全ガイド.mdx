@@ -1,0 +1,144 @@
+---
+title: GCP完全ガイド
+sidebar:
+    label: GCP基礎
+---
+
+# GCP完全ガイド
+
+GCPの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Compute Engine
+
+### インスタンスの作成
+
+```bash
+# gcloud CLIでのインスタンス作成
+gcloud compute instances create my-instance \
+  --zone=asia-northeast1-a \
+  --machine-type=n1-standard-1 \
+  --image-family=ubuntu-2004-lts \
+  --image-project=ubuntu-os-cloud
+```
+
+### インスタンスの管理
+
+```bash
+# インスタンスの起動
+gcloud compute instances start my-instance --zone=asia-northeast1-a
+
+# インスタンスの停止
+gcloud compute instances stop my-instance --zone=asia-northeast1-a
+
+# インスタンスの削除
+gcloud compute instances delete my-instance --zone=asia-northeast1-a
+```
+
+## 2. Cloud Storage
+
+### バケットの作成
+
+```bash
+# バケットの作成
+gsutil mb -p my-project -c STANDARD -l asia-northeast1 gs://my-bucket
+
+# ファイルのアップロード
+gsutil cp file.txt gs://my-bucket/
+
+# ファイルのダウンロード
+gsutil cp gs://my-bucket/file.txt ./
+```
+
+### ライフサイクル管理
+
+```json
+{
+  "lifecycle": {
+    "rule": [
+      {
+        "action": {"type": "SetStorageClass", "storageClass": "NEARLINE"},
+        "condition": {"age": 30}
+      },
+      {
+        "action": {"type": "Delete"},
+        "condition": {"age": 365}
+      }
+    ]
+  }
+}
+```
+
+## 3. Cloud Functions
+
+### 関数の作成
+
+```typescript
+// Cloud Functionsの実装
+import { CloudFunction } from '@google-cloud/functions-framework';
+
+export const helloWorld: CloudFunction = (req, res) => {
+  res.send('Hello World!');
+};
+
+// デプロイ
+// gcloud functions deploy helloWorld --runtime nodejs18 --trigger http
+```
+
+### イベント駆動関数
+
+```typescript
+// Cloud Storageイベント
+import { Storage } from '@google-cloud/storage';
+
+export const processFile = async (file: Storage.File) => {
+  console.log(`Processing file: ${file.name}`);
+  // ファイル処理
+};
+```
+
+## 4. BigQuery
+
+### クエリの実行
+
+```typescript
+// BigQueryクエリ
+import { BigQuery } from '@google-cloud/bigquery';
+
+const bigquery = new BigQuery();
+
+const query = `
+  SELECT name, COUNT(*) as count
+  FROM \`my-project.my_dataset.my_table\`
+  GROUP BY name
+  ORDER BY count DESC
+  LIMIT 10
+`;
+
+const [rows] = await bigquery.query(query);
+console.log('Results:', rows);
+```
+
+## 5. Cloud SQL
+
+### インスタンスの作成
+
+```bash
+# Cloud SQLインスタンスの作成
+gcloud sql instances create my-instance \
+  --database-version=POSTGRES_14 \
+  --tier=db-f1-micro \
+  --region=asia-northeast1
+```
+
+## まとめ
+
+GCP完全ガイドのポイント：
+
+- **Compute Engine**: 仮想マシンの管理
+- **Cloud Storage**: オブジェクトストレージ
+- **Cloud Functions**: サーバーレス関数
+- **BigQuery**: データ分析
+- **Cloud SQL**: マネージドデータベース
+
+適切なGCPの使用により、スケーラブルで効率的なシステムを構築できます。
+

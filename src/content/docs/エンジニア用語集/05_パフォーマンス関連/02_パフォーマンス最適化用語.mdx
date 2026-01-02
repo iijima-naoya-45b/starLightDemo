@@ -1,0 +1,183 @@
+---
+title: パフォーマンス最適化用語
+sidebar:
+    label: パフォーマンス最適化用語
+---
+
+# パフォーマンス最適化用語
+
+## レイジーローディング（Lazy Loading）
+
+**定義:**
+レイジーローディングは、必要な時までデータやリソースの読み込みを遅延させる手法です。
+
+**なぜ重要なのか:**
+- **初期読み込み速度**: 初期読み込み時間を短縮
+- **リソースの効率化**: 必要なリソースのみを読み込む
+- **ユーザー体験**: ページの表示速度が向上
+
+**使用例:**
+
+```typescript
+// 画像のレイジーローディング
+<img src="image.jpg" loading="lazy" alt="Product" />
+
+// コンポーネントのレイジーローディング
+const LazyComponent = React.lazy(() => import('./Component'));
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LazyComponent />
+    </Suspense>
+  );
+}
+```
+
+**関連用語:**
+- コード分割
+- バンドルサイズ
+- パフォーマンス最適化
+
+---
+
+## デバウンス（Debounce）
+
+**定義:**
+デバウンスは、連続して発生するイベントを、最後のイベントから一定時間経過後に1回だけ実行する手法です。
+
+**なぜ重要なのか:**
+- **パフォーマンス**: 不要な処理を削減
+- **リソースの節約**: API呼び出しなどを削減
+- **ユーザー体験**: 応答性が向上
+
+**使用例:**
+
+```typescript
+function debounce(func: Function, wait: number) {
+  let timeout: NodeJS.Timeout;
+  return function executedFunction(...args: any[]) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+// 検索入力のデバウンス
+const debouncedSearch = debounce((query: string) => {
+  searchAPI(query);
+}, 300);
+
+// 使用例
+input.addEventListener('input', (e) => {
+  debouncedSearch(e.target.value);
+});
+```
+
+**関連用語:**
+- スロットル
+- パフォーマンス最適化
+- イベントハンドリング
+
+---
+
+## スロットル（Throttle）
+
+**定義:**
+スロットルは、一定時間内にイベントの実行回数を制限する手法です。
+
+**なぜ重要なのか:**
+- **パフォーマンス**: 処理の頻度を制限
+- **リソースの節約**: CPUやメモリの使用を制限
+- **ユーザー体験**: スムーズな動作を実現
+
+**使用例:**
+
+```typescript
+function throttle(func: Function, limit: number) {
+  let inThrottle: boolean;
+  return function executedFunction(...args: any[]) {
+    if (!inThrottle) {
+      func(...args);
+      inThrottle = true;
+      setTimeout(() => inThrottle = false, limit);
+    }
+  };
+}
+
+// スクロールイベントのスロットル
+const throttledScroll = throttle(() => {
+  updateScrollPosition();
+}, 100);
+
+window.addEventListener('scroll', throttledScroll);
+```
+
+**関連用語:**
+- デバウンス
+- パフォーマンス最適化
+- イベントハンドリング
+
+---
+
+## プロファイリング（Profiling）
+
+**定義:**
+プロファイリングは、プログラムの実行時間やリソース使用量を測定・分析する手法です。
+
+**なぜ重要なのか:**
+- **ボトルネックの特定**: パフォーマンスの問題を特定
+- **最適化の優先順位**: 最適化すべき箇所を特定
+- **パフォーマンスの改善**: データに基づいて改善
+
+**使用例:**
+
+```typescript
+// Node.jsのプロファイリング
+console.time('database-query');
+const users = await User.findAll();
+console.timeEnd('database-query');
+
+// Chrome DevToolsのプロファイリング
+// Performanceタブで記録を開始し、パフォーマンスを分析
+```
+
+**関連用語:**
+- ボトルネック
+- パフォーマンス最適化
+- ベンチマーク
+
+---
+
+## コード分割（Code Splitting）
+
+**定義:**
+コード分割は、アプリケーションのコードを複数のバンドルに分割し、必要な時だけ読み込む手法です。
+
+**なぜ重要なのか:**
+- **初期読み込み速度**: 初期バンドルサイズを削減
+- **キャッシング**: 変更の少ない部分をキャッシュ
+- **パフォーマンス**: 必要なコードのみを読み込む
+
+**使用例:**
+
+```typescript
+// Webpackのコード分割
+const LazyComponent = React.lazy(() => import('./LazyComponent'));
+
+// 動的インポート
+async function loadModule() {
+  const module = await import('./module');
+  return module.default;
+}
+```
+
+**関連用語:**
+- レイジーローディング
+- バンドルサイズ
+- パフォーマンス最適化
+
+

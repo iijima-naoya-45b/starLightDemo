@@ -1,0 +1,703 @@
+---
+title: マイクロサービス実装完全ガイド
+sidebar:
+    label: マイクロサービス実装
+---
+
+# マイクロサービス実装完全ガイド
+
+マイクロサービスアーキテクチャの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. マイクロサービスアーキテクチャの基本
+
+### マイクロサービスの定義
+
+マイクロサービスは、独立してデプロイ可能な小さなサービスです。
+
+```
+マイクロサービスの特徴
+   ├─ 独立したデプロイ
+   ├─ 独立したデータベース
+   ├─ 独立した技術スタック
+   ├─ ビジネス機能に基づく分割
+   └─ サービス間の疎結合
+```
+
+## 2. サービス間通信
+
+### 同期通信（HTTP/REST）
+
+```typescript
+// Order Service
+class OrderService {
+  private paymentServiceClient: PaymentServiceClient;
+  
+  async createOrder(orderData: OrderData): Promise<Order> {
+    const order = await this.orderRepository.save(orderData);
+    
+    // 同期で決済サービスを呼び出し
+    try {
+      const paymentResult = await this.paymentServiceClient.charge({
+        orderId: order.id,
+        amount: orderData.amount
+      });
+      
+      if (!paymentResult.success) {
+        await this.orderRepository.updateStatus(order.id, 'payment_failed');
+        throw new Error('Payment failed');
+      }
+      
+      await this.orderRepository.updateStatus(order.id, 'paid');
+      return order;
+    } catch (error) {
+      // エラーハンドリング
+      await this.orderRepository.updateStatus(order.id, 'error');
+      throw error;
+    }
+  }
+}
+
+// Payment Service Client
+class PaymentServiceClient {
+  async charge(data: { orderId: string; amount: number }): Promise<PaymentResult> {
+    const response = await fetch('http://payment-service/api/charge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Payment service error: ${response.status}`);
+    }
+    
+    return await response.json();
+  }
+}
+```
+
+### 非同期通信（メッセージキュー）
+
+```typescript
+// Order Service
+import { EventBus } from './event-bus';
+
+class OrderService {
+  private eventBus: EventBus;
+  
+  async createOrder(orderData: OrderData): Promise<Order> {
+    const order = await this.orderRepository.save(orderData);
+    
+    // イベントを発行（非同期）
+    await this.eventBus.publish('order.created', {
+      orderId: order.id,
+      userId: orderData.userId,
+      items: orderData.items,
+      amount: orderData.amount,
+      timestamp: new Date().toISOString()
+    });
+    
+    return order;
+  }
+}
+
+// Payment Service
+class PaymentService {
+  private eventBus: EventBus;
+  
+  constructor() {
+    this.eventBus.subscribe('order.created', this.handleOrderCreated.bind(this));
+  }
+  
+  async handleOrderCreated(event: OrderCreatedEvent): Promise<void> {
+    try {
+      const paymentResult = await this.chargePayment(event.orderId, event.amount);
+      
+      if (paymentResult.success) {
+        await this.eventBus.publish('payment.completed', {
+          orderId: event.orderId,
+          paymentId: paymentResult.paymentId,
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        await this.eventBus.publish('payment.failed', {
+          orderId: event.orderId,
+          reason: paymentResult.reason,
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      logger.error('Payment processing failed', { orderId: event.orderId, error });
+      await this.eventBus.publish('payment.failed', {
+        orderId: event.orderId,
+        reason: 'Internal error',
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+}
+```
+
+### gRPC通信
+
+```protobuf
+// order.proto
+syntax = "proto3";
+
+service OrderService {
+  rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
+  rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
+}
+
+message CreateOrderRequest {
+  string user_id = 1;
+  repeated OrderItem items = 2;
+  double amount = 3;
+}
+
+message CreateOrderResponse {
+  string order_id = 1;
+  string status = 2;
+  string created_at = 3;
+}
+```
+
+```typescript
+// Order Service (gRPC Server)
+import * as grpc from '@grpc/grpc-js';
+import { OrderServiceService } from './generated/order_grpc_pb';
+import { CreateOrderRequest, CreateOrderResponse } from './generated/order_pb';
+
+class OrderServiceImpl {
+  createOrder(
+    call: grpc.ServerUnaryCall<CreateOrderRequest, CreateOrderResponse>,
+    callback: grpc.sendUnaryData<CreateOrderResponse>
+  ) {
+    const request = call.request;
+    const order = this.orderRepository.create({
+      userId: request.getUserId(),
+      items: request.getItemsList().map(item => ({
+        productId: item.getProductId(),
+        quantity: item.getQuantity()
+      })),
+      amount: request.getAmount()
+    });
+    
+    const response = new CreateOrderResponse();
+    response.setOrderId(order.id);
+    response.setStatus(order.status);
+    response.setCreatedAt(order.createdAt.toISOString());
+    
+    callback(null, response);
+  }
+}
+
+// Payment Service (gRPC Client)
+import { OrderServiceClient } from './generated/order_grpc_pb';
+import { CreateOrderRequest } from './generated/order_pb';
+
+class PaymentService {
+  private orderServiceClient: OrderServiceClient;
+  
+  async processOrder(orderId: string) {
+    const request = new CreateOrderRequest();
+    // リクエストを設定
+    
+    this.orderServiceClient.createOrder(request, (error, response) => {
+      if (error) {
+        logger.error('gRPC call failed', error);
+        return;
+      }
+      
+      logger.info('Order created', { orderId: response.getOrderId() });
+    });
+  }
+}
+```
+
+## 3. API Gateway
+
+### API Gatewayの実装
+
+```typescript
+// API Gateway
+import express from 'express';
+import { createProxyMiddleware } from 'http-proxy-middleware';
+
+const app = express();
+
+// Order Service
+app.use('/api/orders', createProxyMiddleware({
+  target: 'http://order-service:3001',
+  changeOrigin: true,
+  pathRewrite: {
+    '^/api/orders': ''
+  }
+}));
+
+// Payment Service
+app.use('/api/payments', createProxyMiddleware({
+  target: 'http://payment-service:3002',
+  changeOrigin: true,
+  pathRewrite: {
+    '^/api/payments': ''
+  }
+}));
+
+// Inventory Service
+app.use('/api/inventory', createProxyMiddleware({
+  target: 'http://inventory-service:3003',
+  changeOrigin: true,
+  pathRewrite: {
+    '^/api/inventory': ''
+  }
+}));
+
+// 認証ミドルウェア
+app.use(async (req, res, next) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const user = await authService.verifyToken(token);
+    req.user = user;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.listen(3000, () => {
+  console.log('API Gateway running on port 3000');
+});
+```
+
+### Kong API Gateway
+
+```yaml
+# kong.yml
+_format_version: "3.0"
+
+services:
+  - name: order-service
+    url: http://order-service:3001
+    routes:
+      - name: order-route
+        paths:
+          - /api/orders
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+
+  - name: payment-service
+    url: http://payment-service:3002
+    routes:
+      - name: payment-route
+        paths:
+          - /api/payments
+        methods:
+          - GET
+          - POST
+
+plugins:
+  - name: rate-limiting
+    config:
+      minute: 100
+      hour: 1000
+  - name: cors
+    config:
+      origins:
+        - http://localhost:3000
+```
+
+## 4. サービスディスカバリ
+
+### Consul
+
+```typescript
+// サービス登録
+import { Consul } from 'consul';
+
+const consul = new Consul();
+
+async function registerService() {
+  await consul.agent.service.register({
+    name: 'order-service',
+    address: 'order-service',
+    port: 3001,
+    check: {
+      http: 'http://order-service:3001/health',
+      interval: '10s'
+    }
+  });
+}
+
+// サービス発見
+async function discoverService(serviceName: string) {
+  const services = await consul.health.service({
+    service: serviceName,
+    passing: true
+  });
+  
+  if (services.length === 0) {
+    throw new Error(`Service ${serviceName} not found`);
+  }
+  
+  // ロードバランシング（ラウンドロビン）
+  const service = services[Math.floor(Math.random() * services.length)];
+  return `http://${service.Service.Address}:${service.Service.Port}`;
+}
+```
+
+### Eureka
+
+```java
+// Spring Cloud Eureka
+@SpringBootApplication
+@EnableEurekaClient
+public class OrderServiceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(OrderServiceApplication.class, args);
+    }
+}
+
+// application.yml
+eureka:
+  client:
+    service-url:
+      defaultZone: http://eureka-server:8761/eureka/
+  instance:
+    hostname: order-service
+    port: 3001
+```
+
+## 5. Circuit Breaker
+
+### Resilience4j（Java）
+
+```java
+// Circuit Breakerの設定
+@Configuration
+public class CircuitBreakerConfig {
+    
+    @Bean
+    public CircuitBreaker paymentServiceCircuitBreaker() {
+        return CircuitBreaker.of("paymentService", CircuitBreakerConfig.custom()
+            .failureRateThreshold(50)
+            .waitDurationInOpenState(Duration.ofSeconds(30))
+            .slidingWindowSize(10)
+            .build());
+    }
+}
+
+// 使用例
+@Service
+public class OrderService {
+    
+    @Autowired
+    private CircuitBreaker paymentServiceCircuitBreaker;
+    
+    @Autowired
+    private PaymentServiceClient paymentServiceClient;
+    
+    public Order createOrder(OrderData orderData) {
+        return paymentServiceCircuitBreaker.executeSupplier(() -> {
+            PaymentResult result = paymentServiceClient.charge(orderData.getAmount());
+            return processOrder(orderData, result);
+        });
+    }
+}
+```
+
+### opossum（Node.js）
+
+```typescript
+import CircuitBreaker from 'opossum';
+
+const options = {
+  timeout: 3000,
+  errorThresholdPercentage: 50,
+  resetTimeout: 30000
+};
+
+const breaker = new CircuitBreaker(paymentServiceClient.charge, options);
+
+breaker.on('open', () => {
+  console.log('Circuit breaker opened');
+});
+
+breaker.on('halfOpen', () => {
+  console.log('Circuit breaker half-open');
+});
+
+breaker.on('close', () => {
+  console.log('Circuit breaker closed');
+});
+
+// 使用例
+async function createOrder(orderData: OrderData) {
+  try {
+    const paymentResult = await breaker.fire({
+      orderId: orderData.orderId,
+      amount: orderData.amount
+    });
+    
+    return processOrder(orderData, paymentResult);
+  } catch (error) {
+    if (breaker.opened) {
+      // フォールバック処理
+      return handlePaymentFailure(orderData);
+    }
+    throw error;
+  }
+}
+```
+
+## 6. 分散トレーシング
+
+### OpenTelemetry
+
+```typescript
+// OpenTelemetryの設定
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
+import { JaegerExporter } from '@opentelemetry/exporter-jaeger';
+
+const sdk = new NodeSDK({
+  traceExporter: new JaegerExporter({
+    endpoint: 'http://jaeger:14268/api/traces'
+  }),
+  instrumentations: [getNodeAutoInstrumentations()]
+});
+
+sdk.start();
+
+// カスタムトレース
+import { trace } from '@opentelemetry/api';
+
+const tracer = trace.getTracer('order-service');
+
+async function createOrder(orderData: OrderData) {
+  const span = tracer.startSpan('createOrder');
+  
+  try {
+    span.setAttribute('order.userId', orderData.userId);
+    span.setAttribute('order.amount', orderData.amount);
+    
+    const order = await processOrder(orderData);
+    
+    span.setStatus({ code: SpanStatusCode.OK });
+    return order;
+  } catch (error) {
+    span.setStatus({ code: SpanStatusCode.ERROR });
+    span.recordException(error);
+    throw error;
+  } finally {
+    span.end();
+  }
+}
+```
+
+## 7. データ管理
+
+### データベース per サービス
+
+```typescript
+// Order Service - PostgreSQL
+class OrderService {
+  private orderRepository: OrderRepository;  // PostgreSQL
+  
+  async createOrder(orderData: OrderData) {
+    return await this.orderRepository.save(orderData);
+  }
+}
+
+// Payment Service - MongoDB
+class PaymentService {
+  private paymentRepository: PaymentRepository;  // MongoDB
+  
+  async processPayment(paymentData: PaymentData) {
+    return await this.paymentRepository.save(paymentData);
+  }
+}
+```
+
+### Sagaパターン
+
+```typescript
+// Saga Orchestrator
+class OrderSaga {
+  async execute(orderData: OrderData) {
+    const sagaId = generateSagaId();
+    
+    try {
+      // Step 1: 注文を作成
+      const order = await this.orderService.createOrder(orderData);
+      await this.sagaLog.record(sagaId, 'order.created', order);
+      
+      // Step 2: 決済を処理
+      const payment = await this.paymentService.charge(order.id, orderData.amount);
+      await this.sagaLog.record(sagaId, 'payment.completed', payment);
+      
+      // Step 3: 在庫を更新
+      await this.inventoryService.reserve(order.id, orderData.items);
+      await this.sagaLog.record(sagaId, 'inventory.reserved', { orderId: order.id });
+      
+      return order;
+    } catch (error) {
+      // 補償トランザクション
+      await this.compensate(sagaId);
+      throw error;
+    }
+  }
+  
+  async compensate(sagaId: string) {
+    const logs = await this.sagaLog.get(sagaId);
+    
+    // 逆順で補償
+    for (const log of logs.reverse()) {
+      switch (log.event) {
+        case 'inventory.reserved':
+          await this.inventoryService.release(log.data.orderId);
+          break;
+        case 'payment.completed':
+          await this.paymentService.refund(log.data.paymentId);
+          break;
+        case 'order.created':
+          await this.orderService.cancel(log.data.orderId);
+          break;
+      }
+    }
+  }
+}
+```
+
+## 8. 実践的なベストプラクティス
+
+### サービスの分割基準
+
+```typescript
+// ビジネス機能に基づく分割
+// ❌ 悪い例: 技術的な分割
+// - Frontend Service
+// - Backend Service
+// - Database Service
+
+// ✅ 良い例: ビジネス機能による分割
+// - User Service（ユーザー管理）
+// - Order Service（注文管理）
+// - Payment Service（決済処理）
+// - Inventory Service（在庫管理）
+```
+
+### サービスのサイズ
+
+```typescript
+// サービスのサイズの目安
+// - 2 Pizza Team Rule: 1つのサービスは2つのピザでチームを養えるサイズ
+// - 100-200行のコード: 小さすぎる（モノリスの方が良い）
+// - 10,000行以上のコード: 大きすぎる（さらに分割を検討）
+// - 適切なサイズ: 1,000-5,000行程度
+```
+
+### データの整合性
+
+```typescript
+// 最終的整合性の実装
+class OrderService {
+  async createOrder(orderData: OrderData) {
+    const order = await this.orderRepository.save(orderData);
+    
+    // イベントを発行（非同期）
+    await this.eventBus.publish('order.created', {
+      orderId: order.id,
+      userId: orderData.userId,
+      amount: orderData.amount
+    });
+    
+    // 注文は即座に返す（決済は非同期で処理）
+    return order;
+  }
+}
+
+// イベントソーシング
+class OrderEventStore {
+  async append(event: OrderEvent) {
+    await this.eventStore.save(event);
+    
+    // イベントを発行
+    await this.eventBus.publish(event.type, event.data);
+  }
+  
+  async getOrder(orderId: string) {
+    const events = await this.eventStore.getByOrderId(orderId);
+    return this.replayEvents(events);
+  }
+}
+```
+
+## 9. よくある問題と解決方法
+
+### 問題1: サービス間の緊密な結合
+
+```typescript
+// 解決: イベント駆動アーキテクチャ
+// ❌ 悪い例: 直接呼び出し
+await paymentService.charge(orderId, amount);
+
+// ✅ 良い例: イベント発行
+await eventBus.publish('order.created', { orderId, amount });
+```
+
+### 問題2: 分散トランザクション
+
+```typescript
+// 解決: Sagaパターン
+// 2フェーズコミットの代わりに、Sagaパターンを使用
+class OrderSaga {
+  async execute(orderData: OrderData) {
+    // 各ステップを順次実行
+    // 失敗時は補償トランザクションを実行
+  }
+}
+```
+
+### 問題3: データの重複
+
+```typescript
+// 解決: CQRSパターン
+// 読み取り用のデータを別途保持
+class OrderReadModel {
+  async getOrderWithUser(orderId: string) {
+    // 読み取り最適化されたデータを返す
+    return await this.readRepository.find(orderId);
+  }
+}
+
+// 書き込みはイベントソーシングで管理
+class OrderWriteModel {
+  async createOrder(orderData: OrderData) {
+    await this.eventStore.append(new OrderCreatedEvent(orderData));
+  }
+}
+```
+
+## まとめ
+
+マイクロサービス実装完全ガイドのポイント：
+
+- **サービス間通信**: 同期（HTTP/REST、gRPC）、非同期（メッセージキュー）
+- **API Gateway**: 統一されたエントリーポイント
+- **サービスディスカバリ**: Consul、Eureka
+- **Circuit Breaker**: 障害の伝播を防止
+- **分散トレーシング**: OpenTelemetry、Jaeger
+- **データ管理**: データベース per サービス、Sagaパターン
+- **ベストプラクティス**: ビジネス機能による分割、適切なサイズ、最終的整合性
+
+適切なマイクロサービスアーキテクチャにより、スケーラブルで柔軟なシステムを構築できます。
+
+

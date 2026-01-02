@@ -1,0 +1,58 @@
+---
+title: Cassandra完全ガイド
+sidebar:
+    label: Cassandra基礎
+---
+
+# Cassandra完全ガイド
+
+Cassandraの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Cassandraとは
+
+### Cassandraの特徴
+
+Cassandraは、分散型のNoSQLデータベースです。
+
+```
+Cassandraの特徴
+   ├─ 分散型
+   ├─ スケーラビリティ
+   ├─ 可用性
+   └─ パフォーマンス
+```
+
+## 2. 基本的な操作
+
+### CQLの使用
+
+```sql
+-- キースペースの作成
+CREATE KEYSPACE my_keyspace
+WITH REPLICATION = {
+  'class': 'SimpleStrategy',
+  'replication_factor': 3
+};
+
+-- テーブルの作成
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  name TEXT,
+  email TEXT
+);
+
+-- データの挿入
+INSERT INTO users (id, name, email) VALUES (uuid(), 'Alice', 'alice@example.com');
+```
+
+## まとめ
+
+Cassandra完全ガイドのポイント：
+
+- **分散型**: 分散アーキテクチャ
+- **スケーラビリティ**: 高いスケーラビリティ
+- **可用性**: 高可用性
+
+適切なCassandraの使用により、スケーラブルで可用性の高いシステムを構築できます。
+
+

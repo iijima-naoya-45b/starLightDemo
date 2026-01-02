@@ -1,0 +1,60 @@
+---
+title: PowerShell完全ガイド
+sidebar:
+    label: PowerShell基礎
+---
+
+# PowerShell完全ガイド
+
+PowerShellの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. PowerShellとは
+
+### PowerShellの特徴
+
+PowerShellは、Windows環境での自動化とスクリプティングのためのツールです。
+
+```
+PowerShellの特徴
+   ├─ オブジェクト指向
+   ├─ .NET統合
+   ├─ コマンドレット
+   └─ パイプライン
+```
+
+## 2. 基本的な構文
+
+### 変数
+
+```powershell
+# 変数の定義
+$name = "Alice"
+$age = 25
+
+# 変数の使用
+Write-Host "Name: $name"
+Write-Host "Age: $age"
+```
+
+### コマンドレット
+
+```powershell
+# ファイルの取得
+Get-ChildItem -Path "C:\Users" -Recurse
+
+# プロセスの取得
+Get-Process | Where-Object {$_.CPU -gt 100}
+```
+
+## まとめ
+
+PowerShell完全ガイドのポイント：
+
+- **変数**: 変数の定義と使用
+- **コマンドレット**: コマンドの実行
+- **パイプライン**: コマンドの連結
+- **オブジェクト**: オブジェクトの操作
+
+適切なPowerShellの使用により、効率的なWindows環境での作業が可能になります。
+
+

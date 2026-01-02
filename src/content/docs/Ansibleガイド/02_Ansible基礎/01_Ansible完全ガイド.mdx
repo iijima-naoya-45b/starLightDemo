@@ -1,0 +1,57 @@
+---
+title: Ansible完全ガイド
+sidebar:
+    label: Ansible基礎
+---
+
+# Ansible完全ガイド
+
+Ansibleの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Ansibleとは
+
+### Ansibleの特徴
+
+Ansibleは、構成管理と自動化のためのツールです。
+
+```
+Ansibleの特徴
+   ├─ エージェントレス
+   ├─ YAMLベース
+   ├─ 冪等性
+   └─ モジュール
+```
+
+## 2. Playbook
+
+### 基本的なPlaybook
+
+```yaml
+# playbook.yml
+- hosts: webservers
+  become: yes
+  tasks:
+    - name: Install nginx
+      apt:
+        name: nginx
+        state: present
+    
+    - name: Start nginx
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+```
+
+## まとめ
+
+Ansible完全ガイドのポイント：
+
+- **Playbook**: タスクの定義
+- **モジュール**: 再利用可能なタスク
+- **冪等性**: 安全な実行
+- **インベントリ**: ホストの管理
+
+適切なAnsibleの使用により、効率的な構成管理が可能になります。
+
+

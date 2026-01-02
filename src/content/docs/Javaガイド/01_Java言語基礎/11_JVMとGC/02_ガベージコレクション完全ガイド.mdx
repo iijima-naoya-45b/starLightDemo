@@ -1,0 +1,378 @@
+---
+title: ガベージコレクション完全ガイド
+sidebar:
+    label: ガベージコレクション完全ガイド
+---
+
+# ガベージコレクション完全ガイド
+
+ガベージコレクション（GC）の仕組みと最適化方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. ガベージコレクションとは
+
+### GCの役割
+
+ガベージコレクションは、使用されなくなったオブジェクトを自動的に回収し、メモリを解放する仕組みです。
+
+```java
+// オブジェクトのライフサイクル
+public class GCLifecycle {
+    public void demonstrate() {
+        User user = new User("Alice");  // オブジェクトがヒープに作成
+        // userを使用
+        user = null;  // 参照を削除（GCの対象になる）
+        // GCが実行されると、メモリが解放される
+    }
+}
+```
+
+### GCが必要な理由
+
+- **メモリリークの防止**: 手動メモリ管理のミスを防ぐ
+- **開発効率**: メモリ管理に時間を取られない
+- **安全性**: ダングリングポインタの問題を回避
+
+## 2. ヒープメモリの構造
+
+### ヒープの分割
+
+```
+┌─────────────────────────────────────┐
+│      Young Generation               │
+│  ┌──────────┐  ┌──────────┐        │
+│  │   Eden   │  │ Survivor │        │
+│  │          │  │  (S0/S1) │        │
+│  └──────────┘  └──────────┘        │
+├─────────────────────────────────────┤
+│      Old Generation                │
+│  ┌──────────────────────────────┐ │
+│  │                              │ │
+│  │                              │ │
+│  └──────────────────────────────┘ │
+└─────────────────────────────────────┘
+```
+
+### オブジェクトの移動
+
+```java
+public class ObjectMovement {
+    public void demonstrate() {
+        // 1. 新しいオブジェクトはEdenに作成
+        User user1 = new User("User1");
+        
+        // 2. Minor GCが発生
+        //    - EdenとSurvivorの生きているオブジェクトをSurvivorに移動
+        //    - 年齢が増加
+        
+        // 3. 複数回のMinor GCを生き延びたオブジェクトはOld Generationへ
+        //    - デフォルトでは15回のMinor GCを生き延びると昇格
+        
+        // 4. Old GenerationがいっぱいになるとMajor GC（Full GC）が発生
+    }
+}
+```
+
+## 3. GCアルゴリズムの種類
+
+### Serial GC
+
+**特徴:**
+- シングルスレッドで動作
+- 小規模アプリケーション向け
+- 一時停止時間が長い
+
+```bash
+java -XX:+UseSerialGC MyApp
+```
+
+**使用例:**
+- 小規模なアプリケーション
+- シングルコア環境
+- 一時停止時間が許容できる場合
+
+### Parallel GC
+
+**特徴:**
+- マルチスレッドで動作
+- スループット重視
+- 一時停止時間は長いが、処理速度が速い
+
+```bash
+java -XX:+UseParallelGC MyApp
+java -XX:ParallelGCThreads=4  # GCスレッド数
+```
+
+**使用例:**
+- バッチ処理
+- スループットが重要なアプリケーション
+- 一時停止時間が許容できる場合
+
+### G1 GC（推奨）
+
+**特徴:**
+- 大規模ヒープに適している
+- 低レイテンシを実現
+- リージョン単位でGCを実行
+
+```bash
+java -XX:+UseG1GC MyApp
+java -XX:MaxGCPauseMillis=200  # 目標一時停止時間
+java -XX:G1HeapRegionSize=16m  # リージョンサイズ
+```
+
+**G1GCの動作:**
+
+```java
+// G1GCはヒープを複数のリージョンに分割
+// 各リージョンはEden、Survivor、Oldのいずれか
+// 最もゴミの多いリージョンから回収（Garbage First）
+
+// 設定例:
+// -XX:+UseG1GC
+// -XX:MaxGCPauseMillis=200
+// -XX:G1HeapRegionSize=16m
+// -XX:InitiatingHeapOccupancyPercent=45  # Old Generationが45%になったらGC開始
+```
+
+**使用例:**
+- ヒープサイズが4GB以上
+- 低レイテンシが重要
+- 大規模なアプリケーション
+
+### ZGC（Java 11+）
+
+**特徴:**
+- 超大規模ヒープ向け（数TB）
+- 超低レイテンシ（10ms以下）
+- 並行GC（アプリケーションを停止しない）
+
+```bash
+java -XX:+UseZGC MyApp
+java -Xmx16g  # 大容量ヒープに対応
+```
+
+**使用例:**
+- 超大規模ヒープ（数TB）
+- 超低レイテンシが必要
+- 最新のJavaバージョンを使用
+
+### Shenandoah（Java 12+）
+
+**特徴:**
+- 低レイテンシ
+- 並行GC
+- 中規模ヒープ向け
+
+```bash
+java -XX:+UseShenandoahGC MyApp
+```
+
+## 4. GCの動作タイミング
+
+### Minor GC
+
+```java
+// Minor GCが発生するタイミング:
+// 1. Eden領域がいっぱいになったとき
+// 2. 新しいオブジェクトを作成しようとしてEdenに空きがないとき
+
+public class MinorGCExample {
+    public void triggerMinorGC() {
+        List<User> users = new ArrayList<>();
+        // 大量のオブジェクトを作成
+        for (int i = 0; i < 100000; i++) {
+            users.add(new User("User" + i));  // EdenがいっぱいになるとMinor GC
+        }
+    }
+}
+```
+
+### Major GC（Full GC）
+
+```java
+// Major GCが発生するタイミング:
+// 1. Old Generationがいっぱいになったとき
+// 2. System.gc()が呼ばれたとき（推奨しない）
+// 3. メタスペースが不足したとき
+
+public class MajorGCExample {
+    public void triggerMajorGC() {
+        List<User> longLivedUsers = new ArrayList<>();
+        // 長期間生きるオブジェクトを作成
+        for (int i = 0; i < 1000000; i++) {
+            User user = new User("User" + i);
+            longLivedUsers.add(user);  // Old Generationに移動
+            // Old GenerationがいっぱいになるとMajor GC
+        }
+    }
+}
+```
+
+## 5. GCの最適化
+
+### オブジェクトの作成を減らす
+
+```java
+// 問題のあるコード: 毎回新しいオブジェクトを作成
+public class BadExample {
+    public String process(String input) {
+        StringBuilder sb = new StringBuilder();  // 毎回新しいオブジェクト
+        sb.append(input);
+        return sb.toString();
+    }
+}
+
+// 最適化: オブジェクトの再利用
+public class GoodExample {
+    private final StringBuilder sb = new StringBuilder();  // 再利用
+    
+    public String process(String input) {
+        sb.setLength(0);  // クリア
+        sb.append(input);
+        return sb.toString();
+    }
+}
+```
+
+### 不要な参照を削除
+
+```java
+// 問題のあるコード: 参照が保持され続ける
+public class BadExample {
+    private List<LargeObject> cache = new ArrayList<>();
+    
+    public void addToCache(LargeObject obj) {
+        cache.add(obj);  // 参照が保持され続け、GCされない
+    }
+}
+
+// 最適化: 適切なサイズ制限
+public class GoodExample {
+    private final int MAX_SIZE = 100;
+    private List<LargeObject> cache = new ArrayList<>();
+    
+    public void addToCache(LargeObject obj) {
+        if (cache.size() >= MAX_SIZE) {
+            cache.remove(0);  // 古いオブジェクトを削除
+        }
+        cache.add(obj);
+    }
+}
+```
+
+### コレクションの適切な使用
+
+```java
+// 問題のあるコード: 不適切なコレクションの使用
+public class BadExample {
+    private Map<String, String> map = new HashMap<>();
+    
+    public void add(String key, String value) {
+        map.put(key, value);  // サイズが制限されていない
+    }
+}
+
+// 最適化: 適切なサイズ制限とLRUキャッシュ
+public class GoodExample {
+    private final int MAX_SIZE = 1000;
+    private Map<String, String> map = new LinkedHashMap<String, String>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+            return size() > MAX_SIZE;  // サイズ制限
+        }
+    };
+}
+```
+
+## 6. GCの監視と分析
+
+### GCログの設定
+
+```bash
+# Java 9以降のGCログ設定
+java -Xlog:gc*:file=gc.log:time,level,tags MyApp
+
+# 詳細なGCログ
+java -Xlog:gc*:file=gc.log:time,level,tags:filecount=5,filesize=10M MyApp
+```
+
+### GCログの分析
+
+```bash
+# GCログの例
+[2024-01-01T10:00:00.100+0900][info][gc] GC(0) Pause Young (Normal) 100M->50M(200M) 50.123ms
+[2024-01-01T10:00:01.200+0900][info][gc] GC(1) Pause Young (Normal) 150M->80M(200M) 60.456ms
+[2024-01-01T10:00:05.300+0900][info][gc] GC(2) Pause Full (System.gc()) 180M->100M(200M) 200.789ms
+```
+
+**ログの読み方:**
+- `GC(0)`: GCの回数
+- `Pause Young`: Minor GC
+- `Pause Full`: Major GC
+- `100M->50M`: GC前のサイズ -> GC後のサイズ
+- `(200M)`: ヒープの総サイズ
+- `50.123ms`: GCの一時停止時間
+
+### GC分析ツール
+
+```bash
+# GCViewer: GCログの可視化
+# https://github.com/chewiebug/GCViewer
+
+# jstat: GC統計のリアルタイム表示
+jstat -gc <pid> 1000  # 1秒ごとに表示
+
+# jmap: ヒープダンプの取得
+jmap -dump:format=b,file=heap.hprof <pid>
+```
+
+## 7. 実践的なGCチューニング
+
+### ヒープサイズの設定
+
+```bash
+# 推奨設定
+-Xms2g          # 初期ヒープサイズ（最大と同じに設定）
+-Xmx2g          # 最大ヒープサイズ
+-XX:NewRatio=2  # Old:Young = 2:1
+
+# G1GCの場合
+-XX:+UseG1GC
+-XX:MaxGCPauseMillis=200
+-XX:G1HeapRegionSize=16m
+```
+
+### GCアルゴリズムの選択基準
+
+```markdown
+## GCアルゴリズムの選択基準
+
+1. **ヒープサイズ**
+   - 4GB未満: Parallel GC
+   - 4GB以上: G1GC
+   - 数TB: ZGC
+
+2. **レイテンシ要件**
+   - 許容できる: Parallel GC
+   - 低レイテンシ必要: G1GC
+   - 超低レイテンシ必要: ZGC
+
+3. **スループット要件**
+   - スループット重視: Parallel GC
+   - バランス: G1GC
+```
+
+## まとめ
+
+ガベージコレクション完全ガイドのポイント：
+
+- **GCの役割**: 自動メモリ管理
+- **ヒープ構造**: Young GenerationとOld Generation
+- **GCアルゴリズム**: Serial、Parallel、G1、ZGC、Shenandoah
+- **最適化**: オブジェクト作成の削減、参照の管理
+- **監視**: GCログの設定と分析
+- **チューニング**: ヒープサイズとGCアルゴリズムの選択
+
+適切なGCの理解と最適化により、高性能なJavaアプリケーションを構築できます。
+
+

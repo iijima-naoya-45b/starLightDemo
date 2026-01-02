@@ -1,0 +1,74 @@
+---
+title: PyTorch完全ガイド
+sidebar:
+    label: PyTorch基礎
+---
+
+# PyTorch完全ガイド
+
+PyTorchの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. PyTorchとは
+
+### PyTorchの特徴
+
+PyTorchは、Facebookが開発した深層学習フレームワークです。
+
+```
+PyTorchの特徴
+   ├─ 動的計算グラフ
+   ├─ 自動微分
+   ├─ GPUサポート
+   └─ Pythonic
+```
+
+## 2. 基本的な使用
+
+### シンプルなニューラルネットワーク
+
+```python
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
+# モデルの定義
+class Net(nn.Module):
+    def __init__(self):
+        super(Net, self).__init__()
+        self.fc1 = nn.Linear(784, 128)
+        self.fc2 = nn.Linear(128, 10)
+    
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+# モデルのインスタンス化
+model = Net()
+
+# 損失関数とオプティマイザ
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters())
+
+# 学習
+for epoch in range(10):
+    for data, target in train_loader:
+        optimizer.zero_grad()
+        output = model(data)
+        loss = criterion(output, target)
+        loss.backward()
+        optimizer.step()
+```
+
+## まとめ
+
+PyTorch完全ガイドのポイント：
+
+- **動的計算グラフ**: 柔軟なモデル構築
+- **自動微分**: 勾配の自動計算
+- **GPU**: GPUサポート
+- **Pythonic**: Pythonらしい記述
+
+適切なPyTorchの使用により、効率的な深層学習が可能になります。
+
+

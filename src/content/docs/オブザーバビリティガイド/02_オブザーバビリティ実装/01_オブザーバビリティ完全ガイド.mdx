@@ -1,0 +1,309 @@
+---
+title: オブザーバビリティ完全ガイド
+sidebar:
+    label: オブザーバビリティ実装
+---
+
+# オブザーバビリティ完全ガイド
+
+オブザーバビリティの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. オブザーバビリティの3本柱
+
+### ログ（Logs）
+
+```typescript
+// 構造化ログの実装
+import winston from 'winston';
+
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.File({ filename: 'error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'combined.log' })
+  ]
+});
+
+// 構造化ログの使用
+logger.info('User logged in', {
+  userId: user.id,
+  ipAddress: req.ip,
+  timestamp: new Date().toISOString()
+});
+```
+
+### メトリクス（Metrics）
+
+```typescript
+// Prometheusメトリクスの実装
+import { register, Counter, Histogram, Gauge } from 'prom-client';
+
+// カウンター
+const httpRequestsTotal = new Counter({
+  name: 'http_requests_total',
+  help: 'Total number of HTTP requests',
+  labelNames: ['method', 'route', 'status']
+});
+
+// ヒストグラム
+const httpRequestDuration = new Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests in seconds',
+  labelNames: ['method', 'route'],
+  buckets: [0.1, 0.5, 1, 2, 5]
+});
+
+// ゲージ
+const activeConnections = new Gauge({
+  name: 'active_connections',
+  help: 'Number of active connections'
+});
+
+// 使用例
+app.use((req, res, next) => {
+  const start = Date.now();
+  
+  res.on('finish', () => {
+    const duration = (Date.now() - start) / 1000;
+    httpRequestsTotal.inc({
+      method: req.method,
+      route: req.route?.path || req.path,
+      status: res.statusCode
+    });
+    httpRequestDuration.observe(
+      { method: req.method, route: req.route?.path || req.path },
+      duration
+    );
+  });
+  
+  next();
+});
+```
+
+### トレース（Traces）
+
+```typescript
+// OpenTelemetryトレーシングの実装
+import { trace } from '@opentelemetry/api';
+
+const tracer = trace.getTracer('order-service');
+
+async function processOrder(orderData: OrderData) {
+  const span = tracer.startSpan('processOrder');
+  
+  try {
+    span.setAttribute('order.id', orderData.id);
+    span.setAttribute('order.amount', orderData.amount);
+    
+    // 子スパンの作成
+    const paymentSpan = tracer.startSpan('processPayment', {
+      parent: span
+    });
+    
+    await processPayment(orderData);
+    paymentSpan.end();
+    
+    span.setStatus({ code: SpanStatusCode.OK });
+    return result;
+  } catch (error) {
+    span.setStatus({ code: SpanStatusCode.ERROR });
+    span.recordException(error);
+    throw error;
+  } finally {
+    span.end();
+  }
+}
+```
+
+## 2. ログ管理
+
+### 構造化ログ
+
+```typescript
+// 構造化ログの実装
+interface LogContext {
+  userId?: string;
+  requestId?: string;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+class StructuredLogger {
+  private context: LogContext = {};
+  
+  setContext(context: LogContext): void {
+    this.context = { ...this.context, ...context };
+  }
+  
+  info(message: string, data?: any): void {
+    logger.info(message, {
+      ...this.context,
+      ...data,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  error(message: string, error: Error, data?: any): void {
+    logger.error(message, {
+      ...this.context,
+      ...data,
+      error: {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+```
+
+### ログレベル
+
+```typescript
+// ログレベルの使い分け
+logger.debug('Detailed information for debugging'); // 開発時のみ
+logger.info('General information'); // 通常の情報
+logger.warn('Warning message'); // 警告
+logger.error('Error message'); // エラー
+logger.fatal('Fatal error'); // 致命的なエラー
+```
+
+## 3. メトリクス収集
+
+### カスタムメトリクス
+
+```typescript
+// ビジネスメトリクスの実装
+const ordersProcessed = new Counter({
+  name: 'orders_processed_total',
+  help: 'Total number of orders processed',
+  labelNames: ['status', 'payment_method']
+});
+
+const orderValue = new Histogram({
+  name: 'order_value',
+  help: 'Order value distribution',
+  buckets: [0, 100, 500, 1000, 5000, 10000]
+});
+
+async function processOrder(order: Order) {
+  try {
+    await processPayment(order);
+    ordersProcessed.inc({ status: 'success', payment_method: order.paymentMethod });
+    orderValue.observe(order.amount);
+  } catch (error) {
+    ordersProcessed.inc({ status: 'failed', payment_method: order.paymentMethod });
+    throw error;
+  }
+}
+```
+
+## 4. 分散トレーシング
+
+### トレースコンテキストの伝播
+
+```typescript
+// トレースコンテキストの伝播
+import { context, propagation } from '@opentelemetry/api';
+
+async function makeHttpRequest(url: string, data: any) {
+  const span = tracer.startSpan('http_request');
+  const ctx = trace.setSpan(context.active(), span);
+  
+  // トレースコンテキストをHTTPヘッダーに注入
+  const headers: Record<string, string> = {};
+  propagation.inject(ctx, headers);
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      ...headers,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(data)
+  });
+  
+  span.end();
+  return response;
+}
+```
+
+## 5. アラート設定
+
+### アラートルール
+
+```yaml
+# Prometheusアラートルール
+groups:
+  - name: application_alerts
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value }} errors per second"
+      
+      - alert: HighLatency
+        expr: histogram_quantile(0.99, http_request_duration_seconds) > 1
+        for: 5m
+        annotations:
+          summary: "High latency detected"
+          description: "99th percentile latency is {{ $value }} seconds"
+```
+
+## 6. 実践的なベストプラクティス
+
+### 相関ID
+
+```typescript
+// 相関IDの実装
+import { v4 as uuidv4 } from 'uuid';
+
+app.use((req, res, next) => {
+  const correlationId = req.headers['x-correlation-id'] || uuidv4();
+  req.correlationId = correlationId;
+  res.setHeader('X-Correlation-ID', correlationId);
+  
+  // ログコンテキストに設定
+  logger.setContext({ correlationId });
+  
+  next();
+});
+```
+
+### ログ集約
+
+```typescript
+// ELK Stackへの送信
+import { createLogger, transports } from 'winston';
+import { ElasticsearchTransport } from 'winston-elasticsearch';
+
+const esTransport = new ElasticsearchTransport({
+  level: 'info',
+  clientOpts: {
+    node: 'http://elasticsearch:9200'
+  }
+});
+
+const logger = createLogger({
+  transports: [esTransport]
+});
+```
+
+## まとめ
+
+オブザーバビリティ完全ガイドのポイント：
+
+- **3本柱**: ログ、メトリクス、トレース
+- **構造化ログ**: 検索可能なログ
+- **メトリクス収集**: Prometheus、カスタムメトリクス
+- **分散トレーシング**: OpenTelemetry、トレースコンテキスト
+- **アラート**: 問題の早期発見
+- **ベストプラクティス**: 相関ID、ログ集約
+
+適切なオブザーバビリティにより、システムの状態を把握できます。
+
+

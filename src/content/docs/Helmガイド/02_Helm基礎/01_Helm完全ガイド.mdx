@@ -1,0 +1,68 @@
+---
+title: Helm完全ガイド
+sidebar:
+    label: Helm基礎
+---
+
+# Helm完全ガイド
+
+Helmの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Helmとは
+
+### Helmの特徴
+
+Helmは、Kubernetesのパッケージマネージャーです。
+
+```
+Helmの特徴
+   ├─ Chart
+   ├─ Release
+   ├─ Repository
+   └─ Template
+```
+
+## 2. Chartの作成
+
+### Chartの構造
+
+```
+my-chart/
+├── Chart.yaml
+├── values.yaml
+├── templates/
+│   ├── deployment.yaml
+│   └── service.yaml
+└── charts/
+```
+
+### Chart.yaml
+
+```yaml
+apiVersion: v2
+name: my-chart
+version: 1.0.0
+description: A Helm chart
+```
+
+### values.yaml
+
+```yaml
+replicaCount: 3
+image:
+  repository: nginx
+  tag: latest
+```
+
+## まとめ
+
+Helm完全ガイドのポイント：
+
+- **Chart**: パッケージの定義
+- **Release**: デプロイされたインスタンス
+- **Repository**: Chartのリポジトリ
+- **Template**: 再利用可能なテンプレート
+
+適切なHelmの使用により、効率的なKubernetes運用が可能になります。
+
+

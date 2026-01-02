@@ -1,0 +1,110 @@
+---
+title: Solid.js完全ガイド
+sidebar:
+    label: Solid.js基礎
+---
+
+# Solid.js完全ガイド
+
+Solid.jsの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Solid.jsとは
+
+### Solid.jsの特徴
+
+Solid.jsは、リアクティブなUIを構築するための高性能なフレームワークです。
+
+```
+Solid.jsの特徴
+   ├─ 高性能
+   ├─ リアクティブ
+   ├─ TypeScript
+   └─ 軽量
+```
+
+## 2. 環境構築
+
+### プロジェクトの作成
+
+```bash
+# Solid.jsプロジェクトの作成
+npx degit solidjs/templates/js my-app
+cd my-app
+npm install
+npm run dev
+```
+
+## 3. コンポーネント
+
+### 基本的なコンポーネント
+
+```jsx
+// App.jsx
+import { createSignal } from 'solid-js';
+
+function App() {
+  const [count, setCount] = createSignal(0);
+  
+  return (
+    <div>
+      <h1>Count: {count()}</h1>
+      <button onClick={() => setCount(count() + 1)}>
+        Increment
+      </button>
+    </div>
+  );
+}
+
+export default App;
+```
+
+### リアクティブな計算
+
+```jsx
+import { createSignal, createMemo } from 'solid-js';
+
+function App() {
+  const [count, setCount] = createSignal(0);
+  const doubled = createMemo(() => count() * 2);
+  
+  return (
+    <div>
+      <p>Count: {count()}</p>
+      <p>Doubled: {doubled()}</p>
+    </div>
+  );
+}
+```
+
+## 4. エフェクト
+
+```jsx
+import { createSignal, createEffect } from 'solid-js';
+
+function App() {
+  const [count, setCount] = createSignal(0);
+  
+  createEffect(() => {
+    console.log('Count changed:', count());
+  });
+  
+  return (
+    <button onClick={() => setCount(count() + 1)}>
+      Count: {count()}
+    </button>
+  );
+}
+```
+
+## まとめ
+
+Solid.js完全ガイドのポイント：
+
+- **コンポーネント**: シンプルなコンポーネント構文
+- **リアクティブ**: リアクティブな計算
+- **エフェクト**: 副作用の管理
+- **パフォーマンス**: 優れたパフォーマンス
+
+適切なSolid.jsの使用により、高性能なアプリケーションを構築できます。
+
+

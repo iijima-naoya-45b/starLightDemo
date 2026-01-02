@@ -1,0 +1,1254 @@
+---
+title: エラーハンドリング完全ガイド
+sidebar:
+    label: エラーハンドリング
+---
+
+# エラーハンドリング完全ガイド
+
+エラーハンドリングの実践的な方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. エラーハンドリングとは
+
+### エラーハンドリングの役割
+
+エラーハンドリングは、アプリケーションで発生するエラーを適切に捕捉し、処理する仕組みです。
+
+```
+エラーハンドリングの目的
+   ├─ アプリケーションの安定性
+   ├─ ユーザー体験の向上
+   ├─ デバッグの容易さ
+   ├─ エラー情報の記録
+   ├─ エラーの分類と処理
+   └─ エラーの伝播制御
+```
+
+### エラーハンドリングの重要性
+
+```markdown
+## エラーハンドリングの重要性
+
+### 1. アプリケーションの安定性
+- **クラッシュの防止**: エラーが発生してもアプリケーションが停止しない
+- **部分的な障害の隔離**: 1つのエラーが全体に影響しない
+- **グレースフルデグラデーション**: エラー時も可能な限り機能を提供
+
+### 2. ユーザー体験の向上
+- **分かりやすいエラーメッセージ**: ユーザーが理解できるメッセージ
+- **適切なフィードバック**: エラーが発生したことを明確に伝える
+- **リカバリーの提案**: エラーからの回復方法を提示
+
+### 3. デバッグの容易さ
+- **詳細なエラー情報**: デバッグに必要な情報を提供
+- **スタックトレース**: エラーが発生した箇所を特定
+- **コンテキスト情報**: エラー発生時の状態を記録
+
+### 4. 運用とモニタリング
+- **エラーの追跡**: エラーの発生頻度とパターンを把握
+- **アラート**: 重要なエラーを即座に通知
+- **分析**: エラーの傾向を分析して改善
+```
+
+## 2. JavaScript/TypeScriptでのエラーハンドリング
+
+### try-catch文
+
+```typescript
+// 基本的なエラーハンドリング
+async function fetchUser(userId: string) {
+  try {
+    const response = await fetch(`/api/users/${userId}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const user = await response.json();
+    return user;
+  } catch (error) {
+    console.error('Failed to fetch user:', error);
+    throw error;
+  }
+}
+```
+
+### カスタムエラークラス
+
+```typescript
+// カスタムエラークラスの定義
+class ValidationError extends Error {
+  constructor(message: string, public field: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+class NotFoundError extends Error {
+  constructor(resource: string, id: string) {
+    super(`${resource} with id ${id} not found`);
+    this.name = 'NotFoundError';
+  }
+}
+
+// 使用例
+function validateUser(user: User) {
+  if (!user.email) {
+    throw new ValidationError('Email is required', 'email');
+  }
+  
+  if (!user.id) {
+    throw new NotFoundError('User', user.id);
+  }
+}
+```
+
+### エラーハンドリングミドルウェア
+
+```typescript
+// Express.jsの例
+import express, { Request, Response, NextFunction } from 'express';
+
+// カスタムエラークラス
+class AppError extends Error {
+  constructor(
+    public statusCode: number,
+    message: string,
+    public isOperational: boolean = true
+  ) {
+    super(message);
+    this.name = this.constructor.name;
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+// エラーハンドリングミドルウェア
+function errorHandler(
+  err: Error,
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  if (err instanceof AppError) {
+    return res.status(err.statusCode).json({
+      status: 'error',
+      message: err.message
+    });
+  }
+  
+  // 予期しないエラー
+  console.error('Unexpected error:', err);
+  res.status(500).json({
+    status: 'error',
+    message: 'Internal server error'
+  });
+}
+
+// 使用例
+app.get('/api/users/:id', async (req, res, next) => {
+  try {
+    const user = await getUserById(req.params.id);
+    if (!user) {
+      throw new AppError(404, 'User not found');
+    }
+    res.json(user);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.use(errorHandler);
+```
+
+## 3. Pythonでのエラーハンドリング
+
+### 基本的なエラーハンドリング
+
+```python
+# 基本的なエラーハンドリング
+def fetch_user(user_id: str):
+    try:
+        response = requests.get(f'/api/users/{user_id}')
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.HTTPError as e:
+        logger.error(f'HTTP error: {e}')
+        raise
+    except requests.exceptions.RequestException as e:
+        logger.error(f'Request error: {e}')
+        raise
+```
+
+### カスタム例外クラス
+
+```python
+# カスタム例外クラスの定義
+class ValidationError(Exception):
+    def __init__(self, message: str, field: str):
+        self.message = message
+        self.field = field
+        super().__init__(self.message)
+
+class NotFoundError(Exception):
+    def __init__(self, resource: str, resource_id: str):
+        self.resource = resource
+        self.resource_id = resource_id
+        message = f'{resource} with id {resource_id} not found'
+        super().__init__(message)
+
+# 使用例
+def validate_user(user: dict):
+    if not user.get('email'):
+        raise ValidationError('Email is required', 'email')
+    
+    if not user.get('id'):
+        raise NotFoundError('User', user.get('id'))
+```
+
+### Flaskでのエラーハンドリング
+
+```python
+# Flaskの例
+from flask import Flask, jsonify
+import logging
+
+app = Flask(__name__)
+logger = logging.getLogger(__name__)
+
+# カスタム例外クラス
+class AppError(Exception):
+    def __init__(self, status_code: int, message: str):
+        self.status_code = status_code
+        self.message = message
+        super().__init__(self.message)
+
+# エラーハンドラー
+@app.errorhandler(AppError)
+def handle_app_error(error):
+    logger.error(f'AppError: {error.message}')
+    return jsonify({
+        'status': 'error',
+        'message': error.message
+    }), error.status_code
+
+@app.errorhandler(404)
+def handle_not_found(error):
+    return jsonify({
+        'status': 'error',
+        'message': 'Resource not found'
+    }), 404
+
+@app.errorhandler(500)
+def handle_internal_error(error):
+    logger.error(f'Internal error: {error}')
+    return jsonify({
+        'status': 'error',
+        'message': 'Internal server error'
+    }), 500
+
+# 使用例
+@app.route('/api/users/<user_id>')
+def get_user(user_id):
+    try:
+        user = get_user_by_id(user_id)
+        if not user:
+            raise AppError(404, 'User not found')
+        return jsonify(user)
+    except AppError:
+        raise
+    except Exception as e:
+        logger.error(f'Unexpected error: {e}')
+        raise AppError(500, 'Internal server error')
+```
+
+## 4. Javaでのエラーハンドリング
+
+### 基本的なエラーハンドリング
+
+```java
+// 基本的なエラーハンドリング
+public User fetchUser(String userId) {
+    try {
+        Response response = client.get("/api/users/" + userId);
+        
+        if (response.getStatus() != 200) {
+            throw new RuntimeException("HTTP error: " + response.getStatus());
+        }
+        
+        return response.readEntity(User.class);
+    } catch (Exception e) {
+        logger.error("Failed to fetch user: " + userId, e);
+        throw e;
+    }
+}
+```
+
+### カスタム例外クラス
+
+```java
+// カスタム例外クラスの定義
+public class ValidationException extends Exception {
+    private String field;
+    
+    public ValidationException(String message, String field) {
+        super(message);
+        this.field = field;
+    }
+    
+    public String getField() {
+        return field;
+    }
+}
+
+public class NotFoundException extends Exception {
+    private String resource;
+    private String resourceId;
+    
+    public NotFoundException(String resource, String resourceId) {
+        super(resource + " with id " + resourceId + " not found");
+        this.resource = resource;
+        this.resourceId = resourceId;
+    }
+}
+
+// 使用例
+public void validateUser(User user) throws ValidationException {
+    if (user.getEmail() == null || user.getEmail().isEmpty()) {
+        throw new ValidationException("Email is required", "email");
+    }
+}
+```
+
+### Spring Bootでのエラーハンドリング
+
+```java
+// Spring Bootの例
+@RestController
+@ControllerAdvice
+public class GlobalExceptionHandler {
+    
+    private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    
+    @ExceptionHandler(ValidationException.class)
+    public ResponseEntity<ErrorResponse> handleValidationException(ValidationException e) {
+        logger.error("Validation error: " + e.getMessage());
+        ErrorResponse error = new ErrorResponse("VALIDATION_ERROR", e.getMessage());
+        return ResponseEntity.badRequest().body(error);
+    }
+    
+    @ExceptionHandler(NotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotFoundException(NotFoundException e) {
+        logger.error("Not found: " + e.getMessage());
+        ErrorResponse error = new ErrorResponse("NOT_FOUND", e.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+    }
+    
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleGenericException(Exception e) {
+        logger.error("Unexpected error", e);
+        ErrorResponse error = new ErrorResponse("INTERNAL_ERROR", "Internal server error");
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+    }
+}
+
+// エラーレスポンスクラス
+public class ErrorResponse {
+    private String code;
+    private String message;
+    
+    public ErrorResponse(String code, String message) {
+        this.code = code;
+        this.message = message;
+    }
+    
+    // getters and setters
+}
+```
+
+## 5. エラーハンドリングパターン
+
+### 1. 早期リターン
+
+```typescript
+// 早期リターンパターン
+function processOrder(orderId: string) {
+  if (!orderId) {
+    throw new Error('Order ID is required');
+  }
+  
+  const order = getOrder(orderId);
+  if (!order) {
+    throw new NotFoundError('Order', orderId);
+  }
+  
+  if (order.status !== 'pending') {
+    throw new Error('Order is not pending');
+  }
+  
+  // 処理を続行
+  return processOrderInternal(order);
+}
+```
+
+### 2. Result型パターン
+
+```typescript
+// Result型の定義
+type Result<T, E = Error> = 
+  | { success: true; data: T }
+  | { success: false; error: E };
+
+// 使用例
+function fetchUser(userId: string): Result<User, Error> {
+  try {
+    const user = getUserById(userId);
+    if (!user) {
+      return { success: false, error: new Error('User not found') };
+    }
+    return { success: true, data: user };
+  } catch (error) {
+    return { success: false, error: error as Error };
+  }
+}
+
+// 呼び出し側
+const result = fetchUser('123');
+if (result.success) {
+  console.log(result.data);
+} else {
+  console.error(result.error);
+}
+```
+
+### 3. エラー境界（React）
+
+```typescript
+// React Error Boundary
+import React, { Component, ErrorInfo, ReactNode } from 'react';
+
+interface Props {
+  children: ReactNode;
+}
+
+interface State {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+  
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo);
+    // エラー追跡サービスに送信
+  }
+  
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div>
+          <h1>Something went wrong.</h1>
+          <p>{this.state.error?.message}</p>
+        </div>
+      );
+    }
+    
+    return this.props.children;
+  }
+}
+
+// 使用例
+function App() {
+  return (
+    <ErrorBoundary>
+      <MyComponent />
+    </ErrorBoundary>
+  );
+}
+```
+
+## 6. 実践的なベストプラクティス
+
+### エラーメッセージの設計
+
+```typescript
+// 良いエラーメッセージ
+throw new Error('Failed to process order: Order ID is required');
+
+// 悪いエラーメッセージ
+throw new Error('Error');
+```
+
+### エラーの分類
+
+```typescript
+// エラーの分類
+enum ErrorType {
+  VALIDATION = 'VALIDATION',
+  NOT_FOUND = 'NOT_FOUND',
+  UNAUTHORIZED = 'UNAUTHORIZED',
+  INTERNAL = 'INTERNAL'
+}
+
+class AppError extends Error {
+  constructor(
+    public type: ErrorType,
+    message: string,
+    public statusCode: number
+  ) {
+    super(message);
+    this.name = 'AppError';
+  }
+}
+```
+
+### エラーのログ記録
+
+```typescript
+// エラーのログ記録
+function handleError(error: Error, context: Record<string, any>) {
+  logger.error('Error occurred', {
+    message: error.message,
+    stack: error.stack,
+    ...context
+  });
+  
+  // エラー追跡サービスに送信
+  errorTracker.captureException(error, { extra: context });
+}
+```
+
+## 7. よくある問題と解決方法
+
+### 問題1: エラーが捕捉されない
+
+```typescript
+// 解決: グローバルエラーハンドラーの設定
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection:', reason);
+  errorTracker.captureException(reason);
+});
+
+window.addEventListener('error', (event) => {
+  logger.error('Unhandled Error:', event.error);
+  errorTracker.captureException(event.error);
+});
+```
+
+### 問題2: エラーメッセージが不適切
+
+```typescript
+// 解決: ユーザー向けと開発者向けのメッセージを分離
+class AppError extends Error {
+  constructor(
+    message: string,
+    public userMessage: string,
+    public statusCode: number
+  ) {
+    super(message);
+  }
+}
+```
+
+### 問題3: エラー情報の不足
+
+```typescript
+// 解決: コンテキスト情報の追加
+try {
+  await processOrder(orderId);
+} catch (error) {
+  logger.error('Failed to process order', {
+    orderId,
+    userId: user.id,
+    timestamp: new Date().toISOString(),
+    error: error.message,
+    stack: error.stack
+  });
+  throw error;
+}
+```
+
+## 8. スタックトレースの理解
+
+### スタックトレースとは
+
+スタックトレースは、エラーが発生した時点での関数呼び出しの履歴を記録したものです。
+
+```markdown
+## スタックトレースの概念
+
+### スタックとは
+- **コールスタック**: 関数呼び出しの履歴を保持するデータ構造
+- **LIFO（Last In First Out）**: 最後に呼び出された関数が最初に終了する
+- **関数の入れ子**: 関数が他の関数を呼び出すことでスタックが積み上がる
+
+### スタックトレースの役割
+- **エラー発生箇所の特定**: どの関数でエラーが発生したか
+- **呼び出し経路の追跡**: どの関数から呼び出されたか
+- **デバッグ情報の提供**: デバッグに必要な情報
+```
+
+### スタックトレースの例
+
+```typescript
+// スタックトレースの例
+function functionA() {
+  functionB();
+}
+
+function functionB() {
+  functionC();
+}
+
+function functionC() {
+  throw new Error('Something went wrong');
+}
+
+try {
+  functionA();
+} catch (error) {
+  console.error(error.stack);
+  // 出力例:
+  // Error: Something went wrong
+  //     at functionC (file:///path/to/file.ts:10:11)
+  //     at functionB (file:///path/to/file.ts:6:3)
+  //     at functionA (file:///path/to/file.ts:2:3)
+  //     at Object.<anonymous> (file:///path/to/file.ts:13:3)
+}
+```
+
+### スタックトレースの読み方
+
+```markdown
+## スタックトレースの読み方
+
+### 基本構造
+```
+Error: Something went wrong
+    at functionC (file:///path/to/file.ts:10:11)
+    at functionB (file:///path/to/file.ts:6:3)
+    at functionA (file:///path/to/file.ts:2:3)
+```
+
+### 各要素の意味
+- **Error: Something went wrong**: エラーメッセージ
+- **at functionC**: エラーが発生した関数名
+- **file:///path/to/file.ts**: ファイルパス
+- **10:11**: 行番号:列番号
+
+### 読み方のポイント
+1. **下から上に読む**: 呼び出しの流れを追う
+2. **最初の行**: エラーが実際に発生した箇所
+3. **その下の行**: 呼び出し元の関数
+4. **最下部**: エラーの起点（エントリーポイント）
+```
+
+### JavaScript/TypeScriptでのスタックトレース
+
+```typescript
+// スタックトレースの取得
+function getStackTrace(): string {
+  const error = new Error();
+  return error.stack || '';
+}
+
+// スタックトレースのカスタマイズ
+class CustomError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CustomError';
+    // スタックトレースからこのコンストラクタを除外
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+// スタックトレースの解析
+function parseStackTrace(stack: string): Array<{
+  function: string;
+  file: string;
+  line: number;
+  column: number;
+}> {
+  const lines = stack.split('\n');
+  const frames = [];
+  
+  for (const line of lines) {
+    const match = line.match(/at\s+(.+?)\s+\((.+?):(\d+):(\d+)\)/);
+    if (match) {
+      frames.push({
+        function: match[1],
+        file: match[2],
+        line: parseInt(match[3]),
+        column: parseInt(match[4]),
+      });
+    }
+  }
+  
+  return frames;
+}
+```
+
+### Pythonでのスタックトレース
+
+```python
+import traceback
+import sys
+
+# スタックトレースの取得
+def get_stack_trace():
+    return traceback.format_exc()
+
+# スタックトレースの出力
+def example_function():
+    try:
+        inner_function()
+    except Exception as e:
+        # スタックトレースを出力
+        traceback.print_exc()
+        # または
+        print(traceback.format_exc())
+
+def inner_function():
+    raise ValueError("Something went wrong")
+
+# スタックトレースの解析
+def parse_stack_trace():
+    exc_type, exc_value, exc_traceback = sys.exc_info()
+    for frame in traceback.extract_tb(exc_traceback):
+        print(f"File: {frame.filename}")
+        print(f"Line: {frame.lineno}")
+        print(f"Function: {frame.name}")
+        print(f"Code: {frame.line}")
+```
+
+### Javaでのスタックトレース
+
+```java
+// スタックトレースの取得
+public class StackTraceExample {
+    public void methodA() {
+        methodB();
+    }
+    
+    public void methodB() {
+        methodC();
+    }
+    
+    public void methodC() {
+        try {
+            throw new RuntimeException("Something went wrong");
+        } catch (RuntimeException e) {
+            // スタックトレースを出力
+            e.printStackTrace();
+            
+            // スタックトレースを文字列として取得
+            StringWriter sw = new StringWriter();
+            PrintWriter pw = new PrintWriter(sw);
+            e.printStackTrace(pw);
+            String stackTrace = sw.toString();
+            
+            System.out.println(stackTrace);
+        }
+    }
+    
+    // スタックトレースの解析
+    public void analyzeStackTrace(Exception e) {
+        StackTraceElement[] elements = e.getStackTrace();
+        for (StackTraceElement element : elements) {
+            System.out.println("Class: " + element.getClassName());
+            System.out.println("Method: " + element.getMethodName());
+            System.out.println("File: " + element.getFileName());
+            System.out.println("Line: " + element.getLineNumber());
+        }
+    }
+}
+```
+
+### スタックトレースの最適化
+
+```markdown
+## スタックトレースの最適化
+
+### 1. 不要な情報の除外
+- **内部実装の隠蔽**: ライブラリ内部のスタックフレームを除外
+- **ノイズの削減**: デバッグに不要な情報を削減
+
+### 2. ソースマップの活用
+- **TypeScript/JavaScript**: ソースマップで元のコード位置を表示
+- **デバッグの容易さ**: トランスパイル後のコードではなく、元のコードを参照
+
+### 3. スタックトレースの制限
+- **フレーム数の制限**: スタックトレースが長すぎる場合の制限
+- **重要な情報の優先**: 重要なフレームのみを表示
+```
+
+## 9. エラーの種類と分類
+
+### エラーの分類
+
+```markdown
+## エラーの分類
+
+### 1. 実行時エラー（Runtime Error）
+- **定義**: プログラム実行中に発生するエラー
+- **例**: NullPointerException、ArrayIndexOutOfBoundsException
+- **特徴**: コンパイル時には検出できない
+
+### 2. コンパイル時エラー（Compile-time Error）
+- **定義**: コンパイル時に検出されるエラー
+- **例**: 構文エラー、型エラー
+- **特徴**: 実行前に検出可能
+
+### 3. 論理エラー（Logic Error）
+- **定義**: プログラムは実行されるが、期待通りの動作をしない
+- **例**: 計算ミス、条件分岐の誤り
+- **特徴**: エラーとして検出されにくい
+
+### 4. システムエラー（System Error）
+- **定義**: システムリソースの問題によるエラー
+- **例**: メモリ不足、ディスクフル
+- **特徴**: アプリケーションでは制御できない
+```
+
+### エラーの重大度
+
+```markdown
+## エラーの重大度
+
+### 1. クリティカル（Critical）
+- **定義**: アプリケーションが完全に停止する
+- **対応**: 即座に対応が必要
+- **例**: データベース接続エラー、メモリ不足
+
+### 2. エラー（Error）
+- **定義**: 機能が正常に動作しない
+- **対応**: できるだけ早く対応
+- **例**: API呼び出し失敗、ファイル読み込みエラー
+
+### 3. 警告（Warning）
+- **定義**: 問題の可能性があるが、動作は継続
+- **対応**: 調査と対応を検討
+- **例**: 非推奨APIの使用、パフォーマンスの問題
+
+### 4. 情報（Info）
+- **定義**: 情報提供のみ
+- **対応**: 通常は対応不要
+- **例**: 正常な処理の完了、状態の変更
+```
+
+### エラーのカテゴリ
+
+```typescript
+// エラーのカテゴリ定義
+enum ErrorCategory {
+  // 入力関連
+  VALIDATION = 'VALIDATION',           // 入力検証エラー
+  FORMAT = 'FORMAT',                   // フォーマットエラー
+  
+  // 認証・認可関連
+  AUTHENTICATION = 'AUTHENTICATION',   // 認証エラー
+  AUTHORIZATION = 'AUTHORIZATION',     // 認可エラー
+  
+  // リソース関連
+  NOT_FOUND = 'NOT_FOUND',             // リソースが見つからない
+  CONFLICT = 'CONFLICT',               // リソースの競合
+  
+  // システム関連
+  INTERNAL = 'INTERNAL',               // 内部エラー
+  EXTERNAL = 'EXTERNAL',               // 外部サービスエラー
+  TIMEOUT = 'TIMEOUT',                 // タイムアウト
+  
+  // ビジネスロジック関連
+  BUSINESS = 'BUSINESS',                  // ビジネスルール違反
+  RATE_LIMIT = 'RATE_LIMIT',          // レート制限
+}
+
+class AppError extends Error {
+  constructor(
+    public category: ErrorCategory,
+    message: string,
+    public statusCode: number,
+    public isRetryable: boolean = false
+  ) {
+    super(message);
+    this.name = 'AppError';
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+```
+
+## 10. エラーコードとエラーレスポンスの設計
+
+### エラーコードの設計
+
+```markdown
+## エラーコードの設計原則
+
+### 1. 一貫性
+- **命名規則**: 統一された命名規則を使用
+- **階層構造**: カテゴリとサブカテゴリで階層化
+- **バージョニング**: APIのバージョンごとに管理
+
+### 2. 明確性
+- **意味が明確**: エラーコードから原因が分かる
+- **ドキュメント化**: エラーコードの意味を文書化
+- **例**: `VALIDATION_EMAIL_INVALID`、`AUTH_TOKEN_EXPIRED`
+
+### 3. 拡張性
+- **将来の拡張**: 新しいエラーコードを追加しやすい
+- **後方互換性**: 既存のエラーコードを変更しない
+```
+
+### エラーレスポンスの設計
+
+```typescript
+// エラーレスポンスの構造
+interface ErrorResponse {
+  // 基本情報
+  error: {
+    code: string;              // エラーコード
+    message: string;           // エラーメッセージ（ユーザー向け）
+    details?: string;          // 詳細情報（開発者向け）
+    
+    // 分類情報
+    category: ErrorCategory;
+    severity: 'critical' | 'error' | 'warning' | 'info';
+    
+    // コンテキスト情報
+    field?: string;            // エラーが発生したフィールド
+    resource?: string;         // エラーが発生したリソース
+    resourceId?: string;      // リソースID
+    
+    // タイムスタンプ
+    timestamp: string;
+    
+    // トレース情報（開発環境のみ）
+    traceId?: string;          // トレースID
+    stackTrace?: string;       // スタックトレース（開発環境のみ）
+  };
+  
+  // HTTP情報
+  status: number;              // HTTPステータスコード
+  path?: string;               // リクエストパス
+  method?: string;             // HTTPメソッド
+}
+
+// エラーレスポンスの生成
+function createErrorResponse(
+  error: AppError,
+  req?: Request
+): ErrorResponse {
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  
+  return {
+    error: {
+      code: error.category,
+      message: error.userMessage || error.message,
+      details: isDevelopment ? error.message : undefined,
+      category: error.category,
+      severity: getSeverity(error.category),
+      timestamp: new Date().toISOString(),
+      traceId: req?.headers['x-trace-id'] as string,
+      stackTrace: isDevelopment ? error.stack : undefined,
+    },
+    status: error.statusCode,
+    path: req?.path,
+    method: req?.method,
+  };
+}
+```
+
+### HTTPステータスコードのマッピング
+
+```markdown
+## HTTPステータスコードのマッピング
+
+### 4xx クライアントエラー
+- **400 Bad Request**: リクエストが不正（VALIDATION、FORMAT）
+- **401 Unauthorized**: 認証が必要（AUTHENTICATION）
+- **403 Forbidden**: アクセス権限がない（AUTHORIZATION）
+- **404 Not Found**: リソースが見つからない（NOT_FOUND）
+- **409 Conflict**: リソースの競合（CONFLICT）
+- **429 Too Many Requests**: レート制限（RATE_LIMIT）
+
+### 5xx サーバーエラー
+- **500 Internal Server Error**: 内部サーバーエラー（INTERNAL）
+- **502 Bad Gateway**: ゲートウェイエラー（EXTERNAL）
+- **503 Service Unavailable**: サービス利用不可（EXTERNAL、TIMEOUT）
+- **504 Gateway Timeout**: ゲートウェイタイムアウト（TIMEOUT）
+```
+
+## 11. エラー追跡とモニタリング
+
+### エラー追跡の設定
+
+```typescript
+// エラー追跡サービスの統合（Sentry例）
+import * as Sentry from '@sentry/node';
+
+// 初期化
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV,
+  tracesSampleRate: 1.0,
+});
+
+// エラーの捕捉と送信
+function captureError(error: Error, context?: Record<string, any>) {
+  Sentry.captureException(error, {
+    tags: {
+      category: error instanceof AppError ? error.category : 'UNKNOWN',
+    },
+    extra: context,
+    level: getSeverityLevel(error),
+  });
+}
+
+// グローバルエラーハンドラー
+process.on('unhandledRejection', (reason, promise) => {
+  Sentry.captureException(reason);
+  logger.error('Unhandled Rejection:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  Sentry.captureException(error);
+  logger.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+```
+
+### エラーメトリクス
+
+```markdown
+## エラーメトリクス
+
+### 1. エラー率
+- **定義**: 総リクエスト数に対するエラー数の割合
+- **計算**: エラー数 / 総リクエスト数 × 100
+- **目標**: 1%以下
+
+### 2. エラー発生頻度
+- **定義**: 単位時間あたりのエラー発生数
+- **計算**: エラー数 / 時間
+- **用途**: エラーの急増を検知
+
+### 3. エラーカテゴリ別の分布
+- **定義**: エラーカテゴリごとの発生数
+- **用途**: 問題の特定と優先順位付け
+
+### 4. 平均エラー解決時間（MTTR）
+- **定義**: エラー発生から解決までの平均時間
+- **計算**: 総解決時間 / エラー数
+- **目標**: 1時間以内
+```
+
+## 12. 実践的なベストプラクティス（拡充）
+
+### エラーハンドリングの階層
+
+```markdown
+## エラーハンドリングの階層
+
+### 1. アプリケーション層
+- **役割**: ビジネスロジックのエラー処理
+- **例**: バリデーションエラー、ビジネスルール違反
+- **対応**: カスタムエラークラスで処理
+
+### 2. フレームワーク層
+- **役割**: フレームワークレベルのエラー処理
+- **例**: ルーティングエラー、ミドルウェアエラー
+- **対応**: エラーハンドリングミドルウェア
+
+### 3. インフラ層
+- **役割**: システムレベルのエラー処理
+- **例**: データベースエラー、ネットワークエラー
+- **対応**: グローバルエラーハンドラー
+```
+
+### エラーの伝播戦略
+
+```markdown
+## エラーの伝播戦略
+
+### 1. 即座に処理
+- **適用**: 回復可能なエラー
+- **例**: バリデーションエラー、リトライ可能なエラー
+- **実装**: try-catchで捕捉して処理
+
+### 2. 上位に伝播
+- **適用**: 処理できないエラー
+- **例**: 認証エラー、権限エラー
+- **実装**: エラーを再スロー
+
+### 3. 変換して伝播
+- **適用**: 抽象化が必要なエラー
+- **例**: データベースエラーをビジネスエラーに変換
+- **実装**: エラーをラップして再スロー
+```
+
+### エラーハンドリングパターンの拡充
+
+```typescript
+// パターン1: エラーチェーン
+class ErrorChain {
+  private errors: Error[] = [];
+  
+  add(error: Error): this {
+    this.errors.push(error);
+    return this;
+  }
+  
+  getRootCause(): Error {
+    return this.errors[0];
+  }
+  
+  getAllErrors(): Error[] {
+    return [...this.errors];
+  }
+}
+
+// パターン2: エラーハンドラーチェーン
+type ErrorHandler = (error: Error) => boolean; // true = handled
+
+class ErrorHandlerChain {
+  private handlers: ErrorHandler[] = [];
+  
+  add(handler: ErrorHandler): this {
+    this.handlers.push(handler);
+    return this;
+  }
+  
+  handle(error: Error): boolean {
+    for (const handler of this.handlers) {
+      if (handler(error)) {
+        return true;
+      }
+    }
+    return false;
+  }
+}
+
+// パターン3: エラーレトライ
+async function retryOnError<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  delay: number = 1000
+): Promise<T> {
+  let lastError: Error;
+  
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error as Error;
+      
+      if (i < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2; // 指数バックオフ
+      }
+    }
+  }
+  
+  throw lastError!;
+}
+```
+
+## 13. よくある問題と解決方法（拡充）
+
+### 問題4: スタックトレースが長すぎる
+
+```typescript
+// 解決: スタックトレースのフィルタリング
+function filterStackTrace(stack: string, maxFrames: number = 10): string {
+  const lines = stack.split('\n');
+  const filtered = lines.slice(0, maxFrames + 1); // +1 for error message
+  return filtered.join('\n');
+}
+
+// 解決: 内部実装の除外
+function cleanStackTrace(stack: string): string {
+  return stack
+    .split('\n')
+    .filter(line => {
+      // node_modulesや内部ライブラリを除外
+      return !line.includes('node_modules') && 
+             !line.includes('internal/');
+    })
+    .join('\n');
+}
+```
+
+### 問題5: エラー情報の漏洩
+
+```typescript
+// 解決: 本番環境での情報制限
+function sanitizeError(error: Error, isProduction: boolean): Error {
+  if (isProduction) {
+    // スタックトレースを削除
+    const sanitized = new Error('An error occurred');
+    sanitized.name = error.name;
+    return sanitized;
+  }
+  return error;
+}
+```
+
+### 問題6: エラーの重複報告
+
+```typescript
+// 解決: エラーの重複検出
+class ErrorDeduplicator {
+  private recentErrors: Map<string, number> = new Map();
+  private readonly TTL = 60000; // 1分
+  
+  shouldReport(error: Error): boolean {
+    const key = this.getErrorKey(error);
+    const now = Date.now();
+    const lastReported = this.recentErrors.get(key);
+    
+    if (lastReported && now - lastReported < this.TTL) {
+      return false; // 最近報告済み
+    }
+    
+    this.recentErrors.set(key, now);
+    this.cleanup();
+    return true;
+  }
+  
+  private getErrorKey(error: Error): string {
+    return `${error.name}:${error.message}:${error.stack?.split('\n')[0]}`;
+  }
+  
+  private cleanup(): void {
+    const now = Date.now();
+    for (const [key, timestamp] of this.recentErrors.entries()) {
+      if (now - timestamp > this.TTL) {
+        this.recentErrors.delete(key);
+      }
+    }
+  }
+}
+```
+
+## まとめ
+
+エラーハンドリング完全ガイドのポイント：
+
+- **エラーハンドリングの基礎**: try-catch文、カスタムエラークラス、エラーハンドリングミドルウェア
+- **スタックトレース**: スタックトレースの概念、読み方、各言語での扱い
+- **エラーの分類**: 実行時エラー、コンパイル時エラー、論理エラー、システムエラー
+- **エラーコードとレスポンス**: 一貫性のあるエラーコード設計、エラーレスポンスの構造
+- **エラーハンドリングパターン**: 早期リターン、Result型、エラー境界、エラーチェーン、リトライ
+- **エラー追跡とモニタリング**: エラー追跡サービスの統合、メトリクスの収集
+- **ベストプラクティス**: エラーメッセージの設計、エラーの伝播戦略、階層的なエラーハンドリング
+- **よくある問題**: エラーが捕捉されない、エラーメッセージが不適切、スタックトレースが長すぎる、エラー情報の漏洩
+
+適切なエラーハンドリングにより、安定性の高いアプリケーションを構築できます。
+

@@ -1,0 +1,495 @@
+---
+title: デプロイ戦略完全ガイド
+sidebar:
+    label: デプロイ戦略
+---
+
+# デプロイ戦略完全ガイド
+
+デプロイ戦略の実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Blue-Greenデプロイ
+
+### Blue-Greenデプロイとは
+
+Blue-Greenデプロイは、2つの完全に同じ環境（BlueとGreen）を用意し、トラフィックを切り替えるデプロイ戦略です。
+
+```
+Blue-Greenデプロイの流れ
+   ├─ Blue環境（現在の本番環境）
+   ├─ Green環境（新しいバージョン）
+   ├─ トラフィックの切り替え
+   └─ 問題があればBlueに戻す
+```
+
+### Kubernetesでの実装
+
+```yaml
+# blue-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp-blue
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: myapp
+        version: blue
+    spec:
+      containers:
+      - name: myapp
+        image: myapp:v1.0.0
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: myapp-service
+spec:
+  selector:
+    app: myapp
+    version: blue  # 初期はBlueを指す
+  ports:
+  - port: 80
+    targetPort: 8080
+```
+
+```yaml
+# green-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp-green
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+      version: green
+  template:
+    metadata:
+      labels:
+        app: myapp
+        version: green
+    spec:
+      containers:
+      - name: myapp
+        image: myapp:v1.1.0  # 新しいバージョン
+        ports:
+        - containerPort: 8080
+```
+
+```bash
+# デプロイスクリプト
+#!/bin/bash
+
+# 1. Green環境をデプロイ
+kubectl apply -f green-deployment.yaml
+
+# 2. Green環境のヘルスチェック
+kubectl wait --for=condition=available --timeout=300s deployment/myapp-green
+
+# 3. トラフィックをGreenに切り替え
+kubectl patch service myapp-service -p '{"spec":{"selector":{"version":"green"}}}'
+
+# 4. 問題があればBlueに戻す
+# kubectl patch service myapp-service -p '{"spec":{"selector":{"version":"blue"}}}'
+```
+
+### AWSでの実装
+
+```yaml
+# blue-green-deploy.yml
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Building the Docker image...
+      - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
+      - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Pushing the Docker image...
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+      - echo Creating new task definition...
+      - aws ecs register-task-definition --cli-input-json file://task-definition.json
+      - echo Updating ECS service...
+      - aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --task-definition $TASK_DEFINITION --force-new-deployment
+```
+
+## 2. Canaryデプロイ
+
+### Canaryデプロイとは
+
+Canaryデプロイは、新しいバージョンを少数のユーザーに段階的にリリースするデプロイ戦略です。
+
+```
+Canaryデプロイの流れ
+   ├─ 新しいバージョンを少数のインスタンスにデプロイ
+   ├─ トラフィックの一部を新しいバージョンにルーティング
+   ├─ 問題がなければ段階的にトラフィックを増やす
+   └─ 問題があれば即座にロールバック
+```
+
+### Kubernetesでの実装
+
+```yaml
+# canary-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp-canary
+spec:
+  replicas: 1  # 少数のインスタンス
+  selector:
+    matchLabels:
+      app: myapp
+      version: canary
+  template:
+    metadata:
+      labels:
+        app: myapp
+        version: canary
+    spec:
+      containers:
+      - name: myapp
+        image: myapp:v1.1.0
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: myapp-service
+spec:
+  selector:
+    app: myapp
+  ports:
+  - port: 80
+    targetPort: 8080
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: myapp
+spec:
+  hosts:
+  - myapp
+  http:
+  - match:
+    - headers:
+        canary:
+          exact: "true"
+    route:
+    - destination:
+        host: myapp
+        subset: canary
+      weight: 100
+  - route:
+    - destination:
+        host: myapp
+        subset: stable
+      weight: 90
+    - destination:
+        host: myapp
+        subset: canary
+      weight: 10  # 10%のトラフィックをCanaryに
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: myapp
+spec:
+  host: myapp
+  subsets:
+  - name: stable
+    labels:
+      version: stable
+  - name: canary
+    labels:
+      version: canary
+```
+
+### AWSでの実装
+
+```yaml
+# canary-deploy.yml
+version: 0.2
+phases:
+  build:
+    commands:
+      - echo Building and pushing Docker image...
+      - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+  post_build:
+    commands:
+      - echo Creating new task definition...
+      - aws ecs register-task-definition --cli-input-json file://task-definition.json
+      - echo Creating Canary deployment...
+      - aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --task-definition $TASK_DEFINITION --desired-count 1 --deployment-configuration maximumPercent=200,minimumHealthyPercent=100
+```
+
+## 3. Rollingデプロイ
+
+### Rollingデプロイとは
+
+Rollingデプロイは、新しいバージョンを段階的にインスタンスにデプロイする戦略です。
+
+```
+Rollingデプロイの流れ
+   ├─ 新しいバージョンを1つのインスタンスにデプロイ
+   ├─ ヘルスチェックが成功したら次のインスタンスに
+   ├─ すべてのインスタンスが更新されるまで繰り返す
+   └─ 問題があればロールバック
+```
+
+### Kubernetesでの実装
+
+```yaml
+# rolling-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+spec:
+  replicas: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # 同時に追加できるインスタンス数
+      maxUnavailable: 0  # 同時に停止できるインスタンス数
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: myapp
+        image: myapp:v1.1.0
+        ports:
+        - containerPort: 8080
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+```
+
+```bash
+# Rollingデプロイの実行
+kubectl set image deployment/myapp myapp=myapp:v1.1.0
+
+# デプロイの進捗を確認
+kubectl rollout status deployment/myapp
+
+# ロールバック
+kubectl rollout undo deployment/myapp
+```
+
+### AWSでの実装
+
+```yaml
+# rolling-deploy.yml
+version: 0.2
+phases:
+  build:
+    commands:
+      - echo Building and pushing Docker image...
+      - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+  post_build:
+    commands:
+      - echo Creating new task definition...
+      - aws ecs register-task-definition --cli-input-json file://task-definition.json
+      - echo Updating ECS service with Rolling deployment...
+      - aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --task-definition $TASK_DEFINITION --deployment-configuration maximumPercent=200,minimumHealthyPercent=50
+```
+
+## 4. デプロイ戦略の比較
+
+### 比較表
+
+| 戦略 | ダウンタイム | ロールバック | リスク | 複雑度 |
+|------|------------|------------|--------|--------|
+| Blue-Green | なし | 簡単 | 低い | 中 |
+| Canary | なし | 簡単 | 低い | 高 |
+| Rolling | なし | 中程度 | 中 | 低 |
+
+### 選択基準
+
+```typescript
+// デプロイ戦略の選択フローチャート
+function selectDeploymentStrategy(requirements: Requirements): Strategy {
+  if (requirements.needInstantRollback) {
+    return 'blue-green';
+  }
+  
+  if (requirements.needGradualRelease) {
+    return 'canary';
+  }
+  
+  if (requirements.needSimpleDeployment) {
+    return 'rolling';
+  }
+  
+  return 'rolling'; // デフォルト
+}
+```
+
+## 5. 実践的なベストプラクティス
+
+### ヘルスチェック
+
+```typescript
+// ヘルスチェックエンドポイント
+app.get('/health', async (req, res) => {
+  const health = {
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    checks: {
+      database: await checkDatabase(),
+      cache: await checkCache(),
+      externalApi: await checkExternalApi()
+    }
+  };
+  
+  const isHealthy = Object.values(health.checks).every(check => check === true);
+  
+  res.status(isHealthy ? 200 : 503).json(health);
+});
+
+app.get('/ready', async (req, res) => {
+  const ready = {
+    status: 'ready',
+    timestamp: new Date().toISOString()
+  };
+  
+  res.status(200).json(ready);
+});
+```
+
+### ロールバック戦略
+
+```bash
+#!/bin/bash
+# ロールバックスクリプト
+
+# Kubernetes
+kubectl rollout undo deployment/myapp
+
+# AWS ECS
+aws ecs update-service \
+  --cluster $CLUSTER_NAME \
+  --service $SERVICE_NAME \
+  --task-definition $PREVIOUS_TASK_DEFINITION \
+  --force-new-deployment
+
+# Docker Swarm
+docker service rollback myapp
+```
+
+### デプロイ前のチェックリスト
+
+```markdown
+## デプロイ前チェックリスト
+
+- [ ] テストがすべて成功している
+- [ ] コードレビューが完了している
+- [ ] データベースマイグレーションが準備されている
+- [ ] ロールバック手順が確認されている
+- [ ] 監視とアラートが設定されている
+- [ ] バックアップが取得されている
+- [ ] デプロイ時間が適切である（低トラフィック時間帯）
+```
+
+## 6. よくある問題と解決方法
+
+### 問題1: デプロイ中のエラー
+
+```bash
+# 解決: 自動ロールバック
+kubectl set image deployment/myapp myapp=myapp:v1.1.0
+kubectl rollout status deployment/myapp --timeout=300s
+
+# タイムアウトした場合は自動ロールバック
+if [ $? -ne 0 ]; then
+  kubectl rollout undo deployment/myapp
+fi
+```
+
+### 問題2: データベースマイグレーション
+
+```typescript
+// 解決: 後方互換性のあるマイグレーション
+// 1. 新しいカラムを追加（NULL許可）
+await db.query('ALTER TABLE users ADD COLUMN new_field VARCHAR(255)');
+
+// 2. データを移行
+await db.query('UPDATE users SET new_field = old_field WHERE old_field IS NOT NULL');
+
+// 3. 新しいバージョンをデプロイ
+
+// 4. 古いカラムを削除（後で実行）
+// await db.query('ALTER TABLE users DROP COLUMN old_field');
+```
+
+### 問題3: セッションの維持
+
+```typescript
+// 解決: セッションストアの外部化
+import RedisStore from 'connect-redis';
+import redis from 'redis';
+
+const redisClient = redis.createClient({
+  host: process.env.REDIS_HOST,
+  port: process.env.REDIS_PORT
+});
+
+app.use(session({
+  store: new RedisStore({ client: redisClient }),
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false
+}));
+```
+
+## まとめ
+
+デプロイ戦略完全ガイドのポイント：
+
+- **Blue-Greenデプロイ**: 2つの環境を用意し、トラフィックを切り替え
+- **Canaryデプロイ**: 少数のユーザーに段階的にリリース
+- **Rollingデプロイ**: 段階的にインスタンスを更新
+- **ヘルスチェック**: デプロイの成功を確認
+- **ロールバック戦略**: 問題があれば即座に戻す
+- **ベストプラクティス**: チェックリスト、自動化、監視
+
+適切なデプロイ戦略により、安全で効率的なリリースが可能になります。
+
+

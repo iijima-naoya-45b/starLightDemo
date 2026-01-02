@@ -1,0 +1,73 @@
+---
+title: Vite完全ガイド
+sidebar:
+    label: Vite基礎
+---
+
+# Vite完全ガイド
+
+Viteの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Viteとは
+
+### Viteの特徴
+
+Viteは、高速な開発サーバーと最適化されたビルドを提供するモダンなビルドツールです。
+
+```
+Viteの特徴
+   ├─ 高速な開発サーバー
+   ├─ HMR
+   ├─ 最適化されたビルド
+   └─ ES Modules
+```
+
+## 2. 環境構築
+
+### プロジェクトの作成
+
+```bash
+# Viteプロジェクトの作成
+npm create vite@latest my-app -- --template react-ts
+
+# 依存関係のインストール
+cd my-app
+npm install
+
+# 開発サーバーの起動
+npm run dev
+```
+
+## 3. 設定
+
+### vite.config.ts
+
+```typescript
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 3000,
+    open: true
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: true
+  }
+});
+```
+
+## まとめ
+
+Vite完全ガイドのポイント：
+
+- **開発サーバー**: 高速な開発サーバー
+- **HMR**: 高速なHot Module Replacement
+- **ビルド**: 最適化されたビルド
+- **設定**: 柔軟な設定
+
+適切なViteの使用により、高速な開発が可能になります。
+
+

@@ -1,0 +1,349 @@
+---
+title: Javaツール完全ガイド
+sidebar:
+    label: Javaツール完全ガイド
+---
+
+# Javaツール完全ガイド
+
+Java開発で使用する主要なツールを、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Javaツールとは
+
+### JDKに含まれるツール
+
+```
+JDKツール
+   ├─ jps: 実行中のJavaプロセスの一覧
+   ├─ jstat: JVM統計情報の表示
+   ├─ jmap: ヒープダンプの取得
+   ├─ jstack: スレッドダンプの取得
+   ├─ jconsole: JVM監視ツール（GUI）
+   ├─ VisualVM: 統合監視ツール（GUI）
+   ├─ jhat: ヒープダンプの分析
+   └─ javap: クラスファイルの逆アセンブル
+```
+
+## 2. jps（Java Process Status）
+
+### 基本的な使用
+
+```bash
+# 実行中のJavaプロセスの一覧を表示
+jps
+
+# 出力例:
+# 12345 MyApplication
+# 12346 AnotherApp
+
+# 詳細情報を表示
+jps -lvm
+
+# 出力例:
+# 12345 com.example.MyApplication -Xmx2g -Xms2g
+```
+
+### 実践的な使用例
+
+```bash
+# 特定のプロセスを検索
+jps | grep MyApp
+
+# プロセスIDを取得して他のツールで使用
+PID=$(jps | grep MyApp | awk '{print $1}')
+jmap -heap $PID
+```
+
+## 3. jstat（JVM Statistics）
+
+### GC統計の表示
+
+```bash
+# GC統計を1秒ごとに10回表示
+jstat -gc <pid> 1000 10
+
+# 出力例:
+#  S0     S1     E      O      M     CCS    YGC     YGCT    FGC    FGCT     GCT
+#  0.00  50.00  25.00  75.00  80.00  70.00     10     0.100     2     0.200  0.300
+
+# 各列の意味:
+# S0, S1: Survivor領域の使用率
+# E: Eden領域の使用率
+# O: Old Generationの使用率
+# M: Metaspaceの使用率
+# YGC: Young GCの回数
+# YGCT: Young GCの累計時間
+# FGC: Full GCの回数
+# FGCT: Full GCの累計時間
+# GCT: GCの累計時間
+```
+
+### その他の統計情報
+
+```bash
+# クラスローディング統計
+jstat -class <pid> 1000 10
+
+# コンパイラ統計
+jstat -compiler <pid> 1000 10
+
+# GC容量統計
+jstat -gccapacity <pid> 1000 10
+```
+
+## 4. jmap（Memory Map）
+
+### ヒープダンプの取得
+
+```bash
+# ヒープダンプの取得
+jmap -dump:format=b,file=heap.hprof <pid>
+
+# ライブオブジェクトのみ
+jmap -dump:live,format=b,file=heap.hprof <pid>
+
+# ヒープの使用状況
+jmap -heap <pid>
+
+# ヒストグラム（クラスごとのインスタンス数とサイズ）
+jmap -histo <pid>
+```
+
+### 実践的な使用例
+
+```bash
+# OOMエラー時の自動ヒープダンプ
+java -XX:+HeapDumpOnOutOfMemoryError \
+     -XX:HeapDumpPath=/path/to/dump \
+     MyApp
+
+# 定期的なヒープダンプ
+while true; do
+    jmap -dump:format=b,file=heap_$(date +%Y%m%d_%H%M%S).hprof <pid>
+    sleep 3600  # 1時間ごと
+done
+```
+
+## 5. jstack（Thread Dump）
+
+### スレッドダンプの取得
+
+```bash
+# スレッドダンプの取得
+jstack <pid>
+
+# ファイルに出力
+jstack <pid> > thread_dump.txt
+
+# デッドロックの検出
+jstack <pid> | grep -A 10 "deadlock"
+```
+
+### スレッドダンプの分析
+
+```bash
+# スレッドの状態を確認
+jstack <pid> | grep "java.lang.Thread.State"
+
+# 出力例:
+# "main" #1 prio=5 os_prio=0 tid=0x00007f... nid=0x1234 runnable
+# "GC task thread#0" #2 prio=5 os_prio=0 tid=0x00007f... nid=0x1235 runnable
+
+# 特定のスレッドのスタックトレースを確認
+jstack <pid> | grep -A 20 "Thread-1"
+```
+
+## 6. jconsole（Java Monitoring and Management Console）
+
+### jconsoleの起動
+
+```bash
+# jconsoleの起動
+jconsole
+
+# 特定のプロセスに接続
+jconsole <pid>
+
+# リモート接続
+jconsole hostname:port
+```
+
+### jconsoleの機能
+
+```
+jconsoleの機能
+   ├─ メモリ監視
+   ├─ スレッド監視
+   ├─ クラス監視
+   ├─ VM情報
+   └─ MBeanブラウザ
+```
+
+### 実践的な使用例
+
+```bash
+# JMX接続を有効にして起動
+java -Dcom.sun.management.jmxremote \
+     -Dcom.sun.management.jmxremote.port=9999 \
+     -Dcom.sun.management.jmxremote.authenticate=false \
+     -Dcom.sun.management.jmxremote.ssl=false \
+     MyApp
+
+# jconsoleで接続
+jconsole localhost:9999
+```
+
+## 7. VisualVM
+
+### VisualVMの起動
+
+```bash
+# VisualVMの起動
+jvisualvm
+
+# または
+visualvm
+```
+
+### VisualVMの機能
+
+```
+VisualVMの機能
+   ├─ アプリケーション監視
+   ├─ CPUプロファイリング
+   ├─ メモリプロファイリング
+   ├─ スレッド分析
+   ├─ ヒープダンプ分析
+   └─ プラグイン機能
+```
+
+### 実践的な使用例
+
+```java
+// VisualVMでプロファイリングするコード
+public class ProfilingExample {
+    public void processData(List<Data> dataList) {
+        for (Data data : dataList) {
+            processItem(data);  // VisualVMでCPU使用率を確認
+        }
+    }
+    
+    private void processItem(Data data) {
+        // 処理
+    }
+}
+```
+
+## 8. jhat（Java Heap Analysis Tool）
+
+### ヒープダンプの分析
+
+```bash
+# ヒープダンプの分析
+jhat heap.hprof
+
+# ポートを指定
+jhat -port 7000 heap.hprof
+
+# ブラウザでアクセス
+# http://localhost:7000
+```
+
+### jhatの機能
+
+```
+jhatの機能
+   ├─ クラスごとのインスタンス数
+   ├─ インスタンスの参照関係
+   ├─ OQL（Object Query Language）
+   └─ ヒストグラム表示
+```
+
+## 9. javap（Class File Disassembler）
+
+### クラスファイルの逆アセンブル
+
+```bash
+# クラスファイルの逆アセンブル
+javap MyClass
+
+# 詳細情報を表示
+javap -c MyClass  # バイトコードを表示
+javap -v MyClass  # 詳細情報を表示
+javap -p MyClass  # プライベートメンバーも表示
+```
+
+### 実践的な使用例
+
+```bash
+# メソッドのシグネチャを確認
+javap -p MyClass | grep "public void"
+
+# バイトコードを確認
+javap -c MyClass > MyClass.bytecode
+```
+
+## 10. 実践的なトラブルシューティング
+
+### メモリリークの調査
+
+```bash
+# 1. ヒープ使用状況を確認
+jmap -heap <pid>
+
+# 2. ヒストグラムを確認
+jmap -histo <pid> | head -20
+
+# 3. ヒープダンプを取得
+jmap -dump:format=b,file=heap.hprof <pid>
+
+# 4. VisualVMで分析
+jvisualvm
+# File -> Load -> heap.hprof
+```
+
+### デッドロックの調査
+
+```bash
+# 1. スレッドダンプを取得
+jstack <pid> > thread_dump.txt
+
+# 2. デッドロックを検索
+grep -A 10 "deadlock" thread_dump.txt
+
+# 3. スレッドの状態を確認
+grep "java.lang.Thread.State" thread_dump.txt
+```
+
+### パフォーマンス問題の調査
+
+```bash
+# 1. GC統計を確認
+jstat -gc <pid> 1000 10
+
+# 2. CPU使用率が高いスレッドを確認
+top -H -p <pid>
+
+# 3. スレッドダンプを取得
+jstack <pid> > thread_dump.txt
+
+# 4. VisualVMでCPUプロファイリング
+jvisualvm
+```
+
+## まとめ
+
+Javaツール完全ガイドのポイント：
+
+- **jps**: 実行中のJavaプロセスの確認
+- **jstat**: GC統計の監視
+- **jmap**: ヒープダンプの取得
+- **jstack**: スレッドダンプの取得
+- **jconsole**: JVM監視（GUI）
+- **VisualVM**: 統合監視ツール（GUI）
+- **jhat**: ヒープダンプの分析
+- **javap**: クラスファイルの逆アセンブル
+
+適切なツールの使用により、効率的なデバッグとパフォーマンス分析が可能になります。
+
+

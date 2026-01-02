@@ -1,0 +1,55 @@
+---
+title: レガシーシステム統合完全ガイド
+sidebar:
+    label: レガシーシステム統合実装
+---
+
+# レガシーシステム統合完全ガイド
+
+レガシーシステム統合の実践的な手法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. レガシーシステム統合とは
+
+### 統合のアプローチ
+
+```
+統合のアプローチ
+   ├─ API統合
+   ├─ データ統合
+   ├─ イベント統合
+   └─ アダプターパターン
+```
+
+## 2. API統合
+
+### REST API統合
+
+```typescript
+// レガシーシステムとの統合
+class LegacySystemAdapter {
+  async getData(id: string): Promise<any> {
+    const response = await fetch(`http://legacy-system/api/data/${id}`);
+    return response.json();
+  }
+  
+  async sendData(data: any): Promise<void> {
+    await fetch('http://legacy-system/api/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+  }
+}
+```
+
+## まとめ
+
+レガシーシステム統合完全ガイドのポイント：
+
+- **API統合**: REST APIによる統合
+- **データ統合**: データの同期
+- **アダプターパターン**: アダプターによる統合
+
+適切な統合により、効率的なシステムを構築できます。
+
+

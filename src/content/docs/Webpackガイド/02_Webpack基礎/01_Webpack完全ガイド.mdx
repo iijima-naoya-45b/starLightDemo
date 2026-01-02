@@ -1,0 +1,72 @@
+---
+title: Webpack完全ガイド
+sidebar:
+    label: Webpack基礎
+---
+
+# Webpack完全ガイド
+
+Webpackの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Webpackとは
+
+### Webpackの特徴
+
+Webpackは、モジュールバンドラーとして広く使われているビルドツールです。
+
+```
+Webpackの特徴
+   ├─ モジュールバンドリング
+   ├─ コード分割
+   ├─ ローダー
+   └─ プラグイン
+```
+
+## 2. 環境構築
+
+### Webpackのインストール
+
+```bash
+# Webpackのインストール
+npm install -D webpack webpack-cli
+
+# 設定ファイルの作成
+touch webpack.config.js
+```
+
+## 3. 基本的な設定
+
+```javascript
+// webpack.config.js
+const path = require('path');
+
+module.exports = {
+  entry: './src/index.js',
+  output: {
+    path: path.resolve(__dirname, 'dist'),
+    filename: 'bundle.js'
+  },
+  module: {
+    rules: [
+      {
+        test: /\.js$/,
+        exclude: /node_modules/,
+        use: 'babel-loader'
+      }
+    ]
+  }
+};
+```
+
+## まとめ
+
+Webpack完全ガイドのポイント：
+
+- **エントリーポイント**: バンドルの起点
+- **出力**: バンドルの出力先
+- **ローダー**: ファイルの変換
+- **プラグイン**: ビルドプロセスの拡張
+
+適切なWebpackの使用により、効率的なビルドが可能になります。
+
+

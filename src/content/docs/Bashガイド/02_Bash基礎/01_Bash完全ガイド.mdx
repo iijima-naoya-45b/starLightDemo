@@ -1,0 +1,91 @@
+---
+title: Bash完全ガイド
+sidebar:
+    label: Bash基礎
+---
+
+# Bash完全ガイド
+
+Bashの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Bashとは
+
+### Bashの特徴
+
+Bashは、Linux/Mac環境で最も広く使われているシェルスクリプト言語です。
+
+```
+Bashの特徴
+   ├─ シェルスクリプト
+   ├─ パイプライン
+   ├─ 変数
+   └─ 制御構造
+```
+
+## 2. 基本的な構文
+
+### 変数
+
+```bash
+#!/bin/bash
+
+# 変数の定義
+name="Alice"
+age=25
+
+# 変数の使用
+echo "Name: $name"
+echo "Age: $age"
+```
+
+### 条件分岐
+
+```bash
+#!/bin/bash
+
+if [ "$age" -ge 18 ]; then
+    echo "Adult"
+else
+    echo "Minor"
+fi
+```
+
+### ループ
+
+```bash
+#!/bin/bash
+
+# forループ
+for i in {1..10}; do
+    echo $i
+done
+
+# whileループ
+count=0
+while [ $count -lt 10 ]; do
+    echo $count
+    count=$((count + 1))
+done
+```
+
+## 3. パイプライン
+
+```bash
+#!/bin/bash
+
+# パイプラインの使用
+cat file.txt | grep "error" | wc -l
+```
+
+## まとめ
+
+Bash完全ガイドのポイント：
+
+- **変数**: 変数の定義と使用
+- **条件分岐**: if文
+- **ループ**: for、while
+- **パイプライン**: コマンドの連結
+
+適切なBashの使用により、効率的な作業が可能になります。
+
+

@@ -1,0 +1,651 @@
+---
+title: MongoDB完全ガイド
+sidebar:
+    label: MongoDB詳細
+---
+
+# MongoDB完全ガイド
+
+MongoDBの実践的な使い方を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. MongoDBとは
+
+### MongoDBの特徴
+
+MongoDBは、NoSQLドキュメントデータベースです。JSONライクなドキュメント形式でデータを保存します。
+
+```
+MongoDBの特徴
+   ├─ スキーマレス（柔軟なデータ構造）
+   ├─ 水平スケーリングが容易
+   ├─ 高速な読み書き
+   ├─ 豊富なクエリ機能
+   └─ 集約パイプラインによる複雑な処理
+```
+
+### なぜMongoDBを選ぶのか
+
+**MongoDBを選ぶべき場合:**
+- スキーマが頻繁に変更される
+- 水平スケーリングが必要
+- 高速な読み書きが必要
+- 複雑な集約処理が必要
+
+**MongoDBを選ばないべき場合:**
+- トランザクションの整合性が重要（リレーショナルDBの方が適している）
+- 複雑なJOINが必要（リレーショナルDBの方が適している）
+
+## 2. MongoDBのインストールとセットアップ
+
+### macOSでのインストール
+
+```bash
+# Homebrewを使用
+brew tap mongodb/brew
+brew install mongodb-community
+
+# サービスを開始
+brew services start mongodb-community
+
+# MongoDBに接続
+mongosh
+```
+
+### Linuxでのインストール
+
+```bash
+# Ubuntu/Debian
+wget -qO - https://www.mongodb.org/static/pgp/server-7.0.asc | sudo apt-key add -
+echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+sudo apt-get update
+sudo apt-get install -y mongodb-org
+
+# サービスを開始
+sudo systemctl start mongod
+sudo systemctl enable mongod
+
+# MongoDBに接続
+mongosh
+```
+
+### Windowsでのインストール
+
+1. [MongoDB公式サイト](https://www.mongodb.com/try/download/community)からインストーラーをダウンロード
+2. インストーラーを実行し、指示に従ってインストール
+3. MongoDB Compassまたはmongoshから接続
+
+### 初期設定
+
+```javascript
+// データベースの作成と選択
+use myapp
+
+// ユーザーの作成
+db.createUser({
+  user: "myuser",
+  pwd: "mypassword",
+  roles: [
+    { role: "readWrite", db: "myapp" }
+  ]
+})
+
+// 認証
+db.auth("myuser", "mypassword")
+```
+
+## 3. 基本的な操作
+
+### ドキュメントの挿入
+
+```javascript
+// 単一ドキュメントの挿入
+db.users.insertOne({
+  name: "Alice",
+  email: "alice@example.com",
+  age: 30,
+  tags: ["developer", "designer"],
+  address: {
+    city: "Tokyo",
+    country: "Japan"
+  },
+  created_at: new Date()
+})
+
+// 複数ドキュメントの挿入
+db.users.insertMany([
+  {
+    name: "Bob",
+    email: "bob@example.com",
+    age: 25
+  },
+  {
+    name: "Charlie",
+    email: "charlie@example.com",
+    age: 35
+  }
+])
+```
+
+### ドキュメントの検索
+
+```javascript
+// すべてのドキュメントを取得
+db.users.find()
+
+// 条件付き検索
+db.users.find({ age: { $gt: 25 } })
+
+// プロジェクション（特定のフィールドのみ取得）
+db.users.find({}, { name: 1, email: 1 })
+
+// ソート
+db.users.find().sort({ age: -1 })
+
+// リミット
+db.users.find().limit(10)
+
+// スキップ
+db.users.find().skip(10).limit(10)
+```
+
+### ドキュメントの更新
+
+```javascript
+// 単一ドキュメントの更新
+db.users.updateOne(
+  { email: "alice@example.com" },
+  { $set: { age: 31 } }
+)
+
+// 複数ドキュメントの更新
+db.users.updateMany(
+  { age: { $lt: 30 } },
+  { $set: { status: "junior" } }
+)
+
+// 置き換え
+db.users.replaceOne(
+  { email: "alice@example.com" },
+  {
+    name: "Alice Smith",
+    email: "alice@example.com",
+    age: 31
+  }
+)
+
+// インクリメント
+db.users.updateOne(
+  { email: "alice@example.com" },
+  { $inc: { age: 1 } }
+)
+
+// 配列への追加
+db.users.updateOne(
+  { email: "alice@example.com" },
+  { $push: { tags: "senior" } }
+)
+```
+
+### ドキュメントの削除
+
+```javascript
+// 単一ドキュメントの削除
+db.users.deleteOne({ email: "alice@example.com" })
+
+// 複数ドキュメントの削除
+db.users.deleteMany({ age: { $lt: 18 } })
+
+// すべてのドキュメントの削除
+db.users.deleteMany({})
+```
+
+## 4. インデックス
+
+### 基本的なインデックス
+
+```javascript
+// 単一フィールドインデックス
+db.users.createIndex({ email: 1 })
+
+// 複合インデックス
+db.users.createIndex({ name: 1, age: -1 })
+
+// ユニークインデックス
+db.users.createIndex({ email: 1 }, { unique: true })
+
+// テキストインデックス（全文検索）
+db.articles.createIndex({ title: "text", content: "text" })
+
+// インデックスの確認
+db.users.getIndexes()
+
+// インデックスの削除
+db.users.dropIndex({ email: 1 })
+```
+
+### インデックスの最適化
+
+```javascript
+// クエリプランの確認
+db.users.find({ email: "alice@example.com" }).explain("executionStats")
+
+// インデックスの使用状況を確認
+db.users.aggregate([
+  { $indexStats: {} }
+])
+```
+
+## 5. 集約パイプライン
+
+### 基本的な集約操作
+
+```javascript
+// グループ化と集計
+db.orders.aggregate([
+  {
+    $group: {
+      _id: "$user_id",
+      total_amount: { $sum: "$amount" },
+      order_count: { $count: {} },
+      avg_amount: { $avg: "$amount" }
+    }
+  },
+  {
+    $sort: { total_amount: -1 }
+  }
+])
+
+// 結合（$lookup）
+db.orders.aggregate([
+  {
+    $lookup: {
+      from: "users",
+      localField: "user_id",
+      foreignField: "_id",
+      as: "user"
+    }
+  },
+  {
+    $unwind: "$user"
+  },
+  {
+    $project: {
+      order_id: "$_id",
+      user_name: "$user.name",
+      amount: 1
+    }
+  }
+])
+
+// フィルタリング
+db.orders.aggregate([
+  {
+    $match: {
+      amount: { $gt: 100 },
+      status: "completed"
+    }
+  },
+  {
+    $group: {
+      _id: "$user_id",
+      total: { $sum: "$amount" }
+    }
+  }
+])
+```
+
+### 高度な集約操作
+
+```javascript
+// ウィンドウ関数（$setWindowFields）
+db.sales.aggregate([
+  {
+    $setWindowFields: {
+      partitionBy: "$product_id",
+      sortBy: { date: 1 },
+      output: {
+        running_total: {
+          $sum: "$amount",
+          window: {
+            documents: ["unboundedPreceding", "current"]
+          }
+        }
+      }
+    }
+  }
+])
+
+// ファセット検索
+db.products.aggregate([
+  {
+    $facet: {
+      "by_category": [
+        { $group: { _id: "$category", count: { $sum: 1 } } }
+      ],
+      "by_price": [
+        {
+          $bucket: {
+            groupBy: "$price",
+            boundaries: [0, 100, 500, 1000, Infinity],
+            default: "other"
+          }
+        }
+      ]
+    }
+  }
+])
+```
+
+## 6. シャーディング
+
+### シャーディングの設定
+
+```javascript
+// 設定サーバーの起動（mongod --configsvr）
+
+// ルーターサーバーの起動（mongos --configdb config1:27019,config2:27019,config3:27019）
+
+// シャードキーの設定
+sh.enableSharding("myapp")
+
+// コレクションのシャーディング
+sh.shardCollection("myapp.orders", { user_id: 1, order_date: 1 })
+
+// シャードの状態確認
+sh.status()
+```
+
+### シャーディング戦略
+
+```javascript
+// 範囲シャーディング
+// - データが均等に分散されない可能性がある
+// - 範囲クエリが効率的
+
+// ハッシュシャーディング
+sh.shardCollection("myapp.users", { _id: "hashed" })
+// - データが均等に分散される
+// - 範囲クエリが非効率的
+```
+
+## 7. レプリカセット
+
+### レプリカセットの設定
+
+```javascript
+// プライマリサーバーの設定
+rs.initiate({
+  _id: "rs0",
+  members: [
+    { _id: 0, host: "mongodb1:27017" },
+    { _id: 1, host: "mongodb2:27017" },
+    { _id: 2, host: "mongodb3:27017" }
+  ]
+})
+
+// レプリカセットの状態確認
+rs.status()
+
+// セカンダリサーバーからの読み取り
+db.getMongo().setReadPreference("secondary")
+```
+
+### レプリカセットの選挙
+
+```javascript
+// プライマリサーバーの確認
+rs.isMaster()
+
+// 手動でのフェイルオーバー（テスト環境のみ）
+rs.stepDown()
+```
+
+## 8. トランザクション
+
+### トランザクションの使用
+
+```javascript
+// セッションの開始
+const session = db.getMongo().startSession()
+
+// トランザクションの開始
+session.startTransaction()
+
+try {
+  // 操作1
+  session.getDatabase("myapp").users.insertOne({
+    name: "Alice",
+    email: "alice@example.com"
+  }, { session })
+
+  // 操作2
+  session.getDatabase("myapp").orders.insertOne({
+    user_id: user_id,
+    amount: 100
+  }, { session })
+
+  // コミット
+  session.commitTransaction()
+} catch (error) {
+  // ロールバック
+  session.abortTransaction()
+} finally {
+  session.endSession()
+}
+```
+
+## 9. パフォーマンス最適化
+
+### クエリの最適化
+
+```javascript
+// インデックスの使用を確認
+db.users.find({ email: "alice@example.com" }).explain("executionStats")
+
+// プロジェクションの使用（必要なフィールドのみ取得）
+db.users.find({}, { name: 1, email: 1 })
+
+// バッチサイズの調整
+db.users.find().batchSize(100)
+```
+
+### 接続プール
+
+```javascript
+// 接続文字列での設定
+mongodb://localhost:27017/myapp?maxPoolSize=10&minPoolSize=5
+
+// 接続プールの監視
+db.serverStatus().connections
+```
+
+## 10. セキュリティ
+
+### 認証と認可
+
+```javascript
+// ユーザーの作成
+db.createUser({
+  user: "admin",
+  pwd: "admin_password",
+  roles: [
+    { role: "userAdminAnyDatabase", db: "admin" },
+    { role: "readWriteAnyDatabase", db: "admin" }
+  ]
+})
+
+// ロールの作成
+db.createRole({
+  role: "appUser",
+  privileges: [
+    {
+      resource: { db: "myapp", collection: "" },
+      actions: ["find", "insert", "update", "remove"]
+    }
+  ],
+  roles: []
+})
+```
+
+### 暗号化
+
+```javascript
+// 暗号化の有効化（mongod.conf）
+security:
+  encryption:
+    keyFile: /path/to/keyfile
+
+// TLS/SSL接続
+mongodb://localhost:27017/myapp?ssl=true&sslCAFile=/path/to/ca.pem
+```
+
+## 11. バックアップとリストア
+
+### mongodumpによるバックアップ
+
+```bash
+# データベース全体のバックアップ
+mongodump --host localhost:27017 --db myapp --out /backup
+
+# 特定のコレクションのみのバックアップ
+mongodump --host localhost:27017 --db myapp --collection users --out /backup
+
+# 認証付きバックアップ
+mongodump --host localhost:27017 --db myapp --username myuser --password mypassword --out /backup
+```
+
+### mongorestoreによるリストア
+
+```bash
+# データベースのリストア
+mongorestore --host localhost:27017 --db myapp /backup/myapp
+
+# 特定のコレクションのみのリストア
+mongorestore --host localhost:27017 --db myapp --collection users /backup/myapp/users.bson
+```
+
+### 継続的バックアップ（Oplog）
+
+```javascript
+// Oplogの確認
+db.oplog.rs.find().sort({ ts: -1 }).limit(1)
+
+// ポイントインタイムリカバリ
+mongorestore --oplogReplay /backup
+```
+
+## 12. 実践的なベストプラクティス
+
+### スキーマ設計
+
+```javascript
+// 埋め込み vs 参照の選択
+
+// 埋め込み（1対1、1対少）
+// - 頻繁に一緒にアクセスされるデータ
+db.users.insertOne({
+  name: "Alice",
+  profile: {
+    bio: "Developer",
+    avatar: "avatar.jpg"
+  }
+})
+
+// 参照（1対多、多対多）
+// - 独立してアクセスされるデータ
+db.users.insertOne({
+  name: "Alice",
+  order_ids: [ObjectId("..."), ObjectId("...")]
+})
+```
+
+### 命名規則
+
+```javascript
+// データベース名: 小文字、スネークケース
+use my_app
+
+// コレクション名: 複数形、スネークケース
+db.user_profiles.insertOne({...})
+
+// フィールド名: スネークケース
+{
+  first_name: "Alice",
+  created_at: new Date()
+}
+```
+
+### 監視とログ
+
+```javascript
+// サーバー統計の確認
+db.serverStatus()
+
+// データベース統計の確認
+db.stats()
+
+// コレクション統計の確認
+db.users.stats()
+
+// スロークエリの確認
+db.setProfilingLevel(1, { slowms: 100 })
+db.system.profile.find().sort({ ts: -1 }).limit(10)
+```
+
+## 13. よくある問題と解決方法
+
+### 問題1: メモリ使用量が高い
+
+```javascript
+// インデックスの確認
+db.users.getIndexes()
+
+// 不要なインデックスの削除
+db.users.dropIndex({ unused_field: 1 })
+
+// ワーキングセットの確認
+db.serverStatus().wiredTiger.cache
+```
+
+### 問題2: クエリが遅い
+
+```javascript
+// クエリプランの確認
+db.users.find({ email: "alice@example.com" }).explain("executionStats")
+
+// インデックスの作成
+db.users.createIndex({ email: 1 })
+
+// プロジェクションの使用
+db.users.find({}, { name: 1, email: 1 })
+```
+
+### 問題3: ディスク容量不足
+
+```javascript
+// データベースサイズの確認
+db.stats()
+
+// 不要なデータの削除
+db.old_logs.deleteMany({ created_at: { $lt: new Date("2023-01-01") } })
+
+// コレクションの圧縮
+db.runCommand({ compact: "old_logs" })
+```
+
+## まとめ
+
+MongoDB完全ガイドのポイント：
+
+- **スキーマレス**: 柔軟なデータ構造
+- **集約パイプライン**: 複雑なデータ処理
+- **インデックス**: パフォーマンスの向上
+- **シャーディング**: 水平スケーリング
+- **レプリカセット**: 高可用性
+- **トランザクション**: データ整合性
+- **セキュリティ**: 認証と認可
+- **バックアップ**: データ保護
+
+適切なMongoDBの使用により、スケーラブルで柔軟なアプリケーションを構築できます。
+
+

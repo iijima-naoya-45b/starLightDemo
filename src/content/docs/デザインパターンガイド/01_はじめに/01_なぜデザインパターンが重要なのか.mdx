@@ -1,8 +1,10 @@
 ---
-title: "なぜデザインパターンが重要なのか"
-label: "なぜデザインパターンが重要なのか"
+title: なぜデザインパターンが重要なのか
+sidebar:
+    label: はじめに
 ---
 
+<<<<<<< HEAD
 ## 🎨 なぜデザインパターンが重要なのか
 
 `デザインパターン`は、ソフトウェア開発において繰り返し発生する問題に対する再利用可能な解決策です。適切な`デザインパターン`の使用により、コードの品質と保守性を向上させられます。
@@ -12,162 +14,75 @@ label: "なぜデザインパターンが重要なのか"
 #### ❌ デザインパターンなしのコードの問題
 
 **❌ 問題のある実装:**
+=======
+# なぜデザインパターンが重要なのか
+
+デザインパターンは、よくある問題に対する再利用可能な解決策です。
+
+## デザインパターンの重要性
+
+### パターンなしの問題
+
+**問題のあるコード:**
+>>>>>>> 679c0c7a8f59569d5c3d35990194c2b6d08840aa
 
 ```typescript
-// 問題のあるコード: 責任が混在
+// 問題: コードの重複と保守性の低さ
 class UserService {
   async getUser(id: string) {
-    // データベースアクセス
-    const user = await db.query('SELECT * FROM users WHERE id = ?', [id]);
-    
-    // ビジネスロジック
-    if (user.age < 18) {
-      throw new Error('User is underage');
-    }
-    
-    // データ変換
-    return {
-      id: user.id,
-      name: user.name,
-      email: user.email
-    };
+    // データベース接続のコードが重複
+    const connection = await createConnection();
+    const user = await connection.query('SELECT * FROM users WHERE id = ?', [id]);
+    await connection.close();
+    return user;
+  }
+  
+  async createUser(data: UserData) {
+    // 同じコードが重複
+    const connection = await createConnection();
+    const user = await connection.query('INSERT INTO users ...', [data]);
+    await connection.close();
+    return user;
   }
 }
-
-// 問題点:
-// - 責任が混在している
-// - テストが困難
-// - 再利用が困難
-// - 変更の影響範囲が大きい
 ```
 
-#### デザインパターンによる解決
+### デザインパターンによる解決
 
-**改善された実装:**
+**改善されたコード:**
 
 ```typescript
-// Repositoryパターンを使用
-interface UserRepository {
-  findById(id: string): Promise<User>;
-}
-
-class UserRepositoryImpl implements UserRepository {
-  async findById(id: string): Promise<User> {
-    return await db.query('SELECT * FROM users WHERE id = ?', [id]);
+// 解決: Repositoryパターンの使用
+class UserRepository {
+  async findById(id: string) {
+    return await this.db.query('SELECT * FROM users WHERE id = ?', [id]);
+  }
+  
+  async create(data: UserData) {
+    return await this.db.query('INSERT INTO users ...', [data]);
   }
 }
 
-// Service層でビジネスロジックを実装
 class UserService {
   constructor(private userRepository: UserRepository) {}
   
   async getUser(id: string) {
-    const user = await this.userRepository.findById(id);
-    
-    if (user.age < 18) {
-      throw new Error('User is underage');
-    }
-    
-    return user;
+    return await this.userRepository.findById(id);
   }
-}
-
-// DTOパターンでデータ変換
-class UserDTO {
-  constructor(private user: User) {}
   
-  toJSON() {
-    return {
-      id: this.user.id,
-      name: this.user.name,
-      email: this.user.email
-    };
+  async createUser(data: UserData) {
+    return await this.userRepository.create(data);
   }
 }
-
-// メリット:
-// - 責任が分離されている
-// - テストが容易
-// - 再利用が容易
-// - 変更の影響範囲が小さい
 ```
 
-### デザインパターンの種類
-
-#### 1.  Creational Patterns（生成に関するパターン）
-
-**目的:**
-オブジェクトの生成方法を抽象化します。
-
-**主なパターン:**
-- Singleton（シングルトン）
-- Factory（ファクトリー）
-- Builder（ビルダー）
-
-#### 2. Structural Patterns（構造に関するパターン）
-
-**目的:**
-クラスやオブジェクトの構造を定義します。
-
-**主なパターン:**
-- Adapter（アダプター）
-- Decorator（デコレーター）
-- Facade（ファサード）
-
-#### 3. Behavioral Patterns（振る舞いに関するパターン）
-
-**目的:**
-オブジェクト間の通信方法を定義します。
-
-**主なパターン:**
-- Observer（オブザーバー）
-- Strategy（ストラテジー）
-- Command（コマンド）
-
-### デザインパターンのメリット
-
-#### 1. コードの再利用性
-
-```typescript
-// Repositoryパターンにより、データアクセスロジックを再利用
-class UserRepository implements Repository<User> {
-  // 実装
-}
-
-class ProductRepository implements Repository<Product> {
-  // 同じインターフェースを使用
-}
-```
-
-#### 2. コードの保守性
-
-```typescript
-// 責任が分離されているため、変更の影響範囲が小さい
-class UserService {
-  // ビジネスロジックのみに集中
-}
-```
-
-#### 3. テストの容易性
-
-```typescript
-// モックを使用してテストが容易
-const mockRepository = {
-  findById: jest.fn()
-};
-
-const service = new UserService(mockRepository);
-```
-
-### まとめ
+## まとめ
 
 デザインパターンが重要な理由：
 
-- **再利用性**: 実証された解決策を再利用できる
-- **保守性**: コードの構造が明確になり、保守しやすい
-- **テスト容易性**: 責任が分離され、テストが容易
-- **コミュニケーション**: チーム内で共通の言語を使用できる
-- **品質**: コードの品質が向上する
+- **再利用性**: よくある問題に対する解決策
+- **保守性**: コードの理解と変更が容易
+- **拡張性**: 新しい機能の追加が容易
+- **品質**: 実証された設計パターン
 
-適切なデザインパターンの使用により、高品質なコードを書けます。
-
+適切なデザインパターンの使用により、保守性の高いコードを構築できます。

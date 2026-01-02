@@ -1,0 +1,61 @@
+---
+title: TensorFlow完全ガイド
+sidebar:
+    label: TensorFlow基礎
+---
+
+# TensorFlow完全ガイド
+
+TensorFlowの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. TensorFlowとは
+
+### TensorFlowの特徴
+
+TensorFlowは、Googleが開発した深層学習フレームワークです。
+
+```
+TensorFlowの特徴
+   ├─ 計算グラフ
+   ├─ 自動微分
+   ├─ GPU/TPUサポート
+   └─ Keras統合
+```
+
+## 2. 基本的な使用
+
+### シンプルなニューラルネットワーク
+
+```python
+import tensorflow as tf
+from tensorflow import keras
+
+# モデルの定義
+model = keras.Sequential([
+    keras.layers.Dense(128, activation='relu', input_shape=(784,)),
+    keras.layers.Dense(10, activation='softmax')
+])
+
+# コンパイル
+model.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+# 学習
+model.fit(x_train, y_train, epochs=10)
+```
+
+## まとめ
+
+TensorFlow完全ガイドのポイント：
+
+- **計算グラフ**: 計算の最適化
+- **自動微分**: 勾配の自動計算
+- **GPU/TPU**: 高速な計算
+- **Keras**: 高レベルAPI
+
+適切なTensorFlowの使用により、効率的な深層学習が可能になります。
+
+

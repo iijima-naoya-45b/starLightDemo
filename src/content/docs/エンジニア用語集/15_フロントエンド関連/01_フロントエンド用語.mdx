@@ -1,0 +1,195 @@
+---
+title: フロントエンド用語
+sidebar:
+    label: フロントエンド用語
+---
+
+# フロントエンド用語
+
+## SSR（Server-Side Rendering）
+
+**定義:**
+SSRは、サーバー側でHTMLを生成し、クライアントに送信する手法です。
+
+**なぜ重要なのか:**
+- **SEO**: 検索エンジンがコンテンツを認識できる
+- **初期表示速度**: 初期表示が速い
+- **パフォーマンス**: クライアントの負荷を軽減
+
+**使用例:**
+
+```typescript
+// Next.jsのSSR
+export async function getServerSideProps(context) {
+  const data = await fetchData();
+  return {
+    props: { data }
+  };
+}
+
+function Page({ data }) {
+  return <div>{data.title}</div>;
+}
+```
+
+**関連用語:**
+- CSR
+- SSG
+- ISR
+
+---
+
+## CSR（Client-Side Rendering）
+
+**定義:**
+CSRは、クライアント側でHTMLを生成する手法です。
+
+**なぜ重要なのか:**
+- **インタラクティブ**: リッチなインタラクションが可能
+- **サーバー負荷**: サーバーの負荷を軽減
+- **開発効率**: 開発が容易
+
+**使用例:**
+
+```typescript
+// ReactのCSR
+function App() {
+  const [data, setData] = useState(null);
+  
+  useEffect(() => {
+    fetchData().then(setData);
+  }, []);
+  
+  return <div>{data?.title}</div>;
+}
+```
+
+**関連用語:**
+- SSR
+- SSG
+- ハイドレーション
+
+---
+
+## SSG（Static Site Generation）
+
+**定義:**
+SSGは、ビルド時にHTMLを生成し、静的ファイルとして配信する手法です。
+
+**なぜ重要なのか:**
+- **パフォーマンス**: 非常に高速
+- **コスト**: サーバーのコストが低い
+- **スケーラビリティ**: CDNで簡単にスケール
+
+**使用例:**
+
+```typescript
+// Next.jsのSSG
+export async function getStaticProps() {
+  const data = await fetchData();
+  return {
+    props: { data },
+    revalidate: 3600 // ISR
+  };
+}
+```
+
+**関連用語:**
+- SSR
+- CSR
+- ISR
+
+---
+
+## ISR（Incremental Static Regeneration）
+
+**定義:**
+ISRは、静的サイトを段階的に再生成する手法です。
+
+**なぜ重要なのか:**
+- **パフォーマンス**: 静的サイトの高速性を維持
+- **動的コンテンツ**: 動的コンテンツにも対応
+- **スケーラビリティ**: 大規模サイトにも対応
+
+**使用例:**
+
+```typescript
+// Next.jsのISR
+export async function getStaticProps() {
+  const data = await fetchData();
+  return {
+    props: { data },
+    revalidate: 60 // 60秒ごとに再生成
+  };
+}
+```
+
+**関連用語:**
+- SSG
+- SSR
+- キャッシング
+
+---
+
+## ハイドレーション（Hydration）
+
+**定義:**
+ハイドレーションは、サーバー側で生成されたHTMLに、クライアント側のJavaScriptを接続する処理です。
+
+**なぜ重要なのか:**
+- **インタラクティブ**: 静的HTMLをインタラクティブにする
+- **パフォーマンス**: 初期表示が速い
+- **SEO**: SEOとインタラクティブ性を両立
+
+**使用例:**
+
+```typescript
+// Reactのハイドレーション
+// サーバー側でHTMLを生成
+const html = ReactDOMServer.renderToString(<App />);
+
+// クライアント側でハイドレーション
+ReactDOM.hydrate(<App />, document.getElementById('root'));
+```
+
+**関連用語:**
+- SSR
+- CSR
+- レンダリング
+
+---
+
+## 仮想DOM（Virtual DOM）
+
+**定義:**
+仮想DOMは、実際のDOMの軽量なコピーで、変更を効率的に適用する仕組みです。
+
+**なぜ重要なのか:**
+- **パフォーマンス**: DOM操作を最適化
+- **開発効率**: 宣言的なUI記述が可能
+- **クロスブラウザ**: ブラウザの違いを抽象化
+
+**使用例:**
+
+```typescript
+// Reactの仮想DOM
+function App() {
+  const [count, setCount] = useState(0);
+  
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(count + 1)}>
+        Increment
+      </button>
+    </div>
+  );
+}
+```
+
+**関連用語:**
+- React
+- DOM
+- レンダリング
+
+

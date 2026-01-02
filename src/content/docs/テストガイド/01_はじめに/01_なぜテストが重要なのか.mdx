@@ -1,0 +1,70 @@
+---
+title: なぜテストが重要なのか
+sidebar:
+    label: はじめに
+---
+
+# なぜテストが重要なのか
+
+テストは、ソフトウェアの品質を保証し、バグを早期に発見するための重要なプロセスです。
+
+## テストの重要性
+
+### テストなしの問題
+
+**問題のある開発プロセス:**
+
+```typescript
+// テストなしのコード
+function calculateTotal(items: Item[]): number {
+  let total = 0;
+  for (const item of items) {
+    total += item.price * item.quantity;
+  }
+  return total;
+}
+
+// 問題点:
+// - バグが本番環境で発見される
+// - リファクタリングが困難
+// - 回帰バグが発生しやすい
+```
+
+### テストによる解決
+
+**改善された開発プロセス:**
+
+```typescript
+// テスト付きのコード
+function calculateTotal(items: Item[]): number {
+  let total = 0;
+  for (const item of items) {
+    total += item.price * item.quantity;
+  }
+  return total;
+}
+
+// テスト
+describe('calculateTotal', () => {
+  it('should calculate total correctly', () => {
+    const items = [
+      { price: 100, quantity: 2 },
+      { price: 200, quantity: 1 }
+    ];
+    expect(calculateTotal(items)).toBe(400);
+  });
+});
+```
+
+## まとめ
+
+テストが重要な理由：
+
+- **品質の保証**: バグを早期に発見
+- **リファクタリングの安全性**: 変更による影響を確認
+- **ドキュメント**: コードの使用方法を示す
+- **自信**: 変更を安全に行える
+
+適切なテストにより、高品質なソフトウェアを構築できます。
+
+

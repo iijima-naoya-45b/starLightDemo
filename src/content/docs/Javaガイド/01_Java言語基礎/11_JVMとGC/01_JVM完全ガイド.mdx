@@ -1,0 +1,263 @@
+---
+title: JVM完全ガイド
+sidebar:
+    label: JVM完全ガイド
+---
+
+# JVM完全ガイド
+
+JVM（Java Virtual Machine）の仕組みと動作原理を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. JVMとは
+
+### JVMの役割
+
+JVMは、Javaバイトコードを実行する仮想マシンです。プラットフォーム非依存性を実現する重要なコンポーネントです。
+
+```
+Javaソースコード (.java)
+    ↓ javac（コンパイラ）
+Javaバイトコード (.class)
+    ↓ JVM（実行時）
+ネイティブコード（実行）
+```
+
+### JVMの利点
+
+- **プラットフォーム非依存**: Write Once, Run Anywhere
+- **自動メモリ管理**: ガベージコレクション
+- **セキュリティ**: サンドボックス環境
+- **最適化**: JITコンパイルによる最適化
+
+## 2. JVMのメモリ構造
+
+### メモリ領域の詳細
+
+```
+┌─────────────────────────────────────┐
+│         Method Area                 │
+│  - クラス情報                        │
+│  - 定数プール                        │
+│  - メソッドデータ                    │
+│  - フィールド情報                    │
+├─────────────────────────────────────┤
+│         Heap Area                   │
+│  ┌──────────────────────────────┐  │
+│  │   Young Generation            │  │
+│  │  ┌──────┐  ┌──────┐         │  │
+│  │  │ Eden │  │Survivor│        │  │
+│  │  │      │  │(S0/S1)│         │  │
+│  │  └──────┘  └──────┘         │  │
+│  ├──────────────────────────────┤  │
+│  │   Old Generation             │  │
+│  │  ┌──────────────────┐    │  │
+│  │  │                    │    │  │
+│  │  └──────────────────┘    │  │
+│  └──────────────────────────────┘  │
+├─────────────────────────────────────┤
+│         Stack Area                 │
+│  - メソッド呼び出しフレーム          │
+│  - ローカル変数                     │
+│  - パラメータ                       │
+│  - 戻り値アドレス                   │
+├─────────────────────────────────────┤
+│         PC Register                │
+│  - 現在実行中の命令のアドレス        │
+├─────────────────────────────────────┤
+│         Native Method Stack        │
+│  - ネイティブメソッドのスタック      │
+└─────────────────────────────────────┘
+```
+
+### 各メモリ領域の詳細
+
+#### Method Area（メソッド領域）
+
+```java
+// クラス情報がMethod Areaに格納される
+public class User {
+    private String name;  // フィールド情報
+    private int age;      // フィールド情報
+    
+    public void setName(String name) {  // メソッド情報
+        this.name = name;
+    }
+}
+```
+
+**特徴:**
+- すべてのスレッドで共有
+- クラスロード時に初期化
+- ガベージコレクションの対象（Java 8以降）
+
+#### Heap Area（ヒープ領域）
+
+```java
+// オブジェクトはヒープに作成される
+User user = new User();  // ヒープにオブジェクトが作成される
+```
+
+**Young Generation:**
+- **Eden**: 新しく作成されたオブジェクトが配置される
+- **Survivor (S0/S1)**: Minor GCで生き残ったオブジェクトが移動
+
+**Old Generation:**
+- 長期間生き残ったオブジェクトが配置される
+- Major GC（Full GC）の対象
+
+#### Stack Area（スタック領域）
+
+```java
+public void method() {
+    int localVar = 10;  // スタックに格納される
+    String str = "test";  // 参照はスタック、オブジェクトはヒープ
+}
+```
+
+**特徴:**
+- スレッドごとに独立
+- メソッド呼び出しごとにフレームが作成
+- ローカル変数、パラメータ、戻り値アドレスを格納
+
+## 3. クラスローダー
+
+### クラスローダーの階層
+
+```
+Bootstrap ClassLoader
+    ↓
+Extension ClassLoader
+    ↓
+Application ClassLoader
+    ↓
+Custom ClassLoader（必要に応じて）
+```
+
+### クラスローディングのプロセス
+
+```java
+// 1. ロード: .classファイルを読み込む
+// 2. リンク: 検証、準備、解決
+// 3. 初期化: 静的変数の初期化、静的ブロックの実行
+
+public class ClassLoadingExample {
+    static {
+        System.out.println("静的ブロックが実行される");
+    }
+    
+    private static int staticVar = 10;  // 初期化時に値が設定される
+    
+    public static void main(String[] args) {
+        System.out.println("mainメソッドが実行される");
+    }
+}
+```
+
+## 4. JITコンパイラ
+
+### JITコンパイルの仕組み
+
+```java
+// 1. インタープリタモード: バイトコードを逐次実行
+// 2. プロファイリング: 頻繁に実行されるメソッドを特定
+// 3. JITコンパイル: ホットスポットをネイティブコードにコンパイル
+// 4. 最適化: インライン化、ループ展開など
+
+public class JITExample {
+    public int calculate(int n) {
+        int sum = 0;
+        for (int i = 0; i < n; i++) {
+            sum += i;  // このループが頻繁に実行されるとJITコンパイルされる
+        }
+        return sum;
+    }
+}
+```
+
+### JITコンパイラの最適化
+
+- **インライン化**: メソッド呼び出しを展開
+- **ループ展開**: ループを展開してオーバーヘッドを削減
+- **デッドコード削除**: 実行されないコードを削除
+- **定数畳み込み**: コンパイル時に計算可能な値を計算
+
+## 5. JVMの起動オプション
+
+### メモリ設定
+
+```bash
+# ヒープサイズの設定
+-Xms512m          # 初期ヒープサイズ
+-Xmx2048m         # 最大ヒープサイズ
+-Xmn256m          # Young Generationサイズ
+
+# メタスペースサイズ（Java 8以降）
+-XX:MetaspaceSize=256m
+-XX:MaxMetaspaceSize=512m
+```
+
+### GC設定
+
+```bash
+# GCアルゴリズムの選択
+-XX:+UseG1GC              # G1GCを使用
+-XX:MaxGCPauseMillis=200  # 目標GC一時停止時間
+
+# GCログの出力
+-Xlog:gc*:file=gc.log:time,level,tags
+```
+
+### その他の設定
+
+```bash
+# JITコンパイラの設定
+-XX:+TieredCompilation    # 段階的コンパイル
+-XX:CompileThreshold=1000 # JITコンパイルの閾値
+
+# デバッグ設定
+-XX:+HeapDumpOnOutOfMemoryError  # OOM時にヒープダンプ
+-XX:HeapDumpPath=/path/to/dump    # ヒープダンプのパス
+```
+
+## 6. JVMの監視
+
+### JVMの状態確認
+
+```bash
+# プロセスの確認
+jps -lvm
+
+# ヒープの使用状況
+jmap -heap <pid>
+
+# ヒープダンプの取得
+jmap -dump:format=b,file=heap.hprof <pid>
+
+# GCの統計情報
+jstat -gc <pid> 1000 10  # 1秒ごとに10回表示
+```
+
+### 実践的な監視例
+
+```bash
+# メモリ使用状況の監視
+jstat -gcutil <pid> 1000
+
+# 出力例:
+#  S0     S1     E      O      M     CCS    YGC     YGCT    FGC    FGCT     GCT
+#  0.00  50.00  25.00  75.00  80.00  70.00     10     0.100     2     0.200  0.300
+```
+
+## まとめ
+
+JVM完全ガイドのポイント：
+
+- **メモリ構造**: Method Area、Heap、Stackの役割
+- **クラスローダー**: クラスローディングのプロセス
+- **JITコンパイラ**: 最適化の仕組み
+- **起動オプション**: メモリ、GC、その他の設定
+- **監視**: JVMの状態確認方法
+
+適切なJVMの理解により、高性能なJavaアプリケーションを構築できます。
+
+

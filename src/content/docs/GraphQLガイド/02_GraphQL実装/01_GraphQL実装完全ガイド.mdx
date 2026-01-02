@@ -1,0 +1,658 @@
+---
+title: GraphQL実装完全ガイド
+sidebar:
+    label: GraphQL実装
+---
+
+# GraphQL実装完全ガイド
+
+GraphQLの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. GraphQLサーバーの実装
+
+### Apollo Server（Node.js）
+
+```typescript
+// schema.graphql
+type User {
+  id: ID!
+  name: String!
+  email: String!
+  orders: [Order!]!
+}
+
+type Order {
+  id: ID!
+  amount: Float!
+  status: String!
+  user: User!
+}
+
+type Query {
+  user(id: ID!): User
+  users(limit: Int, offset: Int): [User!]!
+}
+
+type Mutation {
+  createUser(name: String!, email: String!): User!
+  updateUser(id: ID!, name: String, email: String): User!
+}
+```
+
+```typescript
+// resolvers.ts
+import { User, Order } from './models';
+
+const resolvers = {
+  Query: {
+    user: async (_: any, { id }: { id: string }) => {
+      return await User.findById(id);
+    },
+    users: async (_: any, { limit = 10, offset = 0 }: { limit?: number; offset?: number }) => {
+      return await User.find().limit(limit).skip(offset);
+    }
+  },
+  
+  Mutation: {
+    createUser: async (_: any, { name, email }: { name: string; email: string }) => {
+      const user = new User({ name, email });
+      return await user.save();
+    },
+    updateUser: async (_: any, { id, name, email }: { id: string; name?: string; email?: string }) => {
+      const user = await User.findById(id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+      
+      if (name) user.name = name;
+      if (email) user.email = email;
+      
+      return await user.save();
+    }
+  },
+  
+  User: {
+    orders: async (user: User) => {
+      return await Order.find({ userId: user.id });
+    }
+  }
+};
+```
+
+```typescript
+// server.ts
+import { ApolloServer } from '@apollo/server';
+import { startStandaloneServer } from '@apollo/server/standalone';
+import { readFileSync } from 'fs';
+import { resolvers } from './resolvers';
+
+const typeDefs = readFileSync('./schema.graphql', 'utf-8');
+
+const server = new ApolloServer({
+  typeDefs,
+  resolvers
+});
+
+const { url } = await startStandaloneServer(server, {
+  listen: { port: 4000 }
+});
+
+console.log(`Server ready at ${url}`);
+```
+
+### GraphQL Yoga（Node.js）
+
+```typescript
+// server.ts
+import { createYoga } from 'graphql-yoga';
+import { createServer } from 'http';
+import { schema } from './schema';
+
+const yoga = createYoga({
+  schema,
+  graphqlEndpoint: '/graphql'
+});
+
+const server = createServer(yoga);
+
+server.listen(4000, () => {
+  console.log('Server is running on http://localhost:4000/graphql');
+});
+```
+
+## 2. スキーマ設計
+
+### 型定義
+
+```graphql
+# スカラー型
+scalar Date
+scalar JSON
+
+# オブジェクト型
+type User {
+  id: ID!
+  name: String!
+  email: String!
+  createdAt: Date!
+  profile: UserProfile
+}
+
+# 入力型
+input CreateUserInput {
+  name: String!
+  email: String!
+  password: String!
+}
+
+# 列挙型
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  CANCELLED
+}
+
+# インターフェース
+interface Node {
+  id: ID!
+}
+
+type User implements Node {
+  id: ID!
+  name: String!
+}
+
+# ユニオン型
+union SearchResult = User | Order | Product
+```
+
+### スキーマのベストプラクティス
+
+```graphql
+# ✅ 良い例: 明確な命名
+type User {
+  id: ID!
+  firstName: String!
+  lastName: String!
+  emailAddress: String!
+}
+
+# ❌ 悪い例: 曖昧な命名
+type User {
+  id: ID!
+  n: String!  # nameの略？
+  e: String!  # emailの略？
+}
+
+# ✅ 良い例: 適切なnullability
+type User {
+  id: ID!           # 必須
+  name: String!    # 必須
+  bio: String       # オプショナル
+}
+
+# ❌ 悪い例: 不適切なnullability
+type User {
+  id: ID            # IDは常に必須であるべき
+  name: String      # 名前も必須であるべき
+}
+```
+
+## 3. Resolverの実装
+
+### 基本的なResolver
+
+```typescript
+const resolvers = {
+  Query: {
+    user: async (parent: any, args: { id: string }, context: Context) => {
+      return await context.dataSources.userAPI.getUser(args.id);
+    }
+  },
+  
+  Mutation: {
+    createUser: async (parent: any, args: { input: CreateUserInput }, context: Context) => {
+      return await context.dataSources.userAPI.createUser(args.input);
+    }
+  },
+  
+  User: {
+    orders: async (user: User, args: any, context: Context) => {
+      return await context.dataSources.orderAPI.getOrdersByUserId(user.id);
+    }
+  }
+};
+```
+
+### N+1問題の解決
+
+```typescript
+// ❌ 問題のある実装（N+1問題）
+const resolvers = {
+  User: {
+    orders: async (user: User) => {
+      // 各ユーザーごとにクエリが実行される
+      return await Order.find({ userId: user.id });
+    }
+  }
+};
+
+// ✅ 解決: DataLoaderの使用
+import DataLoader from 'dataloader';
+
+const orderLoader = new DataLoader(async (userIds: string[]) => {
+  const orders = await Order.find({ userId: { $in: userIds } });
+  return userIds.map(userId => 
+    orders.filter(order => order.userId === userId)
+  );
+});
+
+const resolvers = {
+  User: {
+    orders: async (user: User) => {
+      return await orderLoader.load(user.id);
+    }
+  }
+};
+```
+
+## 4. 認証と認可
+
+### JWT認証
+
+```typescript
+// context.ts
+import { verify } from 'jsonwebtoken';
+
+export interface Context {
+  user?: User;
+  dataSources: DataSources;
+}
+
+export async function createContext({ req }: { req: Request }): Promise<Context> {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  
+  if (!token) {
+    return { dataSources };
+  }
+  
+  try {
+    const decoded = verify(token, process.env.JWT_SECRET!) as { userId: string };
+    const user = await User.findById(decoded.userId);
+    return { user, dataSources };
+  } catch (error) {
+    return { dataSources };
+  }
+}
+
+// server.ts
+const server = new ApolloServer({
+  typeDefs,
+  resolvers,
+  context: createContext
+});
+```
+
+### 認可
+
+```typescript
+// directives.ts
+import { mapSchema, getDirective, MapperKind } from '@graphql-tools/utils';
+import { GraphQLSchema } from 'graphql';
+
+export function authDirectiveTransformer(schema: GraphQLSchema) {
+  return mapSchema(schema, {
+    [MapperKind.OBJECT_FIELD]: (fieldConfig) => {
+      const authDirective = getDirective(schema, fieldConfig, 'auth')?.[0];
+      
+      if (authDirective) {
+        const { resolve: originalResolve } = fieldConfig;
+        
+        fieldConfig.resolve = async (parent, args, context, info) => {
+          if (!context.user) {
+            throw new Error('Unauthorized');
+          }
+          
+          return originalResolve(parent, args, context, info);
+        };
+      }
+      
+      return fieldConfig;
+    }
+  });
+}
+
+// schema.graphql
+directive @auth on FIELD_DEFINITION
+
+type Query {
+  me: User @auth
+  users: [User!]!
+}
+```
+
+## 5. エラーハンドリング
+
+### カスタムエラー
+
+```typescript
+// errors.ts
+export class AuthenticationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuthenticationError';
+  }
+}
+
+export class NotFoundError extends Error {
+  constructor(resource: string, id: string) {
+    super(`${resource} with id ${id} not found`);
+    this.name = 'NotFoundError';
+  }
+}
+
+// resolvers.ts
+const resolvers = {
+  Query: {
+    user: async (parent: any, { id }: { id: string }, context: Context) => {
+      if (!context.user) {
+        throw new AuthenticationError('You must be logged in');
+      }
+      
+      const user = await User.findById(id);
+      if (!user) {
+        throw new NotFoundError('User', id);
+      }
+      
+      return user;
+    }
+  }
+};
+```
+
+### エラーフォーマット
+
+```typescript
+// server.ts
+const server = new ApolloServer({
+  typeDefs,
+  resolvers,
+  formatError: (error) => {
+    if (error.originalError instanceof AuthenticationError) {
+      return {
+        message: error.message,
+        code: 'UNAUTHENTICATED',
+        statusCode: 401
+      };
+    }
+    
+    if (error.originalError instanceof NotFoundError) {
+      return {
+        message: error.message,
+        code: 'NOT_FOUND',
+        statusCode: 404
+      };
+    }
+    
+    return {
+      message: 'Internal server error',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500
+    };
+  }
+});
+```
+
+## 6. パフォーマンス最適化
+
+### クエリの複雑度制限
+
+```typescript
+// complexity.ts
+import { createComplexityLimitRule } from 'graphql-query-complexity';
+
+const complexityLimitRule = createComplexityLimitRule({
+  maximumComplexity: 1000,
+  onComplete: (complexity: number) => {
+    console.log('Query complexity:', complexity);
+  }
+});
+
+const server = new ApolloServer({
+  typeDefs,
+  resolvers,
+  validationRules: [complexityLimitRule]
+});
+```
+
+### キャッシング
+
+```typescript
+// cache.ts
+import { InMemoryLRUCache } from '@apollo/utils.keyvaluecache';
+
+const server = new ApolloServer({
+  typeDefs,
+  resolvers,
+  cache: new InMemoryLRUCache({
+    maxSize: Math.pow(2, 20) * 50, // 50MB
+    ttl: 300 // 5分
+  })
+});
+
+// Resolverでのキャッシュ制御
+const resolvers = {
+  Query: {
+    user: async (parent: any, { id }: { id: string }, context: Context, info: any) => {
+      // キャッシュを無効化
+      info.cacheControl.setCacheHint({ maxAge: 60, scope: 'PRIVATE' });
+      
+      return await User.findById(id);
+    }
+  }
+};
+```
+
+## 7. サブスクリプション
+
+### WebSocketサブスクリプション
+
+```typescript
+// schema.graphql
+type Subscription {
+  orderStatusChanged(orderId: ID!): Order!
+  userCreated: User!
+}
+
+// resolvers.ts
+import { PubSub } from 'graphql-subscriptions';
+
+const pubsub = new PubSub();
+
+const resolvers = {
+  Subscription: {
+    orderStatusChanged: {
+      subscribe: (_: any, { orderId }: { orderId: string }) => {
+        return pubsub.asyncIterator(`ORDER_STATUS_CHANGED_${orderId}`);
+      }
+    },
+    userCreated: {
+      subscribe: () => {
+        return pubsub.asyncIterator('USER_CREATED');
+      }
+    }
+  },
+  
+  Mutation: {
+    updateOrderStatus: async (_: any, { id, status }: { id: string; status: string }) => {
+      const order = await Order.findByIdAndUpdate(id, { status }, { new: true });
+      await pubsub.publish(`ORDER_STATUS_CHANGED_${id}`, { orderStatusChanged: order });
+      return order;
+    },
+    createUser: async (_: any, { input }: { input: CreateUserInput }) => {
+      const user = await User.create(input);
+      await pubsub.publish('USER_CREATED', { userCreated: user });
+      return user;
+    }
+  }
+};
+```
+
+## 8. GraphQL Client
+
+### Apollo Client（React）
+
+```typescript
+// client.ts
+import { ApolloClient, InMemoryCache, createHttpLink } from '@apollo/client';
+import { setContext } from '@apollo/client/link/context';
+
+const httpLink = createHttpLink({
+  uri: 'http://localhost:4000/graphql'
+});
+
+const authLink = setContext((_, { headers }) => {
+  const token = localStorage.getItem('token');
+  return {
+    headers: {
+      ...headers,
+      authorization: token ? `Bearer ${token}` : ''
+    }
+  };
+});
+
+export const client = new ApolloClient({
+  link: authLink.concat(httpLink),
+  cache: new InMemoryCache()
+});
+```
+
+```typescript
+// useUsers.ts
+import { useQuery, useMutation } from '@apollo/client';
+import { gql } from '@apollo/client';
+
+const GET_USERS = gql`
+  query GetUsers($limit: Int, $offset: Int) {
+    users(limit: $limit, offset: $offset) {
+      id
+      name
+      email
+      orders {
+        id
+        amount
+      }
+    }
+  }
+`;
+
+const CREATE_USER = gql`
+  mutation CreateUser($input: CreateUserInput!) {
+    createUser(input: $input) {
+      id
+      name
+      email
+    }
+  }
+`;
+
+export function useUsers(limit = 10, offset = 0) {
+  const { data, loading, error } = useQuery(GET_USERS, {
+    variables: { limit, offset }
+  });
+  
+  const [createUser] = useMutation(CREATE_USER, {
+    refetchQueries: [{ query: GET_USERS }]
+  });
+  
+  return {
+    users: data?.users || [],
+    loading,
+    error,
+    createUser
+  };
+}
+```
+
+## 9. 実践的なベストプラクティス
+
+### バージョニング
+
+```graphql
+# スキーマのバージョニング
+# v1/schema.graphql
+type User {
+  id: ID!
+  name: String!
+}
+
+# v2/schema.graphql
+type User {
+  id: ID!
+  firstName: String!
+  lastName: String!
+  # nameフィールドは非推奨だが、後方互換性のため残す
+  name: String! @deprecated(reason: "Use firstName and lastName instead")
+}
+```
+
+### レート制限
+
+```typescript
+// rate-limit.ts
+import rateLimit from 'express-rate-limit';
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15分
+  max: 100, // 100リクエスト
+  message: 'Too many requests from this IP'
+});
+
+app.use('/graphql', limiter);
+```
+
+## 10. よくある問題と解決方法
+
+### 問題1: N+1問題
+
+```typescript
+// 解決: DataLoaderの使用
+const userLoader = new DataLoader(async (ids: string[]) => {
+  const users = await User.find({ _id: { $in: ids } });
+  return ids.map(id => users.find(u => u.id === id));
+});
+```
+
+### 問題2: クエリの複雑度
+
+```typescript
+// 解決: クエリの複雑度制限
+const complexityLimitRule = createComplexityLimitRule({
+  maximumComplexity: 1000
+});
+```
+
+### 問題3: セキュリティ
+
+```typescript
+// 解決: 認証と認可の実装
+// JWT認証と@authディレクティブの使用
+```
+
+## まとめ
+
+GraphQL実装完全ガイドのポイント：
+
+- **サーバー実装**: Apollo Server、GraphQL Yoga
+- **スキーマ設計**: 型定義、ベストプラクティス
+- **Resolver**: 基本的な実装、N+1問題の解決
+- **認証と認可**: JWT認証、認可ディレクティブ
+- **エラーハンドリング**: カスタムエラー、エラーフォーマット
+- **パフォーマンス最適化**: クエリの複雑度制限、キャッシング
+- **サブスクリプション**: WebSocketサブスクリプション
+- **GraphQL Client**: Apollo Client
+
+適切なGraphQLの実装により、効率的で柔軟なAPIを構築できます。
+
+

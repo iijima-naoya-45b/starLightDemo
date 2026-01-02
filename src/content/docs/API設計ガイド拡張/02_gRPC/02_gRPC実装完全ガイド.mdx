@@ -1,0 +1,429 @@
+---
+title: gRPC実装完全ガイド
+sidebar:
+    label: gRPC実装
+---
+
+# gRPC実装完全ガイド
+
+gRPCの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. Protocol Buffers
+
+### .protoファイルの定義
+
+```protobuf
+// user.proto
+syntax = "proto3";
+
+package user;
+
+service UserService {
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
+}
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message GetUserResponse {
+  User user = 1;
+}
+
+message CreateUserRequest {
+  string name = 1;
+  string email = 2;
+  int32 age = 3;
+}
+
+message CreateUserResponse {
+  User user = 1;
+}
+
+message ListUsersRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+message ListUsersResponse {
+  repeated User users = 1;
+  int32 total = 2;
+}
+
+message UpdateUserRequest {
+  string user_id = 1;
+  string name = 2;
+  string email = 3;
+}
+
+message UpdateUserResponse {
+  User user = 1;
+}
+
+message DeleteUserRequest {
+  string user_id = 1;
+}
+
+message DeleteUserResponse {
+  bool success = 1;
+}
+
+message User {
+  string id = 1;
+  string name = 2;
+  string email = 3;
+  int32 age = 4;
+  string created_at = 5;
+}
+```
+
+## 2. gRPCサーバーの実装（Node.js）
+
+### サーバーの実装
+
+```typescript
+// server.ts
+import * as grpc from '@grpc/grpc-js';
+import * as protoLoader from '@grpc/proto-loader';
+import { UserService } from './services/userService';
+
+const PROTO_PATH = './proto/user.proto';
+
+const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
+  keepCase: true,
+  longs: String,
+  enums: String,
+  defaults: true,
+  oneofs: true
+});
+
+const userProto = grpc.loadPackageDefinition(packageDefinition).user as any;
+
+const server = new grpc.Server();
+
+server.addService(userProto.UserService.service, {
+  getUser: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
+    try {
+      const user = await UserService.getUser(call.request.user_id);
+      callback(null, { user });
+    } catch (error) {
+      callback({
+        code: grpc.status.NOT_FOUND,
+        message: 'User not found'
+      });
+    }
+  },
+  
+  createUser: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
+    try {
+      const user = await UserService.createUser(call.request);
+      callback(null, { user });
+    } catch (error) {
+      callback({
+        code: grpc.status.INTERNAL,
+        message: error.message
+      });
+    }
+  },
+  
+  listUsers: async (call: grpc.ServerUnaryCall<any, any>, callback: grpc.sendUnaryData<any>) => {
+    try {
+      const result = await UserService.listUsers(call.request);
+      callback(null, result);
+    } catch (error) {
+      callback({
+        code: grpc.status.INTERNAL,
+        message: error.message
+      });
+    }
+  }
+});
+
+server.bindAsync('0.0.0.0:50051', grpc.ServerCredentials.createInsecure(), (error, port) => {
+  if (error) {
+    console.error('Failed to start server:', error);
+    return;
+  }
+  server.start();
+  console.log(`Server running on port ${port}`);
+});
+```
+
+## 3. gRPCクライアントの実装（Node.js）
+
+### クライアントの実装
+
+```typescript
+// client.ts
+import * as grpc from '@grpc/grpc-js';
+import * as protoLoader from '@grpc/proto-loader';
+
+const PROTO_PATH = './proto/user.proto';
+
+const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
+  keepCase: true,
+  longs: String,
+  enums: String,
+  defaults: true,
+  oneofs: true
+});
+
+const userProto = grpc.loadPackageDefinition(packageDefinition).user as any;
+
+const client = new userProto.UserService(
+  'localhost:50051',
+  grpc.credentials.createInsecure()
+);
+
+// GetUser
+client.getUser({ user_id: '123' }, (error: grpc.ServiceError | null, response: any) => {
+  if (error) {
+    console.error('Error:', error.message);
+    return;
+  }
+  console.log('User:', response.user);
+});
+
+// CreateUser
+client.createUser({
+  name: 'Alice',
+  email: 'alice@example.com',
+  age: 30
+}, (error: grpc.ServiceError | null, response: any) => {
+  if (error) {
+    console.error('Error:', error.message);
+    return;
+  }
+  console.log('Created user:', response.user);
+});
+```
+
+## 4. ストリーミング
+
+### サーバーストリーミング
+
+```protobuf
+// user.proto
+service UserService {
+  rpc ListUsersStream(ListUsersRequest) returns (stream User);
+}
+```
+
+```typescript
+// サーバー側
+listUsersStream: (call: grpc.ServerWritableStream<any, any>) => {
+  const users = UserService.getAllUsers();
+  
+  users.forEach((user, index) => {
+    setTimeout(() => {
+      call.write(user);
+    }, index * 100);
+  });
+  
+  call.end();
+}
+```
+
+### クライアントストリーミング
+
+```protobuf
+// user.proto
+service UserService {
+  rpc CreateUsersStream(stream CreateUserRequest) returns (CreateUsersResponse);
+}
+```
+
+```typescript
+// クライアント側
+const call = client.createUsersStream((error, response) => {
+  if (error) {
+    console.error('Error:', error);
+    return;
+  }
+  console.log('Response:', response);
+});
+
+users.forEach(user => {
+  call.write(user);
+});
+
+call.end();
+```
+
+### 双方向ストリーミング
+
+```protobuf
+// user.proto
+service UserService {
+  rpc Chat(stream ChatMessage) returns (stream ChatMessage);
+}
+```
+
+```typescript
+// サーバー側
+chat: (call: grpc.ServerDuplexStream<any, any>) => {
+  call.on('data', (message: any) => {
+    console.log('Received:', message);
+    call.write({ message: `Echo: ${message.message}` });
+  });
+  
+  call.on('end', () => {
+    call.end();
+  });
+}
+```
+
+## 5. エラーハンドリング
+
+### gRPCステータスコード
+
+```typescript
+import * as grpc from '@grpc/grpc-js';
+
+// エラーの送信
+callback({
+  code: grpc.status.NOT_FOUND,
+  message: 'User not found',
+  details: 'The requested user does not exist'
+});
+
+// エラーの処理
+client.getUser({ user_id: '123' }, (error: grpc.ServiceError | null, response: any) => {
+  if (error) {
+    switch (error.code) {
+      case grpc.status.NOT_FOUND:
+        console.error('User not found');
+        break;
+      case grpc.status.INVALID_ARGUMENT:
+        console.error('Invalid argument');
+        break;
+      default:
+        console.error('Unknown error:', error.message);
+    }
+    return;
+  }
+  console.log('User:', response.user);
+});
+```
+
+## 6. 認証と認可
+
+### TLS認証
+
+```typescript
+// サーバー側
+const serverCredentials = grpc.ServerCredentials.createSsl(
+  fs.readFileSync('ca.pem'),
+  [{
+    cert_chain: fs.readFileSync('server.pem'),
+    private_key: fs.readFileSync('server.key')
+  }],
+  true // require client authentication
+);
+
+server.bindAsync('0.0.0.0:50051', serverCredentials, (error, port) => {
+  // ...
+});
+
+// クライアント側
+const clientCredentials = grpc.credentials.createSsl(
+  fs.readFileSync('ca.pem'),
+  fs.readFileSync('client.key'),
+  fs.readFileSync('client.pem')
+);
+
+const client = new userProto.UserService('localhost:50051', clientCredentials);
+```
+
+### JWT認証
+
+```typescript
+// クライアント側
+const metadata = new grpc.Metadata();
+metadata.add('authorization', `Bearer ${token}`);
+
+client.getUser({ user_id: '123' }, metadata, (error, response) => {
+  // ...
+});
+
+// サーバー側（インターセプター）
+const authInterceptor = (options: any, nextCall: any) => {
+  return new grpc.InterceptingCall(nextCall(options), {
+    start: (metadata, listener, next) => {
+      const token = metadata.get('authorization')[0]?.replace('Bearer ', '');
+      if (!token || !verifyToken(token)) {
+        listener.onReceiveStatus({
+          code: grpc.status.UNAUTHENTICATED,
+          message: 'Unauthorized'
+        });
+        return;
+      }
+      next(metadata, listener);
+    }
+  });
+};
+```
+
+## 7. 実践的なベストプラクティス
+
+### タイムアウト
+
+```typescript
+// クライアント側
+const deadline = new Date();
+deadline.setSeconds(deadline.getSeconds() + 5); // 5秒のタイムアウト
+
+client.getUser({ user_id: '123' }, { deadline }, (error, response) => {
+  if (error?.code === grpc.status.DEADLINE_EXCEEDED) {
+    console.error('Request timeout');
+    return;
+  }
+  // ...
+});
+```
+
+### リトライ
+
+```typescript
+import * as grpc from '@grpc/grpc-js';
+
+function retryCall(callFn: Function, maxRetries = 3) {
+  let retries = 0;
+  
+  const attempt = () => {
+    callFn((error: grpc.ServiceError | null, response: any) => {
+      if (error && retries < maxRetries) {
+        if (error.code === grpc.status.UNAVAILABLE || 
+            error.code === grpc.status.DEADLINE_EXCEEDED) {
+          retries++;
+          setTimeout(attempt, Math.pow(2, retries) * 1000); // 指数バックオフ
+          return;
+        }
+      }
+      // 成功またはリトライ不可能なエラー
+    });
+  };
+  
+  attempt();
+}
+```
+
+## まとめ
+
+gRPC実装完全ガイドのポイント：
+
+- **Protocol Buffers**: .protoファイルの定義
+- **サーバー実装**: Node.jsでのgRPCサーバー
+- **クライアント実装**: Node.jsでのgRPCクライアント
+- **ストリーミング**: サーバー、クライアント、双方向ストリーミング
+- **エラーハンドリング**: gRPCステータスコード
+- **認証と認可**: TLS、JWT認証
+- **ベストプラクティス**: タイムアウト、リトライ
+
+適切なgRPCの実装により、高速で効率的なマイクロサービス間通信を実現できます。
+
+

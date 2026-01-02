@@ -1,0 +1,259 @@
+---
+title: その他の技術用語
+sidebar:
+    label: その他の技術用語
+---
+
+# その他の技術用語
+
+## 技術的負債（Technical Debt）
+
+**定義:**
+技術的負債は、短期的な解決策を選択した結果、将来的に追加の作業が必要になる状態を表します。
+
+**なぜ重要なのか:**
+- **開発速度への影響**: 技術的負債が増えると開発速度が低下
+- **品質への影響**: バグの発生率が増加
+- **コスト**: 負債の返済にコストがかかる
+
+**技術的負債の種類:**
+```
+- コードの重複
+- テストの不足
+- ドキュメントの不足
+- 古い技術の使用
+- 設計の不備
+```
+
+**関連用語:**
+- リファクタリング
+- コード品質
+- 保守性
+
+---
+
+## リファクタリング（Refactoring）
+
+**定義:**
+リファクタリングは、外部の動作を変えずに、コードの内部構造を改善することです。
+
+**なぜ重要なのか:**
+- **コードの品質**: コードの可読性と保守性が向上
+- **技術的負債の削減**: 技術的負債を削減
+- **開発速度**: 将来の開発速度が向上
+
+**リファクタリングの原則:**
+```
+- 外部の動作を変えない
+- 小さなステップで進める
+- テストを書いてからリファクタリング
+- 頻繁にコミットする
+```
+
+**関連用語:**
+- 技術的負債
+- コード品質
+- テスト
+
+---
+
+## オブザーバビリティ（Observability）
+
+**定義:**
+オブザーバビリティは、システムの内部状態を外部から観測できる能力です。
+
+**なぜ重要なのか:**
+- **問題の特定**: 問題を迅速に特定できる
+- **パフォーマンスの監視**: システムのパフォーマンスを監視
+- **デバッグ**: 問題の原因を特定しやすい
+
+**オブザーバビリティの3本柱:**
+```
+1. ログ（Logs）: イベントの記録
+2. メトリクス（Metrics）: 数値データ
+3. トレース（Traces）: リクエストの追跡
+```
+
+**関連用語:**
+- ロギング
+- メトリクス
+- トレーシング
+
+---
+
+## イミュータブル（Immutable）
+
+**定義:**
+イミュータブルは、一度作成されたら変更できない状態を表します。
+
+**なぜ重要なのか:**
+- **バグの削減**: 予期しない変更を防ぐ
+- **並行処理**: 並行処理での安全性が向上
+- **デバッグ**: 状態の追跡が容易
+
+**使用例:**
+
+```typescript
+// ❌ ミュータブル（変更可能）
+const user = { name: 'Alice', age: 30 };
+user.age = 31; // 変更可能
+
+// ✅ イミュータブル（変更不可）
+const user = Object.freeze({ name: 'Alice', age: 30 });
+// user.age = 31; // エラー
+
+// 新しいオブジェクトを作成
+const updatedUser = { ...user, age: 31 };
+```
+
+**関連用語:**
+- 関数型プログラミング
+- 状態管理
+- 並行処理
+
+---
+
+## 冪等性（Idempotency）
+
+**定義:**
+冪等性は、同じ操作を何度実行しても結果が同じになる性質です。
+
+**なぜ重要なのか:**
+- **安全性**: 重複実行による問題を防ぐ
+- **リトライ**: エラー時のリトライが安全
+- **分散システム**: 分散システムでの整合性を保つ
+
+**使用例:**
+
+```typescript
+// ✅ 冪等な操作
+async function updateUser(userId: string, data: UserData) {
+  // 同じデータで何度実行しても結果が同じ
+  await db.query(
+    'UPDATE users SET name = ?, email = ? WHERE id = ?',
+    [data.name, data.email, userId]
+  );
+}
+
+// ❌ 非冪等な操作
+let count = 0;
+function increment() {
+  count++; // 実行するたびに結果が変わる
+}
+```
+
+**関連用語:**
+- トランザクション
+- 分散システム
+- リトライ
+
+---
+
+## ドライ（DRY: Don't Repeat Yourself）
+
+**定義:**
+DRYは、コードの重複を避ける原則です。
+
+**なぜ重要なのか:**
+- **保守性**: 変更箇所が1箇所で済む
+- **バグの削減**: 重複による不整合を防ぐ
+- **コードの品質**: コードの品質が向上
+
+**使用例:**
+
+```typescript
+// ❌ 重複したコード
+function calculateTotal1(items: Item[]) {
+  let total = 0;
+  for (const item of items) {
+    total += item.price * item.quantity;
+  }
+  return total;
+}
+
+function calculateTotal2(items: Item[]) {
+  let total = 0;
+  for (const item of items) {
+    total += item.price * item.quantity;
+  }
+  return total;
+}
+
+// ✅ DRY原則に従ったコード
+function calculateTotal(items: Item[]): number {
+  return items.reduce(
+    (total, item) => total + item.price * item.quantity,
+    0
+  );
+}
+```
+
+**関連用語:**
+- リファクタリング
+- コード品質
+- 保守性
+
+---
+
+## SOLID原則
+
+**定義:**
+SOLID原則は、オブジェクト指向プログラミングの5つの設計原則です。
+
+**なぜ重要なのか:**
+- **保守性**: コードの保守性が向上
+- **拡張性**: 機能の追加が容易
+- **テスト容易性**: テストが書きやすい
+
+**SOLID原則:**
+```
+S: Single Responsibility Principle（単一責任の原則）
+O: Open/Closed Principle（開放/閉鎖の原則）
+L: Liskov Substitution Principle（リスコフの置換原則）
+I: Interface Segregation Principle（インターフェース分離の原則）
+D: Dependency Inversion Principle（依存性逆転の原則）
+```
+
+**関連用語:**
+- オブジェクト指向
+- デザインパターン
+- コード品質
+
+---
+
+## YAGNI（You Aren't Gonna Need It）
+
+**定義:**
+YAGNIは、必要になるまで実装しないという原則です。
+
+**なぜ重要なのか:**
+- **シンプルさ**: 不要な機能を実装しない
+- **開発速度**: 必要な機能に集中できる
+- **保守性**: コードがシンプルになる
+
+**使用例:**
+
+```typescript
+// ❌ YAGNIに反する例
+class UserService {
+  // 将来必要になるかもしれない機能を実装
+  async sendEmail() { ... }
+  async sendSMS() { ... }
+  async sendPushNotification() { ... }
+  // 実際にはまだ必要ない
+}
+
+// ✅ YAGNI原則に従った例
+class UserService {
+  // 今必要な機能のみを実装
+  async getUser(id: string) { ... }
+  async createUser(data: UserData) { ... }
+}
+```
+
+**関連用語:**
+- アジャイル
+- MVP
+- リーン開発
+
+

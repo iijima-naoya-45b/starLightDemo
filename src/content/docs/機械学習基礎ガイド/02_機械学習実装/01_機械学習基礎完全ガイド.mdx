@@ -1,0 +1,71 @@
+---
+title: 機械学習基礎完全ガイド
+sidebar:
+    label: 機械学習実装
+---
+
+# 機械学習基礎完全ガイド
+
+機械学習の実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. 機械学習とは
+
+### 機械学習の種類
+
+```
+機械学習の種類
+   ├─ 教師あり学習
+   ├─ 教師なし学習
+   └─ 強化学習
+```
+
+## 2. 教師あり学習
+
+### 分類
+
+```python
+from sklearn import datasets
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+
+# データの読み込み
+iris = datasets.load_iris()
+X = iris.data
+y = iris.target
+
+# データの分割
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2)
+
+# モデルの学習
+model = RandomForestClassifier()
+model.fit(X_train, y_train)
+
+# 予測
+predictions = model.predict(X_test)
+```
+
+### 回帰
+
+```python
+from sklearn.linear_model import LinearRegression
+
+# モデルの学習
+model = LinearRegression()
+model.fit(X_train, y_train)
+
+# 予測
+predictions = model.predict(X_test)
+```
+
+## まとめ
+
+機械学習基礎完全ガイドのポイント：
+
+- **教師あり学習**: 分類、回帰
+- **教師なし学習**: クラスタリング、次元削減
+- **強化学習**: エージェントの学習
+
+適切な機械学習の使用により、データから価値を創出できます。
+
+

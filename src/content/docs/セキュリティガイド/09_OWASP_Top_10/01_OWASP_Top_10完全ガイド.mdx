@@ -1,0 +1,563 @@
+---
+title: OWASP Top 10完全ガイド
+sidebar:
+    label: OWASP Top 10
+---
+
+# OWASP Top 10完全ガイド
+
+OWASP Top 10は、Webアプリケーションの最も重要なセキュリティリスクのリストです。実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. A01:2021 – Broken Access Control（アクセス制御の不備）
+
+### 問題の説明
+
+アクセス制御の不備により、認証されていないユーザーが権限のないリソースにアクセスできる問題です。
+
+### 問題のある実装
+
+```typescript
+// ❌ 悪い例: アクセス制御なし
+app.get('/api/users/:id', async (req, res) => {
+  const user = await User.findById(req.params.id);
+  res.json(user); // 誰でもアクセス可能
+});
+
+// ❌ 悪い例: 不十分なアクセス制御
+app.get('/api/users/:id', async (req, res) => {
+  if (req.user) {
+    const user = await User.findById(req.params.id);
+    res.json(user); // 認証されていれば誰でもアクセス可能
+  }
+});
+```
+
+### 解決方法
+
+```typescript
+// ✅ 良い例: 適切なアクセス制御
+app.get('/api/users/:id', authenticate, async (req, res) => {
+  // 自分のデータのみアクセス可能
+  if (req.user.id !== req.params.id && !req.user.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  
+  const user = await User.findById(req.params.id);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  
+  res.json(user);
+});
+
+// ミドルウェア
+function authenticate(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+}
+```
+
+## 2. A02:2021 – Cryptographic Failures（暗号化の失敗）
+
+### 問題の説明
+
+機密データの暗号化が不適切、または暗号化されていない問題です。
+
+### 問題のある実装
+
+```typescript
+// ❌ 悪い例: 平文でパスワードを保存
+async function createUser(userData) {
+  const user = new User({
+    name: userData.name,
+    email: userData.email,
+    password: userData.password // 平文で保存
+  });
+  return await user.save();
+}
+
+// ❌ 悪い例: 弱いハッシュ関数
+const crypto = require('crypto');
+const passwordHash = crypto.createHash('md5').update(password).digest('hex');
+```
+
+### 解決方法
+
+```typescript
+// ✅ 良い例: bcryptでパスワードをハッシュ化
+import bcrypt from 'bcrypt';
+
+async function createUser(userData) {
+  const saltRounds = 10;
+  const passwordHash = await bcrypt.hash(userData.password, saltRounds);
+  
+  const user = new User({
+    name: userData.name,
+    email: userData.email,
+    password: passwordHash
+  });
+  return await user.save();
+}
+
+// パスワード検証
+async function verifyPassword(plainPassword, hashedPassword) {
+  return await bcrypt.compare(plainPassword, hashedPassword);
+}
+
+// ✅ 良い例: HTTPSの使用
+// app.js
+const https = require('https');
+const fs = require('fs');
+
+const options = {
+  key: fs.readFileSync('private-key.pem'),
+  cert: fs.readFileSync('certificate.pem')
+};
+
+https.createServer(options, app).listen(443);
+```
+
+## 3. A03:2021 – Injection（インジェクション）
+
+### 問題の説明
+
+SQLインジェクション、コマンドインジェクションなどのインジェクション攻撃です。
+
+### 問題のある実装
+
+```typescript
+// ❌ 悪い例: SQLインジェクション
+app.get('/api/users', async (req, res) => {
+  const query = `SELECT * FROM users WHERE name = '${req.query.name}'`;
+  const users = await db.query(query); // SQLインジェクションの脆弱性
+  res.json(users);
+});
+
+// ❌ 悪い例: コマンドインジェクション
+app.get('/api/files', async (req, res) => {
+  const filename = req.query.filename;
+  exec(`cat ${filename}`, (error, stdout) => { // コマンドインジェクションの脆弱性
+    res.send(stdout);
+  });
+});
+```
+
+### 解決方法
+
+```typescript
+// ✅ 良い例: パラメータ化クエリ
+app.get('/api/users', async (req, res) => {
+  const query = 'SELECT * FROM users WHERE name = ?';
+  const users = await db.query(query, [req.query.name]); // パラメータ化クエリ
+  res.json(users);
+});
+
+// ✅ 良い例: ORMの使用
+app.get('/api/users', async (req, res) => {
+  const users = await User.findAll({
+    where: { name: req.query.name } // ORMが自動的にエスケープ
+  });
+  res.json(users);
+});
+
+// ✅ 良い例: 入力検証とサニタイゼーション
+import validator from 'validator';
+
+app.get('/api/files', async (req, res) => {
+  const filename = req.query.filename;
+  
+  // 入力検証
+  if (!filename || !validator.isAlphanumeric(filename)) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+  
+  // パスを正規化
+  const safePath = path.join('/safe/directory', filename);
+  
+  // ディレクトリトラバーサル対策
+  if (!safePath.startsWith('/safe/directory')) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  
+  const content = fs.readFileSync(safePath);
+  res.send(content);
+});
+```
+
+## 4. A04:2021 – Insecure Design（不安全な設計）
+
+### 問題の説明
+
+セキュリティを考慮していない設計による問題です。
+
+### 問題のある実装
+
+```typescript
+// ❌ 悪い例: セキュリティを考慮していない設計
+class UserService {
+  async resetPassword(email: string) {
+    // パスワードリセットトークンが推測可能
+    const token = Math.random().toString(36).substring(7);
+    await this.sendResetEmail(email, token);
+  }
+}
+```
+
+### 解決方法
+
+```typescript
+// ✅ 良い例: セキュリティを考慮した設計
+import crypto from 'crypto';
+
+class UserService {
+  async resetPassword(email: string) {
+    // 安全なランダムトークン
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 3600000); // 1時間後
+    
+    await this.saveResetToken(email, token, expiresAt);
+    await this.sendResetEmail(email, token);
+  }
+  
+  async verifyResetToken(email: string, token: string) {
+    const resetToken = await this.getResetToken(email);
+    
+    if (!resetToken || resetToken.token !== token) {
+      throw new Error('Invalid token');
+    }
+    
+    if (resetToken.expiresAt < new Date()) {
+      throw new Error('Token expired');
+    }
+    
+    return true;
+  }
+}
+```
+
+## 5. A05:2021 – Security Misconfiguration（セキュリティ設定の不備）
+
+### 問題の説明
+
+デフォルト設定、不完全な設定、開示されたクラウドストレージなどの問題です。
+
+### 問題のある実装
+
+```typescript
+// ❌ 悪い例: デフォルト設定
+const app = express();
+app.use(cors()); // すべてのオリジンからアクセス可能
+
+// ❌ 悪い例: デバッグモードが有効
+app.set('env', 'development');
+app.use(errorHandler({ debug: true })); // エラー詳細を公開
+```
+
+### 解決方法
+
+```typescript
+// ✅ 良い例: 適切なセキュリティ設定
+const app = express();
+
+// CORSの設定
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['https://example.com'],
+  credentials: true
+}));
+
+// セキュリティヘッダー
+import helmet from 'helmet';
+app.use(helmet());
+
+// 環境変数の使用
+app.set('env', process.env.NODE_ENV || 'production');
+
+// エラーハンドリング
+app.use((err, req, res, next) => {
+  if (app.get('env') === 'development') {
+    res.status(500).json({ error: err.message, stack: err.stack });
+  } else {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+```
+
+## 6. A06:2021 – Vulnerable and Outdated Components（脆弱で古いコンポーネント）
+
+### 問題の説明
+
+既知の脆弱性を持つ依存関係や古いコンポーネントの使用です。
+
+### 問題のある実装
+
+```json
+// ❌ 悪い例: 古い依存関係
+{
+  "dependencies": {
+    "express": "4.0.0", // 古いバージョン
+    "lodash": "3.0.0"   // 既知の脆弱性
+  }
+}
+```
+
+### 解決方法
+
+```bash
+# 脆弱性のスキャン
+npm audit
+
+# 自動修正
+npm audit fix
+
+# 依存関係の更新
+npm update
+
+# セキュリティチェックの自動化
+# .github/workflows/security.yml
+name: Security Scan
+on: [push, pull_request]
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate
+```
+
+## 7. A07:2021 – Identification and Authentication Failures（認証と識別の失敗）
+
+### 問題の説明
+
+認証メカニズムの実装不備による問題です。
+
+### 問題のある実装
+
+```typescript
+// ❌ 悪い例: 弱いパスワードポリシー
+app.post('/api/register', async (req, res) => {
+  const { email, password } = req.body;
+  
+  if (password.length >= 6) { // 弱い要件
+    const user = await createUser({ email, password });
+    res.json(user);
+  }
+});
+```
+
+### 解決方法
+
+```typescript
+// ✅ 良い例: 強力なパスワードポリシー
+import zxcvbn from 'zxcvbn';
+
+app.post('/api/register', async (req, res) => {
+  const { email, password } = req.body;
+  
+  // パスワード強度のチェック
+  const passwordStrength = zxcvbn(password);
+  if (passwordStrength.score < 3) {
+    return res.status(400).json({ 
+      error: 'Weak password',
+      suggestions: passwordStrength.feedback.suggestions
+    });
+  }
+  
+  // パスワード要件
+  const requirements = {
+    minLength: 12,
+    requireUppercase: true,
+    requireLowercase: true,
+    requireNumbers: true,
+    requireSymbols: true
+  };
+  
+  if (!validatePassword(password, requirements)) {
+    return res.status(400).json({ error: 'Password does not meet requirements' });
+  }
+  
+  const user = await createUser({ email, password });
+  res.json(user);
+});
+
+// レート制限
+import rateLimit from 'express-rate-limit';
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15分
+  max: 5, // 5回まで
+  message: 'Too many login attempts'
+});
+
+app.post('/api/login', loginLimiter, async (req, res) => {
+  // ログイン処理
+});
+```
+
+## 8. A08:2021 – Software and Data Integrity Failures（ソフトウェアとデータの整合性の失敗）
+
+### 問題の説明
+
+CI/CDパイプラインの不備、依存関係の改ざんなどの問題です。
+
+### 解決方法
+
+```yaml
+# .github/workflows/ci.yml
+name: CI/CD Pipeline
+on: [push, pull_request]
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Verify dependencies
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+      - name: Run tests
+        run: npm test
+      - name: Build
+        run: npm run build
+```
+
+## 9. A09:2021 – Security Logging and Monitoring Failures（セキュリティログとモニタリングの失敗）
+
+### 問題の説明
+
+ログ記録やモニタリングの不備による問題です。
+
+### 解決方法
+
+```typescript
+// ✅ 良い例: セキュリティログの記録
+import winston from 'winston';
+
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.File({ filename: 'security.log' })
+  ]
+});
+
+app.post('/api/login', async (req, res) => {
+  const { email, password } = req.body;
+  
+  try {
+    const user = await authenticateUser(email, password);
+    logger.info('Successful login', { userId: user.id, email, ip: req.ip });
+    res.json({ token: generateToken(user) });
+  } catch (error) {
+    logger.warn('Failed login attempt', { email, ip: req.ip, error: error.message });
+    res.status(401).json({ error: 'Invalid credentials' });
+  }
+});
+
+// 異常検知
+app.use((req, res, next) => {
+  if (req.body && Object.keys(req.body).length > 1000) {
+    logger.warn('Suspicious request', { 
+      ip: req.ip, 
+      path: req.path,
+      bodySize: JSON.stringify(req.body).length
+    });
+  }
+  next();
+});
+```
+
+## 10. A10:2021 – Server-Side Request Forgery (SSRF)（サーバーサイドリクエスト偽造）
+
+### 問題の説明
+
+サーバーが信頼できないソースからのリクエストを実行する問題です。
+
+### 問題のある実装
+
+```typescript
+// ❌ 悪い例: SSRFの脆弱性
+app.get('/api/fetch', async (req, res) => {
+  const url = req.query.url;
+  const response = await fetch(url); // 任意のURLにアクセス可能
+  res.json(await response.json());
+});
+```
+
+### 解決方法
+
+```typescript
+// ✅ 良い例: URLの検証とホワイトリスト
+import { URL } from 'url';
+
+const ALLOWED_HOSTS = ['api.example.com', 'cdn.example.com'];
+
+app.get('/api/fetch', async (req, res) => {
+  const urlString = req.query.url;
+  
+  try {
+    const url = new URL(urlString);
+    
+    // ホワイトリストチェック
+    if (!ALLOWED_HOSTS.includes(url.hostname)) {
+      return res.status(403).json({ error: 'Host not allowed' });
+    }
+    
+    // プライベートIPアドレスのブロック
+    if (isPrivateIP(url.hostname)) {
+      return res.status(403).json({ error: 'Private IP not allowed' });
+    }
+    
+    // プロトコルのチェック
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      return res.status(403).json({ error: 'Invalid protocol' });
+    }
+    
+    const response = await fetch(urlString);
+    res.json(await response.json());
+  } catch (error) {
+    res.status(400).json({ error: 'Invalid URL' });
+  }
+});
+
+function isPrivateIP(hostname: string): boolean {
+  const privateIPs = [
+    /^10\./,
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./,
+    /^192\.168\./,
+    /^127\./,
+    /^localhost$/
+  ];
+  
+  return privateIPs.some(pattern => pattern.test(hostname));
+}
+```
+
+## まとめ
+
+OWASP Top 10完全ガイドのポイント：
+
+- **A01: アクセス制御**: 適切な認証と認可の実装
+- **A02: 暗号化**: 強力なハッシュ関数とHTTPSの使用
+- **A03: インジェクション**: パラメータ化クエリと入力検証
+- **A04: 設計**: セキュリティを考慮した設計
+- **A05: 設定**: 適切なセキュリティ設定
+- **A06: コンポーネント**: 依存関係の更新と脆弱性スキャン
+- **A07: 認証**: 強力なパスワードポリシーとレート制限
+- **A08: 整合性**: CI/CDパイプラインのセキュリティ
+- **A09: ログ**: セキュリティログとモニタリング
+- **A10: SSRF**: URLの検証とホワイトリスト
+
+適切なセキュリティ対策により、安全なWebアプリケーションを構築できます。
+
+

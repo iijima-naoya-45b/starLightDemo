@@ -1,0 +1,339 @@
+---
+title: リファクタリング完全ガイド
+sidebar:
+    label: リファクタリング実装
+---
+
+# リファクタリング完全ガイド
+
+リファクタリングの実践的な手法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. リファクタリングとは
+
+### リファクタリングの定義
+
+リファクタリングは、コードの外部動作を変えずに内部構造を改善するプロセスです。
+
+```
+リファクタリングの目的
+   ├─ 可読性の向上
+   ├─ 保守性の向上
+   ├─ テストの容易さ
+   └─ パフォーマンスの改善
+```
+
+## 2. リファクタリングの原則
+
+### 原則1: テストを先に書く
+
+```typescript
+// リファクタリング前のテスト
+describe('calculateTotal', () => {
+  it('should calculate total correctly', () => {
+    const order = {
+      items: [
+        { price: 100, quantity: 2 },
+        { price: 200, quantity: 1 }
+      ]
+    };
+    expect(calculateTotal(order)).toBe(400);
+  });
+});
+
+// リファクタリング後も同じテストが通る
+```
+
+### 原則2: 小さなステップで進める
+
+```typescript
+// ❌ 悪い例: 一度に大きな変更
+function processOrder(order) {
+  // 100行のコードを一度に変更
+}
+
+// ✅ 良い例: 小さなステップで変更
+function processOrder(order) {
+  const items = extractItems(order);
+  const total = calculateTotal(items);
+  return applyDiscount(total, order.customer);
+}
+```
+
+## 3. リファクタリングパターン
+
+### パターン1: 関数の抽出
+
+```typescript
+// リファクタリング前
+function processOrder(order: Order): number {
+  let total = 0;
+  for (let i = 0; i < order.items.length; i++) {
+    total += order.items[i].price * order.items[i].quantity;
+  }
+  if (order.customer.type === 'VIP') {
+    total = total * 0.9;
+  }
+  return total;
+}
+
+// リファクタリング後
+function processOrder(order: Order): number {
+  const subtotal = calculateSubtotal(order.items);
+  return applyDiscount(subtotal, order.customer);
+}
+
+function calculateSubtotal(items: OrderItem[]): number {
+  return items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+}
+
+function applyDiscount(amount: number, customer: Customer): number {
+  const discountRates = { VIP: 0.1, PREMIUM: 0.15 };
+  const rate = discountRates[customer.type] || 0;
+  return amount * (1 - rate);
+}
+```
+
+### パターン2: 変数の抽出
+
+```typescript
+// リファクタリング前
+function calculatePrice(item: Item): number {
+  return item.basePrice * (1 + item.taxRate) * (1 - item.discountRate);
+}
+
+// リファクタリング後
+function calculatePrice(item: Item): number {
+  const priceWithTax = item.basePrice * (1 + item.taxRate);
+  const finalPrice = priceWithTax * (1 - item.discountRate);
+  return finalPrice;
+}
+```
+
+### パターン3: 条件式の簡略化
+
+```typescript
+// リファクタリング前
+function getStatus(user: User): string {
+  if (user.isActive && user.hasPermission) {
+    return 'active';
+  } else {
+    return 'inactive';
+  }
+}
+
+// リファクタリング後
+function getStatus(user: User): string {
+  return user.isActive && user.hasPermission ? 'active' : 'inactive';
+}
+```
+
+### パターン4: 早期リターン
+
+```typescript
+// リファクタリング前
+function validateUser(user: User): boolean {
+  if (user.email) {
+    if (user.email.includes('@')) {
+      if (user.name) {
+        return true;
+      } else {
+        return false;
+      }
+    } else {
+      return false;
+    }
+  } else {
+    return false;
+  }
+}
+
+// リファクタリング後
+function validateUser(user: User): boolean {
+  if (!user.email || !user.email.includes('@')) {
+    return false;
+  }
+  if (!user.name) {
+    return false;
+  }
+  return true;
+}
+```
+
+### パターン5: マジックナンバーの除去
+
+```typescript
+// リファクタリング前
+function calculateDiscount(amount: number): number {
+  if (amount > 1000) {
+    return amount * 0.1;
+  }
+  return 0;
+}
+
+// リファクタリング後
+const DISCOUNT_THRESHOLD = 1000;
+const DISCOUNT_RATE = 0.1;
+
+function calculateDiscount(amount: number): number {
+  if (amount > DISCOUNT_THRESHOLD) {
+    return amount * DISCOUNT_RATE;
+  }
+  return 0;
+}
+```
+
+## 4. オブジェクト指向のリファクタリング
+
+### クラスの抽出
+
+```typescript
+// リファクタリング前
+function processOrder(order: Order): void {
+  // 注文処理のロジック
+  const total = calculateTotal(order.items);
+  const discount = calculateDiscount(total, order.customer);
+  const finalTotal = total - discount;
+  sendEmail(order.customer.email, finalTotal);
+}
+
+// リファクタリング後
+class OrderProcessor {
+  calculateTotal(items: OrderItem[]): number {
+    return items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  }
+  
+  calculateDiscount(total: number, customer: Customer): number {
+    const discountRates = { VIP: 0.1, PREMIUM: 0.15 };
+    const rate = discountRates[customer.type] || 0;
+    return total * rate;
+  }
+  
+  processOrder(order: Order): void {
+    const total = this.calculateTotal(order.items);
+    const discount = this.calculateDiscount(total, order.customer);
+    const finalTotal = total - discount;
+    this.sendEmail(order.customer.email, finalTotal);
+  }
+  
+  private sendEmail(email: string, total: number): void {
+    // メール送信のロジック
+  }
+}
+```
+
+## 5. データ構造のリファクタリング
+
+### 配列からオブジェクトへの変換
+
+```typescript
+// リファクタリング前
+function getUserById(users: User[], id: string): User | undefined {
+  return users.find(user => user.id === id);
+}
+
+// リファクタリング後
+function createUserMap(users: User[]): Map<string, User> {
+  return new Map(users.map(user => [user.id, user]));
+}
+
+function getUserById(userMap: Map<string, User>, id: string): User | undefined {
+  return userMap.get(id);
+}
+```
+
+## 6. エラーハンドリングのリファクタリング
+
+```typescript
+// リファクタリング前
+function processPayment(amount: number): void {
+  if (amount <= 0) {
+    console.error('Invalid amount');
+    return;
+  }
+  if (amount > 10000) {
+    console.error('Amount too large');
+    return;
+  }
+  // 処理
+}
+
+// リファクタリング後
+class PaymentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PaymentError';
+  }
+}
+
+function processPayment(amount: number): void {
+  if (amount <= 0) {
+    throw new PaymentError('Invalid amount');
+  }
+  if (amount > 10000) {
+    throw new PaymentError('Amount too large');
+  }
+  // 処理
+}
+```
+
+## 7. 実践的なベストプラクティス
+
+### リファクタリングのタイミング
+
+```markdown
+## リファクタリングのタイミング
+
+1. **機能追加前**: 新しい機能を追加しやすくする
+2. **バグ修正後**: バグの原因となったコードを改善
+3. **コードレビュー時**: レビューで指摘された問題を修正
+4. **定期的なメンテナンス**: 技術的負債を返済
+```
+
+### リファクタリングのチェックリスト
+
+```markdown
+## リファクタリングチェックリスト
+
+- [ ] テストが存在し、すべて通る
+- [ ] 小さなステップで進める
+- [ ] 外部動作が変わらないことを確認
+- [ ] コードレビューを受ける
+- [ ] ドキュメントを更新する
+```
+
+## 8. よくある問題と解決方法
+
+### 問題1: リファクタリングが大きすぎる
+
+```typescript
+// 解決: 小さなステップに分割
+// Step 1: 関数の抽出
+// Step 2: 変数の抽出
+// Step 3: 条件式の簡略化
+```
+
+### 問題2: テストがない
+
+```typescript
+// 解決: リファクタリング前にテストを書く
+describe('processOrder', () => {
+  it('should process order correctly', () => {
+    // テストを書く
+  });
+});
+```
+
+## まとめ
+
+リファクタリング完全ガイドのポイント：
+
+- **原則**: テストを先に書く、小さなステップで進める
+- **パターン**: 関数の抽出、変数の抽出、条件式の簡略化、早期リターン
+- **オブジェクト指向**: クラスの抽出、責任の分離
+- **データ構造**: 適切なデータ構造の選択
+- **エラーハンドリング**: 適切なエラーハンドリング
+- **ベストプラクティス**: タイミング、チェックリスト
+
+適切なリファクタリングにより、保守性の高いコードを維持できます。
+
+

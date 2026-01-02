@@ -1,0 +1,416 @@
+---
+title: RESTful API実装完全ガイド
+sidebar:
+    label: RESTful API実装
+---
+
+# RESTful API実装完全ガイド
+
+RESTful APIの実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. RESTful APIの基本原則
+
+### RESTの原則
+
+```
+RESTの原則
+   ├─ ステートレス
+   ├─ 統一インターフェース
+   ├─ リソースベース
+   ├─ キャッシュ可能
+   └─ 階層化システム
+```
+
+### HTTPメソッドの使い分け
+
+```typescript
+// GET: リソースの取得
+app.get('/api/users', async (req, res) => {
+  const users = await User.findAll();
+  res.json(users);
+});
+
+// POST: リソースの作成
+app.post('/api/users', async (req, res) => {
+  const user = await User.create(req.body);
+  res.status(201).json(user);
+});
+
+// PUT: リソースの完全置換
+app.put('/api/users/:id', async (req, res) => {
+  const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  res.json(user);
+});
+
+// PATCH: リソースの部分更新
+app.patch('/api/users/:id', async (req, res) => {
+  const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  res.json(user);
+});
+
+// DELETE: リソースの削除
+app.delete('/api/users/:id', async (req, res) => {
+  await User.findByIdAndDelete(req.params.id);
+  res.status(204).send();
+});
+```
+
+## 2. リソース設計
+
+### リソースの命名規則
+
+```typescript
+// ✅ 良い例: 名詞を使用、複数形
+GET    /api/users
+GET    /api/users/123
+POST   /api/users
+PUT    /api/users/123
+DELETE /api/users/123
+
+// ❌ 悪い例: 動詞を使用、単数形
+GET    /api/getUser
+POST   /api/createUser
+GET    /api/user
+```
+
+### ネストされたリソース
+
+```typescript
+// ✅ 良い例: ネストされたリソース
+GET    /api/users/123/orders
+GET    /api/users/123/orders/456
+POST   /api/users/123/orders
+
+// ❌ 悪い例: 深すぎるネスト
+GET    /api/users/123/orders/456/items/789/products/012
+```
+
+## 3. エラーハンドリング
+
+### エラーレスポンスの形式
+
+```typescript
+// エラーレスポンスの標準形式
+interface ErrorResponse {
+  error: {
+    code: string;
+    message: string;
+    details?: any;
+  };
+}
+
+// 実装例
+app.use((err, req, res, next) => {
+  if (err instanceof ValidationError) {
+    return res.status(400).json({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Validation failed',
+        details: err.errors
+      }
+    });
+  }
+  
+  if (err instanceof NotFoundError) {
+    return res.status(404).json({
+      error: {
+        code: 'NOT_FOUND',
+        message: 'Resource not found'
+      }
+    });
+  }
+  
+  res.status(500).json({
+    error: {
+      code: 'INTERNAL_ERROR',
+      message: 'Internal server error'
+    }
+  });
+});
+```
+
+### HTTPステータスコード
+
+```typescript
+// 成功レスポンス
+200 OK          // リクエスト成功
+201 Created      // リソース作成成功
+204 No Content  // 削除成功
+
+// クライアントエラー
+400 Bad Request      // 不正なリクエスト
+401 Unauthorized     // 認証が必要
+403 Forbidden       // アクセス権限なし
+404 Not Found       // リソースが見つからない
+409 Conflict        // 競合状態
+
+// サーバーエラー
+500 Internal Server Error  // サーバー内部エラー
+503 Service Unavailable   // サービス利用不可
+```
+
+## 4. ページネーション
+
+### オフセットベースのページネーション
+
+```typescript
+app.get('/api/users', async (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 20;
+  const offset = (page - 1) * limit;
+  
+  const { count, rows: users } = await User.findAndCountAll({
+    limit,
+    offset
+  });
+  
+  res.json({
+    data: users,
+    pagination: {
+      page,
+      limit,
+      total: count,
+      totalPages: Math.ceil(count / limit)
+    }
+  });
+});
+```
+
+### カーソルベースのページネーション
+
+```typescript
+app.get('/api/users', async (req, res) => {
+  const limit = parseInt(req.query.limit) || 20;
+  const cursor = req.query.cursor;
+  
+  const query: any = { limit: limit + 1 };
+  if (cursor) {
+    query.where = { id: { [Op.gt]: cursor } };
+  }
+  
+  const users = await User.findAll(query);
+  const hasNextPage = users.length > limit;
+  const items = hasNextPage ? users.slice(0, limit) : users;
+  const nextCursor = hasNextPage ? items[items.length - 1].id : null;
+  
+  res.json({
+    data: items,
+    pagination: {
+      hasNextPage,
+      nextCursor
+    }
+  });
+});
+```
+
+## 5. フィルタリングとソート
+
+### フィルタリング
+
+```typescript
+app.get('/api/users', async (req, res) => {
+  const { name, email, status } = req.query;
+  
+  const where: any = {};
+  if (name) where.name = { [Op.like]: `%${name}%` };
+  if (email) where.email = { [Op.like]: `%${email}%` };
+  if (status) where.status = status;
+  
+  const users = await User.findAll({ where });
+  res.json(users);
+});
+```
+
+### ソート
+
+```typescript
+app.get('/api/users', async (req, res) => {
+  const sortBy = req.query.sortBy || 'createdAt';
+  const sortOrder = req.query.sortOrder || 'DESC';
+  
+  const users = await User.findAll({
+    order: [[sortBy, sortOrder]]
+  });
+  
+  res.json(users);
+});
+```
+
+## 6. バージョニング
+
+### URLベースのバージョニング
+
+```typescript
+// v1
+app.get('/api/v1/users', async (req, res) => {
+  // v1の実装
+});
+
+// v2
+app.get('/api/v2/users', async (req, res) => {
+  // v2の実装
+});
+```
+
+### ヘッダーベースのバージョニング
+
+```typescript
+app.get('/api/users', async (req, res) => {
+  const apiVersion = req.headers['api-version'] || 'v1';
+  
+  if (apiVersion === 'v2') {
+    // v2の実装
+  } else {
+    // v1の実装
+  }
+});
+```
+
+## 7. 認証と認可
+
+### JWT認証
+
+```typescript
+import jwt from 'jsonwebtoken';
+
+// ログイン
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  
+  const user = await User.findOne({ where: { email } });
+  if (!user || !await bcrypt.compare(password, user.password)) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+  
+  const token = jwt.sign(
+    { userId: user.id },
+    process.env.JWT_SECRET,
+    { expiresIn: '24h' }
+  );
+  
+  res.json({ token });
+});
+
+// 認証ミドルウェア
+function authenticate(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+}
+
+// 保護されたエンドポイント
+app.get('/api/users/me', authenticate, async (req, res) => {
+  const user = await User.findById(req.user.userId);
+  res.json(user);
+});
+```
+
+## 8. レート制限
+
+```typescript
+import rateLimit from 'express-rate-limit';
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15分
+  max: 100, // 100リクエスト
+  message: 'Too many requests'
+});
+
+app.use('/api/', limiter);
+```
+
+## 9. APIドキュメント
+
+### Swagger/OpenAPI
+
+```typescript
+import swaggerJsdoc from 'swagger-jsdoc';
+import swaggerUi from 'swagger-ui-express';
+
+const options = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'User API',
+      version: '1.0.0'
+    },
+    servers: [
+      {
+        url: 'http://localhost:3000/api'
+      }
+    ]
+  },
+  apis: ['./routes/*.ts']
+};
+
+const specs = swaggerJsdoc(options);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
+```
+
+## 10. 実践的なベストプラクティス
+
+### HATEOAS
+
+```typescript
+app.get('/api/users/:id', async (req, res) => {
+  const user = await User.findById(req.params.id);
+  
+  res.json({
+    ...user.toJSON(),
+    links: {
+      self: `/api/users/${user.id}`,
+      orders: `/api/users/${user.id}/orders`,
+      update: `/api/users/${user.id}`,
+      delete: `/api/users/${user.id}`
+    }
+  });
+});
+```
+
+### バリデーション
+
+```typescript
+import { body, validationResult } from 'express-validator';
+
+app.post('/api/users',
+  body('email').isEmail(),
+  body('name').isLength({ min: 1 }),
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+    
+    const user = await User.create(req.body);
+    res.status(201).json(user);
+  }
+);
+```
+
+## まとめ
+
+RESTful API実装完全ガイドのポイント：
+
+- **HTTPメソッド**: GET、POST、PUT、PATCH、DELETEの適切な使用
+- **リソース設計**: 名詞を使用、複数形、適切なネスト
+- **エラーハンドリング**: 標準的なエラーレスポンス形式
+- **ページネーション**: オフセットベース、カーソルベース
+- **フィルタリングとソート**: クエリパラメータの使用
+- **バージョニング**: URLベース、ヘッダーベース
+- **認証と認可**: JWT認証
+- **レート制限**: 過剰なリクエストの防止
+- **APIドキュメント**: Swagger/OpenAPI
+
+適切なRESTful APIの実装により、使いやすく保守性の高いAPIを構築できます。
+
+

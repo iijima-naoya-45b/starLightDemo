@@ -1,0 +1,449 @@
+---
+title: パフォーマンス最適化完全ガイド
+sidebar:
+    label: パフォーマンス最適化
+---
+
+# パフォーマンス最適化完全ガイド
+
+パフォーマンス最適化の実践的な実装方法を、実務で使える実装例とベストプラクティスとともに詳しく解説します。
+
+## 1. フロントエンド最適化
+
+### バンドルサイズの最適化
+
+```typescript
+// webpack.config.js
+const path = require('path');
+
+module.exports = {
+  optimization: {
+    splitChunks: {
+      chunks: 'all',
+      cacheGroups: {
+        vendor: {
+          test: /[\\/]node_modules[\\/]/,
+          name: 'vendors',
+          chunks: 'all'
+        }
+      }
+    }
+  }
+};
+
+// コード分割
+import React, { lazy, Suspense } from 'react';
+
+const LazyComponent = lazy(() => import('./LazyComponent'));
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LazyComponent />
+    </Suspense>
+  );
+}
+```
+
+### 画像最適化
+
+```typescript
+// Next.js Image Component
+import Image from 'next/image';
+
+function ProductImage({ src, alt }) {
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      width={500}
+      height={500}
+      loading="lazy"
+      placeholder="blur"
+    />
+  );
+}
+
+// WebP形式の使用
+<picture>
+  <source srcSet="image.webp" type="image/webp" />
+  <img src="image.jpg" alt="Product" />
+</picture>
+```
+
+### キャッシング
+
+```typescript
+// Service Worker
+self.addEventListener('fetch', (event) => {
+  event.respondWith(
+    caches.match(event.request).then((response) => {
+      return response || fetch(event.request).then((response) => {
+        const responseToCache = response.clone();
+        caches.open('v1').then((cache) => {
+          cache.put(event.request, responseToCache);
+        });
+        return response;
+      });
+    })
+  );
+});
+```
+
+## 2. バックエンド最適化
+
+### データベースクエリの最適化
+
+```typescript
+// ❌ 悪い例: N+1問題
+async function getUsersWithOrders() {
+  const users = await User.findAll();
+  for (const user of users) {
+    user.orders = await Order.findAll({ where: { userId: user.id } });
+  }
+  return users;
+}
+
+// ✅ 良い例: Eager Loading
+async function getUsersWithOrders() {
+  const users = await User.findAll({
+    include: [{
+      model: Order,
+      as: 'orders'
+    }]
+  });
+  return users;
+}
+
+// ✅ 良い例: バッチ読み込み
+async function getUsersWithOrders() {
+  const users = await User.findAll();
+  const userIds = users.map(u => u.id);
+  const orders = await Order.findAll({
+    where: { userId: { [Op.in]: userIds } }
+  });
+  
+  const ordersByUserId = orders.reduce((acc, order) => {
+    if (!acc[order.userId]) acc[order.userId] = [];
+    acc[order.userId].push(order);
+    return acc;
+  }, {});
+  
+  return users.map(user => ({
+    ...user.toJSON(),
+    orders: ordersByUserId[user.id] || []
+  }));
+}
+```
+
+### インデックスの最適化
+
+```sql
+-- インデックスの作成
+CREATE INDEX idx_user_email ON users(email);
+CREATE INDEX idx_order_user_id ON orders(user_id);
+CREATE INDEX idx_order_created_at ON orders(created_at);
+
+-- 複合インデックス
+CREATE INDEX idx_order_user_created ON orders(user_id, created_at);
+
+-- クエリの最適化
+EXPLAIN SELECT * FROM orders WHERE user_id = 1 AND created_at > '2024-01-01';
+```
+
+### キャッシング
+
+```typescript
+// Redisキャッシング
+import Redis from 'ioredis';
+
+const redis = new Redis(process.env.REDIS_URL);
+
+async function getUser(userId: string) {
+  const cacheKey = `user:${userId}`;
+  
+  // キャッシュから取得
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+  
+  // データベースから取得
+  const user = await User.findById(userId);
+  
+  // キャッシュに保存
+  await redis.setex(cacheKey, 3600, JSON.stringify(user)); // 1時間
+  
+  return user;
+}
+```
+
+## 3. API最適化
+
+### ページネーション
+
+```typescript
+// カーソルベースのページネーション
+async function getUsers(cursor?: string, limit = 20) {
+  const query = User.find();
+  
+  if (cursor) {
+    query.where('id').gt(cursor);
+  }
+  
+  const users = await query.limit(limit + 1).exec();
+  
+  const hasNextPage = users.length > limit;
+  const items = hasNextPage ? users.slice(0, limit) : users;
+  const nextCursor = hasNextPage ? items[items.length - 1].id : null;
+  
+  return {
+    items,
+    nextCursor,
+    hasNextPage
+  };
+}
+```
+
+### レスポンスの圧縮
+
+```typescript
+// Express.js
+import compression from 'compression';
+
+app.use(compression());
+
+// Gzip圧縮の設定
+app.use(compression({
+  level: 6,
+  threshold: 1024
+}));
+```
+
+### レート制限
+
+```typescript
+// express-rate-limit
+import rateLimit from 'express-rate-limit';
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15分
+  max: 100, // 100リクエスト
+  message: 'Too many requests'
+});
+
+app.use('/api/', limiter);
+```
+
+## 4. プロファイリング
+
+### Node.jsプロファイリング
+
+```typescript
+// 0xプロファイラー
+// npm install -g 0x
+// 0x app.js
+
+// clinic.js
+// npm install -g clinic
+// clinic doctor -- node app.js
+
+// カスタムプロファイリング
+console.time('database-query');
+const users = await User.findAll();
+console.timeEnd('database-query');
+```
+
+### メモリリークの検出
+
+```typescript
+// heapdump
+import heapdump from 'heapdump';
+
+setInterval(() => {
+  heapdump.writeSnapshot((err, filename) => {
+    if (err) {
+      console.error('Heap dump failed', err);
+    } else {
+      console.log('Heap dump written to', filename);
+    }
+  });
+}, 60000); // 1分ごと
+```
+
+## 5. CDNの活用
+
+### 静的アセットのCDN配信
+
+```html
+<!-- CDNの使用 -->
+<script src="https://cdn.example.com/js/app.js"></script>
+<link rel="stylesheet" href="https://cdn.example.com/css/app.css">
+```
+
+### CloudFrontの設定
+
+```yaml
+# cloudfront.yml
+Resources:
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: example.com
+            Id: S3Origin
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+```
+
+## 6. データベース最適化
+
+### 接続プール
+
+```typescript
+// PostgreSQL接続プール
+import { Pool } from 'pg';
+
+const pool = new Pool({
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  max: 20, // 最大接続数
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000
+});
+```
+
+### クエリの最適化
+
+```sql
+-- インデックスの使用
+EXPLAIN ANALYZE SELECT * FROM users WHERE email = 'alice@example.com';
+
+-- 不要なカラムの選択を避ける
+SELECT id, name FROM users; -- ✅ 良い
+SELECT * FROM users; -- ❌ 悪い
+
+-- JOINの最適化
+SELECT u.id, u.name, o.id, o.amount
+FROM users u
+INNER JOIN orders o ON u.id = o.user_id
+WHERE u.id = 1;
+```
+
+## 7. 実践的なベストプラクティス
+
+### レイジーローディング
+
+```typescript
+// 画像のレイジーローディング
+<img src="image.jpg" loading="lazy" alt="Product" />
+
+// コンポーネントのレイジーローディング
+const LazyComponent = React.lazy(() => import('./Component'));
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LazyComponent />
+    </Suspense>
+  );
+}
+```
+
+### デバウンスとスロットル
+
+```typescript
+// デバウンス
+function debounce(func: Function, wait: number) {
+  let timeout: NodeJS.Timeout;
+  return function executedFunction(...args: any[]) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+// 使用例
+const debouncedSearch = debounce((query: string) => {
+  searchAPI(query);
+}, 300);
+
+// スロットル
+function throttle(func: Function, limit: number) {
+  let inThrottle: boolean;
+  return function executedFunction(...args: any[]) {
+    if (!inThrottle) {
+      func(...args);
+      inThrottle = true;
+      setTimeout(() => inThrottle = false, limit);
+    }
+  };
+}
+```
+
+## 8. よくある問題と解決方法
+
+### 問題1: メモリリーク
+
+```typescript
+// 解決: イベントリスナーの削除
+class Component {
+  private listeners: Array<() => void> = [];
+  
+  addEventListener(event: string, handler: () => void) {
+    this.listeners.push(handler);
+    // イベントリスナーを追加
+  }
+  
+  destroy() {
+    // イベントリスナーを削除
+    this.listeners.forEach(listener => listener());
+    this.listeners = [];
+  }
+}
+```
+
+### 問題2: 重い計算処理
+
+```typescript
+// 解決: Web Workerの使用
+// worker.js
+self.onmessage = function(e) {
+  const result = heavyComputation(e.data);
+  self.postMessage(result);
+};
+
+// main.js
+const worker = new Worker('worker.js');
+worker.postMessage(data);
+worker.onmessage = function(e) {
+  console.log('Result:', e.data);
+};
+```
+
+## まとめ
+
+パフォーマンス最適化完全ガイドのポイント：
+
+- **フロントエンド最適化**: バンドルサイズ、画像最適化、キャッシング
+- **バックエンド最適化**: データベースクエリ、インデックス、キャッシング
+- **API最適化**: ページネーション、圧縮、レート制限
+- **プロファイリング**: パフォーマンス測定、メモリリーク検出
+- **CDNの活用**: 静的アセットの配信
+- **データベース最適化**: 接続プール、クエリ最適化
+- **ベストプラクティス**: レイジーローディング、デバウンス、スロットル
+
+適切なパフォーマンス最適化により、高速で効率的なアプリケーションを構築できます。
+
+
