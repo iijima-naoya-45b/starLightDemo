@@ -171,7 +171,9 @@ services:
 
 ## 4. ネットワークの設定
 
-### デフォルトネットワーク
+### デフォルトネットワーク（注意: セキュリティリスク）
+
+**❌ 問題のある実装:**
 
 ```yaml
 # docker-compose.yml
@@ -180,14 +182,34 @@ version: '3.8'
 services:
   app:
     build: .
+    ports:
+      - "3000:3000"
   
   db:
     image: postgres:14-alpine
+    # ❌ 問題: DBのポートをホストに晒している
+    ports:
+      - "5432:5432"
 
-# 自動的に同じネットワークに接続される
+# 問題点:
+# 1. DBのポート（5432）をホストに晒すのは、開発中であっても「癖」として良くない
+# 2. セキュリティリスク: 外部から直接DBにアクセスできる
+# 3. 本来、外部に晒すべきは app（3000）だけである
 ```
 
-### カスタムネットワーク
+**🪓 コードレビューでの指摘文例:**
+
+```
+【指摘】ネットワーク設定が「デフォルト頼み」です。
+【問題】サービス間の通信について、デフォルトネットワークに頼りすぎています。
+       セキュリティ: 本来、外部に晒すべきは app（3000）だけであり、
+       db（5432）を ports: でホストに晒すのは開発中であっても「癖」として良くないです。
+【影響】セキュリティリスクの増大、本番環境での誤設定のリスク
+【推奨】DBのポートフォワーディングはデバッグ時のみに限定し、
+       コンテナ間通信はサービス名（db:5432）で行うことを強調すべきです。
+```
+
+**✅ 改善された実装（セキュリティを考慮したネットワーク設定）:**
 
 ```yaml
 # docker-compose.yml
@@ -196,17 +218,99 @@ version: '3.8'
 services:
   app:
     build: .
+    ports:
+      # ✅ アプリケーションのポートのみ公開
+      - "3000:3000"
+    environment:
+      # ✅ コンテナ間通信はサービス名を使用
+      - DATABASE_URL=postgresql://postgres:password@db:5432/mydb
+    depends_on:
+      - db
     networks:
       - app-network
   
   db:
     image: postgres:14-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mydb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # ✅ DBのポートは公開しない（コンテナ間通信のみ）
+    # ports:
+    #   - "5432:5432"  # ❌ 削除
     networks:
       - app-network
+
+volumes:
+  postgres_data:
 
 networks:
   app-network:
     driver: bridge
+
+# メリット:
+# - DBのポートが外部に晒されない（セキュリティ向上）
+# - コンテナ間通信はサービス名（db:5432）で行う
+# - 本番環境でも同じ設定を維持できる
+```
+
+**✅ デバッグ時のみポートを公開する方法:**
+
+```yaml
+# docker-compose.dev.yml（開発環境用）
+services:
+  db:
+    image: postgres:14-alpine
+    # ✅ デバッグ時のみポートを公開
+    ports:
+      - "5432:5432"  # ローカルから直接DBに接続する場合のみ
+    networks:
+      - app-network
+
+# docker-compose.yml（本番環境用）
+services:
+  db:
+    image: postgres:14-alpine
+    # ✅ 本番環境ではポートを公開しない
+    # ports:
+    #   - "5432:5432"  # 公開しない
+    networks:
+      - app-network
+
+# 使い分け:
+# - 開発環境: docker compose -f docker-compose.dev.yml up
+# - 本番環境: docker compose up
+```
+
+### カスタムネットワーク（推奨）
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    networks:
+      - app-network
+  
+  db:
+    image: postgres:14-alpine
+    networks:
+      - app-network
+    # ✅ ポートは公開しない（コンテナ間通信のみ）
+
+networks:
+  app-network:
+    driver: bridge
+    # ✅ カスタムネットワークを使用することで、
+    #    ネットワークの設定を明示的に管理できる
+
+# コンテナ間通信:
+# - app から db への接続: db:5432（サービス名を使用）
+# - 外部からのアクセス: app:3000 のみ（DBは外部からアクセス不可）
 ```
 
 ## 5. ボリュームの設定
@@ -234,15 +338,115 @@ services:
       - ./src:/app/src  # 開発環境でのホットリロード
 ```
 
-### 匿名ボリューム
+### 匿名ボリューム（注意: node_modulesのゾンビ化問題）
+
+**❌ 問題のある実装:**
 
 ```yaml
 services:
   app:
     build: .
     volumes:
-      - /app/node_modules  # node_modulesを上書きしない
+      - .:/app
+      - /app/node_modules  # ❌ 匿名ボリューム（名前なし）
 ```
+
+**🪓 コードレビューでの指摘文例:**
+
+```
+【指摘】node_modules の「ゾンビ化」問題があります。
+【問題】docker-compose.yml の volumes 設定に致命的な問題があります。
+       ホスト側の node_modules を隠すためのハックですが、これをやると
+       「ホスト側で npm install したものと、コンテナ内のものが混ざる」
+       「古いパッケージがコンテナ内に残り続ける」というトラブルが多発します。
+【影響】依存関係の不整合、予期しない動作、デバッグの困難
+【推奨】開発環境でも node_modules は匿名ボリュームではなく、名前付きボリュームにするか、
+       あるいは「ホスト側とコンテナ側を完全に分離する」ための .dockerignore との併用戦略を深く解説すべきです。
+```
+
+**✅ 改善された実装（パターン1: 名前付きボリューム）:**
+
+```yaml
+services:
+  app:
+    build: .
+    volumes:
+      - .:/app
+      # ✅ 名前付きボリュームを使用（匿名ボリュームではなく）
+      - app_node_modules:/app/node_modules
+
+volumes:
+  app_node_modules:
+    # 名前付きボリュームとして管理されるため、
+    # docker compose down -v で明示的に削除できる
+
+# メリット:
+# - ホスト側とコンテナ側の node_modules が完全に分離される
+# - 古いパッケージが残り続ける問題を回避
+# - ボリュームの管理が明確
+```
+
+**✅ 改善された実装（パターン2: .dockerignoreとの併用）:**
+
+```yaml
+# docker-compose.yml
+services:
+  app:
+    build: .
+    volumes:
+      - .:/app
+      # ✅ .dockerignore で node_modules を除外しているため、
+      #    ホスト側の node_modules はコンテナにコピーされない
+      #    コンテナ内で npm install した node_modules が使用される
+
+# .dockerignore
+node_modules
+npm-debug.log
+.git
+.env
+.DS_Store
+
+# メリット:
+# - ホスト側とコンテナ側の node_modules が完全に分離される
+# - 匿名ボリュームや名前付きボリュームが不要
+# - シンプルで理解しやすい
+```
+
+**✅ 改善された実装（パターン3: 開発環境での完全分離）:**
+
+```yaml
+# docker-compose.dev.yml（開発環境用）
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      # ✅ ソースコードのみマウント
+      - ./src:/app/src
+      - ./public:/app/public
+      # ✅ node_modules はマウントしない（コンテナ内のものを使用）
+      #    .dockerignore で node_modules を除外しているため、
+      #    ビルド時にコンテナ内で npm install される
+
+# Dockerfile.dev
+FROM node:18-slim
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci  # ✅ コンテナ内で依存関係をインストール
+# ソースコードは volumes でマウントするため、COPY しない
+
+# メリット:
+# - ホスト側とコンテナ側の node_modules が完全に分離される
+# - OS/アーキテクチャの違いによる問題を回避
+# - 開発環境と本番環境の一貫性を保つ
+```
+
+**推奨アプローチ:**
+
+1. **開発環境**: `.dockerignore`で`node_modules`を除外し、コンテナ内で`npm install`する（パターン2または3）
+2. **本番環境**: マルチステージビルドで`node_modules`を含めない（ビルド成果物のみコピー）
+3. **デバッグ時**: 名前付きボリュームを使用する場合は、`docker compose down -v`で明示的に削除できるようにする
 
 ## 6. 実務でのベストプラクティス
 
@@ -348,46 +552,83 @@ services:
 
 ## 7. Docker Composeのコマンド
 
-### 基本的なコマンド
+**⚠️ 重要な注意事項: Docker Compose V1 vs V2**
+
+Docker Composeには、V1（`docker-compose`、ハイフンあり）とV2（`docker compose`、ハイフンなし）があります。
+
+**❌ 問題のあるアプローチ（古いコマンド）:**
 
 ```bash
-# サービスの起動
+# ❌ V1（ハイフンあり）は既にサポートが終了しつつある
 docker-compose up -d
-
-# サービスの停止
 docker-compose down
-
-# サービスの再ビルド
-docker-compose up -d --build
-
-# ログの確認
 docker-compose logs -f
 
-# サービスの状態確認
-docker-compose ps
-
-# サービスの再起動
-docker-compose restart
+# 問題点:
+# 1. ハイフンありの旧バージョンはすでにサポートが終了しつつある
+# 2. 古い習慣を初心者に教え込むのは「負債」を植え付けるのと同じ
 ```
 
-### 高度なコマンド
+**🪓 コードレビューでの指摘文例:**
+
+```
+【指摘】「docker-compose」のコマンドが古いです（V1 vs V2）。
+【問題】いまだに docker-compose（ハイフンあり）をメインで紹介していますが、
+       現在は docker compose（ハイフンなしのV2）が標準です。
+       ハイフンありの旧バージョンはすでにサポートが終了しつつあります。
+【影響】古い習慣を初心者に教え込むのは「負債」を植え付けるのと同じです。
+【推奨】全てのコマンド例を docker compose に統一してください。
+```
+
+**✅ 改善されたアプローチ（V2コマンド）:**
+
+### 基本的なコマンド（V2）
 
 ```bash
-# 特定のサービスのみ起動
-docker-compose up -d app
+# ✅ サービスの起動（V2: ハイフンなし）
+docker compose up -d
 
-# サービスのスケール
-docker-compose up -d --scale app=3
+# ✅ サービスの停止（V2）
+docker compose down
 
-# サービスの一時停止
-docker-compose pause
+# ✅ サービスの再ビルド（V2）
+docker compose up -d --build
 
-# サービスの再開
-docker-compose unpause
+# ✅ ログの確認（V2）
+docker compose logs -f
 
-# サービスの削除（ボリュームも含む）
-docker-compose down -v
+# ✅ サービスの状態確認（V2）
+docker compose ps
+
+# ✅ サービスの再起動（V2）
+docker compose restart
 ```
+
+### 高度なコマンド（V2）
+
+```bash
+# ✅ 特定のサービスのみ起動（V2）
+docker compose up -d app
+
+# ✅ サービスのスケール（V2）
+docker compose up -d --scale app=3
+
+# ✅ サービスの一時停止（V2）
+docker compose pause
+
+# ✅ サービスの再開（V2）
+docker compose unpause
+
+# ✅ サービスの削除（ボリュームも含む）（V2）
+docker compose down -v
+```
+
+**V1からV2への移行:**
+
+- V1: `docker-compose`（ハイフンあり、Python実装）
+- V2: `docker compose`（ハイフンなし、Go実装、Docker CLIのプラグイン）
+
+V2は、Docker Desktopに標準で含まれており、パフォーマンスも向上しています。新規プロジェクトでは必ずV2を使用してください。
 
 ## 8. よくある問題と解決策
 
