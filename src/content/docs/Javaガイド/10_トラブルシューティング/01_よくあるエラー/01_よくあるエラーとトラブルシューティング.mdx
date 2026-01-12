@@ -610,6 +610,425 @@ public class GlobalExceptionHandler {
 }
 ```
 
+### Jakarta関係のエラー
+
+Jakarta EE（旧Java EE）への移行に伴うエラーと解決方法について解説します。
+
+#### エラー13: パッケージjavaxが見つからない
+
+**エラーメッセージ:**
+```
+package javax.persistence does not exist
+package javax.validation does not exist
+package javax.servlet does not exist
+```
+
+**原因:**
+- Spring Boot 3.x以降では、`javax.*`パッケージが`jakarta.*`に変更された
+- 古いコードやライブラリが`javax.*`を使用している
+- 依存関係のバージョンがJakarta EEに対応していない
+
+**解決方法:**
+
+**1. インポート文を修正（javax → jakarta）:**
+
+```java
+// ❌ 古いコード（javax.*）
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.GeneratedValue;
+import javax.validation.constraints.NotNull;
+import javax.servlet.http.HttpServletRequest;
+
+// ✅ 新しいコード（jakarta.*）
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.GeneratedValue;
+import jakarta.validation.constraints.NotNull;
+import jakarta.servlet.http.HttpServletRequest;
+```
+
+**2. 主なパッケージ名の変更:**
+
+| 旧パッケージ（javax.*） | 新パッケージ（jakarta.*） |
+|----------------------|------------------------|
+| `javax.persistence.*` | `jakarta.persistence.*` |
+| `javax.validation.*` | `jakarta.validation.*` |
+| `javax.servlet.*` | `jakarta.servlet.*` |
+| `javax.annotation.*` | `jakarta.annotation.*` |
+| `javax.transaction.*` | `jakarta.transaction.*` |
+| `javax.enterprise.*` | `jakarta.enterprise.*` |
+
+**3. 依存関係の更新:**
+
+```xml
+<!-- Maven: pom.xml -->
+<dependencies>
+    <!-- Spring Boot 3.x以降は自動的にJakarta EEを使用 -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-web</artifactId>
+        <version>3.1.0</version>
+    </dependency>
+    
+    <!-- JPA（Jakarta Persistence） -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-data-jpa</artifactId>
+        <version>3.1.0</version>
+    </dependency>
+    
+    <!-- Validation（Jakarta Validation） -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-validation</artifactId>
+        <version>3.1.0</version>
+    </dependency>
+</dependencies>
+```
+
+```groovy
+// Gradle: build.gradle
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web:3.1.0'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa:3.1.0'
+    implementation 'org.springframework.boot:spring-boot-starter-validation:3.1.0'
+}
+```
+
+---
+
+#### エラー14: クラスが見つからない（NoClassDefFoundError）
+
+**エラーメッセージ:**
+```
+java.lang.NoClassDefFoundError: javax/persistence/Entity
+java.lang.NoClassDefFoundError: javax/validation/constraints/NotNull
+```
+
+**原因:**
+- 実行時にJakarta EEのクラスが見つからない
+- クラスパスにJakarta EEのライブラリが含まれていない
+- 古いバージョンのライブラリが混在している
+
+**解決方法:**
+
+**1. 依存関係の確認:**
+
+```bash
+# Maven: 依存関係ツリーを確認
+./mvnw dependency:tree | grep -i jakarta
+./mvnw dependency:tree | grep -i javax
+
+# Gradle: 依存関係を確認
+./gradlew dependencies | grep -i jakarta
+./gradlew dependencies | grep -i javax
+```
+
+**2. 古いライブラリの除外:**
+
+```xml
+<!-- Maven: 古いjavax.*を使用するライブラリを除外 -->
+<dependency>
+    <groupId>com.example</groupId>
+    <artifactId>old-library</artifactId>
+    <version>1.0.0</version>
+    <exclusions>
+        <exclusion>
+            <groupId>javax.persistence</groupId>
+            <artifactId>javax.persistence-api</artifactId>
+        </exclusion>
+    </exclusions>
+</dependency>
+```
+
+**3. クリーンビルド:**
+
+```bash
+# Maven
+./mvnw clean install
+
+# Gradle
+./gradlew clean build
+```
+
+---
+
+#### エラー15: アノテーションが見つからない
+
+**エラーメッセージ:**
+```
+cannot find symbol: @Entity
+cannot find symbol: @NotNull
+cannot find symbol: @Valid
+```
+
+**原因:**
+- インポート文が`javax.*`のまま
+- Jakarta EEの依存関係が不足している
+- IDEのキャッシュが古い
+
+**解決方法:**
+
+**1. インポート文を修正:**
+
+```java
+// ❌ 古いコード
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.validation.constraints.NotNull;
+import javax.validation.Valid;
+
+// ✅ 新しいコード
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.Valid;
+
+@Entity
+public class User {
+    @Id
+    private Long id;
+    
+    @NotNull
+    private String name;
+}
+```
+
+**2. IDEのキャッシュをクリア:**
+
+**IntelliJ IDEA:**
+```
+File → Invalidate Caches / Restart → Invalidate and Restart
+```
+
+**Eclipse:**
+```
+Project → Clean → Clean all projects
+```
+
+**3. 依存関係の確認:**
+
+```xml
+<!-- Maven: Jakarta Persistence API -->
+<dependency>
+    <groupId>jakarta.persistence</groupId>
+    <artifactId>jakarta.persistence-api</artifactId>
+    <version>3.1.0</version>
+</dependency>
+
+<!-- Jakarta Validation API -->
+<dependency>
+    <groupId>jakarta.validation</groupId>
+    <artifactId>jakarta.validation-api</artifactId>
+    <version>3.0.2</version>
+</dependency>
+```
+
+---
+
+#### エラー16: Spring Boot 2.xから3.xへの移行エラー
+
+**エラーメッセージ:**
+```
+The package javax.persistence is accessible from more than one module
+```
+
+**原因:**
+- Spring Boot 2.xと3.xの依存関係が混在している
+- モジュールパスでjavax.*とjakarta.*が競合している
+
+**解決方法:**
+
+**1. Spring Bootのバージョンを統一:**
+
+```xml
+<!-- Maven: pom.xml -->
+<parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.1.0</version>  <!-- 3.x系に統一 -->
+</parent>
+```
+
+**2. 移行チェックリスト:**
+
+```java
+// ✅ 移行が必要な主な変更点
+
+// 1. インポート文の変更
+// javax.* → jakarta.*
+
+// 2. アノテーションの変更
+// @javax.persistence.Entity → @jakarta.persistence.Entity
+// @javax.validation.NotNull → @jakarta.validation.NotNull
+
+// 3. 設定ファイルの変更
+// javax.persistence.* → jakarta.persistence.*
+
+// 4. 依存関係の更新
+// spring-boot-starter-web:2.7.x → 3.1.0
+// spring-boot-starter-data-jpa:2.7.x → 3.1.0
+```
+
+**3. 自動移行ツールの使用:**
+
+```bash
+# OpenRewriteを使用した自動移行
+# https://docs.openrewrite.org/recipes/java/spring/boot3/upgradespringboot_3_0
+
+# Maven
+./mvnw org.openrewrite.maven:rewrite-maven-plugin:run \
+  -Drewrite.activeRecipes=org.openrewrite.java.spring.boot3.UpgradeSpringBoot_3_0
+```
+
+---
+
+#### エラー17: バリデーションアノテーションが動作しない
+
+**エラーメッセージ:**
+```
+@NotNull annotation is not recognized
+@Valid annotation is not recognized
+```
+
+**原因:**
+- `javax.validation.*`から`jakarta.validation.*`への移行が不完全
+- バリデーションの依存関係が不足している
+
+**解決方法:**
+
+**1. インポート文を修正:**
+
+```java
+// ❌ 古いコード
+import javax.validation.constraints.NotNull;
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.Email;
+import javax.validation.Valid;
+
+// ✅ 新しいコード
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.Valid;
+
+public class UserCreateRequest {
+    @NotNull
+    @NotBlank
+    private String name;
+    
+    @Email
+    private String email;
+}
+```
+
+**2. 依存関係の確認:**
+
+```xml
+<!-- Maven: Jakarta Validation -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-validation</artifactId>
+    <version>3.1.0</version>
+</dependency>
+```
+
+**3. コントローラーでの使用:**
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    @PostMapping
+    public ResponseEntity<UserDTO> createUser(
+            @Valid @RequestBody UserCreateRequest request) {  // @Validはjakarta.validation.Valid
+        // ...
+    }
+}
+```
+
+---
+
+#### エラー18: JPAエンティティが認識されない
+
+**エラーメッセージ:**
+```
+Not a managed type: class com.example.User
+```
+
+**原因:**
+- `javax.persistence.*`から`jakarta.persistence.*`への移行が不完全
+- エンティティのアノテーションが古いパッケージを使用している
+
+**解決方法:**
+
+**1. エンティティクラスのインポートを修正:**
+
+```java
+// ❌ 古いコード
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
+import javax.persistence.Column;
+
+// ✅ 新しいコード
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Column;
+
+@Entity
+@Table(name = "users")
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @Column(nullable = false)
+    private String name;
+}
+```
+
+**2. application.propertiesの確認:**
+
+```properties
+# JPA設定（Jakarta Persistence）
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+```
+
+---
+
+### Jakarta移行のチェックリスト
+
+Jakarta EEへの移行時に確認すべき項目：
+
+- [ ] すべての`javax.*`インポートを`jakarta.*`に変更
+- [ ] Spring Boot 3.x以降を使用しているか
+- [ ] 依存関係がJakarta EEに対応しているか
+- [ ] IDEのキャッシュをクリアしたか
+- [ ] クリーンビルドを実行したか
+- [ ] テストが正常に動作するか
+
+**主な変更点の一覧:**
+
+| 変更前（javax.*） | 変更後（jakarta.*） |
+|-----------------|-------------------|
+| `javax.persistence.Entity` | `jakarta.persistence.Entity` |
+| `javax.persistence.Id` | `jakarta.persistence.Id` |
+| `javax.validation.NotNull` | `jakarta.validation.NotNull` |
+| `javax.validation.Valid` | `jakarta.validation.Valid` |
+| `javax.servlet.http.HttpServletRequest` | `jakarta.servlet.http.HttpServletRequest` |
+| `javax.annotation.PostConstruct` | `jakarta.annotation.PostConstruct` |
+| `javax.transaction.Transactional` | `jakarta.transaction.Transactional` |
+
+---
+
 ### まとめ
 
 よくあるエラーと解決方法：
@@ -621,6 +1040,7 @@ public class GlobalExceptionHandler {
 5. **データベースエラー**: 接続情報とテーブル定義を確認
 6. **HTTPエラー**: マッピングとバリデーションを確認
 7. **パフォーマンス**: メモリ設定とデータ処理方法を最適化
+8. **Jakarta移行エラー**: `javax.*`を`jakarta.*`に変更、依存関係を更新
 
 適切なエラーハンドリングとデバッグテクニックにより、問題を迅速に解決できます。
 

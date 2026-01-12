@@ -35,9 +35,12 @@ Next.jsプロジェクトのフォルダ構成は、状態管理ライブラリ�
 
 **問題2: 責務の混在**
 
+> **📚 Reactの基礎について**: useState、useEffect、コンポーネントの詳細については、[Reactガイド](/Reactガイド/01_React基礎)を参照してください。
+
 ```typescript
 // 問題のあるコード: コンポーネントにビジネスロジックが混在
 // components/UserCard.tsx
+// 注意: useStateとuseEffectの詳細については、Reactガイドを参照してください
 export default function UserCard({ userId }: { userId: string }) {
   const [user, setUser] = useState(null);
   
@@ -87,9 +90,12 @@ export default function UserCard({ userId }: { userId: string }) {
 
 **解決: 責務の分離**
 
+> **📚 カスタムフックの詳細**: カスタムフックの作成方法については、[ReactガイドのuseStateとuseEffect](/Reactガイド/01_React基礎/03_フック/01_useStateとuseEffect)の「カスタムフックへの分離」セクションを参照してください。
+
 ```typescript
 // 解決: ビジネスロジックを分離
 // features/users/hooks/useUser.ts
+// 注意: useState、useEffect、カスタムフックの詳細については、Reactガイドを参照してください
 export function useUser(userId: string) {
   const [user, setUser] = useState<User | null>(null);
   

@@ -7,6 +7,50 @@ label: "システムテスト詳細"
 
 システムテストは、Railsアプリケーションの**エンドツーエンド（E2E）テスト**を実行するための機能です。Capybaraを使用して、実際のユーザーがブラウザで操作するのと同じように、アプリケーションの動作をテストできます。
 
+#### ⚠️ 「System Spec」 vs 「Request Spec」の境界線
+
+Rails 5.1以降、統合テストはSystem Spec（Capybara使用）が推奨されていますが、すべてをSystem Specで書くとテスト実行時間が爆発します。
+
+**重要な理解**:
+「ブラウザの挙動（JSなど）」を確認する必要がないテストまでCapybaraで書くのは時間の無駄です。
+
+**問題点**:
+APIの挙動や、単なる画面遷移の確認であれば、ブラウザを起動しないRequest Specの方が圧倒的に高速で安定しています。
+
+```ruby
+# ❌ 非効率: System SpecでAPIの挙動を確認
+RSpec.describe 'ユーザー一覧API', type: :system do
+  it 'ユーザー一覧を取得できること' do
+    visit '/api/v1/users'
+    # 問題: ブラウザを起動する必要がないのに、Capybaraを使っている
+    # 問題: テスト実行時間が遅い
+  end
+end
+
+# ✅ 効率的: Request SpecでAPIの挙動を確認
+RSpec.describe 'ユーザー一覧API', type: :request do
+  it 'ユーザー一覧を取得できること' do
+    get '/api/v1/users'
+    expect(response).to have_http_status(:success)
+    expect(JSON.parse(response.body)).to be_an(Array)
+    # 高速: ブラウザを起動しないため、System Specより10倍以上速い
+  end
+end
+```
+
+**改善案**:
+「JSが絡む複雑なUI操作はSystem Spec」、「それ以外のエンドツーエンドの挙動確認はRequest Spec」という使い分けの基準を明文化しましょう。
+
+| テストの種類 | 使用するSpec | 理由 |
+| --- | --- | --- |
+| JavaScriptを使ったUI操作 | System Spec | ブラウザが必要 |
+| フォーム送信（JS不要） | Request Spec | 高速で十分 |
+| APIの挙動確認 | Request Spec | ブラウザ不要 |
+| 画面遷移の確認 | Request Spec | 高速で十分 |
+| リアルタイム通信 | System Spec | WebSocketのテストに必要 |
+
+この使い分けにより、テスト実行時間を大幅に短縮できます。
+
 ### システムテストとは
 
 システムテストは、以下のような特徴があります：
@@ -253,6 +297,66 @@ RSpec.describe 'Ajax通信', type: :system, js: true do
 end
 ```
 
+#### ⚠️ 「何でも待つ」ことの副作用
+
+`wait: 5`などの待機処理は重要ですが、これに頼りすぎるとテストが不安定（Flaky）になります。
+
+**重要な理解**:
+「要素が表示されるまで待つ」のは正解ですが、「要素が消えるまで待つ」処理を忘れると、次のテストケースに影響が出ます。
+
+**問題点**:
+非同期処理（Ajaxなど）の結果を待たずに次の操作に移ると、前のテストのデータが残っていてテストが落ちる「謎の失敗」に悩まされることになります。
+
+```ruby
+# ❌ 危険: 要素が消えるまで待たない
+it '投稿を削除できること', js: true do
+  visit posts_path
+  click_button '削除'
+  # 問題: 削除処理が完了する前に次のテストに進む
+  # 問題: 次のテストで削除された投稿がまだ表示される
+end
+
+# ✅ 安全: 要素が消えるまで待つ
+it '投稿を削除できること', js: true do
+  visit posts_path
+  expect(page).to have_css('.post-item', count: 5)
+  
+  click_button '削除'
+  
+  # 削除処理の完了を待つ
+  expect(page).not_to have_css('.post-item', count: 5, wait: 5)
+  expect(page).to have_css('.post-item', count: 4)
+  # または、削除された要素が消えるまで待つ
+  expect(page).not_to have_css('.post-item', text: '削除された投稿', wait: 5)
+end
+```
+
+**改善案**:
+破壊的な操作（削除など）の後は、必ずその要素が`not_to have_css`になることを確認してから次のステップに進む、というルールを徹底しましょう。
+
+```ruby
+# ✅ 良い例: 非同期処理の完了を確実に待つ
+it 'Ajaxでデータを更新できること', js: true do
+  visit users_path
+  
+  # 更新前の状態を確認
+  expect(page).to have_content('古いデータ')
+  
+  click_button '更新'
+  
+  # 更新処理の完了を待つ（2つの方法）
+  # 方法1: 新しいデータが表示されるまで待つ
+  expect(page).to have_content('新しいデータ', wait: 5)
+  
+  # 方法2: 古いデータが消えるまで待つ
+  expect(page).not_to have_content('古いデータ', wait: 5)
+  
+  # 両方を確認することで、より確実に待機できる
+end
+```
+
+このルールにより、テストの安定性が大幅に向上します。
+
 #### Selenium Chromeドライバー（デバッグ用）
 
 ```ruby
@@ -458,14 +562,124 @@ RSpec.describe 'ユーザー登録', type: :system do
 end
 ```
 
+#### 🛠️ database.ymlのテスト設定（追加まさかり）
+
+テストの実行速度を上げるために、`database.yml`で見落とされがちな設定があります。
+
+**重要な理解**:
+Rails 6から導入されたParallel Testing（テストの並列実行）を使う場合、CPUコア数分だけDB接続が必要になります。`pool`数が少ないと、並列実行中に`ConnectionTimeoutError`でテストが全滅します。
+
+```yaml
+# config/database.yml
+test:
+  <<: *default
+  database: my_app_test
+  # まさかり：テスト並列実行（parallelize）時のプール数不足
+  # Rails 6以降の並列テストを使う場合、テストワーカーの数だけ接続が必要
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 }.to_i * 2 %>
+  checkout_timeout: 5
+  reaping_frequency: 10
+```
+
+**重要ポイント**:
+- **並列テスト**: `parallelize(workers: 4)`を使う場合、4つのワーカーが同時にDBに接続する
+- **Poolサイズ**: ワーカー数 × スレッド数 + 余裕を持たせた設定が必要
+- **デフォルトの5では不足**: 並列実行時に`ConnectionTimeoutError`が発生する
+
+この設定により、並列テスト実行時の接続エラーを防げます。
+
+#### 🛠️ CircleCI / GitHub Actionsでの「スクリーンショット」
+
+CI（自動テスト環境）でSystem Specが落ちた時、原因の特定は困難です。
+
+**重要な理解**:
+「CIでだけテストが落ちる」という怪現象への対策がありません。
+
+**解決策**:
+RailsのSystem Test標準機能である`take_failed_screenshot`を活用しましょう。失敗時のブラウザの状態を画像で保存するように設定しておけば、デバッグ時間が1/10になります。
+
+```ruby
+# spec/rails_helper.rb
+RSpec.configure do |config|
+  config.before(:each, type: :system) do
+    # 失敗時にスクリーンショットを自動保存
+    take_failed_screenshot
+  end
+end
+
+# または、より詳細な設定
+RSpec.configure do |config|
+  config.after(:each, type: :system) do |example|
+    if example.exception
+      # 失敗時にスクリーンショットとHTMLを保存
+      take_screenshot
+      save_page  # HTMLも保存
+    end
+  end
+end
+```
+
+**保存先**:
+- スクリーンショット: `tmp/screenshots/`
+- HTML: `tmp/capybara/`
+
+**CI環境での設定**:
+```yaml
+# .github/workflows/test.yml
+- name: Upload screenshots
+  if: failure()
+  uses: actions/upload-artifact@v2
+  with:
+    name: screenshots
+    path: tmp/screenshots/
+```
+
+この設定により、CIでのテスト失敗時の原因特定が容易になります。
+
 ### まとめ
 
 システムテストは、RailsアプリケーションのE2Eテストを実行するための強力な機能です。以下のポイントを押さえることで、効果的なテストを書くことができます：
 
 - **ドライバーの使い分け**: JavaScriptが必要な場合のみSeleniumを使用し、それ以外はRack::Testを使用
-- **待機処理**: 動的なコンテンツに対しては適切な待機時間を設定
+- **System Spec vs Request Spec**: JSが絡む複雑なUI操作はSystem Spec、それ以外はRequest Spec
+- **待機処理**: 動的なコンテンツに対しては適切な待機時間を設定し、要素が消えるまで待つ
 - **テストの独立性**: 各テストが独立して実行できるようにする
 - **ヘルパーメソッド**: 繰り返し使用する操作はヘルパーメソッドに抽出
 - **ページオブジェクトパターン**: 複雑なテストはページオブジェクトパターンで整理
+- **database.ymlの設定**: 並列テスト実行時のpool数を適切に設定
+- **スクリーンショット**: CI環境での失敗時にスクリーンショットを自動保存
 
-これらのベストプラクティスを守ることで、保守性が高く、実行速度の速いテストスイートを構築できます。
+これらのベストプラクティスを守ることで、保守性が高く、実行速度の速い、信頼性の高いテストスイートを構築できます。
+
+## 🚀 設計レビューでの「まさかり」文例
+
+実務でのコードレビューで使用できる、具体的な指摘文例を以下に示します。
+
+### テストの粒度が粗すぎる場合の指摘
+
+```
+【指摘】テストの粒度が粗すぎます。
+【問題】1つのitブロックの中で、「ログインして、プロフィールを編集して、パスワードを変えて、ログアウトする」という一連の流れをすべてテストしています。
+【影響】どこかで失敗した際、原因の切り分けが難しく、またテストコードの可読性が著しく低下します。
+【推奨】1つのitブロックでは「1つの期待される振る舞い」のみを検証するように分割してください。
+```
+
+### System SpecとRequest Specの使い分けが不適切な場合の指摘
+
+```
+【指摘】System SpecとRequest Specの使い分けが不適切です。
+【問題】APIの挙動確認にSystem Specを使用しており、テスト実行時間が無駄に長くなっています。
+【影響】テストスイート全体の実行時間が増加し、開発効率が低下します。
+【推奨】JavaScriptが絡まないAPIの挙動確認はRequest Specを使用してください。
+```
+
+### 待機処理が不十分な場合の指摘
+
+```
+【指摘】非同期処理の完了を待たずに次の操作に移っています。
+【問題】削除操作の後、要素が消えるまで待たずに次のテストに進んでいます。
+【影響】テストが不安定（Flaky）になり、CI環境でランダムに失敗する可能性があります。
+【推奨】破壊的な操作の後は、必ずその要素がnot_to have_cssになることを確認してから次のステップに進んでください。
+```
+
+これらの指摘文例を参考に、コードレビューで適切なフィードバックを行い、堅牢なテストスイートを構築しましょう。

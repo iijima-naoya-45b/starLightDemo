@@ -31,7 +31,193 @@ config.active_job.queue_adapter = :sidekiq
 Sidekiqの起動:
 Redisをインストールし、ターミナルで以下のコマンドを実行してSidekiqプロセスを起動します。
 
-Bash
-
+```bash
 bundle exec sidekiq
+```
+
 これにより、アプリケーションの要件に合わせて、スケーラブルで堅牢な非同期処理を実装することが可能になります。
+
+#### ⚠️ Active Job vs Sidekiq (Worker) の使い分け
+
+Rails 4.2以降はActive Jobが標準ですが、Sidekiqには独自の`Sidekiq::Worker`（現在は`Sidekiq::Job`）という書き方もあります。
+
+**重要な理解**:
+「とりあえずActive Job」は正解ですが、Sidekiq特有の高度な機能（バッチ処理、詳細なリトライ制御、レートリミット）をフル活用したい場合は、Active Jobを介さず直接SidekiqのAPIを使う方が有利なケースがあります。
+
+**問題点**:
+Active Jobは「共通規格」であるため、Sidekiq独自の便利機能が一部削ぎ落とされています。
+
+```ruby
+# Active Job経由（共通規格）
+class PaymentJob < ApplicationJob
+  queue_as :default
+  
+  def perform(order_id)
+    # 制限: Sidekiqの高度な機能が使えない
+  end
+end
+
+# Sidekiqネイティブ（直接API）
+class PaymentJob
+  include Sidekiq::Job
+  
+  sidekiq_options queue: 'default', retry: 5, backtrace: true
+  
+  def perform(order_id)
+    # 利点: Sidekiqの全機能が使える
+    # - バッチ処理
+    # - 詳細なリトライ制御
+    # - レートリミット
+  end
+end
+```
+
+**改善案**:
+基本はActive Jobで書き、パフォーマンスや複雑な制御が必要になったらSidekiqネイティブな書き方を検討するという使い分けを意識しましょう。
+
+| ケース | 使用する方法 | 理由 |
+| --- | --- | --- |
+| 基本的な非同期処理 | Active Job | 共通規格で移植性が高い |
+| バッチ処理が必要 | Sidekiq::Job | Sidekiqのバッチ機能が必要 |
+| 詳細なリトライ制御 | Sidekiq::Job | リトライ戦略の細かい制御が必要 |
+| レートリミットが必要 | Sidekiq::Job | Sidekiqのレートリミット機能が必要 |
+
+#### ⚠️ Redisの「永続化」とメモリ管理
+
+SidekiqはRedisをメモリとして使います。
+
+**重要な理解**:
+Redisのメモリが一杯になると、新しいジョブが捨てられたり、古いジョブが消えたりします。
+
+**問題点**:
+Redisの設定（`maxmemory-policy`）を`noeviction`（メモリ満杯時にエラーを出す）にしておかないと、勝手にジョブが消えて原因不明のデータ不整合に悩まされます。
+
+```ruby
+# config/sidekiq.yml
+:concurrency: 5  # まさかり：並列数を上げすぎると、DBコネクションを使い果たす
+
+production:
+  :concurrency: 10
+  :queues:
+    - default
+    - critical
+    - low
+```
+
+**Redis設定例**:
+```conf
+# redis.conf
+# まさかり：メモリ満杯時にエラーを出す（ジョブが勝手に消えるのを防ぐ）
+maxmemory-policy noeviction
+maxmemory 512mb
+```
+
+**database.ymlとの関連性**:
+Sidekiqの並列数（Concurrency）を上げすぎると、DBコネクションを使い果たします。前述の`database.yml`の`pool`サイズは、「Pumaの接続数 + SidekiqのConcurrency」を考慮して設定してください。
+
+```yaml
+# config/database.yml
+production:
+  adapter: postgresql
+  # まさかり：Pumaのスレッド数 + SidekiqのConcurrency + 余裕
+  # 例: Puma(5) + Sidekiq(10) + 余裕(2) = 17
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 }.to_i + ENV.fetch("SIDEKIQ_CONCURRENCY") { 10 }.to_i + 2 %>
+```
+
+この設定により、DBコネクション不足によるエラーを防げます。
+
+#### ⚠️ 外部API呼び出しのタイムアウト設定
+
+ジョブの中で外部APIを叩く際は、必ずタイムアウト設定が必要です。
+
+**重要な理解**:
+外部APIが重くなると、Sidekiqのワーカースレッドがすべて「待ち」状態になり、他の重要なジョブ（メール送信など）が一切処理されなくなります。
+
+**問題点**:
+タイムアウト設定がないと、バックグラウンド処理の全面停止につながります。
+
+```ruby
+# ❌ 危険: タイムアウト設定がない
+class ExternalApiJob < ApplicationJob
+  def perform(user_id)
+    user = User.find(user_id)
+    # 問題: タイムアウトがないため、外部APIが重いと永遠に待つ
+    response = Net::HTTP.get(URI('https://api.example.com/data'))
+  end
+end
+```
+
+**改善案**:
+FaradayやNet::HTTPを使う際は必ず`open_timeout`と`read_timeout`を設定し、失敗時は速やかにリトライキューへ回るようにしてください。
+
+```ruby
+# ✅ 安全: タイムアウト設定がある
+class ExternalApiJob < ApplicationJob
+  retry_on StandardError, wait: :exponentially_longer, attempts: 3
+  
+  def perform(user_id)
+    user = User.find(user_id)
+    
+    # タイムアウト設定を明示
+    uri = URI('https://api.example.com/data')
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = true
+    http.open_timeout = 5  # 接続タイムアウト（秒）
+    http.read_timeout = 10  # 読み込みタイムアウト（秒）
+    
+    response = http.get(uri.path)
+    # 処理...
+  end
+end
+
+# または、Faradayを使う場合
+class ExternalApiJob < ApplicationJob
+  def perform(user_id)
+    user = User.find(user_id)
+    
+    conn = Faraday.new do |f|
+      f.request :url_encoded
+      f.adapter Faraday.default_adapter
+      f.options.timeout = 10  # タイムアウト設定
+    end
+    
+    response = conn.get('https://api.example.com/data')
+    # 処理...
+  end
+end
+```
+
+この設定により、外部APIの障害がバックグラウンド処理全体に影響を与えることを防げます。
+
+## 🚀 設計レビューでの「まさかり」文例
+
+実務でのコードレビューで使用できる、具体的な指摘文例を以下に示します。
+
+### ジョブの引数にオブジェクトを渡している場合の指摘
+
+```
+【指摘】ジョブの引数にActive Recordのインスタンスを直接渡しています。
+【問題】ジョブがキューに入ってから実行されるまでの間に、データベースのレコードが削除された場合、ActiveRecord::RecordNotFoundでクラッシュします。
+【影響】ジョブの実行失敗、データ不整合のリスク。
+【推奨】引数にはID（整数や文字列）を渡し、performメソッドの中で再取得してください。
+```
+
+### 冪等性が確保されていない場合の指摘
+
+```
+【指摘】ジョブに冪等性がありません。
+【問題】リトライされた際、同じ処理が複数回実行され、メールが重複送信される可能性があります。
+【影響】ユーザーへの重複メール送信、データの二重登録など。
+【推奨】「既に処理済みフラグが立っていたら何もしない」といった、何度実行しても結果が変わらない（冪等な）設計を徹底してください。
+```
+
+### 外部API呼び出しにタイムアウト設定がない場合の指摘
+
+```
+【指摘】ジョブの中で外部APIを叩いていますが、タイムアウト設定がありません。
+【問題】外部APIが重くなると、Sidekiqのワーカースレッドがすべて「待ち」状態になり、他の重要なジョブ（メール送信など）が一切処理されなくなります。
+【影響】バックグラウンド処理の全面停止。
+【推奨】FaradayやNet::HTTPを使う際は必ずopen_timeoutとread_timeoutを設定し、失敗時は速やかにリトライキューへ回るようにしてください。
+```
+
+これらの指摘文例を参考に、コードレビューで適切なフィードバックを行い、堅牢なバックグラウンド処理を構築しましょう。

@@ -7,6 +7,24 @@ label: "ファイル作成の順序"
 
 Spring Bootアプリケーションを開発する際の、効率的なファイル作成の順序について解説します。
 
+### データベースアクセスの設計思想
+
+Spring Bootでデータベースにアクセスする際には、主に2つの設計思想があります：
+
+1. **JPA（Java Persistence API）**: ORM（Object-Relational Mapping）の設計思想
+   - **Hibernate**: JPAの実装の一つ
+   - オブジェクトとリレーショナルデータベースを自動的にマッピング
+   - エンティティベースの開発
+
+2. **MyBatis**: SQLマッパーフレームワーク
+   - SQLを直接制御しながら、Javaオブジェクトとデータベースの結果をマッピング
+   - SQLベースの開発
+
+**選択の指針:**
+
+- **JPA（Hibernate）**: CRUD操作が中心、オブジェクト指向的な設計を重視、開発速度を優先
+- **MyBatis**: 複雑なSQLクエリが多い、パフォーマンスが重要、既存のSQL資産を活用したい
+
 ### 基本的な開発フロー
 
 Spring Bootプロジェクトでは、**下位レイヤーから上位レイヤーへ**順番にファイルを作成するのが一般的です。
@@ -14,7 +32,7 @@ Spring Bootプロジェクトでは、**下位レイヤーから上位レイヤ�
 ```
 1. Model/Entity層
    ↓
-2. Repository層
+2. Repository層 / Mapper層
    ↓
 3. Service層
    ↓
@@ -27,14 +45,25 @@ Spring Bootプロジェクトでは、**下位レイヤーから上位レイヤ�
 7. Exception層
 ```
 
+---
+
+## JPA（Hibernate）を使用する場合
+
 ### 1. Model/Entity層の作成
 
 まず、データベースのテーブルに対応するエンティティクラスを作成します。
+
+#### @Dataを使用した場合（推奨）
+
+**@Dataアノテーションを使用すれば、コンストラクタ、getter/setterが自動生成されるため、定義不要です。**
 
 ```java
 // src/main/java/com/example/myapp/model/User.java
 @Entity
 @Table(name = "users")
+@Data  // getter/setter、toString、equals、hashCode、コンストラクタを自動生成
+@NoArgsConstructor  // 引数なしコンストラクタ（JPAの要件）
+@AllArgsConstructor  // 全フィールドを引数に持つコンストラクタ（オプション）
 public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -58,35 +87,212 @@ public class User {
     @Column(nullable = false)
     private LocalDateTime updatedAt;
     
-    // コンストラクタ、getter/setter
-    public User() {}
+    // @Dataにより以下が自動生成される:
+    // - 引数なしコンストラクタ（@NoArgsConstructor）
+    // - 全フィールドを引数に持つコンストラクタ（@AllArgsConstructor）
+    // - getter/setter
+    // - toString()
+    // - equals()/hashCode()
+}
+```
+
+**メリット:**
+- コードが簡潔で読みやすい
+- ボイラープレートコードが削減される
+- 保守性が向上する
+
+**⚠️ 重要な注意点: 双方向の関連がある場合の@Exclude**
+
+もしあなたが`@Data`（または`@ToString`や`@EqualsAndHashCode`）を使い、かつ「双方向（親子両方から参照できる）」の関連を作るなら、手動で`@Exclude`を入れるのは必須の儀式だと思ってください。
+
+**問題のある例（無限ループが発生）:**
+
+```java
+// Userエンティティ
+@Entity
+@Table(name = "users")
+@Data  // ⚠️ 問題: 双方向の関連がある場合、無限ループが発生する可能性
+@NoArgsConstructor
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
     
+    private String name;
+    
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+    private List<Order> orders = new ArrayList<>();  // ⚠️ OrderからもUserを参照
+}
+
+// Orderエンティティ
+@Entity
+@Table(name = "orders")
+@Data  // ⚠️ 問題: 双方向の関連がある場合、無限ループが発生する可能性
+@NoArgsConstructor
+public class Order {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @ManyToOne
+    @JoinColumn(name = "user_id")
+    private User user;  // ⚠️ UserからもOrderを参照（双方向）
+    
+    private BigDecimal amount;
+}
+
+// 問題: toString()やequals()/hashCode()が無限ループを引き起こす
+// User.toString() → Order.toString() → User.toString() → ...
+```
+
+**解決方法: @Excludeを使用**
+
+```java
+// Userエンティティ
+@Entity
+@Table(name = "users")
+@Data
+@NoArgsConstructor
+@ToString(exclude = "orders")  // ✅ ordersフィールドをtoStringから除外
+@EqualsAndHashCode(exclude = "orders")  // ✅ ordersフィールドをequals/hashCodeから除外
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+    private List<Order> orders = new ArrayList<>();
+}
+
+// Orderエンティティ
+@Entity
+@Table(name = "orders")
+@Data
+@NoArgsConstructor
+@ToString(exclude = "user")  // ✅ userフィールドをtoStringから除外
+@EqualsAndHashCode(exclude = "user")  // ✅ userフィールドをequals/hashCodeから除外
+public class Order {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @ManyToOne
+    @JoinColumn(name = "user_id")
+    private User user;
+    
+    private BigDecimal amount;
+}
+```
+
+**なぜ@Excludeが必須なのか:**
+
+1. **無限ループの防止**: `@ToString`が双方向の関連フィールドを含むと、循環参照によりスタックオーバーフローが発生
+2. **パフォーマンスの問題**: `@EqualsAndHashCode`が双方向の関連フィールドを含むと、計算コストが膨大になる
+3. **予期しない動作**: 双方向の関連を含む`equals()/hashCode()`は、エンティティの管理状態によって予期しない動作を引き起こす可能性がある
+
+**ベストプラクティス:**
+
+- **双方向の関連フィールドは常に`@Exclude`で除外する**
+- **IDフィールドのみを使用して`equals()/hashCode()`を計算する（推奨）**
+
+```java
+// より安全な実装例
+@Entity
+@Table(name = "users")
+@Data
+@NoArgsConstructor
+@ToString(exclude = "orders")
+@EqualsAndHashCode(of = "id")  // ✅ IDフィールドのみを使用
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+    private List<Order> orders = new ArrayList<>();
+}
+```
+
+#### @Getter/@Setterを使用したほうが良いパターン
+
+**以下の場合は、@Getter/@Setterを個別に使用することを推奨します：**
+
+1. **特定のフィールドのみgetter/setterを生成したい場合**
+2. **setterを制限したい場合（例: idフィールドはsetterを生成しない）**
+3. **アクセス修飾子を制御したい場合**
+
+```java
+// src/main/java/com/example/myapp/model/User.java
+@Entity
+@Table(name = "users")
+@NoArgsConstructor  // 引数なしコンストラクタ（JPAの要件）
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Getter  // getterのみ生成（setterは生成しない）
+    private Long id;
+    
+    @Column(nullable = false, length = 100)
+    @Getter
+    @Setter
+    private String name;
+    
+    @Column(unique = true, nullable = false, length = 255)
+    @Email
+    @Getter
+    @Setter
+    private String email;
+    
+    @Column(nullable = false)
+    @Getter
+    @Setter(AccessLevel.PRIVATE)  // setterをprivateに制限（外部からの変更を防ぐ）
+    private String password;
+    
+    @CreatedDate
+    @Column(nullable = false, updatable = false)
+    @Getter  // getterのみ生成（作成日時は外部から変更不可）
+    private LocalDateTime createdAt;
+    
+    @LastModifiedDate
+    @Column(nullable = false)
+    @Getter  // getterのみ生成（更新日時は自動更新のため、外部から変更不可）
+    private LocalDateTime updatedAt;
+    
+    // コンストラクタ（必要に応じて）
     public User(String name, String email, String password) {
         this.name = name;
         this.email = email;
         this.password = password;
     }
-    
-    // getter/setter
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-    
-    public String getEmail() { return email; }
-    public void setEmail(String email) { this.email = email; }
-    
-    public String getPassword() { return password; }
-    public void setPassword(String password) { this.password = password; }
-    
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
-    
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }
 ```
+
+**使用例:**
+
+```java
+// idフィールドはgetterのみ（setterなし）
+User user = new User();
+user.getId();  // OK
+// user.setId(1L);  // コンパイルエラー（setterが存在しない）
+
+// passwordフィールドはprivate setter（クラス内からのみ変更可能）
+user.setPassword("newPassword");  // クラス内からのみアクセス可能
+
+// createdAt/updatedAtはgetterのみ（外部から変更不可）
+user.getCreatedAt();  // OK
+// user.setCreatedAt(...);  // コンパイルエラー（setterが存在しない）
+```
+
+**@Getter/@Setterを使うべき場合:**
+
+- **IDフィールド**: setterを生成しない（不変性を保証）
+- **作成日時・更新日時**: getterのみ生成（自動更新のため外部から変更不可）
+- **パスワードフィールド**: setterをprivateに制限（セキュリティのため）
+- **特定のフィールドのみアクセス制御**: 細かい制御が必要な場合
 
 **作成する理由:**
 - データベースのスキーマを定義する
@@ -340,7 +546,9 @@ public class RestTemplateConfig {
 - [ ] `@Entity`アノテーションが付いているか
 - [ ] `@Id`と`@GeneratedValue`が設定されているか
 - [ ] 適切な`@Column`設定があるか
-- [ ] getter/setterが定義されているか
+- [ ] `@Data`または`@Getter`/`@Setter`が適切に設定されているか（Lombok使用時）
+- [ ] `@NoArgsConstructor`が設定されているか（JPAの要件）
+- [ ] アクセス制御が必要なフィールドには`@Getter`/`@Setter`を個別に使用しているか
 
 #### Repository作成時
 - [ ] `JpaRepository`を継承しているか
@@ -359,9 +567,9 @@ public class RestTemplateConfig {
 - [ ] `@Valid`アノテーションが使用されているか
 - [ ] 適切なHTTPステータスコードが返されているか
 
-### まとめ
+### まとめ（JPA使用時）
 
-Spring Bootプロジェクトでのファイル作成の順序：
+JPA（Hibernate）を使用する場合のファイル作成の順序：
 
 1. **Model/Entity層**: データベーススキーマの定義
 2. **Repository層**: データアクセスの実装
@@ -372,5 +580,398 @@ Spring Bootプロジェクトでのファイル作成の順序：
 7. **Config層**: 設定クラスの定義（必要に応じて）
 
 この順序に従うことで、依存関係を明確にし、効率的に開発を進めることができます。
+
+---
+
+## MyBatisを使用する場合（A5M2使用想定）
+
+MyBatisは**SQLマッパーフレームワーク**で、SQLを直接制御しながらJavaオブジェクトとデータベースの結果をマッピングします。A5M2（MyBatis Generator）を使用することで、データベーススキーマからEntity、Mapperインターフェース、Mapper XMLファイルを自動生成できます。
+
+### 基本的な開発フロー（MyBatis使用時）
+
+MyBatisを使用する場合の開発フローは、A5M2を使用してコードを自動生成することを前提とします。
+
+```
+1. データベーススキーマの作成
+   ↓
+2. A5M2によるコード自動生成
+   - Entityクラス
+   - Mapperインターフェース
+   - Mapper XMLファイル
+   ↓
+3. DTO層の作成
+   ↓
+4. Service層の作成
+   ↓
+5. Controller層の作成
+   ↓
+6. Config層の作成（必要に応じて）
+   ↓
+7. Exception層の作成（必要に応じて）
+```
+
+### 1. データベーススキーマの作成
+
+まず、データベーススキーマを作成します。
+
+```sql
+-- usersテーブルの作成
+CREATE TABLE users (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ordersテーブルの作成
+CREATE TABLE orders (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id),
+    total_amount DECIMAL(10, 2) NOT NULL,
+    order_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### 2. A5M2によるコード自動生成
+
+A5M2（MyBatis Generator）を使用して、データベーススキーマからコードを自動生成します。
+
+#### A5M2の設定ファイル（generatorConfig.xml）
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE generatorConfiguration
+        PUBLIC "-//mybatis.org//DTD MyBatis Generator Configuration 1.0//EN"
+        "http://mybatis.org/dtd/mybatis-generator-config_1_0.dtd">
+
+<generatorConfiguration>
+    <context id="PostgreSQL" targetRuntime="MyBatis3">
+        
+        <!-- コメント生成の無効化 -->
+        <commentGenerator>
+            <property name="suppressAllComments" value="true"/>
+        </commentGenerator>
+        
+        <!-- データベース接続情報 -->
+        <jdbcConnection driverClass="org.postgresql.Driver"
+                        connectionURL="jdbc:postgresql://localhost:5432/mydb"
+                        userId="myuser"
+                        password="mypassword">
+        </jdbcConnection>
+        
+        <!-- Java型の解決 -->
+        <javaTypeResolver>
+            <property name="forceBigDecimals" value="false"/>
+        </javaTypeResolver>
+        
+        <!-- Entityクラスの生成設定 -->
+        <javaModelGenerator targetPackage="com.example.myapp.model"
+                            targetProject="src/main/java">
+            <property name="enableSubPackages" value="true"/>
+            <property name="trimStrings" value="true"/>
+        </javaModelGenerator>
+        
+        <!-- Mapper XMLファイルの生成設定 -->
+        <sqlMapGenerator targetPackage="mapper"
+                         targetProject="src/main/resources">
+            <property name="enableSubPackages" value="true"/>
+        </sqlMapGenerator>
+        
+        <!-- Mapperインターフェースの生成設定 -->
+        <javaClientGenerator type="XMLMAPPER"
+                             targetPackage="com.example.myapp.mapper"
+                             targetProject="src/main/java">
+            <property name="enableSubPackages" value="true"/>
+        </javaClientGenerator>
+        
+        <!-- テーブルの設定 -->
+        <table tableName="users" domainObjectName="User">
+            <property name="useActualColumnNames" value="false"/>
+            <generatedKey column="id" sqlStatement="JDBC"/>
+        </table>
+        
+        <table tableName="orders" domainObjectName="Order">
+            <property name="useActualColumnNames" value="false"/>
+            <generatedKey column="id" sqlStatement="JDBC"/>
+        </table>
+        
+    </context>
+</generatorConfiguration>
+```
+
+#### A5M2の実行
+
+A5M2を実行してコードを自動生成します。
+
+```bash
+# Mavenを使用する場合
+mvn mybatis-generator:generate
+
+# または、A5M2プラグインを使用する場合
+# IntelliJ IDEAの場合: Databaseツールウィンドウから実行
+```
+
+#### 自動生成されるファイル
+
+A5M2により、以下のファイルが自動生成されます：
+
+1. **Entityクラス**（`src/main/java/com/example/myapp/model/User.java`など）
+2. **Mapperインターフェース**（`src/main/java/com/example/myapp/mapper/UserMapper.java`など）
+3. **Mapper XMLファイル**（`src/main/resources/mapper/UserMapper.xml`など）
+
+**自動生成されるEntityクラスの例:**
+
+```java
+// src/main/java/com/example/myapp/model/User.java
+public class User {
+    private Long id;
+    private String name;
+    private String email;
+    private String password;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    
+    // コンストラクタ、getter/setterが自動生成される
+    // （A5M2の設定により、Lombokの@Dataを使用することも可能）
+}
+```
+
+**自動生成されるMapperインターフェースの例:**
+
+```java
+// src/main/java/com/example/myapp/mapper/UserMapper.java
+@Mapper
+public interface UserMapper {
+    int deleteByPrimaryKey(Long id);
+    int insert(User record);
+    User selectByPrimaryKey(Long id);
+    List<User> selectAll();
+    int updateByPrimaryKey(User record);
+}
+```
+
+**自動生成されるMapper XMLファイルの例:**
+
+```xml
+<!-- src/main/resources/mapper/UserMapper.xml -->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.myapp.mapper.UserMapper">
+    <resultMap id="BaseResultMap" type="com.example.myapp.model.User">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="name" property="name" jdbcType="VARCHAR"/>
+        <result column="email" property="email" jdbcType="VARCHAR"/>
+        <result column="password" property="password" jdbcType="VARCHAR"/>
+        <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
+        <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
+    </resultMap>
+    
+    <!-- 基本的なCRUD操作が自動生成される -->
+</mapper>
+```
+
+### 3. カスタムMapperメソッドの追加
+
+自動生成されたMapperインターフェースとXMLファイルに、カスタムメソッドを追加します。
+
+**Mapperインターフェースにカスタムメソッドを追加:**
+
+```java
+// src/main/java/com/example/myapp/mapper/UserMapper.java
+@Mapper
+public interface UserMapper {
+    // 自動生成されたメソッド
+    int deleteByPrimaryKey(Long id);
+    int insert(User record);
+    User selectByPrimaryKey(Long id);
+    List<User> selectAll();
+    int updateByPrimaryKey(User record);
+    
+    // カスタムメソッドを追加
+    User selectByEmail(String email);
+    boolean existsByEmail(String email);
+    List<User> selectByNameContaining(String name);
+}
+```
+
+**Mapper XMLファイルにカスタムSQLを追加:**
+
+```xml
+<!-- src/main/resources/mapper/UserMapper.xml -->
+<mapper namespace="com.example.myapp.mapper.UserMapper">
+    <!-- 自動生成されたSQL -->
+    
+    <!-- カスタムSQLを追加 -->
+    <select id="selectByEmail" resultMap="BaseResultMap">
+        SELECT * FROM users WHERE email = #{email}
+    </select>
+    
+    <select id="existsByEmail" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM users WHERE email = #{email})
+    </select>
+    
+    <select id="selectByNameContaining" resultMap="BaseResultMap">
+        SELECT * FROM users WHERE name LIKE CONCAT('%', #{name}, '%')
+    </select>
+</mapper>
+```
+
+### 4. DTO層の作成
+
+APIのリクエスト・レスポンス用のDTOクラスを作成します（JPA版と同じ）。
+
+```java
+// src/main/java/com/example/myapp/dto/UserDTO.java
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class UserDTO {
+    private Long id;
+    private String name;
+    private String email;
+}
+
+// src/main/java/com/example/myapp/dto/UserCreateRequest.java
+@Data
+@NoArgsConstructor
+public class UserCreateRequest {
+    @NotBlank(message = "Name is required")
+    @Size(min = 1, max = 100)
+    private String name;
+    
+    @NotBlank(message = "Email is required")
+    @Email(message = "Email must be valid")
+    private String email;
+    
+    @NotBlank(message = "Password is required")
+    @Size(min = 8, message = "Password must be at least 8 characters")
+    private String password;
+}
+```
+
+### 5. Service層の作成
+
+ビジネスロジックを実装するサービスクラスを作成します。
+
+```java
+// src/main/java/com/example/myapp/service/UserService.java
+@Service
+@Transactional(readOnly = true)
+@RequiredArgsConstructor
+@Slf4j
+public class UserService {
+    
+    private final UserMapper userMapper;
+    private final PasswordEncoder passwordEncoder;
+    
+    public UserDTO findById(Long id) {
+        User user = userMapper.selectByPrimaryKey(id);
+        if (user == null) {
+            throw new ResourceNotFoundException("User", id);
+        }
+        return convertToDTO(user);
+    }
+    
+    @Transactional
+    public UserDTO create(UserCreateRequest request) {
+        if (userMapper.existsByEmail(request.getEmail())) {
+            throw new DuplicateResourceException("User", request.getEmail());
+        }
+        
+        User user = new User();
+        user.setName(request.getName());
+        user.setEmail(request.getEmail());
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        
+        userMapper.insert(user);
+        return convertToDTO(user);
+    }
+    
+    private UserDTO convertToDTO(User user) {
+        return new UserDTO(
+            user.getId(),
+            user.getName(),
+            user.getEmail()
+        );
+    }
+}
+```
+
+### 6. Controller層の作成
+
+HTTPリクエストを処理するコントローラークラスを作成します（JPA版と同じ）。
+
+```java
+// src/main/java/com/example/myapp/controller/UserController.java
+@RestController
+@RequestMapping("/api/users")
+@RequiredArgsConstructor
+@Slf4j
+public class UserController {
+    
+    private final UserService userService;
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<UserDTO> getUser(@PathVariable Long id) {
+        UserDTO user = userService.findById(id);
+        return ResponseEntity.ok(user);
+    }
+    
+    @PostMapping
+    public ResponseEntity<UserDTO> createUser(
+            @Valid @RequestBody UserCreateRequest request) {
+        UserDTO createdUser = userService.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(createdUser);
+    }
+}
+```
+
+### ファイル作成時のチェックリスト（MyBatis使用時）
+
+#### データベーススキーマ作成時
+- [ ] テーブル定義が適切か
+- [ ] 主キーが設定されているか
+- [ ] 外部キー制約が適切に設定されているか
+- [ ] インデックスが適切に設定されているか
+
+#### A5M2実行時
+- [ ] generatorConfig.xmlの設定が正しいか
+- [ ] 生成されるパッケージ名が適切か
+- [ ] 生成されるファイル名が適切か
+
+#### Mapper作成時
+- [ ] `@Mapper`アノテーションが付いているか
+- [ ] カスタムSQLが適切に記述されているか
+- [ ] パラメータマッピングが適切か
+- [ ] 結果マッピングが適切か
+
+#### Service作成時
+- [ ] `@Service`アノテーションが付いているか
+- [ ] `@Transactional`が適切に設定されているか
+- [ ] 例外処理が実装されているか
+- [ ] DTOへの変換メソッドがあるか
+
+### まとめ（MyBatis使用時）
+
+MyBatisを使用する場合のファイル作成の順序：
+
+1. **データベーススキーマ**: テーブル定義の作成
+2. **A5M2によるコード自動生成**: Entity、Mapperインターフェース、Mapper XMLファイル
+3. **カスタムMapperメソッド**: 必要なカスタムSQLの追加
+4. **DTO層**: APIのリクエスト・レスポンスの定義
+5. **Service層**: ビジネスロジックの実装
+6. **Controller層**: HTTPリクエストの処理
+7. **Config層**: 設定クラスの定義（必要に応じて）
+8. **Exception層**: カスタム例外の定義（必要に応じて）
+
+**JPAとMyBatisの使い分け:**
+
+- **JPA（Hibernate）**: CRUD操作が中心、オブジェクト指向的な設計を重視、開発速度を優先
+- **MyBatis**: 複雑なSQLクエリが多い、パフォーマンスが重要、既存のSQL資産を活用したい、A5M2によるコード自動生成を活用したい
+
+この順序に従うことで、MyBatisを使用した開発を効率的に進めることができます。
 
 

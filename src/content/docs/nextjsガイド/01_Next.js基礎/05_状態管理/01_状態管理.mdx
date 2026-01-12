@@ -3,7 +3,11 @@ title: "状態管理.mdx"
 label: "状態管理.mdx"
 ---
 
+> **📚 Reactの基礎について**: 基本的なReactの概念（useState、useEffect、コンポーネント、Props、Context APIなど）については、[Reactガイド](/Reactガイド/01_React基礎)を参照してください。このドキュメントでは、Next.jsでの状態管理に焦点を当てます。
+
 ## ⚛️ 状態管理とは
+
+> **📚 Reactの基礎について**: 基本的なReactの概念（useState、useEffect、コンポーネント、Propsなど）については、[Reactガイド](/Reactガイド/01_React基礎)を参照してください。このドキュメントでは、Next.jsでの状態管理に焦点を当てます。
 
 状態管理は、アプリケーションのデータを一元的に管理し、複数のコンポーネント間で共有・更新する仕組みです。これにより、コンポーネントツリーを深く辿ってデータを渡す**「Props Drilling」**の問題が解決され、アプリケーションのデータフローが予測可能になります。
 
@@ -11,10 +15,13 @@ label: "状態管理.mdx"
 
 #### Props Drillingの問題
 
+> **📚 Props Drillingの詳細**: Props Drillingの問題とContext APIによる解決方法については、[ReactガイドのContext API](/Reactガイド/02_状態管理/01_Context_API/01_Context_API)を参照してください。
+
 **問題のあるコード:**
 
 ```typescript
 // 問題: Propsを何層にも渡す必要がある
+// 注意: useStateの詳細については、Reactガイドを参照してください
 function App() {
   const [user, setUser] = useState(null);
   
@@ -68,8 +75,11 @@ function UserMenu() {
 
 **1. データの単一の真実の源（Single Source of Truth）**
 
+> **📚 useStateの詳細**: useStateの詳細については、[ReactガイドのuseStateとuseEffect](/Reactガイド/01_React基礎/03_フック/01_useStateとuseEffect)を参照してください。
+
 ```typescript
 // 問題: 状態が複数の場所に散在
+// 注意: useStateの詳細については、Reactガイドを参照してください
 function ComponentA() {
   const [cart, setCart] = useState([]);
   // ...
@@ -100,8 +110,11 @@ function ComponentB() {
 
 **2. 予測可能なデータフロー**
 
+> **📚 useEffectの詳細**: useEffectの詳細については、[ReactガイドのuseStateとuseEffect](/Reactガイド/01_React基礎/03_フック/01_useStateとuseEffect)を参照してください。
+
 ```typescript
 // 問題: 状態の更新が予測困難
+// 注意: useStateとuseEffectの詳細については、Reactガイドを参照してください
 function Component() {
   const [data, setData] = useState(null);
   
@@ -178,6 +191,353 @@ Jotai（ジョタイ）は、日本語の「状態」から名付けられたラ
 - **大規模開発**: Reduxは、厳格なルールと予測可能性が求められる大規模なエンタープライズアプリケーションに向いています。
 
 - **Reactとの親和性**: RecoilとJotaiは、アトミックなアプローチにより、コンポーネントベースのReact開発と相性が良いです。特にJotaiは、よりミニマルなAPIを好む開発者におすすめです。
+
+---
+
+## 状態管理の三権分立
+
+状態管理を理解する際、以下の3つの役割を「どこに配置するか」を明確にすることが重要です。それぞれの役割を理解することで、適切な状態管理の選択ができるようになります。
+
+### 1. Local State（ローカル状態）: その場限りの使い捨て
+
+> **📚 useStateの詳細**: useStateの詳細な使い方については、[ReactガイドのuseStateとuseEffect](/Reactガイド/01_React基礎/03_フック/01_useStateとuseEffect)を参照してください。
+
+**役割:** `useState`を使用したコンポーネント内での状態管理
+
+**特徴:**
+- そのコンポーネント内でのみ使用される状態
+- コンポーネントがアンマウントされると、状態も破棄される
+- 最もシンプルで、パフォーマンスへの影響が最小限
+
+**使用例:**
+
+```typescript
+// components/Counter.tsx
+// 注意: useStateの詳細については、Reactガイドを参照してください
+import { useState } from 'react';
+
+function Counter() {
+  // Local State: このコンポーネント内でのみ使用
+  const [count, setCount] = useState(0);
+  const [isOpen, setIsOpen] = useState(false);
+  
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(count + 1)}>Increment</button>
+      <button onClick={() => setIsOpen(!isOpen)}>Toggle</button>
+    </div>
+  );
+}
+```
+
+**判断基準:**
+- 1つのコンポーネント内でのみ使用される
+- 他のコンポーネントと共有する必要がない
+- Props Drillingが2層以内で済む場合は、Local Stateで十分
+
+### 2. Context API: 「依存性の注入」。状態そのものより、値を奥深くまで届けるパイプライン
+
+> **📚 Context APIの詳細**: Context APIの詳細な使い方（作成、提供、消費の3ステップ、注意点など）については、[ReactガイドのContext API](/Reactガイド/02_状態管理/01_Context_API/01_Context_API)を参照してください。
+
+**役割:** コンポーネントツリー全体で値を共有するための仕組み
+
+**特徴:**
+- 状態の「伝達」に特化した仕組み
+- 状態を保持するためには、`useState`や`useReducer`が必要
+- Contextの値が更新されると、そのContextを使用している全コンポーネントが再レンダリングされる
+
+**使用例:**
+
+> **📚 Context APIの詳細**: Context APIの詳細な使い方（作成、提供、消費の3ステップ、注意点など）については、[ReactガイドのContext API](/Reactガイド/02_状態管理/01_Context_API/01_Context_API)を参照してください。
+
+```typescript
+// context/ThemeContext.tsx
+// 注意: Context API、useState、useContextの詳細については、Reactガイドを参照してください
+import { createContext, useContext, useState, ReactNode } from 'react';
+
+type Theme = 'light' | 'dark';
+
+interface ThemeContextType {
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
+}
+
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  // 状態の保持にはuseStateが必要
+  const [theme, setTheme] = useState<Theme>('light');
+  
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+}
+
+export function useTheme() {
+  const context = useContext(ThemeContext);
+  if (context === undefined) {
+    throw new Error('useTheme must be used within a ThemeProvider');
+  }
+  return context;
+}
+```
+
+### 3. Server State（サーバー状態）: サーバーの影（キャッシュ）。「今、手元にあるデータは最新か？」を管理する専門職
+
+**役割:** サーバーからのデータをキャッシュし、再取得や同期を管理
+
+**特徴:**
+- APIから取得したデータの管理
+- キャッシュ、再取得、同期が自動的に行われる
+- TanStack QueryやSWRなどの専用ライブラリが必要
+
+**使用例:**
+
+```typescript
+// hooks/useUser.ts
+import { useQuery } from '@tanstack/react-query';
+
+function UserProfile({ userId }: { userId: string }) {
+  // Server State: サーバーからのデータを管理
+  const { data: user, isLoading, error } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+    staleTime: 5 * 60 * 1000, // 5分間は新鮮とみなす
+  });
+  
+  if (isLoading) return <div>読み込み中...</div>;
+  if (error) return <div>エラーが発生しました</div>;
+  
+  return <div>{user.name}</div>;
+}
+```
+
+**判断基準:**
+- サーバーから取得したデータ
+- キャッシュが必要
+- 再取得が必要
+- 同期が必要
+
+---
+
+## useContextのまさかりポイント：それは「状態管理」ではない
+
+> **📚 Context APIの詳細**: Context APIの詳細な説明については、[ReactガイドのContext API](/Reactガイド/02_状態管理/01_Context_API/01_Context_API)を参照してください。
+
+よくある誤解ですが、**Context APIは単体では「状態管理ライブラリ」ではありません**。
+
+### 💡 まさかりポイント
+
+**Contextは「値を伝達する仕組み」に過ぎません。** 状態の保持には結局`useState`や`useReducer`が必要です。
+
+```typescript
+// ❌ 誤解: Contextが状態を保持している
+// 注意: Context APIの詳細については、Reactガイドを参照してください
+const ThemeContext = createContext(null);  // これは値の伝達の仕組みのみ
+
+// ✅ 正解: useStateが状態を保持している
+// 注意: useStateの詳細については、Reactガイドを参照してください
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [theme, setTheme] = useState('light');  // ここで状態を保持
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+}
+```
+
+### 注意点: Contextの再レンダリング問題
+
+> **📚 Context APIの注意点**: Context APIの詳細な注意点（再レンダリングの問題など）については、[ReactガイドのContext API](/Reactガイド/02_状態管理/01_Context_API/01_Context_API)を参照してください。
+
+**Contextの値が更新されると、そのContextを使っている（消費している）全コンポーネントが再レンダリングされる**ため、頻繁に更新されるグローバルな状態（例：タイマーや入力値）には不向きです。
+
+```typescript
+// ❌ バッドプラクティス: 頻繁に更新される状態をContextで管理
+// context/TimerContext.tsx
+// 注意: useStateとuseEffectの詳細については、Reactガイドを参照してください
+export function TimerProvider({ children }: { children: ReactNode }) {
+  const [time, setTime] = useState(new Date());
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTime(new Date());  // 1秒ごとに更新
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+  
+  return (
+    <TimerContext.Provider value={{ time }}>
+      {children}  {/* 問題: 1秒ごとに全コンポーネントが再レンダリングされる */}
+    </TimerContext.Provider>
+  );
+}
+
+// ✅ ベストプラクティス: 頻繁に更新されない状態のみContextで管理
+// context/ThemeContext.tsx
+// 注意: useStateの詳細については、Reactガイドを参照してください
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [theme, setTheme] = useState('light');  // めったに更新されない
+  
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+}
+```
+
+### 💡 シニアのアドバイス
+
+**「Contextは、認証情報、テーマ、言語設定など、めったに変わらない『静的な共有データ』に限定して使いましょう。」**
+
+**適切な使用例:**
+- ✅ 認証情報（ユーザー情報、ログイン状態）
+- ✅ テーマ（ライト/ダークモード）
+- ✅ 言語設定（i18n）
+- ✅ ルーティング情報
+
+**不適切な使用例:**
+- ❌ タイマー（頻繁に更新される）
+- ❌ フォームの入力値（頻繁に更新される）
+- ❌ アニメーションの状態（頻繁に更新される）
+- ❌ サーバーから取得したデータ（TanStack QueryやSWRを使用すべき）
+
+---
+
+## SWR vs TanStack Query (Server State)
+
+これらは「データを取ってくるツール」ではなく、**「サーバーの状態をクライアントに同期させるキャッシュマネージャー」**です。
+
+### TanStack Query（旧React Query）の強み（SWRとの比較）
+
+#### 1. 宣言的なデータ取得
+
+**TanStack Queryの思想:**
+「いつ取るか」ではなく「このキー（`['user', id]`）のデータが欲しい」と宣言するだけです。
+
+```typescript
+// ✅ TanStack Query: 宣言的なデータ取得
+import { useQuery } from '@tanstack/react-query';
+
+function UserProfile({ userId }: { userId: string }) {
+  // 「user」と「userId」のキーでデータが欲しいと宣言
+  const { data: user } = useQuery({
+    queryKey: ['user', userId],  // キャッシュのキー
+    queryFn: () => fetchUser(userId),  // データ取得関数
+    staleTime: 5 * 60 * 1000,  // 5分間は新鮮
+  });
+  
+  return <div>{user?.name}</div>;
+}
+
+// ✅ SWR: 同様に宣言的
+import useSWR from 'swr';
+
+function UserProfile({ userId }: { userId: string }) {
+  // 「user」と「userId」のキーでデータが欲しいと宣言
+  const { data: user } = useSWR(`/api/users/${userId}`, fetcher);
+  
+  return <div>{user?.name}</div>;
+}
+```
+
+#### 2. 自動再取得（Window Focus Refetching）
+
+ブラウザのタブを切り替えて戻ってきた瞬間に、裏側でデータを最新にする機能です。これはSWRにもありますが、TanStack Queryの方が細かい制御（Mutationの成功後に特定のキーを無効化するなど）に長けています。
+
+```typescript
+// ✅ TanStack Query: 細かい制御が可能
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+function UserProfile({ userId }: { userId: string }) {
+  const queryClient = useQueryClient();
+  
+  // ユーザー情報を取得
+  const { data: user } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,  // ウィンドウフォーカス時に再取得
+  });
+  
+  // ユーザー情報を更新
+  const updateUser = useMutation({
+    mutationFn: (data: UserData) => updateUser(userId, data),
+    onSuccess: () => {
+      // 更新成功後、特定のキーを無効化（再取得をトリガー）
+      queryClient.invalidateQueries({ queryKey: ['user', userId] });
+      // または、関連するすべてのキーを無効化
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+  
+  return (
+    <div>
+      <div>{user?.name}</div>
+      <button onClick={() => updateUser.mutate({ name: '新しい名前' })}>
+        更新
+      </button>
+    </div>
+  );
+}
+```
+
+#### 3. キャッシュ戦略の制御
+
+TanStack Queryは、より細かいキャッシュ戦略の制御が可能です。
+
+```typescript
+// ✅ TanStack Query: 詳細なキャッシュ制御
+import { useQuery } from '@tanstack/react-query';
+
+function ProductList() {
+  const { data: products } = useQuery({
+    queryKey: ['products'],
+    queryFn: () => fetchProducts(),
+    staleTime: 5 * 60 * 1000,  // 5分間は新鮮とみなす
+    gcTime: 10 * 60 * 1000,  // 10分間キャッシュを保持（旧cacheTime）
+    refetchOnMount: true,  // マウント時に再取得
+    refetchOnWindowFocus: true,  // ウィンドウフォーカス時に再取得
+    refetchOnReconnect: true,  // ネットワーク再接続時に再取得
+  });
+  
+  return <div>{/* ... */}</div>;
+}
+```
+
+### 比較表: TanStack Query vs SWR
+
+| 機能 | TanStack Query | SWR |
+|------|---------------|-----|
+| **宣言的なデータ取得** | ✅ | ✅ |
+| **自動再取得** | ✅ | ✅ |
+| **キャッシュ制御** | ✅（詳細） | ✅（シンプル） |
+| **Mutation後の無効化** | ✅（柔軟） | ✅（限定的） |
+| **DevTools** | ✅（優秀） | ❌ |
+| **バンドルサイズ** | 約13KB | 約4KB |
+| **学習コスト** | 中 | 低 |
+| **TypeScriptサポート** | ✅（優秀） | ✅ |
+
+### どちらを選ぶべきか？
+
+**TanStack Queryを選ぶべき場合:**
+- 複雑なキャッシュ戦略が必要
+- Mutationの制御が重要
+- DevToolsでデバッグしたい
+- 大規模なアプリケーション
+
+**SWRを選ぶべき場合:**
+- シンプルで軽量な解決策が必要
+- バンドルサイズを最小限に抑えたい
+- 学習コストを低く抑えたい
+- 小〜中規模のアプリケーション
+
+---
 
 ### 状態管理ライブラリの選択判断
 
@@ -409,6 +769,7 @@ const useFormStore = create((set) => ({
 }));
 
 // 良い例: ローカル状態はuseStateを使用
+// 注意: useStateの詳細については、Reactガイドを参照してください
 function Form() {
   const [inputValue, setInputValue] = useState('');  // ローカル状態
   return <input value={inputValue} onChange={(e) => setInputValue(e.target.value)} />;
@@ -442,11 +803,14 @@ const { data: users } = useQuery({
 
 **間違い3: Props Drillingを過度に避ける**
 
+> **📚 Context APIの詳細**: Context APIの詳細な使い方については、[ReactガイドのContext API](/Reactガイド/02_状態管理/01_Context_API/01_Context_API)を参照してください。
+
 ```typescript
 // 悪い例: 2-3層のProps Drillingを避けるためにグローバルストアを使用
 // 親 → 子 → 孫 の3層だけなのにグローバルストアを使用
 
 // 良い例: Context APIで十分な場合
+// 注意: Context APIの詳細については、Reactガイドを参照してください
 const UserContext = createContext<User | null>(null);
 
 function App() {

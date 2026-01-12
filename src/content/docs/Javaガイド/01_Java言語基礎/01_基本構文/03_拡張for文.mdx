@@ -1,0 +1,487 @@
+---
+title: "拡張for文"
+label: "拡張for文"
+---
+
+## 拡張for文（Enhanced For Loop）
+
+拡張for文は、Java 5で導入された構文で、コレクションや配列を簡単に反復処理できる機能です。従来のfor文よりも簡潔で読みやすいコードを書けます。
+
+**実務での推奨事項:**
+
+拡張for文は、Railsの`map`メソッドに相当する機能で、コレクションの各要素を反復処理する際に使用します。実務では、インデックスが不要な反復処理において、拡張for文を使用することを推奨します。コードが簡潔で読みやすく、バグが発生しにくいためです。
+
+**Railsとの対応:**
+
+```ruby
+# Rails (Ruby)
+users.map { |user| user.name }
+
+# Java（拡張for文）
+for (User user : users) {
+    System.out.println(user.getName());
+}
+```
+
+### なぜ拡張for文が必要なのか
+
+#### 従来のfor文の問題点
+
+**問題のある実装:**
+
+```java
+// 従来のfor文での配列の反復処理
+int[] numbers = {1, 2, 3, 4, 5};
+
+for (int i = 0; i < numbers.length; i++) {
+    System.out.println(numbers[i]);
+}
+
+// 問題点:
+// - インデックス変数（i）の管理が必要
+// - 配列の境界を超えるリスクがある
+// - コードが冗長
+```
+
+**コレクションの場合:**
+
+```java
+// 従来のfor文でのコレクションの反復処理
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie");
+
+for (int i = 0; i < names.size(); i++) {
+    System.out.println(names.get(i));
+}
+
+// 問題点:
+// - インデックスベースのアクセスが必要
+// - Iteratorを使う方が効率的だが、コードが複雑
+```
+
+#### 拡張for文による解決
+
+**改善された実装:**
+
+```java
+// 拡張for文での配列の反復処理
+int[] numbers = {1, 2, 3, 4, 5};
+
+for (int number : numbers) {
+    System.out.println(number);
+}
+
+// メリット:
+// - インデックス変数が不要
+// - 配列の境界を超えるリスクがない
+// - コードが簡潔で読みやすい
+```
+
+**コレクションの場合:**
+
+```java
+// 拡張for文でのコレクションの反復処理
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie");
+
+for (String name : names) {
+    System.out.println(name);
+}
+
+// メリット:
+// - Iteratorを自動的に使用（効率的）
+// - コードが簡潔で読みやすい
+// - 型安全性が保証される
+```
+
+### 拡張for文の基本構文
+
+#### 構文
+
+```java
+for (要素の型 変数名 : コレクションまたは配列) {
+    // 処理
+}
+```
+
+**構文の説明:**
+
+- **要素の型**: コレクションや配列の要素の型
+- **変数名**: 各要素を格納する変数名
+- **コレクションまたは配列**: 反復処理する対象
+
+#### 配列での使用例
+
+```java
+// int配列の反復処理
+int[] numbers = {1, 2, 3, 4, 5};
+
+for (int number : numbers) {
+    System.out.println(number);
+}
+// 出力:
+// 1
+// 2
+// 3
+// 4
+// 5
+```
+
+```java
+// String配列の反復処理
+String[] fruits = {"Apple", "Banana", "Orange"};
+
+for (String fruit : fruits) {
+    System.out.println(fruit);
+}
+// 出力:
+// Apple
+// Banana
+// Orange
+```
+
+#### コレクションでの使用例
+
+```java
+// Listの反復処理
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie");
+
+for (String name : names) {
+    System.out.println(name);
+}
+// 出力:
+// Alice
+// Bob
+// Charlie
+```
+
+```java
+// Setの反復処理
+Set<Integer> numbers = new HashSet<>(Arrays.asList(1, 2, 3, 4, 5));
+
+for (Integer number : numbers) {
+    System.out.println(number);
+}
+// 注意: Setは順序が保証されないため、出力順序は不定
+```
+
+```java
+// Mapの反復処理（エントリセットを使用）
+Map<String, Integer> scores = new HashMap<>();
+scores.put("Alice", 85);
+scores.put("Bob", 92);
+scores.put("Charlie", 78);
+
+for (Map.Entry<String, Integer> entry : scores.entrySet()) {
+    System.out.println(entry.getKey() + ": " + entry.getValue());
+}
+// 出力:
+// Alice: 85
+// Bob: 92
+// Charlie: 78
+```
+
+### 拡張for文の実践例
+
+#### 1. 条件に合う要素の処理
+
+```java
+// 偶数のみを処理
+List<Integer> numbers = Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+
+for (Integer number : numbers) {
+    if (number % 2 == 0) {
+        System.out.println(number + " is even");
+    }
+}
+// 出力:
+// 2 is even
+// 4 is even
+// 6 is even
+// 8 is even
+// 10 is even
+```
+
+#### 2. 要素の変換と集約
+
+```java
+// 文字列の長さの合計を計算
+List<String> words = Arrays.asList("Hello", "World", "Java");
+
+int totalLength = 0;
+for (String word : words) {
+    totalLength += word.length();
+}
+
+System.out.println("Total length: " + totalLength);
+// 出力: Total length: 14
+```
+
+#### 3. オブジェクトのプロパティへのアクセス
+
+```java
+// Userクラスの定義
+class User {
+    private String name;
+    private int age;
+    
+    public User(String name, int age) {
+        this.name = name;
+        this.age = age;
+    }
+    
+    public String getName() {
+        return name;
+    }
+    
+    public int getAge() {
+        return age;
+    }
+}
+
+// Userオブジェクトのリストを処理
+List<User> users = Arrays.asList(
+    new User("Alice", 25),
+    new User("Bob", 30),
+    new User("Charlie", 22)
+);
+
+for (User user : users) {
+    System.out.println(user.getName() + " is " + user.getAge() + " years old");
+}
+// 出力:
+// Alice is 25 years old
+// Bob is 30 years old
+// Charlie is 22 years old
+```
+
+#### 4. ネストしたコレクションの処理
+
+```java
+// リストのリストを処理
+List<List<Integer>> matrix = Arrays.asList(
+    Arrays.asList(1, 2, 3),
+    Arrays.asList(4, 5, 6),
+    Arrays.asList(7, 8, 9)
+);
+
+for (List<Integer> row : matrix) {
+    for (Integer value : row) {
+        System.out.print(value + " ");
+    }
+    System.out.println();
+}
+// 出力:
+// 1 2 3
+// 4 5 6
+// 7 8 9
+```
+
+### 拡張for文の制限事項
+
+#### 1. インデックスにアクセスできない
+
+**問題のある実装:**
+
+```java
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie");
+
+// 拡張for文ではインデックスにアクセスできない
+for (String name : names) {
+    // インデックスが必要な場合は使用できない
+    // System.out.println(i + ": " + name); // エラー
+}
+```
+
+**解決方法:**
+
+```java
+// インデックスが必要な場合は、従来のfor文を使用
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie");
+
+for (int i = 0; i < names.size(); i++) {
+    System.out.println(i + ": " + names.get(i));
+}
+// 出力:
+// 0: Alice
+// 1: Bob
+// 2: Charlie
+```
+
+#### 2. 要素の変更ができない
+
+**問題のある実装:**
+
+```java
+List<Integer> numbers = new ArrayList<>(Arrays.asList(1, 2, 3, 4, 5));
+
+// 拡張for文では要素を変更できない
+for (Integer number : numbers) {
+    number = number * 2; // これは元のリストを変更しない
+}
+
+System.out.println(numbers);
+// 出力: [1, 2, 3, 4, 5]（変更されていない）
+```
+
+**解決方法:**
+
+```java
+// 要素を変更する場合は、従来のfor文を使用
+List<Integer> numbers = new ArrayList<>(Arrays.asList(1, 2, 3, 4, 5));
+
+for (int i = 0; i < numbers.size(); i++) {
+    numbers.set(i, numbers.get(i) * 2);
+}
+
+System.out.println(numbers);
+// 出力: [2, 4, 6, 8, 10]
+```
+
+#### 3. 逆順の反復処理ができない
+
+**問題のある実装:**
+
+```java
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie");
+
+// 拡張for文では逆順の反復処理ができない
+// 逆順にするには、従来のfor文を使用
+for (int i = names.size() - 1; i >= 0; i--) {
+    System.out.println(names.get(i));
+}
+// 出力:
+// Charlie
+// Bob
+// Alice
+```
+
+#### 4. 早期終了（break）は可能
+
+```java
+// 拡張for文でもbreakは使用可能
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie", "David");
+
+for (String name : names) {
+    if (name.equals("Charlie")) {
+        break; // ループを終了
+    }
+    System.out.println(name);
+}
+// 出力:
+// Alice
+// Bob
+```
+
+#### 5. スキップ（continue）も可能
+
+```java
+// 拡張for文でもcontinueは使用可能
+List<Integer> numbers = Arrays.asList(1, 2, 3, 4, 5);
+
+for (Integer number : numbers) {
+    if (number % 2 == 0) {
+        continue; // 次の反復に進む
+    }
+    System.out.println(number);
+}
+// 出力:
+// 1
+// 3
+// 5
+```
+
+### 拡張for文と従来のfor文の使い分け
+
+#### 拡張for文を使うべき場合
+
+1. **シンプルな反復処理**
+   ```java
+   // 各要素を処理するだけ
+   for (String name : names) {
+       System.out.println(name);
+   }
+   ```
+
+2. **インデックスが不要な場合**
+   ```java
+   // インデックスを使わない処理
+   for (User user : users) {
+       processUser(user);
+   }
+   ```
+
+3. **読みやすさを重視する場合**
+   ```java
+   // コードが簡潔で読みやすい
+   for (Product product : products) {
+       if (product.isAvailable()) {
+           addToCart(product);
+       }
+   }
+   ```
+
+#### 従来のfor文を使うべき場合
+
+1. **インデックスが必要な場合**
+   ```java
+   // インデックスを使う処理
+   for (int i = 0; i < array.length; i++) {
+       System.out.println(i + ": " + array[i]);
+   }
+   ```
+
+2. **要素を変更する場合**
+   ```java
+   // 要素を変更する処理
+   for (int i = 0; i < list.size(); i++) {
+       list.set(i, list.get(i) * 2);
+   }
+   ```
+
+3. **逆順の反復処理が必要な場合**
+   ```java
+   // 逆順の反復処理
+   for (int i = list.size() - 1; i >= 0; i--) {
+       System.out.println(list.get(i));
+   }
+   ```
+
+### 拡張for文の内部動作
+
+#### Iteratorパターンの使用
+
+拡張for文は、内部的にIteratorパターンを使用しています。
+
+```java
+// 拡張for文
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie");
+
+for (String name : names) {
+    System.out.println(name);
+}
+
+// これは以下のコードと同等
+Iterator<String> iterator = names.iterator();
+while (iterator.hasNext()) {
+    String name = iterator.next();
+    System.out.println(name);
+}
+```
+
+**メリット:**
+
+- **効率的**: Iteratorを使用することで、コレクションの種類に関わらず効率的に処理できる
+- **型安全**: コンパイル時に型チェックが行われる
+- **簡潔**: コードが簡潔で読みやすい
+
+### まとめ
+
+拡張for文のポイント：
+
+- **基本構文**: `for (要素の型 変数名 : コレクションまたは配列)`
+- **メリット**: インデックス変数が不要、コードが簡潔、型安全
+- **制限事項**: インデックスにアクセスできない、要素を変更できない、逆順の反復処理ができない
+- **使い分け**: シンプルな反復処理には拡張for文、インデックスや要素の変更が必要な場合は従来のfor文
+- **内部動作**: Iteratorパターンを使用して効率的に処理
+
+適切に拡張for文を使用することで、コードを簡潔で読みやすく、保守しやすくできます。
+

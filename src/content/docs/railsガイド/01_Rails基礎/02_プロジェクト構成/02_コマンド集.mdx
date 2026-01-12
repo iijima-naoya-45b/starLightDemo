@@ -12,8 +12,60 @@ label: "Rails ジェネレーターコマンド"
 | コマンド | 役割 | 例 |
 | --- | --- | --- |
 | `rails g model` | データベースのテーブルに対応するモデルとマイグレーションファイルを生成。 | `rails g model Product name:string price:integer` |
+
+#### ⚠️ `rails g model`で型を省略しない、制約も追加する
+
+例として`Product name:string`とありますが、実務ではこれだけでは不十分です。
+
+**問題点**:
+- DBレベルの制約（`null: false`や`unique: true`）をコマンドレベルで意識しないと、不整合なデータが入り込む「ガバガバなDB」になります
+- ジェネレーターは最低限のコードしか作りません
+
+**推奨される手順**:
+1. モデルを生成する
+2. **生成されたマイグレーションファイルを必ず開く**
+3. `null: false`や`default: 0`などを手動で追記する
+
+```bash
+# モデル生成
+rails g model Product name:string price:integer
+
+# 生成されたマイグレーションファイルを編集
+# db/migrate/YYYYMMDDHHMMSS_create_products.rb
+class CreateProducts < ActiveRecord::Migration[7.0]
+  def change
+    create_table :products do |t|
+      t.string :name, null: false        # null制約を追加
+      t.integer :price, null: false, default: 0  # null制約とデフォルト値を追加
+      t.string :sku, null: false, unique: true   # 一意制約を追加
+
+      t.timestamps
+    end
+  end
+end
+```
+
+データベースレベルで制約を設けることで、アプリケーション層でのバリデーションが漏れても、データの整合性を保つことができます。
 | `rails g controller` | コントローラーと、対応するビューフォルダを生成。 | `rails g controller Pages home about` |
 | `rails g scaffold` | CRUD（作成・読み取り・更新・削除）機能を一気に生成！ Model, Controller, View, ルーティングまでまとめて作ります。 | `rails g scaffold Post title:string content:text` |
+
+#### ⚠️ `rails g scaffold`は「実務では使わない」
+
+初心者向けの教材には必ず登場しますが、**実際のプロジェクトで`scaffold`を叩くことはほぼありません**。
+
+**問題点**:
+- `scaffold`は不要なファイル（使わないヘルパー、CSS、テスト、JSONテンプレート）を大量に生成し、「コードの汚染」を引き起こします
+- 魔法で生成されたコードを後から消して回るのは時間の無駄です
+
+**推奨されるアプローチ**:
+- **学習用**として割り切り、実務では`model`や`controller`を個別に生成し、必要な分だけ肉付けしていくスタイルを推奨します
+
+```bash
+# 実務で推奨される方法
+rails g model Product name:string price:integer
+rails g controller Products index show new create edit update destroy
+# 必要なアクションだけを実装していく
+```
 | `rails g migration` | データベースのスキーマを変更するためのマイグレーションファイルだけを生成。 | `rails g migration AddCategoryToPosts category:string` |
 | `rails g resource` | ビューを生成しないScaffold。API開発に最適です。 | `rails g resource User name:string` |
 
@@ -25,6 +77,28 @@ label: "Rails ジェネレーターコマンド"
 | --- | --- |
 | `rails db:migrate` | 未実行のマイグレーションファイルをすべて実行し、データベースを最新の状態に更新します。 |
 | `rails db:rollback` | 最後に実行したマイグレーションを取り消し、データベースの状態を元に戻します。 |
+
+#### ⚠️ `rails db:rollback`への過信は危険
+
+「元に戻せる」というのは便利ですが、**運用フェーズでは非常に危険な考え方です**。
+
+**問題点**:
+- すでに本番環境（Production）で実行し、データが入っているマイグレーションに対して安易に`rollback`すると、データ消失の恐れがあります
+- カラム削除などの破壊的変更を伴うマイグレーションを戻すことはできません
+
+**推奨されるアプローチ**:
+「戻す（rollback）」のではなく、**「修正する新しいマイグレーション（Add... / Remove...）を作る」**のが、安全に壊れるための設計原則です。
+
+```bash
+# 危険: 本番で実行済みのマイグレーションをrollback
+rails db:rollback  # ❌ 本番では絶対に使わない
+
+# 安全: 新しいマイグレーションで修正
+rails g migration AddEmailToUsers email:string
+rails g migration RemoveUnusedColumnFromProducts unused_column:string
+```
+
+開発環境でのみ`rollback`を使用し、本番環境では新しいマイグレーションで修正することを徹底しましょう。
 | `rails db:seed` | `db/seeds.rb` に書かれた初期データをデータベースに投入します。テストデータを用意する際に便利です。 |
 | `rails db:drop` | データベースを完全に削除します。⚠️慎重に使いましょう！ |
 | `rails db:create` | データベースを作成します。 |
@@ -37,7 +111,56 @@ label: "Rails ジェネレーターコマンド"
 | --- | --- |
 | `rails s` | ローカル開発用のウェブサーバーを起動します。`s`は`server`の省略形です。 |
 | `rails c` | アプリケーションのコンテキストで対話型コンソールを起動。データの確認やデバッグに役立ちます。`c`は`console`の省略形です。 |
+
+#### ⚠️ `rails c`（Console）での「破壊的操作」に注意
+
+「データの確認に役立つ」とありますが、**本番環境でこれを叩く時の恐怖に触れておくべきです**。
+
+**危険な操作の例**:
+```ruby
+# 本番サーバーで rails c を開き、誤って実行すると...
+User.destroy_all  # その瞬間にサービス終了
+Article.delete_all  # すべてのデータが消える
+```
+
+**推奨: `rails c --sandbox`を使用**
+
+読み取り専用で起動する`rails c --sandbox`を紹介しましょう。これなら、どんなにデータをいじっても終了時にすべてロールバックされるため、安全に調査ができます。
+
+```bash
+# 安全な方法: サンドボックスモード
+rails c --sandbox
+
+# サンドボックス内では、すべての変更が終了時にロールバックされる
+# User.create(...)  # 試してもOK
+# User.destroy_all   # 試してもOK
+# exit              # 終了すると、すべての変更が取り消される
+```
+
+**本番環境での注意点**:
+- 本番環境で`rails c`を使用する際は、必ず`--sandbox`オプションを使用するか、読み取り専用の操作のみを行う
+- 破壊的な操作（`destroy_all`、`delete_all`など）は絶対に実行しない
+- 本番環境での操作は、必ずバックアップを取ってから行う
 | `rails routes` | アプリケーションのすべてのルーティング情報（URLと対応するコントローラー・アクション）を一覧で表示します。 |
+
+#### ⚠️ `rails routes`は重すぎる：効率的な使い方
+
+ルートが増えてくると、`rails routes`コマンドは結果が表示されるまで数秒〜十数秒待たされるようになります。毎回これを叩くのは開発リズムを壊します。
+
+**効率的な使い方**:
+
+```bash
+# 特定のコントローラに絞り込む
+rails routes -c products
+
+# 検索する（grepの代わり）
+rails routes -g post
+
+# 特定のパスで検索
+rails routes | grep articles
+```
+
+**プロの裏技**: ブラウザで `/rails/info/routes` にアクセスすれば一瞬で確認できます。開発サーバーが起動している状態で、ブラウザから直接ルーティング情報を確認できるため、コマンドラインよりも高速です。
 | `rails t` | アプリケーションのテストを実行します。`t`は`test`の省略形です。 |
 | `rails about` | Railsのバージョンや環境設定など、現在のプロジェクト情報を表示します。 |
 

@@ -5,15 +5,17 @@ label: "useStateとuseEffect"
 
 ## useStateとuseEffect
 
+> **注意**: このドキュメントは**TypeScript（TSX）前提**で説明しています。現在のReact開発では、TypeScriptの採用が標準となっており、型安全性によるバグの早期発見、IDEの補完機能、リファクタリングの安全性などの理由から、JSXよりもTSXが選定されることが一般的です。
+
 ### useState
 
 `useState`は、関数コンポーネントで状態を管理するためのフックです。
 
-```jsx
+```tsx
 import { useState } from 'react';
 
 function Counter() {
-  const [count, setCount] = useState(0);
+  const [count, setCount] = useState<number>(0);
 
   return (
     <div>
@@ -28,10 +30,10 @@ function Counter() {
 
 #### 複数の状態
 
-```jsx
+```tsx
 function Form() {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [name, setName] = useState<string>('');
+  const [email, setEmail] = useState<string>('');
 
   return (
     <form>
@@ -52,18 +54,23 @@ function Form() {
 
 #### オブジェクトの状態
 
-```jsx
+```tsx
+type User = {
+  name: string;
+  email: string;
+};
+
 function UserForm() {
-  const [user, setUser] = useState({
+  const [user, setUser] = useState<User>({
     name: '',
     email: '',
   });
 
-  const updateName = (name) => {
+  const updateName = (name: string) => {
     setUser({ ...user, name });
   };
 
-  const updateEmail = (email) => {
+  const updateEmail = (email: string) => {
     setUser({ ...user, email });
   };
 
@@ -82,15 +89,255 @@ function UserForm() {
 }
 ```
 
+#### フォーム状態管理とReact Hook Form（RHF）
+
+**重要なポイント**: 現場では、フォーム状態管理に**React Hook Form（RHF）**を使用する機会が非常に多いです。`useState`でフォーム状態を管理することも可能ですが、RHFを使用することで、以下のメリットがあります：
+
+1. **パフォーマンス**: 不要な再レンダリングを削減
+2. **バリデーション**: Zodなどのスキーマバリデーションと統合
+3. **型安全性**: TypeScriptとの統合が優れている
+4. **開発効率**: フォームの実装が簡潔になる
+
+**useStateでフォームを管理する場合（参考）:**
+
+```tsx
+type FormData = {
+  name: string;
+  email: string;
+};
+
+function SimpleForm() {
+  const [formData, setFormData] = useState<FormData>({
+    name: '',
+    email: '',
+  });
+  const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // バリデーション処理...
+    // 送信処理...
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input
+        value={formData.name}
+        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+      />
+      {errors.name && <span>{errors.name}</span>}
+      {/* ... */}
+    </form>
+  );
+}
+```
+
+**React Hook Formを使用する場合（推奨）:**
+
+```tsx
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
+// Zodスキーマで型とバリデーションを定義
+const formSchema = z.object({
+  name: z.string().min(1, '名前は必須です'),
+  email: z.string().email('有効なメールアドレスを入力してください'),
+});
+
+type FormData = z.infer<typeof formSchema>;
+
+function UserForm() {
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<FormData>({
+    resolver: zodResolver(formSchema), // Zodでバリデーション
+    defaultValues: {
+      name: '',
+      email: '',
+    },
+  });
+
+  const onSubmit = async (data: FormData) => {
+    // 送信処理（dataは型安全）
+    console.log(data);
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <input {...register('name')} />
+      {errors.name && <span>{errors.name.message}</span>}
+      
+      <input type="email" {...register('email')} />
+      {errors.email && <span>{errors.email.message}</span>}
+      
+      <button type="submit" disabled={isSubmitting}>
+        送信
+      </button>
+    </form>
+  );
+}
+```
+
+**React Hook Formのメリット:**
+
+- ✅ **型安全性**: TypeScriptの型推論が効く
+- ✅ **パフォーマンス**: 不要な再レンダリングを削減（`register`を使用）
+- ✅ **バリデーション**: Zod、Yupなどのスキーマバリデーションと統合
+- ✅ **開発効率**: フォームの実装が簡潔になる
+- ✅ **エラーハンドリング**: エラー状態の管理が自動化される
+
+**使い分け:**
+
+- **useState**: シンプルな状態管理、フォーム以外の状態
+- **React Hook Form**: フォーム状態管理（現場ではこちらが標準）
+
+#### 状態の型定義: booleanを使わない方が優れている点
+
+**重要なポイント**: 複数のboolean状態を管理する場合、**boolean型を複数使用するよりも、ユニオン型で状態を1つにまとめる方が優れています**。
+
+**❌ 問題のあるコード: 複数のboolean状態**
+
+```tsx
+function DataFetcher() {
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isError, setIsError] = useState<boolean>(false);
+  const [isSuccess, setIsSuccess] = useState<boolean>(false);
+  const [data, setData] = useState<Data | null>(null);
+
+  useEffect(() => {
+    setIsLoading(true);
+    setIsError(false);
+    setIsSuccess(false);
+    
+    fetch('/api/data')
+      .then(res => res.json())
+      .then(data => {
+        setIsLoading(false);
+        setIsSuccess(true);
+        setData(data);
+      })
+      .catch(() => {
+        setIsLoading(false);
+        setIsError(true);
+      });
+  }, []);
+
+  // 問題点:
+  // 1. 状態の組み合わせが複雑（isLoading && isError など、無効な状態が発生しうる）
+  // 2. 状態の更新が複数箇所に分散
+  // 3. 状態の整合性が保証されない（isLoading = true && isSuccess = true など）
+}
+```
+
+**✅ 正しいコード: ユニオン型で状態を1つにまとめる**
+
+```tsx
+type FetchStatus = 'idle' | 'loading' | 'success' | 'error';
+
+function DataFetcher() {
+  const [status, setStatus] = useState<FetchStatus>('idle');
+  const [data, setData] = useState<Data | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    setStatus('loading');
+    setError(null);
+    
+    fetch('/api/data')
+      .then(res => res.json())
+      .then(data => {
+        setStatus('success');
+        setData(data);
+      })
+      .catch(err => {
+        setStatus('error');
+        setError(err);
+      });
+  }, []);
+
+  // メリット:
+  // 1. 状態の組み合わせが明確（常に1つの状態のみ）
+  // 2. 状態の整合性が保証される
+  // 3. 条件分岐が簡潔になる
+  // 4. 型安全性が向上
+
+  if (status === 'loading') return <div>Loading...</div>;
+  if (status === 'error') return <div>Error: {error?.message}</div>;
+  if (status === 'success') return <div>Data: {data}</div>;
+  return null;
+}
+```
+
+**booleanを使わない方が優れている理由:**
+
+1. **状態の整合性**: 複数のboolean状態は、無効な組み合わせ（`isLoading = true && isSuccess = true`など）を発生させやすい
+2. **条件分岐の簡潔性**: ユニオン型なら、1つの状態で条件分岐ができる
+3. **型安全性**: TypeScriptの型チェックで、無効な状態を防げる
+4. **保守性**: 状態の追加・変更が容易（新しい状態をユニオン型に追加するだけ）
+
+**実践例: モーダルの状態管理**
+
+```tsx
+// ❌ 悪い例: 複数のboolean状態
+const [isOpen, setIsOpen] = useState<boolean>(false);
+const [isClosing, setIsClosing] = useState<boolean>(false);
+const [isOpening, setIsOpening] = useState<boolean>(false);
+
+// ✅ 良い例: ユニオン型
+type ModalStatus = 'closed' | 'opening' | 'open' | 'closing';
+const [status, setStatus] = useState<ModalStatus>('closed');
+```
+
+**実践例: 非同期処理の状態管理**
+
+```tsx
+// ❌ 悪い例: 複数のboolean状態
+const [isLoading, setIsLoading] = useState<boolean>(false);
+const [isError, setIsError] = useState<boolean>(false);
+
+// ✅ 良い例: ユニオン型
+type AsyncStatus = 'idle' | 'loading' | 'success' | 'error';
+const [status, setStatus] = useState<AsyncStatus>('idle');
+```
+
 ### useEffect
 
-`useEffect`は、副作用（データ取得、DOM操作など）を実行するためのフックです。
+> **【まさかり】useEffectの本質**: `useEffect`は「マウント時に実行される関数」ではなく、**「PropsやStateの変化を外部システム（DOMやAPI）に同期させるための脱出ハッチ」**です。現代のReact（Hooks以降）では、「ライフサイクル」ではなく**「同期（Synchronization）」**と呼ぶのが公式の考え方です。
 
-```jsx
+`useEffect`は、PropsやStateの変化を外部システム（DOMやAPIなど）に同期させるためのフックです。
+
+#### useEffectを使用して良いポイント
+
+useEffectは、以下のケースで使用するのが適切です：
+
+1. **データフェッチング**: APIからデータを取得する
+2. **イベントリスナーの追加/削除**: `addEventListener`、`removeEventListener`
+3. **タイマーの設定/クリーンアップ**: `setInterval`、`setTimeout`、`clearInterval`、`clearTimeout`
+4. **購読（subscription）の設定/クリーンアップ**: WebSocket、EventSource、Pub/Subなど
+5. **DOM操作**: 外部ライブラリとの連携（例: チャートライブラリの初期化）
+6. **ログ記録**: 分析ツールへの送信など
+
+**useEffectを使用しない方が良いケース:**
+
+- ❌ **イベントハンドラー**: `onClick`、`onChange`などのイベントハンドラー内で処理する
+- ❌ **計算値**: `useMemo`を使用する
+- ❌ **状態の初期化**: `useState`の初期値で処理する
+- ❌ **条件付きレンダリング**: JSX内で条件分岐する
+
+```tsx
 import { useState, useEffect } from 'react';
 
-function UserProfile({ userId }) {
-  const [user, setUser] = useState(null);
+type User = {
+  id: number;
+  name: string;
+  email: string;
+};
+
+function UserProfile({ userId }: { userId: number }) {
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     fetch(`/api/users/${userId}`)
@@ -104,29 +351,462 @@ function UserProfile({ userId }) {
 }
 ```
 
-#### クリーンアップ
+#### クリーンアップ（重要）
 
-```jsx
+**なぜクリーンアップが必要なのか:**
+
+useEffectで追加したリソース（イベントリスナー、タイマー、購読など）は、コンポーネントがアンマウントされたり、依存配列の値が変わって再実行される際に、**必ずクリーンアップする必要があります**。
+
+**クリーンアップが必要な理由:**
+
+1. **メモリリークの防止**: 削除されないイベントリスナーやタイマーは、メモリリークの原因になります
+2. **不要な処理の停止**: コンポーネントが存在しない状態で、不要な処理が実行され続けるのを防ぎます
+3. **予期しない副作用の防止**: アンマウントされたコンポーネントの状態を更新しようとすると、エラーが発生します
+
+> **【まさかり】クロージャによるメモリリーク（React特有）**: `useEffect`内で`setInterval`などを使い、クリーンアップ関数（`return () => ...`）を忘れると、コンポーネントが消えてもメモリ上のデータが参照され続け、GC（ガベージコレクション）されません。これが真のメモリリークの温床です。
+
+> **【まさかり】メモリリークの真の恐怖：非同期処理**: 最近のReactで多いのは**「非同期処理の戻り値によるリーク」**です。コンポーネントがアンマウントされた後に、`fetch`のPromiseが解決され、存在しないコンポーネントの`setState`を叩こうとするパターンです（React 18以降は警告が出なくなりましたが、メモリ空間には残ります）。**AbortController**を使って、アンマウント時に通信自体をキャンセルする手法を推奨します。
+
+**実際のバグ例:**
+
+```tsx
+// ❌ 問題のあるコード: クリーンアップがない
 function Timer() {
-  const [seconds, setSeconds] = useState(0);
+  const [seconds, setSeconds] = useState<number>(0);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setSeconds(seconds => seconds + 1);
+      setSeconds(prev => prev + 1);
+    }, 1000);
+    // ❌ 問題: クリーンアップ関数がない
+    // コンポーネントがアンマウントされても、タイマーが動き続ける
+  }, []);
+
+  return <div>Seconds: {seconds}</div>;
+}
+
+// 問題点:
+// 1. コンポーネントを削除しても、タイマーが動き続ける
+// 2. メモリリークが発生する
+// 3. アンマウント後に状態を更新しようとしてエラーが発生する可能性
+```
+
+**✅ 正しいコード: クリーンアップ関数を追加**
+
+```tsx
+function Timer() {
+  const [seconds, setSeconds] = useState<number>(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSeconds(prev => prev + 1);
     }, 1000);
 
-    // クリーンアップ関数
-    return () => clearInterval(interval);
+    // ✅ クリーンアップ関数: コンポーネントがアンマウントされる際に実行される
+    return () => {
+      clearInterval(interval);
+    };
   }, []); // マウント時のみ実行
 
   return <div>Seconds: {seconds}</div>;
 }
 ```
 
+**クリーンアップが必要なケース:**
+
+1. **タイマー（setInterval、setTimeout）**
+2. **イベントリスナー（addEventListener）**
+3. **購読（subscription）**: WebSocket、EventSource、Pub/Subなど
+4. **非同期処理のキャンセル**: AbortControllerなど
+
+**実装例: イベントリスナーのクリーンアップ**
+
+```tsx
+function ScrollTracker() {
+  const [scrollY, setScrollY] = useState<number>(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrollY(window.scrollY);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+
+    // ✅ クリーンアップ: イベントリスナーを削除
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
+  return <div>Scroll Y: {scrollY}</div>;
+}
+```
+
+**【まさかり】実装例: 非同期処理（fetch）によるメモリリークとAbortController**
+
+```tsx
+function UserProfile({ userId }: { userId: number }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    // ❌ 問題のあるコード: AbortControllerがない
+    // コンポーネントがアンマウントされた後に、fetchのPromiseが解決され、
+    // 存在しないコンポーネントのsetStateを叩こうとする
+    // React 18以降は警告が出ないが、メモリ空間には残る
+    fetch(`/api/users/${userId}`)
+      .then(response => response.json())
+      .then(data => setUser(data)) // アンマウント後でも実行される可能性
+      .catch(error => setError(error));
+  }, [userId]);
+
+  // ✅ 解決策: AbortControllerを使用して通信自体をキャンセル
+  useEffect(() => {
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+
+    fetch(`/api/users/${userId}`, { signal })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        // リクエストがキャンセルされていない場合のみ状態を更新
+        if (!signal.aborted) {
+          setUser(data);
+        }
+      })
+      .catch(error => {
+        // AbortErrorの場合は無視（リクエストがキャンセルされただけ）
+        if (error.name !== 'AbortError') {
+          setError(error);
+        }
+      });
+
+    // ✅ クリーンアップ: コンポーネントがアンマウントされたときに通信をキャンセル
+    return () => {
+      abortController.abort();
+    };
+  }, [userId]);
+
+  if (error) return <div>Error: {error.message}</div>;
+  if (!user) return <div>Loading...</div>;
+  return <div>{user.name}</div>;
+}
+```
+
+**重要なポイント:**
+
+- **AbortControllerの使用**: `fetch`などの非同期処理では、必ず`AbortController`を使用してクリーンアップする
+- **通信のキャンセル**: コンポーネントがアンマウントされたときに、進行中の通信をキャンセルする
+- **メモリリークの防止**: アンマウント後の`setState`を防ぎ、メモリリークを防止する
+
+#### AbortControllerとabort()の詳細解説
+
+**AbortControllerとは:**
+
+`AbortController`は、**非同期処理（特にfetch API）をキャンセルするためのWeb標準API**です。Reactでは、コンポーネントがアンマウントされた際や、依存配列の値が変更された際に、進行中の非同期処理をキャンセルするために使用されます。
+
+**なぜAbortControllerが必要なのか:**
+
+1. **メモリリークの防止**: アンマウントされたコンポーネントの状態を更新しようとすると、エラーが発生する可能性があります
+2. **不要な処理の停止**: コンポーネントが存在しない状態で、不要なAPIリクエストが実行され続けるのを防ぎます
+3. **ネットワークリソースの節約**: 不要になったリクエストをキャンセルすることで、ネットワークリソースを節約できます
+4. **競合状態（Race Condition）の防止**: 複数のリクエストが同時に実行された場合、古いリクエストの結果が新しいリクエストの結果を上書きするのを防ぎます
+
+**AbortControllerの基本的な使い方:**
+
+```tsx
+// 1. AbortControllerのインスタンスを作成
+const abortController = new AbortController();
+
+// 2. signalを取得（AbortSignalオブジェクト）
+const signal = abortController.signal;
+
+// 3. fetch APIにsignalを渡す
+fetch('/api/data', { signal })
+  .then(response => response.json())
+  .then(data => console.log(data))
+  .catch(error => {
+    // AbortErrorの場合、リクエストがキャンセルされたことを意味する
+    if (error.name === 'AbortError') {
+      console.log('Request was aborted');
+    } else {
+      console.error('Request failed:', error);
+    }
+  });
+
+// 4. abort()メソッドを呼び出すと、リクエストがキャンセルされる
+abortController.abort();
+```
+
+**AbortControllerの主要なプロパティとメソッド:**
+
+```tsx
+const abortController = new AbortController();
+
+// signal: AbortSignalオブジェクト（リクエストに渡す）
+const signal = abortController.signal;
+
+// aborted: リクエストがキャンセルされたかどうかを示すブール値
+console.log(signal.aborted); // false（初期状態）
+
+// abort(): リクエストをキャンセルするメソッド
+abortController.abort();
+
+console.log(signal.aborted); // true（キャンセル後）
+
+// onabort: キャンセル時に実行されるイベントハンドラー
+signal.addEventListener('abort', () => {
+  console.log('Request was aborted');
+});
+```
+
+**実践例: useEffectでのAbortControllerの使用**
+
+```tsx
+import { useState, useEffect } from 'react';
+
+type User = {
+  id: number;
+  name: string;
+  email: string;
+};
+
+function UserProfile({ userId }: { userId: number }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    // 1. AbortControllerのインスタンスを作成
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+
+    // 2. ローディング状態を設定
+    setIsLoading(true);
+    setError(null);
+
+    // 3. fetch APIにsignalを渡す
+    fetch(`/api/users/${userId}`, { signal })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        // 4. リクエストがキャンセルされていない場合のみ状態を更新
+        if (!signal.aborted) {
+          setUser(data);
+          setIsLoading(false);
+        }
+      })
+      .catch(error => {
+        // 5. AbortErrorの場合は無視（リクエストがキャンセルされたため）
+        if (error.name === 'AbortError') {
+          console.log('Request was aborted');
+          return;
+        }
+        
+        // 6. その他のエラーの場合のみ状態を更新
+        if (!signal.aborted) {
+          setError(error);
+          setIsLoading(false);
+        }
+      });
+
+    // 7. クリーンアップ関数: コンポーネントがアンマウントされた際にリクエストをキャンセル
+    return () => {
+      abortController.abort();
+    };
+  }, [userId]); // userIdが変更された場合も、前回のリクエストがキャンセルされる
+
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+  if (!user) return null;
+
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <p>{user.email}</p>
+    </div>
+  );
+}
+```
+
+**実践例: 複数のリクエストの競合状態を防ぐ**
+
+```tsx
+function SearchResults({ query }: { query: string }) {
+  const [results, setResults] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    // 1. 新しいAbortControllerを作成（queryが変わるたびに）
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+
+    if (!query) {
+      setResults([]);
+      return;
+    }
+
+    setIsLoading(true);
+
+    // 2. 検索リクエストを送信
+    fetch(`/api/search?q=${encodeURIComponent(query)}`, { signal })
+      .then(response => response.json())
+      .then(data => {
+        // 3. リクエストがキャンセルされていない場合のみ状態を更新
+        if (!signal.aborted) {
+          setResults(data.results);
+          setIsLoading(false);
+        }
+      })
+      .catch(error => {
+        if (error.name !== 'AbortError' && !signal.aborted) {
+          console.error('Search failed:', error);
+          setIsLoading(false);
+        }
+      });
+
+    // 4. クリーンアップ: queryが変更された場合、前回のリクエストをキャンセル
+    return () => {
+      abortController.abort();
+    };
+  }, [query]);
+
+  return (
+    <div>
+      {isLoading && <div>Searching...</div>}
+      <ul>
+        {results.map((result, index) => (
+          <li key={index}>{result}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+**実践例: 手動でリクエストをキャンセルする**
+
+```tsx
+function DataFetcher() {
+  const [data, setData] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const fetchData = async () => {
+    // 1. 既存のリクエストがあればキャンセル
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // 2. 新しいAbortControllerを作成
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const signal = abortController.signal;
+
+    setIsLoading(true);
+    setData(null);
+
+    try {
+      const response = await fetch('/api/data', { signal });
+      const result = await response.json();
+
+      // 3. リクエストがキャンセルされていない場合のみ状態を更新
+      if (!signal.aborted) {
+        setData(result);
+        setIsLoading(false);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name !== 'AbortError' && !signal.aborted) {
+        console.error('Failed to fetch data:', error);
+        setIsLoading(false);
+      }
+    }
+  };
+
+  const cancelRequest = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <button onClick={fetchData}>Fetch Data</button>
+      <button onClick={cancelRequest} disabled={!isLoading}>
+        Cancel Request
+      </button>
+      {isLoading && <div>Loading...</div>}
+      {data && <div>{data}</div>}
+    </div>
+  );
+}
+```
+
+**AbortControllerのベストプラクティス:**
+
+1. **必ずクリーンアップ関数でabort()を呼び出す**: useEffectのクリーンアップ関数で、必ず`abortController.abort()`を呼び出す
+2. **AbortErrorを適切に処理する**: `error.name === 'AbortError'`の場合、リクエストがキャンセルされたことを意味するため、エラーとして扱わない
+3. **signal.abortedをチェックする**: 状態を更新する前に、`signal.aborted`をチェックして、リクエストがキャンセルされていないことを確認する
+4. **競合状態を防ぐ**: 複数のリクエストが同時に実行される可能性がある場合、前回のリクエストをキャンセルする
+
+**AbortControllerがサポートされているAPI:**
+
+- ✅ **fetch API**: `fetch(url, { signal })`
+- ✅ **XMLHttpRequest**: `xhr.abort()`（AbortControllerは使用しないが、同様の機能）
+- ✅ **WebSocket**: `websocket.close()`（AbortControllerは使用しないが、同様の機能）
+- ✅ **EventSource (SSE)**: `eventSource.close()`（AbortControllerは使用しないが、同様の機能）
+
+**まとめ:**
+
+- ✅ **AbortControllerを使用**: 非同期処理をキャンセル可能にする
+- ✅ **クリーンアップ関数でabort()を呼び出す**: useEffectのクリーンアップ関数で必ずキャンセル
+- ✅ **AbortErrorを適切に処理する**: キャンセルされたリクエストのエラーは無視する
+- ✅ **signal.abortedをチェックする**: 状態を更新する前に、リクエストがキャンセルされていないことを確認
+- ✅ **競合状態を防ぐ**: 複数のリクエストが同時に実行される可能性がある場合、前回のリクエストをキャンセル
+
+**クリーンアップの実行タイミング:**
+
+1. **コンポーネントのアンマウント時**: コンポーネントがDOMから削除される際
+2. **依存配列の値が変更された時**: useEffectが再実行される前に、前回のクリーンアップが実行される
+
+```tsx
+function Component({ userId }: { userId: number }) {
+  useEffect(() => {
+    console.log('Effect executed for userId:', userId);
+
+    // ✅ クリーンアップ関数
+    return () => {
+      console.log('Cleanup executed for userId:', userId);
+      // この時点では、まだ古いuserIdの値が参照される
+    };
+  }, [userId]);
+
+  // userIdが1から2に変わった場合:
+  // 1. クリーンアップが実行される（userId: 1）
+  // 2. 新しいeffectが実行される（userId: 2）
+}
+```
+
+**まとめ:**
+
+- ✅ **必ずクリーンアップを追加**: タイマー、イベントリスナー、購読などは必ずクリーンアップする
+- ✅ **メモリリークの防止**: クリーンアップにより、メモリリークを防ぐ
+- ✅ **予期しない副作用の防止**: アンマウント後の状態更新を防ぐ
+
 #### 依存配列
 
-```jsx
-// 毎回実行
+```tsx
+// 毎回実行（非推奨: パフォーマンスの問題が発生する可能性）
 useEffect(() => {
   console.log('Component rendered');
 });
@@ -141,4 +821,535 @@ useEffect(() => {
   console.log('User ID changed:', userId);
 }, [userId]);
 ```
+
+**依存配列のベストプラクティス:**
+
+- ✅ **必要な依存関係をすべて含める**: ESLintの`exhaustive-deps`ルールを使用
+- ✅ **空の配列は慎重に使用**: マウント時のみ実行したい場合のみ使用
+- ❌ **依存関係を省略しない**: 無限ループや古い値の参照を防ぐ
+
+---
+
+### useLayoutEffect
+
+`useLayoutEffect`は、`useEffect`と同様に副作用を実行するフックですが、**実行タイミングが異なります**。
+
+#### useEffectとuseLayoutEffectの違い
+
+**useEffect:**
+- **実行タイミング**: ブラウザの描画**後**に実行（非同期）
+- **用途**: データフェッチング、イベントリスナーの追加など、描画に影響しない処理
+
+**useLayoutEffect:**
+- **実行タイミング**: ブラウザの描画**前**に実行（同期的）
+- **用途**: DOMの測定、レイアウトの調整など、描画に影響する処理
+
+**実行順序:**
+
+```
+1. コンポーネントのレンダリング
+2. useLayoutEffectの実行（同期的、ブラウザの描画前）
+3. ブラウザの描画
+4. useEffectの実行（非同期、ブラウザの描画後）
+```
+
+#### なぜuseLayoutEffectが必要なのか
+
+**問題: useEffectでは視覚的なフラッシュが発生する**
+
+```tsx
+// ❌ 問題のあるコード: useEffectを使用
+function Tooltip({ children, text }: { children: React.ReactNode; text: string }) {
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const tooltipRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (tooltipRef.current) {
+      const rect = tooltipRef.current.getBoundingClientRect();
+      // 問題: ブラウザの描画後に実行されるため、一度間違った位置で表示される
+      setPosition({
+        top: rect.top + rect.height + 10,
+        left: rect.left,
+      });
+    }
+  }, []);
+
+  return (
+    <div>
+      {children}
+      <div
+        ref={tooltipRef}
+        style={{
+          position: 'absolute',
+          top: position.top,
+          left: position.left,
+        }}
+      >
+        {text}
+      </div>
+    </div>
+  );
+}
+```
+
+**問題点:**
+
+1. **視覚的なフラッシュ**: 一度間違った位置で表示され、その後正しい位置に移動する
+2. **ユーザー体験の低下**: ちらつきが発生し、ユーザー体験が悪化する
+
+**✅ 解決されたコード: useLayoutEffectを使用**
+
+```tsx
+import { useLayoutEffect, useRef, useState } from 'react';
+
+function Tooltip({ children, text }: { children: React.ReactNode; text: string }) {
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const tooltipRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (tooltipRef.current) {
+      const rect = tooltipRef.current.getBoundingClientRect();
+      // 解決: ブラウザの描画前に実行されるため、正しい位置で表示される
+      setPosition({
+        top: rect.top + rect.height + 10,
+        left: rect.left,
+      });
+    }
+  }, []);
+
+  return (
+    <div>
+      {children}
+      <div
+        ref={tooltipRef}
+        style={{
+          position: 'absolute',
+          top: position.top,
+          left: position.left,
+        }}
+      >
+        {text}
+      </div>
+    </div>
+  );
+}
+```
+
+**メリット:**
+
+1. **視覚的なフラッシュの防止**: ブラウザの描画前に位置を調整するため、ちらつきが発生しない
+2. **ユーザー体験の向上**: スムーズな表示により、ユーザー体験が向上する
+
+#### useLayoutEffectを使用すべきケース
+
+**1. DOM要素のサイズや位置の測定**
+
+```tsx
+function AutoHeightTextarea({ value, onChange }: { 
+  value: string; 
+  onChange: (value: string) => void;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    if (textareaRef.current) {
+      // テキストエリアの高さを自動調整
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [value]); // valueが変わるたびに高さを調整
+
+  return (
+    <textarea
+      ref={textareaRef}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+```
+
+**2. スクロール位置の調整（「下にしゅっと移動する」）**
+
+```tsx
+function ScrollToBottom({ messages }: { messages: Message[] }) {
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    // 解決: ブラウザの描画前にスクロール位置を調整
+    // これにより、新しいメッセージが追加されたときに、スムーズに下にスクロールする
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]); // messagesが変わるたびにスクロール
+
+  return (
+    <div>
+      {messages.map(message => (
+        <div key={message.id}>{message.text}</div>
+      ))}
+      <div ref={messagesEndRef} />
+    </div>
+  );
+}
+```
+
+**3. モーダルの位置調整**
+
+```tsx
+function Modal({ isOpen, onClose, children }: { 
+  isOpen: boolean; 
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const modalRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+
+  useLayoutEffect(() => {
+    if (isOpen && modalRef.current) {
+      // モーダルを画面の中央に配置
+      const rect = modalRef.current.getBoundingClientRect();
+      setPosition({
+        top: (window.innerHeight - rect.height) / 2,
+        left: (window.innerWidth - rect.width) / 2,
+      });
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        ref={modalRef}
+        className="modal-content"
+        style={{
+          position: 'absolute',
+          top: position.top,
+          left: position.left,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+```
+
+**4. アニメーションの開始位置の設定**
+
+```tsx
+function AnimatedBox({ isVisible }: { isVisible: boolean }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (boxRef.current) {
+      // アニメーションの開始位置を設定（描画前に実行）
+      boxRef.current.style.transform = isVisible ? 'translateX(0)' : 'translateX(-100px)';
+    }
+  }, [isVisible]);
+
+  return (
+    <div
+      ref={boxRef}
+      style={{
+        transition: 'transform 0.3s ease',
+      }}
+    >
+      Content
+    </div>
+  );
+}
+```
+
+#### useLayoutEffectを使用しない方が良いケース
+
+**❌ データフェッチング**: `useEffect`を使用する
+
+```tsx
+// ❌ 問題: useLayoutEffectでデータフェッチング
+function UserProfile({ userId }: { userId: number }) {
+  const [user, setUser] = useState<User | null>(null);
+
+  useLayoutEffect(() => {
+    // 問題: データフェッチングは描画に影響しないため、useLayoutEffectは不要
+    fetch(`/api/users/${userId}`)
+      .then(response => response.json())
+      .then(data => setUser(data));
+  }, [userId]);
+
+  return <div>{user?.name}</div>;
+}
+
+// ✅ 正しい: useEffectでデータフェッチング
+function UserProfile({ userId }: { userId: number }) {
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    // 正しい: データフェッチングはuseEffectで十分
+    fetch(`/api/users/${userId}`)
+      .then(response => response.json())
+      .then(data => setUser(data));
+  }, [userId]);
+
+  return <div>{user?.name}</div>;
+}
+```
+
+**❌ イベントリスナーの追加**: `useEffect`を使用する
+
+```tsx
+// ❌ 問題: useLayoutEffectでイベントリスナーを追加
+function ScrollTracker() {
+  const [scrollY, setScrollY] = useState<number>(0);
+
+  useLayoutEffect(() => {
+    // 問題: イベントリスナーの追加は描画に影響しないため、useLayoutEffectは不要
+    const handleScroll = () => {
+      setScrollY(window.scrollY);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
+  return <div>Scroll Y: {scrollY}</div>;
+}
+
+// ✅ 正しい: useEffectでイベントリスナーを追加
+function ScrollTracker() {
+  const [scrollY, setScrollY] = useState<number>(0);
+
+  useEffect(() => {
+    // 正しい: イベントリスナーの追加はuseEffectで十分
+    const handleScroll = () => {
+      setScrollY(window.scrollY);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
+  return <div>Scroll Y: {scrollY}</div>;
+}
+```
+
+#### ベストプラクティス
+
+1. **基本的にはuseEffectを使用**: ほとんどのケースでは`useEffect`で十分
+2. **視覚的なフラッシュを防ぐ場合のみuseLayoutEffectを使用**: DOMの測定やレイアウトの調整が必要な場合のみ
+3. **パフォーマンスに注意**: `useLayoutEffect`は同期的に実行されるため、重い処理は避ける
+
+**まとめ:**
+
+- ✅ **useLayoutEffect**: DOMの測定、レイアウトの調整、スクロール位置の調整など、描画に影響する処理
+- ✅ **useEffect**: データフェッチング、イベントリスナーの追加など、描画に影響しない処理
+- ⚠️ **パフォーマンスに注意**: `useLayoutEffect`は同期的に実行されるため、重い処理は避ける
+
+---
+
+## カスタムフックへの分離（重要）
+
+**重要なポイント**: useEffectやuseStateを使ったロジックは、**コンポーネント（page）ではなく、カスタムフック（hooks）にまとめる方が優れています**。
+
+### なぜカスタムフックに分離するのか
+
+**❌ 問題のあるコード: コンポーネント内にロジックが混在**
+
+```tsx
+// components/UserEditPage.tsx
+function UserEditPage({ userId }: { userId: number }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    setStatus('loading');
+    setError(null);
+
+    const abortController = new AbortController();
+
+    fetch(`/api/users/${userId}`, {
+      signal: abortController.signal
+    })
+      .then(response => response.json())
+      .then(data => {
+        setStatus('success');
+        setUser(data);
+      })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          setStatus('error');
+          setError(err);
+        }
+      });
+
+    return () => {
+      abortController.abort();
+    };
+  }, [userId]);
+
+  if (status === 'loading') return <div>Loading...</div>;
+  if (status === 'error') return <div>Error: {error?.message}</div>;
+  if (!user) return null;
+
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <p>{user.email}</p>
+    </div>
+  );
+}
+```
+
+**問題点:**
+- ロジックとUIが混在している
+- 再利用が困難
+- テストが困難
+- コンポーネントが複雑になる
+
+**✅ 正しいコード: カスタムフックに分離**
+
+```tsx
+// hooks/useUser.ts
+type AsyncStatus = 'idle' | 'loading' | 'success' | 'error';
+
+function useUser(userId: number) {
+  const [user, setUser] = useState<User | null>(null);
+  const [status, setStatus] = useState<AsyncStatus>('idle');
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    setStatus('loading');
+    setError(null);
+
+    const abortController = new AbortController();
+
+    fetch(`/api/users/${userId}`, {
+      signal: abortController.signal
+    })
+      .then(response => response.json())
+      .then(data => {
+        setStatus('success');
+        setUser(data);
+      })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          setStatus('error');
+          setError(err);
+        }
+      });
+
+    return () => {
+      abortController.abort();
+    };
+  }, [userId]);
+
+  return { user, status, error };
+}
+
+// components/UserEditPage.tsx
+function UserEditPage({ userId }: { userId: number }) {
+  const { user, status, error } = useUser(userId);
+
+  if (status === 'loading') return <div>Loading...</div>;
+  if (status === 'error') return <div>Error: {error?.message}</div>;
+  if (!user) return null;
+
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <p>{user.email}</p>
+    </div>
+  );
+}
+```
+
+**カスタムフックに分離するメリット:**
+
+1. **再利用性**: 複数のコンポーネントで同じロジックを使える
+2. **テストしやすさ**: ロジックをコンポーネントから独立してテストできる
+3. **保守性**: ロジックとUIが分離され、変更が容易
+4. **可読性**: コンポーネントが簡潔になり、理解しやすくなる
+5. **責務の分離**: UIの責務とロジックの責務が明確に分かれる
+
+**カスタムフックの命名規則:**
+
+- ✅ `use`で始める: `useUser`、`useCounter`、`useLocalStorage`
+- ✅ 名詞を使用: データや状態を扱う場合は名詞
+- ✅ 動詞を使用: アクションを扱う場合は動詞（`useToggle`など）
+
+**実践例: 複数のカスタムフックを組み合わせ**
+
+```tsx
+// hooks/useCounter.ts
+function useCounter(initialValue: number = 0) {
+  const [count, setCount] = useState<number>(initialValue);
+
+  const increment = useCallback(() => {
+    setCount(prev => prev + 1);
+  }, []);
+
+  const decrement = useCallback(() => {
+    setCount(prev => prev - 1);
+  }, []);
+
+  const reset = useCallback(() => {
+    setCount(initialValue);
+  }, [initialValue]);
+
+  return { count, increment, decrement, reset };
+}
+
+// hooks/useLocalStorage.ts
+function useLocalStorage<T>(key: string, initialValue: T) {
+  const [storedValue, setStoredValue] = useState<T>(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : initialValue;
+    } catch (error) {
+      return initialValue;
+    }
+  });
+
+  const setValue = useCallback((value: T | ((val: T) => T)) => {
+    try {
+      const valueToStore = value instanceof Function ? value(storedValue) : value;
+      setStoredValue(valueToStore);
+      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+    } catch (error) {
+      console.error('Error saving to localStorage:', error);
+    }
+  }, [key, storedValue]);
+
+  return [storedValue, setValue] as const;
+}
+
+// components/Counter.tsx
+function Counter() {
+  const { count, increment, decrement, reset } = useCounter(0);
+  const [persistedCount, setPersistedCount] = useLocalStorage('count', 0);
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={increment}>+</button>
+      <button onClick={decrement}>-</button>
+      <button onClick={reset}>Reset</button>
+    </div>
+  );
+}
+```
+
+**まとめ:**
+
+- ✅ **ロジックはカスタムフックに分離**: コンポーネントはUIに集中
+- ✅ **再利用性を重視**: 複数のコンポーネントで使えるように設計
+- ✅ **テストしやすさ**: ロジックを独立してテストできるように
+- ✅ **責務の分離**: UIの責務とロジックの責務を明確に分ける
 

@@ -1,0 +1,324 @@
+---
+title: "MSW（モックサービスワーカー）"
+label: "MSW（モックサービスワーカー）"
+---
+
+## MSW層: APIのモック（開発・テスト環境）
+
+**役割**: 開発・テスト環境でAPIサーバーをモックし、実際のAPIサーバーに依存せずに開発・テストを進める。
+
+**重要なポイント**: MSWは**Service Worker**を使用してネットワークリクエストをインターセプトし、モックレスポンスを返す。
+
+### セットアップ
+
+```bash
+npm install --save-dev msw
+```
+
+### 実装例
+
+```typescript
+// src/mocks/handlers.ts
+import { http, HttpResponse } from 'msw';
+
+// モックハンドラー定義
+export const handlers = [
+  // GET /api/users/:id
+  http.get('https://api.example.com/users/:id', ({ params }) => {
+    const { id } = params;
+    
+    return HttpResponse.json({
+      id: Number(id),
+      first_name: '太郎',
+      last_name: '山田',
+      email: 'yamada@example.com',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    });
+  }),
+
+  // GET /api/users
+  http.get('https://api.example.com/users', () => {
+    return HttpResponse.json([
+      {
+        id: 1,
+        first_name: '太郎',
+        last_name: '山田',
+        email: 'yamada@example.com',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+      {
+        id: 2,
+        first_name: '花子',
+        last_name: '佐藤',
+        email: 'sato@example.com',
+        created_at: '2024-01-02T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+      },
+    ]);
+  }),
+
+  // POST /api/users
+  http.post('https://api.example.com/users', async ({ request }) => {
+    const body = await request.json();
+    
+    return HttpResponse.json({
+      id: Math.floor(Math.random() * 1000),
+      ...body,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { status: 201 });
+  }),
+
+  // PUT /api/users/:id
+  http.put('https://api.example.com/users/:id', async ({ params, request }) => {
+    const { id } = params;
+    const body = await request.json();
+    
+    return HttpResponse.json({
+      id: Number(id),
+      ...body,
+      updated_at: new Date().toISOString(),
+    });
+  }),
+];
+```
+
+### ブラウザ環境でのセットアップ
+
+```typescript
+// src/mocks/browser.ts
+import { setupWorker } from 'msw/browser';
+import { handlers } from './handlers';
+
+// Service Workerをセットアップ
+export const worker = setupWorker(...handlers);
+```
+
+#### Next.jsでの使用例
+
+```typescript
+// app/layout.tsx (開発環境のみ)
+import { worker } from '@/mocks/browser';
+
+if (process.env.NODE_ENV === 'development') {
+  // MSWを起動（ブラウザ環境）
+  worker.start({
+    onUnhandledRequest: 'bypass', // ハンドラーが定義されていないリクエストはそのまま通過
+  });
+}
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="ja">
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+
+#### Reactでの使用例
+
+```typescript
+// src/index.tsx (開発環境のみ)
+import { worker } from './mocks/browser';
+
+if (process.env.NODE_ENV === 'development') {
+  // MSWを起動（ブラウザ環境）
+  worker.start({
+    onUnhandledRequest: 'bypass',
+  });
+}
+
+// Reactアプリの起動
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+```
+
+### Node.js環境でのセットアップ（テスト環境）
+
+```typescript
+// src/mocks/server.ts
+import { setupServer } from 'msw/node';
+import { handlers } from './handlers';
+
+// テストサーバーをセットアップ
+export const server = setupServer(...handlers);
+```
+
+```typescript
+// src/setupTests.ts (Jest/Vitest設定)
+import { server } from './mocks/server';
+
+// テスト開始前にMSWサーバーを起動
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+
+// 各テスト後にハンドラーをリセット
+afterEach(() => server.resetHandlers());
+
+// テスト終了後にMSWサーバーを停止
+afterAll(() => server.close());
+```
+
+### MSWとSchema層の連携
+
+MSWのモックレスポンスは、Schema層で定義したZodスキーマに準拠させることで、型安全性を保つことができます。
+
+```typescript
+// src/mocks/handlers.ts
+import { http, HttpResponse } from 'msw';
+import { userApiSchema, usersApiSchema } from '@/api/schema/userSchema';
+import { z } from 'zod';
+
+// Schema層のスキーマを使用してモックデータを型安全に定義
+const mockUser = userApiSchema.parse({
+  id: 1,
+  first_name: '太郎',
+  last_name: '山田',
+  email: 'yamada@example.com',
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+});
+
+export const handlers = [
+  http.get('https://api.example.com/users/:id', ({ params }) => {
+    const { id } = params;
+    
+    // Schema層のスキーマで型チェック
+    const user = userApiSchema.parse({
+      ...mockUser,
+      id: Number(id),
+    });
+    
+    return HttpResponse.json(user);
+  }),
+
+  http.get('https://api.example.com/users', () => {
+    // Schema層のスキーマで型チェック
+    const users = usersApiSchema.parse([
+      mockUser,
+      {
+        ...mockUser,
+        id: 2,
+        first_name: '花子',
+        last_name: '佐藤',
+        email: 'sato@example.com',
+      },
+    ]);
+    
+    return HttpResponse.json(users);
+  }),
+];
+```
+
+### エラーハンドリングのモック
+
+エラーケースもモックすることで、エラーハンドリングのテストが可能です。
+
+```typescript
+// src/mocks/handlers.ts
+import { http, HttpResponse } from 'msw';
+
+export const handlers = [
+  // 正常系
+  http.get('https://api.example.com/users/:id', ({ params }) => {
+    const { id } = params;
+    
+    return HttpResponse.json({
+      id: Number(id),
+      first_name: '太郎',
+      last_name: '山田',
+      email: 'yamada@example.com',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    });
+  }),
+
+  // エラーケース: 404 Not Found
+  http.get('https://api.example.com/users/999', () => {
+    return HttpResponse.json(
+      { error: 'User not found' },
+      { status: 404 }
+    );
+  }),
+
+  // エラーケース: 500 Internal Server Error
+  http.get('https://api.example.com/users/error', () => {
+    return HttpResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }),
+];
+```
+
+### 動的なモックデータの生成
+
+テストで異なるデータが必要な場合、動的にモックデータを生成できます。
+
+```typescript
+// src/mocks/handlers.ts
+import { http, HttpResponse } from 'msw';
+import { userApiSchema } from '@/api/schema/userSchema';
+
+// モックデータ生成関数
+function generateMockUser(id: number, firstName: string, lastName: string, email: string) {
+  return userApiSchema.parse({
+    id,
+    first_name: firstName,
+    last_name: lastName,
+    email,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+}
+
+export const handlers = [
+  http.get('https://api.example.com/users/:id', ({ params }) => {
+    const { id } = params;
+    const userId = Number(id);
+    
+    // 動的にモックデータを生成
+    const user = generateMockUser(
+      userId,
+      `ユーザー${userId}`,
+      'テスト',
+      `user${userId}@example.com`
+    );
+    
+    return HttpResponse.json(user);
+  }),
+];
+```
+
+### ベストプラクティス
+
+1. **Schema層との統合**: MSWのモックレスポンスはSchema層のZodスキーマを使用
+2. **環境別の有効化**: 開発・テスト環境でのみMSWを有効化
+3. **リアルなモック**: 実際のAPIレスポンスと同じ形式でモックデータを定義
+4. **エラーハンドリング**: エラーケースもモック（4xx、5xxなど）
+5. **動的なデータ生成**: テストで異なるデータが必要な場合、動的に生成する関数を作成
+
+### パイプライン設計との連携
+
+MSWは[パイプライン設計](./04_パイプライン設計.mdx)の一部として、以下のようにデータフローに組み込まれます：
+
+```
+MSW層: 開発・テスト環境でAPIをモック（実際のAPIサーバーをバイパス）
+  ↓
+API層: unknown -> Strict Schema (Zodで洗浄)
+  ↓
+DTO層: API型 -> UI型 (snake_case -> camelCase, 計算プロパティ追加)
+  ↓
+...
+```
+
+MSW層でモックしたデータは、Schema層で定義したZodスキーマに準拠させることで、型安全性を保ちながら開発・テストを進めることができます。

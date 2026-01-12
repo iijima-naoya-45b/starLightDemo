@@ -53,6 +53,127 @@ export default function Button() {
 3. **SEO**: 検索エンジンがコンテンツを理解しやすい
 4. **ユーザー体験**: すべてのユーザーにとって使いやすい
 
+---
+
+## 🚨 マサカリ1：Next.js特有の「Route Announcer」を無視している
+
+SPA/Next.jsにおいて、ページ遷移（Client-side transition）はスクリーンリーダー利用者にとって「何も起きていない」ように感じられる最大の罠です。
+
+Next.js 10以降は標準でルートアナウンサーが内蔵されていますが、動的なタイトル更新が正しく行われていないと機能しません。`layout.tsx`でのMetadata設計とa11yの関連性を理解すべきです。
+
+### Route Announcerの仕組み
+
+Next.jsは、クライアントサイドでのページ遷移時に、以下の順序でページ名を検出してスクリーンリーダーに通知します：
+
+1. `document.title`（メタデータのtitle）
+2. ページ内の最初の`<h1>`要素
+3. URLのパス名
+
+**重要なポイント:**
+- `layout.tsx`で`generateMetadata`を使用して、各ページの`title`を適切に設定する必要があります
+- ページ内の最初の`<h1>`要素が存在することが推奨されます
+
+### 適切なMetadata設計
+
+```typescript
+// app/layout.tsx
+export const metadata: Metadata = {
+  title: {
+    default: 'サイトタイトル',
+    template: '%s | サイトタイトル', // 子ページのタイトルに追加されるテンプレート
+  },
+  description: 'サイトの説明',
+};
+
+// app/about/page.tsx
+export const metadata: Metadata = {
+  title: 'About', // 「About | サイトタイトル」として表示される
+  description: 'Aboutページの説明',
+};
+
+// app/blog/[slug]/page.tsx
+export async function generateMetadata({
+  params: { slug },
+}: {
+  params: { slug: string };
+}): Promise<Metadata> {
+  const post = await getPost(slug);
+
+  return {
+    title: post.title, // 動的なタイトル
+    description: post.description,
+  };
+}
+```
+
+**ページコンポーネントでの推奨構造:**
+
+```typescript
+// app/about/page.tsx
+export const metadata: Metadata = {
+  title: 'About',
+  description: 'Aboutページの説明',
+};
+
+export default function AboutPage() {
+  return (
+    <main>
+      {/* ✅ 推奨: 最初のh1要素が存在する */}
+      <h1>About Us</h1>
+      <p>私たちについて...</p>
+    </main>
+  );
+}
+```
+
+### Route Announcerが機能しない場合
+
+**❌ 問題のあるコード:**
+
+```typescript
+// ❌ 問題: titleが設定されていない
+// app/page.tsx
+export default function HomePage() {
+  return (
+    <div>
+      {/* h1要素もない */}
+      <h2>Welcome</h2>
+    </div>
+  );
+}
+// Route AnnouncerはURLパス名しか読み上げられない
+```
+
+**✅ 修正後のコード:**
+
+```typescript
+// ✅ 修正: titleとh1要素を設定
+// app/page.tsx
+export const metadata: Metadata = {
+  title: 'Home',
+  description: 'ホームページ',
+};
+
+export default function HomePage() {
+  return (
+    <main>
+      <h1>Welcome</h1>
+      {/* コンテンツ */}
+    </main>
+  );
+}
+// Route Announcerは「Home」または「Welcome」を読み上げる
+```
+
+### ベストプラクティス
+
+1. **すべてのページに`metadata.title`を設定**: ルートアナウンサーが正しく動作する
+2. **ページ内の最初の要素を`<h1>`にする**: セマンティックな構造とRoute Announcerの両方に有効
+3. **テンプレートを使用**: `layout.tsx`で`title.template`を使用して、一貫性のあるタイトル構造を維持
+4. **動的なタイトル**: 動的ルートでは`generateMetadata`を使用して、各ページのタイトルを動的に生成
+
+---
+
 ### セマンティックHTML
 
 #### 適切なHTML要素の使用
@@ -127,87 +248,400 @@ export default function SearchForm() {
 
 #### aria-liveとaria-atomic
 
+🚨 **マサカリ2：aria-liveの使い方が危険**
+
+`aria-live="polite"`は便利ですが、むやみに使うとスクリーンリーダーが絶え間なく喋り続け、ユーザーを混乱させる「情報の暴力」になります。
+
+**実務では「フォーム送信の成功/失敗」や「検索結果の件数変化」など、本当に必要な箇所に絞る設計基準が必要です。**
+
+**適切な使用例:**
+
 ```typescript
-// 動的なコンテンツの更新を通知
-export default function Notification() {
+// ✅ 良い例: フォーム送信の成功/失敗のみ
+'use client';
+
+import { useState } from 'react';
+
+export default function ContactForm() {
+  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      // フォーム送信処理
+      setStatus('success');
+      setMessage('送信が完了しました');
+    } catch (error) {
+      setStatus('error');
+      setMessage('送信に失敗しました。もう一度お試しください');
+    }
+  };
+
   return (
-    <div aria-live="polite" aria-atomic="true">
-      {message && <p>{message}</p>}
+    <form onSubmit={handleSubmit}>
+      {/* フォームフィールド */}
+      {status !== 'idle' && (
+        <div
+          role="alert"
+          aria-live={status === 'error' ? 'assertive' : 'polite'}
+        >
+          {message}
+        </div>
+      )}
+    </form>
+  );
+}
+
+// ✅ 良い例: 検索結果の件数変化
+'use client';
+
+import { useState, useEffect } from 'react';
+
+export default function SearchResults({ query }: { query: string }) {
+  const [results, setResults] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (query) {
+      setIsLoading(true);
+      // 検索処理
+      fetchResults(query).then((data) => {
+        setResults(data);
+        setIsLoading(false);
+      });
+    }
+  }, [query]);
+
+  return (
+    <div>
+      {!isLoading && (
+        <div
+          aria-live="polite"
+          aria-atomic="true"
+          className="sr-only"
+        >
+          {results.length}件の検索結果が見つかりました
+        </div>
+      )}
+      {/* 検索結果の表示 */}
     </div>
   );
 }
 ```
+
+**❌ 悪い例: むやみにaria-liveを使用**
+
+```typescript
+// ❌ 悪い例: 頻繁に更新される要素にaria-liveを使用
+export default function BadExample() {
+  const [count, setCount] = useState(0);
+
+  return (
+    <div>
+      {/* 問題: カウントが更新されるたびにスクリーンリーダーが読み上げる */}
+      <div aria-live="polite">
+        カウント: {count}
+      </div>
+      <button onClick={() => setCount(count + 1)}>+1</button>
+    </div>
+  );
+}
+
+// ❌ 悪い例: 多数のaria-live領域を設定
+export default function BadExample() {
+  return (
+    <div>
+      <div aria-live="polite">通知1</div>
+      <div aria-live="polite">通知2</div>
+      <div aria-live="polite">通知3</div>
+      {/* 問題: 複数のaria-live領域が競合し、ユーザーを混乱させる */}
+    </div>
+  );
+}
+```
+
+**ベストプラクティス:**
+
+1. **`aria-live="polite"`**: 非緊急の更新（フォーム送信の成功、検索結果の件数など）
+2. **`aria-live="assertive"`**: 緊急の更新（エラーメッセージ、セッションタイムアウトなど）のみ
+3. **使用箇所の最小化**: 本当に必要な箇所のみに絞る
+4. **`role="alert"`との組み合わせ**: エラーメッセージには`role="alert"`を使用（`aria-live="assertive"`と同等）
+5. **`aria-atomic`**: 関連する情報をまとめて読み上げる場合に使用
+
+**使用例の判断基準:**
+
+| 更新内容 | aria-live | 理由 |
+|---------|-----------|------|
+| フォーム送信の成功 | `polite` | ユーザーに通知するが、緊急ではない |
+| フォーム送信の失敗 | `assertive` | エラーなので即座に通知が必要 |
+| 検索結果の件数 | `polite` | 情報提供だが、緊急ではない |
+| セッションタイムアウト | `assertive` | 緊急の通知が必要 |
+| リアルタイムのカウント | 使用しない | 頻繁な更新は不要 |
+| ローディング状態 | 使用しない | 視覚的な情報で十分 |
 
 ### キーボード操作
 
 #### フォーカス管理
 
+🚨 **マサカリ3：「Headless UI」や「Radix UI」の推奨がない**
+
+自前でモーダルの「フォーカストラップ」を書くコード例がありますが、これは現代では**「アンチパターン」**に近いです。フォーカストラップを完璧に実装するのは極めて困難で、バグがa11yを破壊します。
+
+**プロは Radix UI や Headless UI などの、a11yが既に検証済みの「Headlessコンポーネント」をベースに使うことを推奨します。「車輪の再発明をせず、枯れたライブラリを使う」のが真のアクセシビリティ設計です。**
+
+#### ❌ アンチパターン: 自前でフォーカストラップを実装
+
 ```typescript
-// モーダルのフォーカス管理
+// ❌ 悪い例: 自前でフォーカストラップを実装（非推奨）
 'use client';
 
 import { useEffect, useRef } from 'react';
 
-export default function Modal({ isOpen, onClose }: ModalProps) {
-  const modalRef = useRef<HTMLDivElement>(null);
-  const firstFocusableRef = useRef<HTMLButtonElement>(null);
-  const lastFocusableRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (isOpen) {
-      // モーダルが開いたときに最初のフォーカス可能要素にフォーカス
-      firstFocusableRef.current?.focus();
-
-      // Escキーで閉じる
-      const handleEscape = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
-          onClose();
-        }
-      };
-
-      document.addEventListener('keydown', handleEscape);
-      return () => document.removeEventListener('keydown', handleEscape);
-    }
-  }, [isOpen, onClose]);
-
-  // Tabキーのトラップ
-  const handleTabKey = (e: React.KeyboardEvent) => {
-    if (e.key !== 'Tab') return;
-
-    if (e.shiftKey) {
-      if (document.activeElement === firstFocusableRef.current) {
-        lastFocusableRef.current?.focus();
-        e.preventDefault();
-      }
-    } else {
-      if (document.activeElement === lastFocusableRef.current) {
-        firstFocusableRef.current?.focus();
-        e.preventDefault();
-      }
-    }
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div
-      ref={modalRef}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="modal-title"
-      onKeyDown={handleTabKey}
-    >
-      <h2 id="modal-title">モーダルのタイトル</h2>
-      <button ref={firstFocusableRef} onClick={onClose}>
-        閉じる
-      </button>
-      <button ref={lastFocusableRef}>OK</button>
-    </div>
-  );
+export default function BadModal({ isOpen, onClose }: ModalProps) {
+  // 問題: フォーカストラップの実装が複雑で、バグが発生しやすい
+  // 問題: すべてのケースをカバーするのは困難
+  // 問題: アクセシビリティのベストプラクティスを完全に実装するのは困難
+  
+  // ... 複雑なフォーカストラップのコード ...
 }
 ```
+
+#### ✅ 推奨される方法: Headless UIコンポーネントライブラリを使用
+
+**1. Radix UI（推奨）**
+
+Radix UIは、アクセシビリティが検証済みのHeadlessコンポーネントライブラリです。
+
+**セットアップ:**
+
+```bash
+npm install @radix-ui/react-dialog
+```
+
+**使用例:**
+
+```typescript
+// components/AccessibleModal.tsx
+'use client';
+
+import * as Dialog from '@radix-ui/react-dialog';
+import { Cross2Icon } from '@radix-ui/react-icons';
+
+export default function AccessibleModal({
+  open,
+  onOpenChange,
+  trigger,
+  title,
+  description,
+  children,
+}: {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  trigger: React.ReactNode;
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Trigger asChild>
+        {trigger}
+      </Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50" />
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white p-6 rounded-lg shadow-lg">
+          <Dialog.Title className="text-xl font-bold mb-2">
+            {title}
+          </Dialog.Title>
+          {description && (
+            <Dialog.Description className="text-gray-600 mb-4">
+              {description}
+            </Dialog.Description>
+          )}
+          {children}
+          <Dialog.Close asChild>
+            <button
+              className="absolute top-4 right-4"
+              aria-label="閉じる"
+            >
+              <Cross2Icon />
+            </button>
+          </Dialog.Close>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+// 使用例
+<AccessibleModal
+  trigger={<button>モーダルを開く</button>}
+  title="モーダルのタイトル"
+  description="モーダルの説明"
+>
+  <p>モーダルのコンテンツ</p>
+</AccessibleModal>
+```
+
+**メリット:**
+- ✅ フォーカストラップが自動的に実装される
+- ✅ Escキーで閉じる機能が自動的に実装される
+- ✅ アクセシビリティのベストプラクティスが既に実装されている
+- ✅ ARIA属性が適切に設定される
+- ✅ スクリーンリーダーに対応
+
+**2. Headless UI（Tailwind CSSと組み合わせやすい）**
+
+Headless UIは、Tailwind CSSの開発者が作成したHeadlessコンポーネントライブラリです。
+
+**セットアップ:**
+
+```bash
+npm install @headlessui/react
+```
+
+**使用例:**
+
+```typescript
+// components/AccessibleModal.tsx
+'use client';
+
+import { Dialog } from '@headlessui/react';
+import { XMarkIcon } from '@heroicons/react/24/outline';
+
+export default function AccessibleModal({
+  isOpen,
+  onClose,
+  title,
+  description,
+  children,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Dialog open={isOpen} onClose={onClose} className="relative z-50">
+      {/* オーバーレイ */}
+      <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
+
+      {/* モーダルコンテンツ */}
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <Dialog.Panel className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full">
+          <div className="flex items-center justify-between mb-4">
+            <Dialog.Title className="text-xl font-bold">
+              {title}
+            </Dialog.Title>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600"
+              aria-label="閉じる"
+            >
+              <XMarkIcon className="h-6 w-6" />
+            </button>
+          </div>
+          {description && (
+            <Dialog.Description className="text-gray-600 mb-4">
+              {description}
+            </Dialog.Description>
+          )}
+          {children}
+        </Dialog.Panel>
+      </div>
+    </Dialog>
+  );
+}
+
+// 使用例
+<AccessibleModal
+  isOpen={isOpen}
+  onClose={() => setIsOpen(false)}
+  title="モーダルのタイトル"
+  description="モーダルの説明"
+>
+  <p>モーダルのコンテンツ</p>
+</AccessibleModal>
+```
+
+**メリット:**
+- ✅ Tailwind CSSとの親和性が高い
+- ✅ フォーカストラップが自動的に実装される
+- ✅ Escキーで閉じる機能が自動的に実装される
+- ✅ アクセシビリティのベストプラクティスが既に実装されている
+
+**3. shadcn/ui（Radix UIベース）**
+
+shadcn/uiは、Radix UIを基盤とした再利用可能なコンポーネント集です。
+
+**セットアップ:**
+
+```bash
+npx shadcn-ui@latest add dialog
+```
+
+**使用例:**
+
+```typescript
+// components/ui/dialog.tsx（自動生成される）
+// 既にアクセシビリティが実装されている
+
+// 使用例
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+
+export default function MyModal() {
+  return (
+    <Dialog>
+      <DialogTrigger>モーダルを開く</DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>モーダルのタイトル</DialogTitle>
+          <DialogDescription>モーダルの説明</DialogDescription>
+        </DialogHeader>
+        <p>モーダルのコンテンツ</p>
+      </DialogContent>
+    </Dialog>
+  )
+}
+```
+
+### 比較: 自前実装 vs Headless UIライブラリ
+
+| 項目 | 自前実装 | Radix UI / Headless UI |
+|------|---------|----------------------|
+| **フォーカストラップ** | ❌ 実装が複雑でバグが発生しやすい | ✅ 自動的に実装される |
+| **Escキーで閉じる** | ❌ 手動で実装が必要 | ✅ 自動的に実装される |
+| **ARIA属性** | ❌ 手動で設定が必要 | ✅ 自動的に設定される |
+| **スクリーンリーダー対応** | ❌ 実装が不十分になりがち | ✅ 検証済み |
+| **保守性** | ❌ 複雑で保守が困難 | ✅ ライブラリが保守 |
+| **テスト** | ❌ すべてのケースをテストする必要がある | ✅ 既にテスト済み |
+
+### 💡 シニアのアドバイス
+
+**「車輪の再発明をせず、枯れたライブラリを使う」のが真のアクセシビリティ設計です。**
+
+フォーカストラップ、キーボード操作、ARIA属性などを完璧に実装するのは極めて困難です。実装の不備は、アクセシビリティを破壊する可能性があります。
+
+**推奨されるライブラリ:**
+
+1. **Radix UI**: 最も包括的で、アクセシビリティに強い
+2. **Headless UI**: Tailwind CSSとの親和性が高い
+3. **shadcn/ui**: Radix UIベースで、カスタマイズ性が高い
+
+**実務での推奨事項:**
+
+- ✅ モーダル、ドロップダウン、ツールチップなどは、Headless UIライブラリを使用
+- ✅ 自前で実装する場合は、既存のライブラリを参考にする
+- ❌ アクセシビリティが重要なコンポーネントは、自前で実装しない
 
 ### 色のコントラスト
 
@@ -371,12 +805,20 @@ if (process.env.NODE_ENV !== 'production') {
 
 Next.jsでアクセシビリティを実装するポイント：
 
+- **Route Announcer**: Next.js標準のルートアナウンサーを活用（適切なMetadata設計が重要）
 - **セマンティックHTML**: 適切なHTML要素の使用
-- **ARIA属性**: スクリーンリーダーへの情報提供
+- **ARIA属性**: スクリーンリーダーへの情報提供（`aria-live`は必要な箇所のみに限定）
 - **キーボード操作**: すべての機能をキーボードで操作可能
+- **Headless UIライブラリ**: Radix UIやHeadless UIなどの検証済みライブラリを使用（自前実装は避ける）
 - **色のコントラスト**: WCAG準拠のコントラスト比
 - **フォーム**: 適切なラベルとエラーメッセージ
 - **テスト**: アクセシビリティテストツールの使用
+
+**🚨 重要な注意点:**
+
+1. **Route Announcer**: `layout.tsx`で適切なMetadata設計を行い、動的なタイトル更新を正しく実装する
+2. **aria-live**: むやみに使用せず、「フォーム送信の成功/失敗」や「検索結果の件数変化」など、本当に必要な箇所に絞る
+3. **フォーカストラップ**: 自前で実装せず、Radix UIやHeadless UIなどの検証済みライブラリを使用する
 
 アクセシビリティは、すべてのユーザーがアプリケーションを利用できるようにするための重要な要素です。適切に実装することで、より包括的で使いやすいアプリケーションを構築できます。
 

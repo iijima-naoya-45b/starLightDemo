@@ -1,0 +1,315 @@
+---
+title: "パイプライン設計"
+label: "パイプライン設計"
+---
+
+## 🔄 パイプライン設計：Reactでの実装
+
+パイプライン設計の詳細については、[設計ガイドのパイプライン設計](../../../設計ガイド/02_api設計/04_パイプライン設計)を参照してください。
+
+このドキュメントでは、React特有の実装例を中心に説明します。
+
+### Reactでのパイプライン設計の実装
+
+Reactでは、`useEffect`と`useState`を活用して、パイプライン設計を実装できます。
+
+---
+
+## Reactでの実装例
+
+### Schema層、DTO層、Form層の実装
+
+各層の詳細な実装については、[設計ガイドのパイプライン設計](../../../設計ガイド/02_api設計/04_パイプライン設計)を参照してください。
+
+### Page層: 司令塔としてデータを取得し、Formへ配分
+
+**役割**: コンポーネントでデータを取得し、適切な層を経由してフォームに渡す。
+
+### 実装例
+
+```typescript
+// components/UserEditPage.tsx
+'use client';
+
+import { useEffect, useState } from 'react';
+import { fetchUser } from '@/api/schema/userSchema';
+import { userApiToDto } from '@/types/user';
+import { userDtoToFormInput } from '@/components/UserForm/schema';
+import UserForm from '@/components/UserForm/UserForm';
+
+type UserEditPageProps = {
+  userId: number;
+};
+
+export default function UserEditPage({ userId }: UserEditPageProps) {
+  const [formInitialValues, setFormInitialValues] = useState<UserFormInput | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    async function loadUser() {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // 1. API層: unknown -> Strict Schema
+        const apiUser = await fetchUser(userId);
+
+        // 2. DTO層: API型 -> UI型
+        const user = userApiToDto(apiUser);
+
+        // 3. Form層: DTO型 -> Form型
+        const initialValues = userDtoToFormInput(user);
+        setFormInitialValues(initialValues);
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error('Failed to load user');
+        setError(error);
+        console.error('Failed to load user:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadUser();
+  }, [userId]);
+
+  if (loading) return <div>読み込み中...</div>;
+  if (error) return <div>エラー: {error.message}</div>;
+  if (!formInitialValues) return <div>ユーザーが見つかりません</div>;
+
+  return (
+    <div>
+      <h1>ユーザー編集</h1>
+      <UserForm
+        initialValues={formInitialValues}
+        userId={userId}
+        onSubmit={updateUser}
+      />
+    </div>
+  );
+}
+```
+
+### API呼び出し関数での実装
+
+```typescript
+// lib/api/userApi.ts
+import { userFormInputToApiRequest } from '@/components/UserForm/schema';
+import { createUserApiSchema } from '@/components/UserForm/schema';
+import { userApiSchema } from '@/api/schema/userSchema';
+
+export async function updateUser(
+  userId: number,
+  formData: UserFormInput
+): Promise<void> {
+  // 1. フォームデータをAPIリクエスト形式に変換
+  const apiRequest = userFormInputToApiRequest(formData);
+
+  // 2. ✅ 重要: APIに送るデータもZodでパース（洗浄）してから送信
+  // これにより、DTOからフォームに変換した際のゴミデータがAPIに飛ぶのを防ぐ
+  const parseResult = createUserApiSchema.safeParse(apiRequest);
+  
+  if (!parseResult.success) {
+    throw new Error('バリデーションエラー: ' + parseResult.error.message);
+  }
+
+  const validatedRequest = parseResult.data;
+
+  // 3. APIを呼び出す（洗浄済みのデータを送信）
+  const response = await fetch(`https://api.example.com/users/${userId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(validatedRequest), // ✅ 洗浄済みデータ
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || 'ユーザーの更新に失敗しました');
+  }
+
+  const data: unknown = await response.json();
+
+  // 4. ✅ レスポンスもZodでパース（洗浄）
+  const validatedResponse = userApiSchema.parse(data);
+
+  return validatedResponse;
+}
+```
+
+### React Hook Formでの実装
+
+```typescript
+// components/UserForm/UserForm.tsx
+'use client';
+
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import {
+  userFormSchema,
+  type UserFormInput,
+  userFormInputToApiRequest,
+} from './schema';
+import { updateUser } from '@/lib/api/userApi';
+
+type UserFormProps = {
+  initialValues: UserFormInput;
+  userId: number;
+  onSubmit: (userId: number, data: UserFormInput) => Promise<void>;
+};
+
+export default function UserForm({
+  initialValues,
+  userId,
+  onSubmit,
+}: UserFormProps) {
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<UserFormInput>({
+    resolver: zodResolver(userFormSchema), // Zodでバリデーション
+    defaultValues: initialValues,
+  });
+
+  const onSubmitHandler = async (data: UserFormInput) => {
+    await onSubmit(userId, data);
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmitHandler)}>
+      <div>
+        <label htmlFor="firstName">名前</label>
+        <input
+          id="firstName"
+          {...register('firstName')}
+          aria-invalid={errors.firstName ? 'true' : 'false'}
+        />
+        {errors.firstName && (
+          <span role="alert" className="error">
+            {errors.firstName.message}
+          </span>
+        )}
+      </div>
+
+      <div>
+        <label htmlFor="lastName">姓</label>
+        <input
+          id="lastName"
+          {...register('lastName')}
+          aria-invalid={errors.lastName ? 'true' : 'false'}
+        />
+        {errors.lastName && (
+          <span role="alert" className="error">
+            {errors.lastName.message}
+          </span>
+        )}
+      </div>
+
+      <div>
+        <label htmlFor="email">メールアドレス</label>
+        <input
+          id="email"
+          type="email"
+          {...register('email')}
+          aria-invalid={errors.email ? 'true' : 'false'}
+        />
+        {errors.email && (
+          <span role="alert" className="error">
+            {errors.email.message}
+          </span>
+        )}
+      </div>
+
+      <button type="submit" disabled={isSubmitting}>
+        {isSubmitting ? '送信中...' : '送信'}
+      </button>
+    </form>
+  );
+}
+```
+
+### React Queryを使った実装（オプション）
+
+データフェッチングライブラリを使用する場合の実装例：
+
+```typescript
+// components/UserEditPageWithQuery.tsx
+'use client';
+
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { fetchUser } from '@/api/schema/userSchema';
+import { userApiToDto } from '@/types/user';
+import { userDtoToFormInput } from '@/components/UserForm/schema';
+import UserForm from '@/components/UserForm/UserForm';
+import { updateUser } from '@/lib/api/userApi';
+
+type UserEditPageProps = {
+  userId: number;
+};
+
+export default function UserEditPageWithQuery({ userId }: UserEditPageProps) {
+  const queryClient = useQueryClient();
+
+  // データ取得
+  const { data: apiUser, isLoading, error } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  });
+
+  // データ更新
+  const mutation = useMutation({
+    mutationFn: (formData: UserFormInput) => updateUser(userId, formData),
+    onSuccess: () => {
+      // キャッシュを無効化して再取得
+      queryClient.invalidateQueries({ queryKey: ['user', userId] });
+    },
+  });
+
+  if (isLoading) return <div>読み込み中...</div>;
+  if (error) return <div>エラー: {error.message}</div>;
+  if (!apiUser) return <div>ユーザーが見つかりません</div>;
+
+  // 1. DTO層: API型 -> UI型
+  const user = userApiToDto(apiUser);
+
+  // 2. Form層: DTO型 -> Form型
+  const formInitialValues = userDtoToFormInput(user);
+
+  return (
+    <div>
+      <h1>ユーザー編集</h1>
+      <UserForm
+        initialValues={formInitialValues}
+        userId={userId}
+        onSubmit={mutation.mutateAsync}
+      />
+      {mutation.isError && (
+        <div className="error">
+          エラー: {mutation.error instanceof Error ? mutation.error.message : '予期しないエラー'}
+        </div>
+      )}
+      {mutation.isSuccess && (
+        <div className="success">ユーザー情報を更新しました</div>
+      )}
+    </div>
+  );
+}
+```
+
+---
+
+## 🏁 まとめ
+
+パイプライン設計の詳細な説明、データフローの全体像、各層の責務、ベストプラクティスについては、[設計ガイドのパイプライン設計](../../../設計ガイド/02_api設計/04_パイプライン設計)を参照してください。
+
+### Reactでのポイント
+
+1. **useEffectとuseStateの活用**: コンポーネント内でデータを取得し、型変換を行う
+2. **React Hook Formの活用**: フォームのバリデーションと状態管理をReact Hook Formで処理
+3. **React Queryの活用（オプション）**: データフェッチングライブラリを使用することで、キャッシングやエラーハンドリングを簡潔に実装できる
+4. **「逆方向」の洗浄**: APIからデータをもらう時は`zod.parse`していますが、**APIにデータを送る直前にも`zod.parse`（または`safeParse`）で洗浄**します。これにより、DTOからフォームに変換した際のゴミデータがAPIに飛ぶのを防げます。
+5. **MSWとの連携**: 開発環境では[MSW（モックサービスワーカー）](../../../設計ガイド/02_api設計/05_msw_モックサービスワーカー)を使用してAPIをモック
+
+このパイプライン設計を守ることで、APIとUIの責務が明確に分離され、保守性の高いReactアプリケーションを構築できます。

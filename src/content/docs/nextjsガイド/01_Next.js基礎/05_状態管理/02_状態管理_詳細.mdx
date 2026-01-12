@@ -7,43 +7,60 @@ label: "Next.jsの状態管理"
 
 Next.jsでは、さまざまな方法で状態管理を行うことができます。これにより、アプリケーションの状態を効率的に管理し、ユーザー体験を向上させることが可能です。
 
-### 1. ReactのuseStateとuseReducer
+> **📚 状態管理の基礎について**: 状態管理の基本概念（三権分立、Context API、SWR vs TanStack Queryなど）については、[状態管理](/nextjsガイド/01_Next.js基礎/05_状態管理/01_状態管理)のセクションを参照してください。
 
-Reactの`useState`と`useReducer`フックを使用して、コンポーネント内で状態を管理することができます。
+> **⚛️ Reactでの状態管理について**: Reactでの状態管理の詳細については、[Reactガイドの状態管理](/Reactガイド/02_状態管理/01_Context_API/01_Context_API)を参照してください。
 
-#### 実装例
+---
 
-```typescript
-// components/Counter.tsx
-import { useState } from 'react';
+---
 
-export default function Counter() {
-  const [count, setCount] = useState(0);
+## 状態管理ライブラリのセットアップ手順
 
-  return (
-    <div>
-      <p>Count: {count}</p>
-      <button onClick={() => setCount(count + 1)}>Increment</button>
-    </div>
-  );
-}
-```
+各状態管理ライブラリのセットアップ手順を、実際のユースケースを交えながら詳しく解説します。
 
-### 2. Context API
+---
 
-Context APIを使用すると、コンポーネントツリー全体で状態を共有することができます。これにより、プロップドリリングを避け、状態管理を簡素化できます。
+## 1. ReactのuseStateとuseReducer
 
-#### 実装例
+> **📚 詳細**: ReactでのuseStateとuseReducerの詳細については、[ReactガイドのuseStateとuseEffect](/Reactガイド/01_React基礎/03_フック/01_useStateとuseEffect)を参照してください。
+
+Reactの`useState`と`useReducer`フックを使用して、コンポーネント内で状態を管理することができます。これらはReactに組み込まれているため、**追加のセットアップは不要**です。
+
+Next.jsでは、クライアントコンポーネント（`'use client'`）で使用する必要があります。
+
+---
+
+## 2. Context API
+
+> **📚 詳細**: Context APIの詳細については、[ReactガイドのContext API](/Reactガイド/02_状態管理/01_Context_API/01_Context_API)を参照してください。
+
+Context APIを使用すると、コンポーネントツリー全体で状態を共有することができます。
+
+**セットアップ:**
+- **追加のインストール**: 不要（Reactに組み込まれている）
+- **プロバイダーの設定**: 必要（Next.jsのApp Routerでは`app/layout.tsx`で`Provider`を配置）
+
+### Next.js App Routerでの設定
 
 ```typescript
 // context/ThemeContext.tsx
+'use client';
+
 import { createContext, useContext, useState, ReactNode } from 'react';
 
-const ThemeContext = createContext(null);
+type Theme = 'light' | 'dark';
+
+interface ThemeContextType {
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
+}
+
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState('light');
-
+  const [theme, setTheme] = useState<Theme>('light');
+  
   return (
     <ThemeContext.Provider value={{ theme, setTheme }}>
       {children}
@@ -52,31 +69,1151 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 }
 
 export function useTheme() {
-  return useContext(ThemeContext);
+  const context = useContext(ThemeContext);
+  if (context === undefined) {
+    throw new Error('useTheme must be used within a ThemeProvider');
+  }
+  return context;
+}
+
+// app/layout.tsx
+import { ThemeProvider } from '@/context/ThemeContext';
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="ja">
+      <body>
+        <ThemeProvider>
+          {children}
+        </ThemeProvider>
+      </body>
+    </html>
+  );
 }
 ```
 
-### 3. Zustand
+**Next.js固有の注意点:**
+- Contextの作成ファイルには`'use client'`ディレクティブが必要です
+- Next.js App Routerでは、`app/layout.tsx`でProviderを配置します
 
-Zustandは、軽量でシンプルな状態管理ライブラリです。Next.jsと組み合わせて使用することで、効率的に状態を管理できます。
+---
 
-#### 実装例
+## 3. Zustand
+
+> **📚 詳細**: Zustandの詳細については、[状態管理](/nextjsガイド/01_Next.js基礎/05_状態管理/01_状態管理)を参照してください。
+
+Zustandは、軽量でシンプルな状態管理ライブラリです。
+
+**セットアップ:**
+- **インストール**: `npm install zustand`
+- **プロバイダーの設定**: 不要（Zustandはプロバイダー不要）
+- **TypeScript**: 型定義が組み込まれている
+
+### Next.jsでのセットアップ
+
+#### ステップ1: インストール
+
+```bash
+npm install zustand
+```
+
+#### ステップ2: ストアの作成
 
 ```typescript
-// store/useStore.ts
-import create from 'zustand';
+// store/useCartStore.ts
+'use client';
 
-interface StoreState {
-  count: number;
-  increment: () => void;
+import { create } from 'zustand';
+
+interface CartStore {
+  items: CartItem[];
+  addItem: (item: CartItem) => void;
 }
 
-const useStore = create<StoreState>((set) => ({
-  count: 0,
-  increment: () => set((state) => ({ count: state.count + 1 })),
+export const useCartStore = create<CartStore>((set) => ({
+  items: [],
+  addItem: (item) => set((state) => ({ items: [...state.items, item] })),
 }));
-
-export default useStore;
 ```
 
+#### ステップ3: Next.jsのコンポーネントで使用
+
+```typescript
+// app/products/[id]/page.tsx
+'use client';
+
+import { useCartStore } from '@/store/useCartStore';
+
+export default function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const addItem = useCartStore((state) => state.addItem);
+  
+  return (
+    <div>
+      <button onClick={() => addItem({ id, name: '商品名', price: 1000 })}>
+        カートに追加
+      </button>
+    </div>
+  );
+}
+```
+
+**Next.js固有の注意点:**
+- ストアファイルには`'use client'`ディレクティブが必要です
+- サーバーコンポーネントからは直接使用できません（クライアントコンポーネントで使用）
+
+---
+
+## 4. Redux (Redux Toolkit)
+
+> **📚 詳細**: Reduxの詳細については、[状態管理](/nextjsガイド/01_Next.js基礎/05_状態管理/01_状態管理)を参照してください。
+
+Reduxは、大規模で複雑なアプリケーション向けの状態管理ライブラリです。Redux Toolkitを使用することで、セットアップが簡素化されます。
+
+**セットアップ:**
+- **インストール**: `npm install @reduxjs/toolkit react-redux`
+- **プロバイダーの設定**: 必要（Next.jsのApp Routerでは`app/providers.tsx`を作成して`Provider`でアプリケーションをラップ）
+- **TypeScript**: 型定義が組み込まれている
+
+### Next.jsでのセットアップ手順
+
+#### ステップ1: インストール
+
+```bash
+npm install @reduxjs/toolkit react-redux
+# または
+yarn add @reduxjs/toolkit react-redux
+# または
+pnpm add @reduxjs/toolkit react-redux
+```
+
+#### ステップ2: ストアの作成
+
+```typescript
+// store/store.ts
+import { configureStore } from '@reduxjs/toolkit';
+import cartReducer from './slices/cartSlice';
+import userReducer from './slices/userSlice';
+
+export const store = configureStore({
+  reducer: {
+    cart: cartReducer,
+    user: userReducer,
+  },
+});
+
+export type RootState = ReturnType<typeof store.getState>;
+export type AppDispatch = typeof store.dispatch;
+```
+
+#### ステップ3: スライスの作成
+
+```typescript
+// store/slices/cartSlice.ts
+import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+
+interface CartItem {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+}
+
+interface CartState {
+  items: CartItem[];
+}
+
+const initialState: CartState = {
+  items: [],
+};
+
+const cartSlice = createSlice({
+  name: 'cart',
+  initialState,
+  reducers: {
+    addItem: (state, action: PayloadAction<Omit<CartItem, 'quantity'>>) => {
+      const existingItem = state.items.find(
+        (item) => item.id === action.payload.id
+      );
+      
+      if (existingItem) {
+        existingItem.quantity += 1;
+      } else {
+        state.items.push({ ...action.payload, quantity: 1 });
+      }
+    },
+    removeItem: (state, action: PayloadAction<string>) => {
+      state.items = state.items.filter((item) => item.id !== action.payload);
+    },
+    updateQuantity: (state, action: PayloadAction<{ id: string; quantity: number }>) => {
+      const item = state.items.find((item) => item.id === action.payload.id);
+      if (item) {
+        if (action.payload.quantity <= 0) {
+          state.items = state.items.filter((item) => item.id !== action.payload.id);
+        } else {
+          item.quantity = action.payload.quantity;
+        }
+      }
+    },
+    clearCart: (state) => {
+      state.items = [];
+    },
+  },
+});
+
+export const { addItem, removeItem, updateQuantity, clearCart } = cartSlice.actions;
+export default cartSlice.reducer;
+```
+
+#### ステップ4: 型安全なフックの作成（オプション、推奨）
+
+```typescript
+// store/hooks.ts
+import { useDispatch, useSelector, TypedUseSelectorHook } from 'react-redux';
+import type { RootState, AppDispatch } from './store';
+
+export const useAppDispatch = () => useDispatch<AppDispatch>();
+export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
+```
+
+#### ステップ5: Next.js App Routerでのプロバイダーの設定
+
+```typescript
+// app/providers.tsx
+'use client';
+
+import { Provider } from 'react-redux';
+import { store } from '@/store/store';
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  return <Provider store={store}>{children}</Provider>;
+}
+
+// app/layout.tsx
+import { Providers } from './providers';
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="ja">
+      <body>
+        {/* Next.js App Routerでは、providers.tsxでProviderを配置 */}
+        <Providers>
+          {children}
+        </Providers>
+      </body>
+    </html>
+  );
+}
+```
+
+**Next.js固有の注意点:**
+- `app/providers.tsx`を作成し、`'use client'`ディレクティブを追加します
+- `app/layout.tsx`で`Providers`コンポーネントを使用します
+- サーバーコンポーネントからは直接使用できません（クライアントコンポーネントで使用）
+
+#### ステップ6: コンポーネントで使用
+
+```typescript
+// components/Cart.tsx
+'use client';
+
+import { useAppSelector, useAppDispatch } from '@/store/hooks';
+import { clearCart } from '@/store/slices/cartSlice';
+
+export default function Cart() {
+  const items = useAppSelector((state) => state.cart.items);
+  const dispatch = useAppDispatch();
+
+  const total = items.reduce(
+    (sum, item) => sum + item.price * item.quantity,
+    0
+  );
+
+  return (
+    <div>
+      <h2>カート</h2>
+      {items.length === 0 ? (
+        <p>カートは空です</p>
+      ) : (
+        <>
+          {items.map((item) => (
+            <CartItem key={item.id} item={item} />
+          ))}
+          <p>合計: ¥{total.toLocaleString()}</p>
+          <button onClick={() => dispatch(clearCart())}>カートをクリア</button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// components/CartItem.tsx
+'use client';
+
+import { useAppDispatch } from '@/store/hooks';
+import { updateQuantity, removeItem } from '@/store/slices/cartSlice';
+
+export default function CartItem({ item }: { item: CartItem }) {
+  const dispatch = useAppDispatch();
+
+  return (
+    <div>
+      <span>{item.name}</span>
+      <span>¥{item.price.toLocaleString()}</span>
+      <input
+        type="number"
+        value={item.quantity}
+        onChange={(e) =>
+          dispatch(updateQuantity({ id: item.id, quantity: parseInt(e.target.value) }))
+        }
+        min="1"
+      />
+      <button onClick={() => dispatch(removeItem(item.id))}>削除</button>
+    </div>
+  );
+}
+```
+
+### 実際のユースケース: 大規模ECサイトの状態管理
+
+**要件:**
+- 複数の機能（カート、ユーザー、商品など）の状態管理
+- タイムトラベルデバッグが必要
+- 厳格な状態管理が必要
+- 複雑な状態遷移
+
+**実装:**
+
+```typescript
+// store/store.ts（上記参照）
+
+// store/slices/cartSlice.ts（上記参照）
+
+// store/slices/userSlice.ts
+import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+interface UserState {
+  user: User | null;
+  isAuthenticated: boolean;
+}
+
+const initialState: UserState = {
+  user: null,
+  isAuthenticated: false,
+};
+
+const userSlice = createSlice({
+  name: 'user',
+  initialState,
+  reducers: {
+    setUser: (state, action: PayloadAction<User>) => {
+      state.user = action.payload;
+      state.isAuthenticated = true;
+    },
+    logout: (state) => {
+      state.user = null;
+      state.isAuthenticated = false;
+    },
+  },
+});
+
+export const { setUser, logout } = userSlice.actions;
+export default userSlice.reducer;
+
+// app/providers.tsx（上記参照）
+
+// 使用例
+// components/Header.tsx
+'use client';
+
+import { useAppSelector, useAppDispatch } from '@/store/hooks';
+import { logout } from '@/store/slices/userSlice';
+
+export default function Header() {
+  const user = useAppSelector((state) => state.user.user);
+  const dispatch = useAppDispatch();
+
+  return (
+    <header>
+      {user ? (
+        <div>
+          <span>{user.name}</span>
+          <button onClick={() => dispatch(logout())}>ログアウト</button>
+        </div>
+      ) : (
+        <a href="/login">ログイン</a>
+      )}
+    </header>
+  );
+}
+```
+
+**注意点:**
+- Redux Toolkitを使用することで、ボイラープレートが大幅に削減される
+- `Provider`でアプリケーション全体をラップする必要がある
+- 型安全なフック（`useAppDispatch`、`useAppSelector`）を作成することで、TypeScriptの型推論が効く
+
+---
+
+## 5. TanStack Query (React Query)
+
+> **📚 詳細**: TanStack Queryの詳細については、[状態管理](/nextjsガイド/01_Next.js基礎/05_状態管理/01_状態管理)を参照してください。
+
+TanStack Query（旧React Query）は、サーバー状態を管理するためのライブラリです。データフェッチング、キャッシュ、同期などの機能を提供します。
+
+**セットアップ:**
+- **インストール**: `npm install @tanstack/react-query`
+- **プロバイダーの設定**: 必要（Next.jsのApp Routerでは`app/providers.tsx`で`QueryClientProvider`でアプリケーションをラップ）
+- **TypeScript**: 型定義が組み込まれている
+
+### Next.jsでのセットアップ手順
+
+#### ステップ1: インストール
+
+```bash
+npm install @tanstack/react-query
+# または
+yarn add @tanstack/react-query
+# または
+pnpm add @tanstack/react-query
+```
+
+#### ステップ2: Next.js App RouterでのQueryClientの作成とプロバイダーの設定
+
+```typescript
+// app/providers.tsx
+'use client';
+
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { useState } from 'react';
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  // Next.js App Routerでは、QueryClientをコンポーネント内で作成する必要がある
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            // デフォルトの設定
+            staleTime: 60 * 1000, // 1分間は新鮮とみなす
+            gcTime: 5 * 60 * 1000, // 5分間キャッシュを保持（旧cacheTime）
+            refetchOnWindowFocus: false, // ウィンドウフォーカス時に再取得しない
+            retry: 1, // エラー時のリトライ回数
+          },
+        },
+      })
+  );
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      {children}
+      {/* 開発環境でのみDevToolsを表示 */}
+      {process.env.NODE_ENV === 'development' && <ReactQueryDevtools />}
+    </QueryClientProvider>
+  );
+}
+
+// app/layout.tsx
+import { Providers } from './providers';
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="ja">
+      <body>
+        {/* Next.js App Routerでは、providers.tsxでQueryClientProviderを配置 */}
+        <Providers>
+          {children}
+        </Providers>
+      </body>
+    </html>
+  );
+}
+```
+
+**オプション: React Query DevToolsのインストール**
+
+```bash
+npm install @tanstack/react-query-devtools
+# または
+yarn add @tanstack/react-query-devtools
+# または
+pnpm add @tanstack/react-query-devtools
+```
+
+**Next.js固有の注意点:**
+- `app/providers.tsx`を作成し、`'use client'`ディレクティブを追加します
+- Next.js App Routerでは、`QueryClient`をコンポーネント内で作成する必要があります（サーバーコンポーネントでは実行できないため）
+- `app/layout.tsx`で`Providers`コンポーネントを使用します
+
+#### ステップ3: カスタムフックの作成（推奨）
+
+```typescript
+// hooks/useUsers.ts
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+// ユーザー一覧を取得するカスタムフック
+export function useUsers() {
+  return useQuery({
+    queryKey: ['users'],
+    queryFn: async () => {
+      const response = await fetch('/api/users');
+      if (!response.ok) {
+        throw new Error('Failed to fetch users');
+      }
+      return response.json() as Promise<User[]>;
+    },
+  });
+}
+
+// ユーザーを取得するカスタムフック
+export function useUser(userId: string) {
+  return useQuery({
+    queryKey: ['user', userId],
+    queryFn: async () => {
+      const response = await fetch(`/api/users/${userId}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch user');
+      }
+      return response.json() as Promise<User>;
+    },
+    enabled: !!userId, // userIdが存在する場合のみ実行
+  });
+}
+
+// ユーザーを作成するカスタムフック
+export function useCreateUser() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: Omit<User, 'id'>) => {
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to create user');
+      }
+      return response.json() as Promise<User>;
+    },
+    onSuccess: () => {
+      // ユーザー作成後、ユーザー一覧を再取得
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+}
+
+// ユーザーを更新するカスタムフック
+export function useUpdateUser() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, ...data }: Partial<User> & { id: string }) => {
+      const response = await fetch(`/api/users/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to update user');
+      }
+      return response.json() as Promise<User>;
+    },
+    onSuccess: (data) => {
+      // 更新後、該当ユーザーとユーザー一覧を再取得
+      queryClient.invalidateQueries({ queryKey: ['user', data.id] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+}
+```
+
+#### ステップ4: コンポーネントで使用
+
+```typescript
+// app/users/page.tsx
+'use client';
+
+import { useUsers, useCreateUser } from '@/hooks/useUsers';
+
+export default function UsersPage() {
+  const { data: users, isLoading, error } = useUsers();
+  const createUser = useCreateUser();
+
+  const handleCreate = async () => {
+    try {
+      await createUser.mutateAsync({
+        name: '新しいユーザー',
+        email: 'newuser@example.com',
+      });
+    } catch (error) {
+      console.error('Failed to create user:', error);
+    }
+  };
+
+  if (isLoading) return <div>読み込み中...</div>;
+  if (error) return <div>エラーが発生しました</div>;
+
+  return (
+    <div>
+      <h1>ユーザー一覧</h1>
+      <button onClick={handleCreate} disabled={createUser.isPending}>
+        {createUser.isPending ? '作成中...' : 'ユーザーを作成'}
+      </button>
+      <ul>
+        {users?.map((user) => (
+          <li key={user.id}>
+            <a href={`/users/${user.id}`}>{user.name}</a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// app/users/[id]/page.tsx
+'use client';
+
+import { useUser, useUpdateUser } from '@/hooks/useUsers';
+import { useParams } from 'next/navigation';
+
+export default function UserDetailPage() {
+  const params = useParams();
+  const userId = params.id as string;
+  const { data: user, isLoading, error } = useUser(userId);
+  const updateUser = useUpdateUser();
+
+  const handleUpdate = async () => {
+    if (!user) return;
+    
+    try {
+      await updateUser.mutateAsync({
+        id: user.id,
+        name: '更新された名前',
+      });
+    } catch (error) {
+      console.error('Failed to update user:', error);
+    }
+  };
+
+  if (isLoading) return <div>読み込み中...</div>;
+  if (error) return <div>エラーが発生しました</div>;
+  if (!user) return <div>ユーザーが見つかりません</div>;
+
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <p>Email: {user.email}</p>
+      <button onClick={handleUpdate} disabled={updateUser.isPending}>
+        {updateUser.isPending ? '更新中...' : 'ユーザーを更新'}
+      </button>
+    </div>
+  );
+}
+```
+
+### 実際のユースケース: ブログアプリケーションのデータフェッチング
+
+**要件:**
+- ブログ記事の一覧と詳細の取得
+- 記事の作成・更新・削除
+- キャッシュの管理
+- オプティミスティックアップデート
+
+**実装:**
+
+```typescript
+// hooks/usePosts.ts
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+interface Post {
+  id: string;
+  title: string;
+  content: string;
+  author: string;
+  createdAt: string;
+}
+
+export function usePosts() {
+  return useQuery({
+    queryKey: ['posts'],
+    queryFn: async () => {
+      const response = await fetch('/api/posts');
+      if (!response.ok) throw new Error('Failed to fetch posts');
+      return response.json() as Promise<Post[]>;
+    },
+  });
+}
+
+export function usePost(postId: string) {
+  return useQuery({
+    queryKey: ['post', postId],
+    queryFn: async () => {
+      const response = await fetch(`/api/posts/${postId}`);
+      if (!response.ok) throw new Error('Failed to fetch post');
+      return response.json() as Promise<Post>;
+    },
+    enabled: !!postId,
+  });
+}
+
+export function useCreatePost() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: Omit<Post, 'id' | 'createdAt'>) => {
+      const response = await fetch('/api/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error('Failed to create post');
+      return response.json() as Promise<Post>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['posts'] });
+    },
+  });
+}
+
+export function useUpdatePost() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, ...data }: Partial<Post> & { id: string }) => {
+      const response = await fetch(`/api/posts/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error('Failed to update post');
+      return response.json() as Promise<Post>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['post', data.id] });
+      queryClient.invalidateQueries({ queryKey: ['posts'] });
+    },
+  });
+}
+
+// app/providers.tsx（上記参照）
+
+// app/posts/page.tsx（使用例）
+'use client';
+
+import { usePosts, useCreatePost } from '@/hooks/usePosts';
+
+export default function PostsPage() {
+  const { data: posts, isLoading } = usePosts();
+  const createPost = useCreatePost();
+
+  // ... 実装
+}
+```
+
+**注意点:**
+- `QueryClientProvider`でアプリケーション全体をラップする必要がある
+- App Routerでは、`QueryClient`をコンポーネント内で作成する必要がある
+- 開発環境では`ReactQueryDevtools`を追加することで、デバッグが容易になる
+- カスタムフックを作成することで、コードの再利用性が向上する
+
+---
+
+## 6. Cookie戦略
+
+Cookieは、サーバーとクライアント間で状態を共有するための重要な仕組みです。認証トークン、セッション情報、ユーザー設定などを保存するために使用されます。
+
+> **📚 詳細**: Cookieの詳細については、[Cookie戦略](/nextjsガイド/03_パフォーマンス/01_キャッシング/05_cookie)を参照してください。
+
+### Cookieの状態管理としての位置づけ
+
+Cookieは、以下の特徴から状態管理の一種として扱えます：
+
+- **永続化**: ブラウザに保存され、ページリロード後も保持される
+- **サーバー・クライアント間の共有**: サーバーとクライアントの両方でアクセス可能
+- **自動送信**: リクエスト時に自動的に送信される
+
+### Next.js App RouterでのCookie操作
+
+#### 1. サーバーコンポーネントでのCookie読み取り
+
+```typescript
+// app/dashboard/page.tsx
+import { cookies } from 'next/headers';
+
+export default async function DashboardPage() {
+  const cookieStore = cookies();
+  const token = cookieStore.get('auth_token')?.value;
+
+  if (!token) {
+    // 認証されていない場合の処理
+    return <div>ログインが必要です</div>;
+  }
+
+  // トークンを使用してサーバーサイドでデータを取得
+  // ...
+
+  return (
+    <div>
+      <h1>ダッシュボード</h1>
+      {/* 認証情報に基づくコンテンツ */}
+    </div>
+  );
+}
+```
+
+**注意点:**
+- `cookies()`関数は動的（dynamic）な関数であるため、これを使用するコンポーネントはビルド時に静的にレンダリングされません
+- サーバーコンポーネントでのみ使用可能です
+
+#### 2. Route HandlerでのCookie操作
+
+Route Handlerでは、Cookieの読み取りと設定の両方が可能です。
+
+```typescript
+// app/api/login/route.ts
+import { cookies } from 'next/headers';
+import { NextResponse } from 'next/server';
+
+export async function POST(req: Request) {
+  const { username, password } = await req.json();
+  
+  // 認証ロジックを実行
+  const token = 'generated_auth_token_123';
+
+  // Cookieを設定
+  cookies().set('auth_token', token, {
+    httpOnly: true, // JavaScriptからのアクセスを禁止（XSS対策）
+    secure: process.env.NODE_ENV === 'production', // HTTPS接続でのみ送信
+    maxAge: 60 * 60 * 24 * 7, // 1週間
+    path: '/',
+    sameSite: 'strict', // CSRF対策
+  });
+
+  return NextResponse.json({ message: 'Login successful' });
+}
+
+// app/api/logout/route.ts
+import { cookies } from 'next/headers';
+import { NextResponse } from 'next/server';
+
+export async function POST() {
+  // Cookieを削除
+  cookies().delete('auth_token');
+
+  return NextResponse.json({ message: 'Logout successful' });
+}
+```
+
+**セキュリティ設定の説明:**
+- **`httpOnly: true`**: JavaScriptからのアクセスを禁止し、XSS攻撃のリスクを軽減します。認証トークンには必須です
+- **`secure: true`**: HTTPS接続でのみCookieを送信します。本番環境では必ず`true`に設定すべきです
+- **`sameSite: 'strict'`**: クロスサイトリクエストでのCookie送信を防ぎ、CSRF攻撃のリスクを軽減します
+- **`maxAge`**: Cookieの有効期限を秒単位で指定します
+
+#### 3. クライアントコンポーネントでのCookie操作
+
+クライアントコンポーネントでは、`js-cookie`などのライブラリを使用してCookieを操作します。
+
+**インストール:**
+
+```bash
+npm install js-cookie
+npm install --save-dev @types/js-cookie
+```
+
+**使用例:**
+
+```typescript
+// components/ThemeToggle.tsx
+'use client';
+
+import Cookies from 'js-cookie';
+import { useState, useEffect } from 'react';
+
+type Theme = 'light' | 'dark';
+
+export default function ThemeToggle() {
+  const [theme, setTheme] = useState<Theme>('light');
+
+  useEffect(() => {
+    // Cookieからテーマを読み取り
+    const savedTheme = Cookies.get('theme') as Theme | undefined;
+    if (savedTheme) {
+      setTheme(savedTheme);
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const newTheme: Theme = theme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+    
+    // Cookieにテーマを保存
+    Cookies.set('theme', newTheme, {
+      expires: 365, // 1年間有効
+      path: '/',
+      sameSite: 'lax',
+    });
+  };
+
+  return (
+    <button onClick={toggleTheme}>
+      テーマ: {theme === 'light' ? '🌞' : '🌙'}
+    </button>
+  );
+}
+```
+
+**注意点:**
+- クライアントコンポーネントからCookieを直接操作するのは、認証トークンのような機密情報には適していません
+- 非機密データ（テーマ設定、言語設定など）に限定すべきです
+- 認証が必要な場合は、`fetch`を使ってAPIルートを呼び出し、Cookieの操作はサーバーに任せます
+
+### Cookieと他の状態管理手法との使い分け
+
+| 状態の種類 | 推奨される方法 | 理由 |
+|-----------|--------------|------|
+| **認証トークン** | Cookie（HttpOnly） | セキュリティが最重要。サーバーサイドで管理 |
+| **セッション情報** | Cookie（HttpOnly） | サーバーサイドで管理する必要がある |
+| **テーマ設定** | Cookie + Context API | 永続化が必要で、クライアントでもアクセス可能 |
+| **言語設定** | Cookie + Context API | 永続化が必要で、クライアントでもアクセス可能 |
+| **カート情報** | Zustand + Cookie | クライアントで頻繁に更新し、永続化も必要 |
+| **UI状態（モーダル開閉など）** | useState / Zustand | 永続化不要、クライアントのみで管理 |
+
+### 実践的なパターン: 認証状態の管理
+
+```typescript
+// app/api/auth/me/route.ts
+import { cookies } from 'next/headers';
+import { NextResponse } from 'next/server';
+
+export async function GET() {
+  const cookieStore = cookies();
+  const token = cookieStore.get('auth_token')?.value;
+
+  if (!token) {
+    return NextResponse.json({ user: null }, { status: 401 });
+  }
+
+  // トークンを検証してユーザー情報を取得
+  // const user = await verifyToken(token);
+  
+  return NextResponse.json({ user: { id: '1', name: 'User' } });
+}
+
+// app/dashboard/page.tsx
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
+
+export default async function DashboardPage() {
+  const cookieStore = cookies();
+  const token = cookieStore.get('auth_token')?.value;
+
+  if (!token) {
+    redirect('/login');
+  }
+
+  // ユーザー情報を取得
+  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/me`, {
+    headers: {
+      Cookie: `auth_token=${token}`,
+    },
+  });
+
+  const { user } = await response.json();
+
+  return (
+    <div>
+      <h1>ダッシュボード</h1>
+      <p>ようこそ、{user.name}さん</p>
+    </div>
+  );
+}
+```
+
+### ベストプラクティス
+
+1. **機密情報はHttpOnly Cookieに**: 認証トークンなどは必ず`httpOnly: true`を設定
+2. **本番環境ではSecureを有効化**: `secure: process.env.NODE_ENV === 'production'`
+3. **SameSite属性を適切に設定**: CSRF対策のため、`sameSite: 'strict'`または`'lax'`を設定
+4. **クライアントでのCookie操作は非機密データに限定**: テーマや言語設定など
+5. **Cookieのサイズに注意**: Cookieは4KBの制限があるため、大きなデータは避ける
+
+### アンチパターン
+
+```typescript
+// ❌ 悪い例: 認証トークンをクライアントでCookieに保存
+'use client';
+
+import Cookies from 'js-cookie';
+
+function LoginForm() {
+  const handleLogin = async (token: string) => {
+    // 問題: 認証トークンをクライアントでCookieに保存
+    Cookies.set('auth_token', token); // XSS攻撃のリスク
+  };
+}
+
+// ✅ 良い例: 認証トークンはサーバーでCookieに保存
+// app/api/login/route.ts
+import { cookies } from 'next/headers';
+
+export async function POST(req: Request) {
+  const token = 'generated_token';
+  
+  cookies().set('auth_token', token, {
+    httpOnly: true, // セキュア
+    secure: true,
+    sameSite: 'strict',
+  });
+}
+```
+
+---
+
+## まとめ：シニアエンジニアの選定基準
+
+状態管理ライブラリの選択に迷ったら、以下の**「シニアエンジニアの選定基準」**を参考にしてください。
+
+### 💡 まさかり：迷ったら、まずはライブラリを入れるな
+
+**ステップ1: まずは`useState`で頑張る**
+
+バケツリレー（Props Drilling）が2層までなら、`useState`で十分です。ライブラリを導入する前に、まずは組み込みの機能で解決できないか検討しましょう。
+
+```typescript
+// ✅ 良い例: 2層のProps Drillingなら問題ない
+function App() {
+  const [user, setUser] = useState(null);
+  return <Layout user={user} setUser={setUser} />;
+}
+
+function Layout({ user, setUser }: { user: User | null; setUser: (user: User) => void }) {
+  return <Header user={user} setUser={setUser} />;
+}
+
+function Header({ user, setUser }: { user: User | null; setUser: (user: User) => void }) {
+  return <UserMenu user={user} setUser={setUser} />;
+}
+```
+
+**ステップ2: サーバーからのデータ取得なら、迷わずTanStack Queryを入れる**
+
+サーバーからのデータ取得が必要な場合、TanStack Query（またはSWR）を導入しましょう。キャッシュ、再取得、同期などの機能が自動的に提供されます。
+
+```typescript
+// ✅ 良い例: サーバーからのデータ取得にはTanStack Query
+import { useQuery } from '@tanstack/react-query';
+
+function UserProfile({ userId }: { userId: string }) {
+  const { data: user } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  });
+  
+  return <div>{user?.name}</div>;
+}
+```
+
+**ステップ3: それでも「どうしても複数の画面で共有したいUI状態（カートの中身など）」が出てきたら、そこで初めてZustandを導入する**
+
+複数の画面で共有する必要があるUI状態（カートの中身、モーダルの開閉状態など）がある場合、Zustandなどの状態管理ライブラリを導入しましょう。
+
+```typescript
+// ✅ 良い例: 複数画面で共有するUI状態にはZustand
+import { create } from 'zustand';
+
+interface CartStore {
+  items: CartItem[];
+  addItem: (item: CartItem) => void;
+  removeItem: (itemId: string) => void;
+}
+
+const useCartStore = create<CartStore>((set) => ({
+  items: [],
+  addItem: (item) => set((state) => ({ 
+    items: [...state.items, item] 
+  })),
+  removeItem: (itemId) => set((state) => ({
+    items: state.items.filter(item => item.id !== itemId)
+  })),
+}));
+```
+
+### 重要な注意点
+
+**ライブラリを増やす = バンドルサイズが増え、学習コストが上がることを忘れないようにしましょう。**
+
+- 不要なライブラリを導入すると、バンドルサイズが増加します
+- チームメンバーが新しいライブラリを学習する必要があります
+- 保守コストが増加します
+
+### 選定フローチャート
+
+```
+状態管理の選定
+│
+├─ サーバーからのデータ取得？
+│  └─ YES → TanStack Query（またはSWR）
+│
+├─ 複数の画面で共有する必要がある？
+│  ├─ YES → Zustand（またはContext API）
+│  └─ NO → useState
+│
+└─ Props Drillingが3層以上？
+   └─ YES → Context API（またはZustand）
+```
+
+### 最終的な推奨事項
+
+1. **Local State（`useState`）**: まずはこれで頑張る
+2. **Server State（TanStack Query）**: サーバーからのデータ取得には必須
+3. **Context API**: めったに変わらない静的な共有データ（認証、テーマなど）
+4. **Zustand**: 複数の画面で共有するUI状態（カート、モーダルなど）
+5. **Cookie**: 認証トークン、セッション情報、永続化が必要な設定（テーマ、言語など）
+
 これらの方法を組み合わせることで、Next.jsアプリケーション内での状態管理が効率的に行えます。プロジェクトの規模や要件に応じて、最適な方法を選択してください。
+
+**状態管理の選定フロー（更新版）:**
+
+```
+状態管理の選定
+│
+├─ 認証トークンやセッション情報？
+│  └─ YES → Cookie（HttpOnly、サーバーサイドで管理）
+│
+├─ サーバーからのデータ取得？
+│  └─ YES → TanStack Query（またはSWR）
+│
+├─ 複数の画面で共有する必要がある？
+│  ├─ YES → Zustand（またはContext API）
+│  └─ NO → useState
+│
+└─ Props Drillingが3層以上？
+   └─ YES → Context API（またはZustand）
+```

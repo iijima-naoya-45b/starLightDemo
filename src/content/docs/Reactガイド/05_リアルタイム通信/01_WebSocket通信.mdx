@@ -48,6 +48,402 @@ socket.onmessage = (event) => {
 // - 接続を維持するため、オーバーヘッドが少ない
 ```
 
+### WebSocketが必要な「4つの決定的な場面」
+
+WebSocketは、特定の場面で**決定的な優位性**を発揮します。以下の4つの場面では、WebSocketの使用を強く推奨します。
+
+#### 1. 「いつ来るかわからない」を待つとき（通知・チャット）
+
+**特徴**: サーバー側でイベントが発生するタイミングが予測不可能で、クライアントが「待ち」の状態になる。
+
+**具体例:**
+- **通知**: メルカリの購入通知、Uber Eatsの「料理が到着しました」通知
+- **チャット**: Slack、Discord、LINEなどのメッセージングアプリ
+- **イベント通知**: GitHubのプルリクエスト通知、Twitterのリプライ通知
+
+**実装例:**
+
+```tsx
+// components/NotificationCenter.tsx
+import { useEffect, useState } from 'react';
+import { useWebSocket } from '../hooks/useWebSocket';
+
+interface Notification {
+  id: string;
+  type: 'purchase' | 'delivery' | 'message';
+  title: string;
+  message: string;
+  timestamp: number;
+}
+
+export function NotificationCenter() {
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  const { lastMessage } = useWebSocket<Notification>({
+    url: 'wss://api.example.com/notifications',
+    reconnect: true,
+  });
+
+  useEffect(() => {
+    if (lastMessage) {
+      // サーバーから通知が来たら即座に表示
+      setNotifications((prev) => [lastMessage, ...prev]);
+      
+      // ブラウザ通知も表示（オプション）
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(lastMessage.title, {
+          body: lastMessage.message,
+          icon: '/notification-icon.png',
+        });
+      }
+    }
+  }, [lastMessage]);
+
+  return (
+    <div className="notification-center">
+      <h2>通知</h2>
+      {notifications.map((notification) => (
+        <div key={notification.id} className="notification">
+          <h3>{notification.title}</h3>
+          <p>{notification.message}</p>
+          <span>{new Date(notification.timestamp).toLocaleString()}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+**なぜWebSocketが必要か:**
+- HTTPポーリングでは、通知が来るまで無駄なリクエストが発生する
+- WebSocketなら、通知が来た瞬間に即座にクライアントに届く
+- バッテリー消費とネットワーク帯域を節約できる
+
+#### 2. 「超リアルタイム」な同期が必要なとき（共同編集・ゲーム）
+
+**特徴**: 複数のユーザーが同時に操作し、その操作を即座に他のユーザーに反映させる必要がある。
+
+**具体例:**
+- **共同編集**: Google Docs、Notion、Figmaなどのリアルタイム共同編集
+- **ゲーム**: マルチプレイヤーゲーム、リアルタイム対戦
+- **ホワイトボード**: Miro、Muralなどのオンラインホワイトボード
+
+**実装例:**
+
+```tsx
+// components/CollaborativeEditor.tsx
+import { useEffect, useState, useCallback } from 'react';
+import { useWebSocket } from '../hooks/useWebSocket';
+
+interface CursorPosition {
+  userId: string;
+  userName: string;
+  x: number;
+  y: number;
+}
+
+interface TextChange {
+  userId: string;
+  position: number;
+  text: string;
+  timestamp: number;
+}
+
+export function CollaborativeEditor() {
+  const [content, setContent] = useState('');
+  const [cursors, setCursors] = useState<CursorPosition[]>([]);
+  const [isTyping, setIsTyping] = useState<Set<string>>(new Set());
+
+  const { sendMessage, lastMessage } = useWebSocket<CursorPosition | TextChange>({
+    url: 'wss://api.example.com/editor',
+    reconnect: true,
+  });
+
+  // カーソル位置の更新
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    sendMessage({
+      userId: 'current-user-id',
+      userName: 'Current User',
+      x: e.clientX,
+      y: e.clientY,
+    });
+  }, [sendMessage]);
+
+  // テキスト変更の送信
+  const handleTextChange = useCallback((newText: string) => {
+    setContent(newText);
+    sendMessage({
+      userId: 'current-user-id',
+      position: newText.length,
+      text: newText,
+      timestamp: Date.now(),
+    });
+  }, [sendMessage]);
+
+  // サーバーからの更新を受信
+  useEffect(() => {
+    if (!lastMessage) return;
+
+    if ('x' in lastMessage) {
+      // カーソル位置の更新
+      setCursors((prev) => {
+        const filtered = prev.filter((c) => c.userId !== lastMessage.userId);
+        return [...filtered, lastMessage as CursorPosition];
+      });
+    } else if ('text' in lastMessage) {
+      // テキスト変更の反映
+      const change = lastMessage as TextChange;
+      if (change.userId !== 'current-user-id') {
+        setContent(change.text);
+        setIsTyping((prev) => new Set(prev).add(change.userId));
+        setTimeout(() => {
+          setIsTyping((prev) => {
+            const next = new Set(prev);
+            next.delete(change.userId);
+            return next;
+          });
+        }, 1000);
+      }
+    }
+  }, [lastMessage]);
+
+  return (
+    <div className="collaborative-editor" onMouseMove={handleMouseMove}>
+      <div className="editor-header">
+        <h2>共同編集</h2>
+        <div className="cursors">
+          {cursors.map((cursor) => (
+            <div
+              key={cursor.userId}
+              className="cursor"
+              style={{ left: cursor.x, top: cursor.y }}
+            >
+              {cursor.userName}
+            </div>
+          ))}
+        </div>
+        {isTyping.size > 0 && (
+          <div className="typing-indicator">
+            {Array.from(isTyping).join(', ')}が入力中...
+          </div>
+        )}
+      </div>
+      <textarea
+        value={content}
+        onChange={(e) => handleTextChange(e.target.value)}
+        placeholder="共同編集エディタ..."
+      />
+    </div>
+  );
+}
+```
+
+**なぜWebSocketが必要か:**
+- 数ミリ秒の遅延がユーザー体験に大きく影響する
+- HTTPポーリングでは、リアルタイム性を実現できない
+- 複数のユーザーの操作を即座に同期する必要がある
+
+#### 3. 「刻一刻と変化する数値」を見せるとき（金融・ライブ）
+
+**特徴**: 数値が頻繁に更新され、その更新を即座にユーザーに表示する必要がある。
+
+**具体例:**
+- **金融**: 株価、為替レート、暗号通貨の価格
+- **ライブ配信**: YouTube Live、Twitchの視聴者数、いいね数
+- **ダッシュボード**: リアルタイムメトリクス、モニタリング
+
+**実装例:**
+
+```tsx
+// components/StockPriceTicker.tsx
+import { useEffect, useState } from 'react';
+import { useWebSocket } from '../hooks/useWebSocket';
+
+interface StockPrice {
+  symbol: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  timestamp: number;
+}
+
+export function StockPriceTicker() {
+  const [prices, setPrices] = useState<Map<string, StockPrice>>(new Map());
+
+  const { lastMessage } = useWebSocket<StockPrice>({
+    url: 'wss://api.example.com/stock-prices',
+    reconnect: true,
+  });
+
+  useEffect(() => {
+    if (lastMessage) {
+      // 価格が更新されたら即座に反映
+      setPrices((prev) => {
+        const next = new Map(prev);
+        next.set(lastMessage.symbol, lastMessage);
+        return next;
+      });
+    }
+  }, [lastMessage]);
+
+  return (
+    <div className="stock-ticker">
+      <h2>リアルタイム株価</h2>
+      <div className="stock-list">
+        {Array.from(prices.values()).map((stock) => (
+          <div key={stock.symbol} className="stock-item">
+            <div className="stock-symbol">{stock.symbol}</div>
+            <div className="stock-price">${stock.price.toFixed(2)}</div>
+            <div
+              className={`stock-change ${
+                stock.change >= 0 ? 'positive' : 'negative'
+              }`}
+            >
+              {stock.change >= 0 ? '+' : ''}
+              {stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
+            </div>
+            <div className="stock-time">
+              {new Date(stock.timestamp).toLocaleTimeString()}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+**なぜWebSocketが必要か:**
+- 価格が1秒間に複数回更新される可能性がある
+- HTTPポーリングでは、更新を見逃す可能性がある
+- ユーザーは最新の情報を即座に知りたい
+
+#### 4. サーバー側で「処理が終わるまで時間がかかる」とき
+
+**特徴**: サーバー側で長時間処理が実行され、その進捗をリアルタイムでクライアントに通知する必要がある。
+
+**具体例:**
+- **ファイル処理**: 動画のエンコード、画像のリサイズ、データのインポート/エクスポート
+- **機械学習**: モデルの学習、推論処理
+- **ビルド・デプロイ**: CI/CDパイプラインの進捗、ビルドログのストリーミング
+
+**実装例:**
+
+```tsx
+// components/FileProcessor.tsx
+import { useEffect, useState } from 'react';
+import { useWebSocket } from '../hooks/useWebSocket';
+
+interface ProcessingStatus {
+  jobId: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  progress: number; // 0-100
+  message: string;
+  resultUrl?: string;
+  error?: string;
+}
+
+export function FileProcessor() {
+  const [status, setStatus] = useState<ProcessingStatus | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+
+  const { sendMessage, lastMessage } = useWebSocket<ProcessingStatus>({
+    url: 'wss://api.example.com/processing',
+    reconnect: true,
+  });
+
+  useEffect(() => {
+    if (lastMessage) {
+      // サーバーから進捗が送られてきたら即座に更新
+      setStatus(lastMessage);
+    }
+  }, [lastMessage]);
+
+  const handleFileUpload = async (file: File) => {
+    // ファイルをアップロード
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch('/api/upload', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const { jobId: newJobId } = await response.json();
+    setJobId(newJobId);
+
+    // WebSocketで進捗を監視開始
+    sendMessage({ type: 'subscribe', jobId: newJobId });
+  };
+
+  return (
+    <div className="file-processor">
+      <h2>ファイル処理</h2>
+      <input
+        type="file"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleFileUpload(file);
+        }}
+      />
+
+      {status && (
+        <div className="processing-status">
+          <div className="status-header">
+            <h3>処理状況</h3>
+            <span className={`status-badge status-${status.status}`}>
+              {status.status === 'queued' && '待機中'}
+              {status.status === 'processing' && '処理中'}
+              {status.status === 'completed' && '完了'}
+              {status.status === 'failed' && '失敗'}
+            </span>
+          </div>
+
+          {status.status === 'processing' && (
+            <div className="progress-bar">
+              <div
+                className="progress-fill"
+                style={{ width: `${status.progress}%` }}
+              />
+              <span className="progress-text">{status.progress}%</span>
+            </div>
+          )}
+
+          <div className="status-message">{status.message}</div>
+
+          {status.status === 'completed' && status.resultUrl && (
+            <a href={status.resultUrl} download>
+              処理済みファイルをダウンロード
+            </a>
+          )}
+
+          {status.status === 'failed' && status.error && (
+            <div className="error-message">{status.error}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+**なぜWebSocketが必要か:**
+- HTTPポーリングでは、進捗を取得するために頻繁にリクエストが必要
+- 長時間処理の場合、ポーリングの回数が膨大になる
+- WebSocketなら、サーバー側で進捗が更新された瞬間にクライアントに通知される
+- サーバー負荷とネットワーク帯域を大幅に削減できる
+
+### まとめ: WebSocketを使うべき場面
+
+| 場面 | 特徴 | 具体例 | WebSocketの必要性 |
+|------|------|--------|------------------|
+| **1. 通知・チャット** | いつ来るかわからないイベントを待つ | メルカリの購入通知、Uber Eatsの到着通知 | ⭐⭐⭐ 必須 |
+| **2. 共同編集・ゲーム** | 超リアルタイムな同期が必要 | Google Docs、マルチプレイヤーゲーム | ⭐⭐⭐ 必須 |
+| **3. 金融・ライブ** | 刻一刻と変化する数値 | 株価、為替レート、ライブ配信の視聴者数 | ⭐⭐⭐ 必須 |
+| **4. 長時間処理** | サーバー側の処理進捗を監視 | 動画エンコード、データインポート | ⭐⭐ 推奨 |
+
+これらの場面では、HTTPポーリングやSSE（Server-Sent Events）では不十分で、**WebSocketの双方向通信が必須**です。
+
 ### ReactでのWebSocket実装
 
 #### 1. 基本的なWebSocketフック

@@ -611,14 +611,84 @@ RSpec.configure do |config|
 end
 ```
 
+#### ⚠️ 「System Spec」 vs 「Request Spec」の境界線
+
+Rails 5.1以降、統合テストはSystem Spec（Capybara使用）が推奨されていますが、すべてをSystem Specで書くとテスト実行時間が爆発します。
+
+**重要な理解**:
+「ブラウザの挙動（JSなど）」を確認する必要がないテストまでCapybaraで書くのは時間の無駄です。
+
+**問題点**:
+APIの挙動や、単なる画面遷移の確認であれば、ブラウザを起動しないRequest Specの方が圧倒的に高速で安定しています。
+
+**改善案**:
+「JSが絡む複雑なUI操作はSystem Spec」、「それ以外のエンドツーエンドの挙動確認はRequest Spec」という使い分けの基準を明文化しましょう。
+
+| テストの種類 | 使用するSpec | 理由 |
+| --- | --- | --- |
+| JavaScriptを使ったUI操作 | System Spec | ブラウザが必要 |
+| フォーム送信（JS不要） | Request Spec | 高速で十分 |
+| APIの挙動確認 | Request Spec | ブラウザ不要 |
+| 画面遷移の確認 | Request Spec | 高速で十分 |
+| リアルタイム通信 | System Spec | WebSocketのテストに必要 |
+
+#### ⚠️ 「何でも待つ」ことの副作用
+
+`wait: 5`などの待機処理は重要ですが、これに頼りすぎるとテストが不安定（Flaky）になります。
+
+**重要な理解**:
+「要素が表示されるまで待つ」のは正解ですが、「要素が消えるまで待つ」処理を忘れると、次のテストケースに影響が出ます。
+
+**問題点**:
+非同期処理（Ajaxなど）の結果を待たずに次の操作に移ると、前のテストのデータが残っていてテストが落ちる「謎の失敗」に悩まされることになります。
+
+**改善案**:
+破壊的な操作（削除など）の後は、必ずその要素が`not_to have_css`になることを確認してから次のステップに進む、というルールを徹底しましょう。
+
+```ruby
+# ✅ 良い例: 要素が消えるまで待つ
+it '投稿を削除できること', js: true do
+  visit posts_path
+  expect(page).to have_css('.post-item', count: 5)
+  
+  click_button '削除'
+  
+  # 削除処理の完了を待つ
+  expect(page).not_to have_css('.post-item', count: 5, wait: 5)
+  expect(page).to have_css('.post-item', count: 4)
+end
+```
+
+#### 🛠️ CircleCI / GitHub Actionsでの「スクリーンショット」
+
+CI（自動テスト環境）でSystem Specが落ちた時、原因の特定は困難です。
+
+**解決策**:
+RailsのSystem Test標準機能である`take_failed_screenshot`を活用しましょう。失敗時のブラウザの状態を画像で保存するように設定しておけば、デバッグ時間が1/10になります。
+
+```ruby
+# spec/rails_helper.rb
+RSpec.configure do |config|
+  config.after(:each, type: :system) do |example|
+    if example.exception
+      # 失敗時にスクリーンショットとHTMLを保存
+      take_screenshot
+      save_page  # HTMLも保存
+    end
+  end
+end
+```
+
 ## まとめ
 
 Capybaraは、RailsアプリケーションのE2Eテストを書くための強力なツールです。以下のポイントを押さえることで、効果的なテストを書くことができます：
 
 - **基本操作の理解**: `visit`, `fill_in`, `click_button`などの基本メソッドを理解する
 - **ドライバーの使い分け**: JavaScriptが必要な場合のみSeleniumを使用し、それ以外はRack::Testを使用
-- **待機処理**: 動的なコンテンツに対しては適切な待機時間を設定する
+- **System Spec vs Request Spec**: JSが絡む複雑なUI操作はSystem Spec、それ以外はRequest Spec
+- **待機処理**: 動的なコンテンツに対しては適切な待機時間を設定し、要素が消えるまで待つ
 - **テストの独立性**: 各テストが独立して実行できるようにする
 - **ページオブジェクトパターン**: 複雑なテストはページオブジェクトパターンで整理する
+- **スクリーンショット**: CI環境での失敗時にスクリーンショットを自動保存
 
-これらのベストプラクティスを守ることで、保守性が高く、実行速度の速いテストスイートを構築できます。
+これらのベストプラクティスを守ることで、保守性が高く、実行速度の速い、信頼性の高いテストスイートを構築できます。

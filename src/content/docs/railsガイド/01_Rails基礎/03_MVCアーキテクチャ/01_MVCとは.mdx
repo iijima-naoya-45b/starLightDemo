@@ -56,3 +56,37 @@ graph TD
     B --> |ビューにデータを渡す| D(View);
     D --> |HTMLをレンダリング| A;
 ```
+
+#### ⚠️ 現代のMVCの「循環参照」リスク
+
+提供されたフロー図は一方通行ですが、実務ではここが複雑に絡み合います。
+
+**問題点**:
+- ユーザーの入力によってViewがModelを直接書き換えようとしたり、Modelの変更が勝手にViewに通知されたりする（双方向データバインディングなど）と、デバッグが地獄になります
+- Reactの「単方向データフロー」に慣れた身からすると、RailsのMVCは「誰がいつデータを変えたか」が追いにくくなる瞬間があります
+
+**推奨される原則**:
+**「データは常にModelからViewへ。アクションは常にViewからControllerへ」**という一方向の循環を意識しましょう。
+
+```mermaid
+graph TD
+    A[ユーザー] --> |アクション| B(Controller);
+    B --> |データ要求| C(Model);
+    C --> |データ返却| B;
+    B --> |データ渡す| D(View);
+    D --> |表示| A;
+    
+    style A fill:#e1f5ff
+    style B fill:#fff4e1
+    style C fill:#e8f5e9
+    style D fill:#fce4ec
+```
+
+**重要なルール**:
+1. **View → Controller**: ユーザーのアクション（クリック、フォーム送信など）は必ずController経由
+2. **Controller → Model**: ControllerはModelにデータの取得・保存を依頼
+3. **Model → Controller**: Modelは処理結果をControllerに返す
+4. **Controller → View**: ControllerはデータをViewに渡す
+5. **View → ユーザー**: Viewは最終的なHTMLをユーザーに表示
+
+この一方向の流れを守ることで、データの流れが追いやすくなり、デバッグが容易になります。
