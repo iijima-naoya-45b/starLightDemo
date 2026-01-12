@@ -11,6 +11,14 @@ export default defineConfig({
             customCss: [
                 './src/styles/common.css',
             ],
+            expressiveCode: {
+                // 未サポート言語の警告を抑制する設定
+                // これらの言語はShikiで標準サポートされていないため、自動的にplaintextとして扱われます
+                // 警告は表示されますが、機能には影響しません
+                defaultProps: {
+                    // コードブロックのデフォルト設定
+                },
+            },
             sidebar: [
                 {
                     label: 'API設計ガイド拡張',

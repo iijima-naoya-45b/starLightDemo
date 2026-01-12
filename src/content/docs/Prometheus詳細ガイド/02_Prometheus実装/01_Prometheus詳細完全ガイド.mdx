@@ -38,7 +38,7 @@ scrape_configs:
 
 ### 基本的なクエリ
 
-```promql
+```plaintext
 # CPU使用率
 100 - (avg(irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
 

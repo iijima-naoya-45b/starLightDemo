@@ -80,7 +80,7 @@ DNS（Domain Name System）は、人間が覚えやすいドメイン名（例: 
 
 ### Aレコード（IPv4アドレス）
 
-```dns
+```plaintext
 example.com.    IN    A    93.184.216.34
 ```
 
@@ -89,7 +89,7 @@ example.com.    IN    A    93.184.216.34
 
 ### AAAAレコード（IPv6アドレス）
 
-```dns
+```plaintext
 example.com.    IN    AAAA    2606:2800:220:1:248:1893:25c8:1946
 ```
 
@@ -97,7 +97,7 @@ example.com.    IN    AAAA    2606:2800:220:1:248:1893:25c8:1946
 
 ### CNAMEレコード（別名）
 
-```dns
+```plaintext
 www.example.com.    IN    CNAME    example.com.
 ```
 
@@ -106,7 +106,7 @@ www.example.com.    IN    CNAME    example.com.
 
 ### MXレコード（メールサーバー）
 
-```dns
+```plaintext
 example.com.    IN    MX    10    mail.example.com.
 ```
 
@@ -115,7 +115,7 @@ example.com.    IN    MX    10    mail.example.com.
 
 ### TXTレコード（テキスト情報）
 
-```dns
+```plaintext
 example.com.    IN    TXT    "v=spf1 include:_spf.example.com ~all"
 ```
 
@@ -124,7 +124,7 @@ example.com.    IN    TXT    "v=spf1 include:_spf.example.com ~all"
 
 ### NSレコード（ネームサーバー）
 
-```dns
+```plaintext
 example.com.    IN    NS    ns1.example.com.
 example.com.    IN    NS    ns2.example.com.
 ```
@@ -206,7 +206,7 @@ host example.com
 
 ### TTL（Time To Live）
 
-```dns
+```plaintext
 example.com.    86400    IN    A    93.184.216.34
                 ^^^^^^
                 TTL（秒）
@@ -257,7 +257,7 @@ ipconfig /flushdns
 
 ### サブドメインの設定
 
-```dns
+```plaintext
 # メインドメイン
 example.com.    IN    A    93.184.216.34
 
@@ -269,7 +269,7 @@ blog.example.com.   IN    CNAME    example-blog.com.
 
 ### ロードバランシング
 
-```dns
+```plaintext
 # 複数のAレコードでロードバランシング
 example.com.    IN    A    93.184.216.34
 example.com.    IN    A    203.0.113.1
@@ -278,7 +278,7 @@ example.com.    IN    A    198.51.100.1
 
 ### フェイルオーバー
 
-```dns
+```plaintext
 # プライマリサーバー
 example.com.    300    IN    A    93.184.216.34
 
@@ -317,7 +317,7 @@ backup.example.com.    60    IN    A    203.0.113.1
 - ワイルドカードレコードが必要
 
 **解決策:**
-```dns
+```plaintext
 # ワイルドカードレコードの設定
 *.example.com.    IN    A    93.184.216.34
 ```
