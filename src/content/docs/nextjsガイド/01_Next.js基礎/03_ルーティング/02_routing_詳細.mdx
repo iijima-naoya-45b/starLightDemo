@@ -27,6 +27,41 @@ App Routerは、`app/`ディレクトリを使用してルーティングを管�
 
 `app/`ディレクトリ内のサブディレクトリがURLパスに対応します。各セグメントの`page.tsx`ファイルが、そのパスのUIを定義します。
 
+#### ファイルシステムとURLの対応関係
+
+以下の図は、ファイルシステムの構造がどのようにURLパスにマッピングされるかを示しています。
+
+```
+ファイルシステム構造              URLパス
+─────────────────────────────  ─────────────────────────
+app/
+├── page.tsx                  → /
+├── about/
+│   └── page.tsx             → /about
+├── blog/
+│   ├── page.tsx             → /blog
+│   ├── [slug]/
+│   │   └── page.tsx         → /blog/[slug]
+│   └── [slug]/
+│       └── [commentId]/
+│           └── page.tsx     → /blog/[slug]/[commentId]
+└── shop/
+    ├── [category]/
+    │   └── [productId]/
+    │       └── page.tsx     → /shop/[category]/[productId]
+    └── [[...slug]]/
+        └── page.tsx         → /shop/[[...slug]]
+```
+
+**重要なポイント:**
+
+- **ディレクトリ名 = URLセグメント**: ディレクトリ名がそのままURLパスのセグメントになります
+- **`page.tsx` = ページコンポーネント**: 各ルートには`page.tsx`ファイルが必要です
+- **`[param]` = 動的セグメント**: 角括弧で囲まれた名前が動的パラメータになります
+- **`[[...slug]]` = オプショナルキャッチオール**: 二重角括弧はオプショナルなキャッチオールルートです
+
+#### ディレクトリ構造の例
+
 ```
 /app
 ├── layout.tsx         // 共有レイアウト（例: ナビゲーションバー）
@@ -66,17 +101,22 @@ export default function AboutPage() {
 
 #### 単一の動的セグメント
 
+> **Next.js 15の変更点**: Next.js 15以降では、`params`はPromiseとして扱われるため、`await`が必要です。Next.js 14以前でも動作するように、`await`を使用することを推奨します。
+
 ```typescript
 // app/blog/[slug]/page.tsx
 type BlogPostPageProps = {
-  params: {
+  params: Promise<{
     slug: string;
-  };
+  }>;
 };
 
 export default async function BlogPostPage({ params }: BlogPostPageProps) {
+  // Next.js 15以降: paramsをawaitする必要がある
+  const { slug } = await params;
+  
   // サーバーコンポーネントなので、直接データフェッチングが可能
-  const post = await fetch(`https://api.example.com/posts/${params.slug}`)
+  const post = await fetch(`https://api.example.com/posts/${slug}`)
     .then(res => res.json());
   
   return (
@@ -90,26 +130,30 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
 
 **特徴:**
 
-- **`params`プロパティ**: 動的なセグメントの値が`params`プロパティとして渡される
+- **`params`プロパティ**: 動的なセグメントの値が`params`プロパティとして渡される（Next.js 15以降はPromise）
 - **型安全性**: TypeScriptで型定義が可能
 - **サーバーコンポーネント**: `async`関数として定義可能
+- **Next.js 15対応**: `params`を`await`で解決する必要がある
 
 #### 複数の動的セグメント
 
 ```typescript
 // app/shop/[category]/[product]/page.tsx
 type ProductPageProps = {
-  params: {
+  params: Promise<{
     category: string;
     product: string;
-  };
+  }>;
 };
 
-export default function ProductPage({ params }: ProductPageProps) {
+export default async function ProductPage({ params }: ProductPageProps) {
+  // Next.js 15以降: paramsをawaitする必要がある
+  const { category, product } = await params;
+  
   return (
     <div>
-      <h1>カテゴリ: {params.category}</h1>
-      <h2>商品: {params.product}</h2>
+      <h1>カテゴリ: {category}</h1>
+      <h2>商品: {product}</h2>
     </div>
   );
 }
@@ -120,20 +164,61 @@ export default function ProductPage({ params }: ProductPageProps) {
 - `/shop/electronics/iphone` → `category: 'electronics'`, `product: 'iphone'`
 - `/shop/clothing/t-shirt` → `category: 'clothing'`, `product: 't-shirt'`
 
+> **💡 シニアの知恵: なぜ意味のある名前を使うのか？**
+> 
+> ネストされた動的ルートでは、すべてのパラメータが`params`オブジェクトに含まれます。例えば、`/users/[userId]/posts/[postId]`という構造の場合、`params`は`{ userId: '...', postId: '...' }`となります。
+> 
+> すべてを`[id]`にしてしまうと、どの`id`がどのセグメントを指しているのかわからなくなり、バグの原因になります。**「その変数が指す固有の名前」**（`userId`、`postId`など）を常に使いましょう。
+
+```typescript
+// ✅ 良い例: 意味のある名前を使用
+// app/users/[userId]/posts/[postId]/page.tsx
+type PostPageProps = {
+  params: Promise<{
+    userId: string;    // ユーザーIDであることが明確
+    postId: string;    // 投稿IDであることが明確
+  }>;
+};
+
+export default async function PostPage({ params }: PostPageProps) {
+  const { userId, postId } = await params;
+  // userIdとpostIdの区別が明確
+  const post = await fetch(`/api/users/${userId}/posts/${postId}`);
+  // ...
+}
+
+// ❌ 悪い例: すべて[id]にしてしまう
+// app/users/[id]/posts/[id]/page.tsx
+type PostPageProps = {
+  params: Promise<{
+    id: string;  // どちらのIDかわからない！
+  }>;
+};
+
+export default async function PostPage({ params }: PostPageProps) {
+  const { id } = await params;
+  // これはユーザーIDなのか、投稿IDなのかわからない
+  // バグの原因になる可能性が高い
+}
+```
+
 #### キャッチオールルート
 
 ```typescript
 // app/docs/[...slug]/page.tsx
 type DocsPageProps = {
-  params: {
+  params: Promise<{
     slug: string[];
-  };
+  }>;
 };
 
-export default function DocsPage({ params }: DocsPageProps) {
+export default async function DocsPage({ params }: DocsPageProps) {
+  // Next.js 15以降: paramsをawaitする必要がある
+  const { slug } = await params;
+  
   // slugは配列として渡される
   // /docs/getting-started/installation → ['getting-started', 'installation']
-  const path = params.slug.join('/');
+  const path = slug.join('/');
   
   return <div>ドキュメント: {path}</div>;
 }
@@ -149,17 +234,20 @@ export default function DocsPage({ params }: DocsPageProps) {
 ```typescript
 // app/shop/[[...slug]]/page.tsx
 type ShopPageProps = {
-  params: {
+  params: Promise<{
     slug?: string[];
-  };
+  }>;
 };
 
-export default function ShopPage({ params }: ShopPageProps) {
-  if (!params.slug) {
+export default async function ShopPage({ params }: ShopPageProps) {
+  // Next.js 15以降: paramsをawaitする必要がある
+  const { slug } = await params;
+  
+  if (!slug) {
     return <div>ショップトップページ</div>;
   }
   
-  return <div>ショップ: {params.slug.join('/')}</div>;
+  return <div>ショップ: {slug.join('/')}</div>;
 }
 ```
 
@@ -318,6 +406,143 @@ export default function Error({
 }
 ```
 
+## クライアントコンポーネントでのルーティング
+
+App Routerでは、クライアントコンポーネントでナビゲーションを行う場合、`next/navigation`から`useRouter`をインポートする必要があります。これは、Pages Routerの`next/router`とは**別物**です。
+
+> **⚠️ 重要な注意点**: `next/router`（Pages Router用）と`next/navigation`（App Router用）は**完全に別のパッケージ**です。混同しないように注意してください。
+
+### App Routerでのクライアントサイドルーティング
+
+```typescript
+'use client';
+
+// ✅ 正しい: App Routerでは next/navigation を使用
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+
+export default function NavigationButton() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  
+  const handleClick = () => {
+    // プログラムによるナビゲーション
+    router.push('/about');
+    // または
+    router.replace('/contact');
+  };
+  
+  return (
+    <div>
+      <p>現在のパス: {pathname}</p>
+      <button onClick={handleClick}>Aboutページへ</button>
+    </div>
+  );
+}
+```
+
+**App Routerの`useRouter`（`next/navigation`）の特徴:**
+
+- ✅ `push()`: 新しいページに遷移（ブラウザ履歴に追加）
+- ✅ `replace()`: 現在のページを置き換え（ブラウザ履歴に追加しない）
+- ✅ `refresh()`: 現在のルートを再フェッチ
+- ✅ `back()`: ブラウザの戻るボタンと同じ動作
+- ✅ `forward()`: ブラウザの進むボタンと同じ動作
+- ❌ `query`プロパティは**存在しない**（これはPages Routerの機能）
+
+### Pages Routerでのクライアントサイドルーティング
+
+```typescript
+// ✅ 正しい: Pages Routerでは next/router を使用
+import { useRouter } from 'next/router';
+
+export default function NavigationButton() {
+  const router = useRouter();
+  
+  // Pages RouterのuseRouterはqueryプロパティを持つ
+  const { id, category } = router.query;
+  
+  const handleClick = () => {
+    router.push('/about');
+  };
+  
+  return (
+    <div>
+      <p>クエリパラメータ: {JSON.stringify(router.query)}</p>
+      <button onClick={handleClick}>Aboutページへ</button>
+    </div>
+  );
+}
+```
+
+**Pages Routerの`useRouter`（`next/router`）の特徴:**
+
+- ✅ `push()`: 新しいページに遷移
+- ✅ `replace()`: 現在のページを置き換え
+- ✅ `query`: URLのクエリパラメータと動的ルートのパラメータにアクセス可能
+- ✅ `pathname`: 現在のパス名
+- ✅ `asPath`: クエリ文字列を含む実際のパス
+
+### 比較表: App Router vs Pages Router
+
+| 機能 | App Router (`next/navigation`) | Pages Router (`next/router`) |
+|------|-------------------------------|----------------------------|
+| インポート | `import { useRouter } from 'next/navigation'` | `import { useRouter } from 'next/router'` |
+| `push()` | ✅ あり | ✅ あり |
+| `replace()` | ✅ あり | ✅ あり |
+| `query` | ❌ **なし** | ✅ あり |
+| `pathname` | `usePathname()`フックを使用 | ✅ `router.pathname` |
+| `searchParams` | `useSearchParams()`フックを使用 | ✅ `router.query` |
+
+### よくある間違い: インポートパスの混同
+
+```typescript
+'use client';
+
+// ❌ 間違い: App Routerで next/router を使用
+import { useRouter } from 'next/router';  // エラーが発生する可能性
+
+// ✅ 正しい: App Routerでは next/navigation を使用
+import { useRouter } from 'next/navigation';
+
+export default function MyComponent() {
+  const router = useRouter();
+  // ...
+}
+```
+
+### App Routerでクエリパラメータを取得する方法
+
+App Routerでは、`query`プロパティが存在しないため、`useSearchParams`フックを使用します。
+
+```typescript
+'use client';
+
+import { useSearchParams } from 'next/navigation';
+
+export default function SearchPage() {
+  const searchParams = useSearchParams();
+  
+  // クエリパラメータを取得
+  const query = searchParams.get('q');
+  const category = searchParams.get('category');
+  
+  return (
+    <div>
+      <p>検索クエリ: {query}</p>
+      <p>カテゴリ: {category}</p>
+    </div>
+  );
+}
+```
+
+**URL例:** `/search?q=nextjs&category=framework`
+
+- `searchParams.get('q')` → `'nextjs'`
+- `searchParams.get('category')` → `'framework'`
+
+---
+
 ## Pages Routerによるルーティング
 
 Pages Routerは、`pages/`ディレクトリを使用してルーティングを管理する従来のアプローチです。
@@ -426,18 +651,72 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
 
 新しいプロジェクトを始める場合は、**App Router**の利用が強く推奨されます。App Routerは、将来的なNext.jsの進化の方向性であり、サーバーコンポーネントやデータフェッチの新しい方法など、多くのパフォーマンス改善を提供します。
 
-### 2. 動的ルートの命名規則
+### 2. 動的ルートの命名規則（思想の深掘り）
+
+動的ルートの命名は、コードの可読性と保守性に大きく影響します。特に、ネストされたルートでは、**意味のある名前を使用することが重要**です。
+
+#### なぜ`[id]`を避けるべきか？
+
+Next.jsのApp Routerでは、`params`がネストされます。例えば、`/users/[userId]/posts/[postId]`という構造の場合、`params`は`{ userId: '...', postId: '...' }`となります。
+
+すべてを`[id]`にしてしまうと、どちらのIDかわからず、バグの原因になります。**「その変数が指す固有の名前」**を常に使いましょう。
 
 ```typescript
-// ✅ 良い例: 意味のある名前
+// ✅ 良い例: 意味のある名前を使用
 app/blog/[slug]/page.tsx
 app/users/[userId]/page.tsx
 app/products/[productId]/page.tsx
+app/users/[userId]/posts/[postId]/page.tsx
 
 // ❌ 悪い例: 意味のない名前
 app/blog/[id]/page.tsx
 app/users/[id]/page.tsx
+app/users/[id]/posts/[id]/page.tsx  // どちらのIDかわからない！
 ```
+
+#### ネストされたルートでの実例
+
+```typescript
+// ✅ 良い例: 明確な命名
+// app/users/[userId]/posts/[postId]/page.tsx
+type PostPageProps = {
+  params: Promise<{
+    userId: string;    // ユーザーIDであることが明確
+    postId: string;    // 投稿IDであることが明確
+  }>;
+};
+
+export default async function PostPage({ params }: PostPageProps) {
+  const { userId, postId } = await params;
+  
+  // userIdとpostIdの区別が明確で、コードが読みやすい
+  const post = await fetch(`/api/users/${userId}/posts/${postId}`);
+  return <div>{/* ... */}</div>;
+}
+
+// ❌ 悪い例: すべて[id]にしてしまう
+// app/users/[id]/posts/[id]/page.tsx
+type PostPageProps = {
+  params: Promise<{
+    id: string;  // どちらのIDかわからない！
+  }>;
+};
+
+export default async function PostPage({ params }: PostPageProps) {
+  const { id } = await params;
+  // これはユーザーIDなのか、投稿IDなのかわからない
+  // バグの原因になる可能性が高い
+  const post = await fetch(`/api/users/${id}/posts/${id}`);  // 間違っている可能性
+  return <div>{/* ... */}</div>;
+}
+```
+
+#### 命名規則のベストプラクティス
+
+1. **固有の名前を使用**: `userId`、`postId`、`productId`など、その変数が何を指しているか明確に
+2. **複数形を避ける**: `[users]`ではなく`[userId]`を使用（単一のIDを表すため）
+3. **意味のある名前**: `[slug]`、`[username]`、`[category]`など、その変数の意味が伝わる名前
+4. **一貫性を保つ**: プロジェクト全体で命名規則を統一
 
 ### 3. レイアウトの適切な使用
 

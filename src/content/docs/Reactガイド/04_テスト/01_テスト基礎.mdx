@@ -5,29 +5,434 @@ label: "テスト基礎"
 
 ## テスト基礎
 
-### React Testing Library
+> **📚 MSWの詳細**: APIのモックについては、[設計ガイドのMSW](/設計ガイド/02_API設計/05_MSW_モックサービスワーカー)を参照してください。
 
-```jsx
-import { render, screen, fireEvent } from '@testing-library/react';
+### テストの目的: ユーザーから見た挙動をテストする
+
+React Testing Libraryの哲学は、**「実装詳細をテストせず、ユーザーから見た挙動をテストする」**ことです。
+
+#### ❌ 悪い例: 実装詳細をテストする
+
+```tsx
+// ❌ 実装詳細に依存したテスト
+test('should call setState when button is clicked', () => {
+  const { rerender } = render(<Counter />);
+  const component = screen.getByTestId('counter');
+  
+  // 問題: コンポーネントの内部実装（setState）に依存している
+  expect(component.state.count).toBe(0);
+  fireEvent.click(screen.getByTestId('increment-button'));
+  expect(component.state.count).toBe(1);
+});
+```
+
+**問題点:**
+- コンポーネントの内部実装（state、useStateなど）に依存している
+- 実装が変わるとテストが壊れる（リファクタリングに弱い）
+- ユーザーの視点とは無関係
+
+#### ✅ 良い例: ユーザーから見た挙動をテストする
+
+```tsx
+// ✅ ユーザーから見た挙動をテスト
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import Counter from './Counter';
 
-test('increments counter on button click', () => {
+test('increments counter when user clicks button', async () => {
+  const user = userEvent.setup();
   render(<Counter />);
-  const button = screen.getByText('Click me');
-  fireEvent.click(button);
-  expect(screen.getByText('You clicked 1 times')).toBeInTheDocument();
+  
+  // ユーザーの視点: 画面上に表示されるテキストを確認
+  expect(screen.getByText('Count: 0')).toBeInTheDocument();
+  
+  // ユーザーの視点: ボタンをクリック
+  const button = screen.getByRole('button', { name: /increment/i });
+  await user.click(button);
+  
+  // ユーザーの視点: 画面上のテキストが更新されたか確認
+  expect(screen.getByText('Count: 1')).toBeInTheDocument();
 });
 ```
 
-### Jest
+**良い点:**
+- ユーザーの視点（画面上に表示される内容）をテストしている
+- 実装が変わっても、ユーザーから見た挙動が同じならテストは通る（リファクタリングに強い）
+- テストが「何をするべきか」を明確に表現している
 
-```jsx
-import { render } from '@testing-library/react';
-import App from './App';
+### クエリの優先順位（チートシート）
 
-test('renders app', () => {
-  render(<App />);
-  expect(screen.getByText('Hello')).toBeInTheDocument();
+React Testing Libraryでは、要素を取得する際に**「ユーザーがどのように要素を見つけるか」**に基づいた優先順位があります。
+
+#### 優先順位表
+
+| 優先順位 | クエリ | 説明 | 使用例 |
+|---------|--------|------|--------|
+| **1位** | `getByRole` | アクセシブルなロール（ボタン、リンク、入力欄など） | `screen.getByRole('button', { name: /submit/i })` |
+| **2位** | `getByLabelText` | フォームラベル（アクセシビリティのため） | `screen.getByLabelText(/email/i)` |
+| **3位** | `getByPlaceholderText` | プレースホルダーテキスト | `screen.getByPlaceholderText(/enter email/i)` |
+| **4位** | `getByText` | 表示テキスト（最も一般的） | `screen.getByText(/welcome/i)` |
+| **5位** | `getByDisplayValue` | 入力欄の値 | `screen.getByDisplayValue('test@example.com')` |
+| **6位** | `getByAltText` | 画像の代替テキスト | `screen.getByAltText(/profile picture/i)` |
+| **7位** | `getByTitle` | title属性 | `screen.getByTitle(/tooltip/i)` |
+| **8位** | `getByTestId` | data-testid属性（最後の手段） | `screen.getByTestId('submit-button')` |
+
+#### 使用例
+
+```tsx
+import { render, screen } from '@testing-library/react';
+import LoginForm from './LoginForm';
+
+test('user can login', () => {
+  render(<LoginForm />);
+  
+  // ✅ 1位: Role（アクセシビリティに基づく）
+  const submitButton = screen.getByRole('button', { name: /login/i });
+  
+  // ✅ 2位: LabelText（フォーム入力）
+  const emailInput = screen.getByLabelText(/email/i);
+  const passwordInput = screen.getByLabelText(/password/i);
+  
+  // ✅ 4位: Text（表示テキスト）
+  expect(screen.getByText(/welcome/i)).toBeInTheDocument();
+  
+  // ❌ 避けるべき: TestId（実装詳細に依存）
+  // const submitButton = screen.getByTestId('submit-button');
 });
 ```
 
+#### クエリの選び方
+
+1. **`getByRole`**: ボタン、リンク、入力欄、見出しなど、アクセシブルな要素
+2. **`getByLabelText`**: フォーム入力欄（`<label>`と`<input>`の関連）
+3. **`getByText`**: 表示されるテキスト（最も一般的）
+4. **`getByTestId`**: 上記で取得できない場合のみ（最後の手段）
+
+### ユーザーイベント: user-event ライブラリ
+
+**`@testing-library/user-event`**は、`fireEvent`よりも実際のユーザー操作をシミュレートするため、推奨されています。
+
+#### インストール
+
+```bash
+npm install --save-dev @testing-library/user-event
+```
+
+#### fireEvent と userEvent の違い
+
+**fireEvent:**
+- DOMイベントを直接発火する
+- 実際のユーザー操作とは異なる場合がある
+
+**userEvent:**
+- 実際のユーザー操作をシミュレートする
+- 複数のイベントを適切な順序で発火（例: `click` → `focus` → `blur`）
+- よりリアルなテストが可能
+
+#### 使用例
+
+```tsx
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import LoginForm from './LoginForm';
+
+test('user can type in input fields', async () => {
+  const user = userEvent.setup();
+  render(<LoginForm />);
+  
+  const emailInput = screen.getByLabelText(/email/i);
+  const passwordInput = screen.getByLabelText(/password/i);
+  const submitButton = screen.getByRole('button', { name: /login/i });
+  
+  // ✅ userEvent: 実際のユーザー操作をシミュレート
+  await user.type(emailInput, 'test@example.com');
+  await user.type(passwordInput, 'password123');
+  await user.click(submitButton);
+  
+  // ❌ fireEvent: DOMイベントを直接発火（非推奨）
+  // fireEvent.change(emailInput, { target: { value: 'test@example.com' } });
+  // fireEvent.click(submitButton);
+});
+```
+
+#### userEvent の主なメソッド
+
+| メソッド | 説明 | 使用例 |
+|---------|------|--------|
+| `click` | クリックイベント | `await user.click(button)` |
+| `type` | テキスト入力 | `await user.type(input, 'text')` |
+| `clear` | 入力欄をクリア | `await user.clear(input)` |
+| `selectOptions` | セレクトボックスを選択 | `await user.selectOptions(select, 'option1')` |
+| `upload` | ファイルアップロード | `await user.upload(fileInput, file)` |
+| `keyboard` | キーボード操作 | `await user.keyboard('{Enter}')` |
+
+#### 非同期処理
+
+**重要**: `userEvent`のメソッドは**すべて非同期**です。必ず`await`を使用してください。
+
+```tsx
+// ✅ 正しい: await を使用
+test('user can submit form', async () => {
+  const user = userEvent.setup();
+  render(<Form />);
+  
+  await user.type(screen.getByLabelText(/email/i), 'test@example.com');
+  await user.click(screen.getByRole('button', { name: /submit/i }));
+  
+  await waitFor(() => {
+    expect(screen.getByText(/success/i)).toBeInTheDocument();
+  });
+});
+
+// ❌ 間違い: await を忘れている
+test('user can submit form', () => {
+  const user = userEvent.setup();
+  render(<Form />);
+  
+  user.type(screen.getByLabelText(/email/i), 'test@example.com'); // await がない
+  user.click(screen.getByRole('button', { name: /submit/i })); // await がない
+});
+```
+
+### 非同期処理: await findBy... の使い分け
+
+React Testing Libraryでは、非同期で表示される要素を取得するために、`findBy...`クエリを使用します。
+
+#### クエリの種類
+
+| クエリ | タイミング | 使用例 |
+|--------|----------|--------|
+| `getBy...` | **同期的**（即座に要素を取得） | `screen.getByText('Hello')` |
+| `queryBy...` | **同期的**（要素が見つからない場合`null`を返す） | `screen.queryByText('Hello')` |
+| `findBy...` | **非同期的**（要素が表示されるまで待つ） | `await screen.findByText('Hello')` |
+
+#### 使い分け
+
+**`getBy...`**: 既に表示されている要素を取得
+
+```tsx
+test('displays initial content', () => {
+  render(<Component />);
+  
+  // ✅ 既に表示されている要素
+  expect(screen.getByText('Welcome')).toBeInTheDocument();
+});
+```
+
+**`queryBy...`**: 要素が存在しないことを確認
+
+```tsx
+test('hides error message initially', () => {
+  render(<Component />);
+  
+  // ✅ 要素が存在しないことを確認
+  expect(screen.queryByText(/error/i)).not.toBeInTheDocument();
+});
+```
+
+**`findBy...`**: 非同期で表示される要素を取得
+
+```tsx
+test('displays data after loading', async () => {
+  render(<Component />);
+  
+  // ✅ 非同期で表示される要素（APIレスポンス後など）
+  const data = await screen.findByText(/loaded/i);
+  expect(data).toBeInTheDocument();
+});
+```
+
+#### 実践例: データ取得コンポーネント
+
+```tsx
+import { render, screen, waitFor } from '@testing-library/react';
+import UserProfile from './UserProfile';
+
+test('displays user data after loading', async () => {
+  render(<UserProfile userId="1" />);
+  
+  // 初期状態: ローディング中
+  expect(screen.getByText(/loading/i)).toBeInTheDocument();
+  
+  // データ読み込み後: ユーザー情報が表示される
+  const userName = await screen.findByText(/john doe/i);
+  expect(userName).toBeInTheDocument();
+  
+  // ローディングメッセージが消えることを確認
+  await waitFor(() => {
+    expect(screen.queryByText(/loading/i)).not.toBeInTheDocument();
+  });
+});
+```
+
+#### `waitFor` の使用
+
+複数の要素が非同期で更新される場合、`waitFor`を使用します。
+
+```tsx
+import { render, screen, waitFor } from '@testing-library/react';
+
+test('updates multiple elements asynchronously', async () => {
+  render(<Component />);
+  
+  await waitFor(() => {
+    expect(screen.getByText(/first element/i)).toBeInTheDocument();
+    expect(screen.getByText(/second element/i)).toBeInTheDocument();
+  });
+});
+```
+
+### モック戦略: MSW によるAPIシミュレーション
+
+**MSW（Mock Service Worker）**は、Service Workerを使用してネットワークリクエストをインターセプトし、モックレスポンスを返すライブラリです。
+
+> **📚 MSWの詳細**: MSWの詳細な使い方については、[設計ガイドのMSW](/設計ガイド/02_API設計/05_MSW_モックサービスワーカー)を参照してください。
+
+#### なぜMSWを使うのか
+
+**従来の方法（fetchのモック）:**
+```tsx
+// ❌ 問題: fetchを直接モック（実装詳細に依存）
+global.fetch = jest.fn(() =>
+  Promise.resolve({
+    json: () => Promise.resolve({ id: 1, name: 'John' }),
+  })
+);
+```
+
+**問題点:**
+- 実装詳細（fetch）に依存している
+- 実際のネットワークリクエストと異なる
+- テストが壊れやすい
+
+**MSWの利点:**
+- 実際のネットワークリクエストをインターセプト
+- 実装詳細（fetch、axiosなど）に依存しない
+- よりリアルなテストが可能
+
+#### セットアップ
+
+**1. インストール**
+
+```bash
+npm install --save-dev msw
+```
+
+**2. ハンドラーの定義**
+
+```tsx
+// src/mocks/handlers.ts
+import { http, HttpResponse } from 'msw';
+
+export const handlers = [
+  // GET /api/users/:id
+  http.get('https://api.example.com/users/:id', ({ params }) => {
+    const { id } = params;
+    return HttpResponse.json({
+      id: Number(id),
+      name: 'John Doe',
+      email: 'john@example.com',
+    });
+  }),
+
+  // GET /api/users
+  http.get('https://api.example.com/users', () => {
+    return HttpResponse.json([
+      { id: 1, name: 'John Doe', email: 'john@example.com' },
+      { id: 2, name: 'Jane Smith', email: 'jane@example.com' },
+    ]);
+  }),
+
+  // POST /api/users
+  http.post('https://api.example.com/users', async ({ request }) => {
+    const body = await request.json();
+    return HttpResponse.json(
+      { id: 3, ...body },
+      { status: 201 }
+    );
+  }),
+];
+```
+
+**3. テストサーバーのセットアップ**
+
+```tsx
+// src/mocks/server.ts
+import { setupServer } from 'msw/node';
+import { handlers } from './handlers';
+
+export const server = setupServer(...handlers);
+```
+
+**4. テスト設定**
+
+```tsx
+// src/setupTests.ts
+import { server } from './mocks/server';
+
+// テスト開始前にMSWサーバーを起動
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+
+// 各テスト後にハンドラーをリセット
+afterEach(() => server.resetHandlers());
+
+// テスト終了後にMSWサーバーを停止
+afterAll(() => server.close());
+```
+
+#### 使用例
+
+```tsx
+import { render, screen, waitFor } from '@testing-library/react';
+import { server } from '@/mocks/server';
+import { http, HttpResponse } from 'msw';
+import UserList from './UserList';
+
+test('displays user list', async () => {
+  render(<UserList />);
+  
+  // MSWがモックレスポンスを返すまで待つ
+  const user1 = await screen.findByText(/john doe/i);
+  const user2 = await screen.findByText(/jane smith/i);
+  
+  expect(user1).toBeInTheDocument();
+  expect(user2).toBeInTheDocument();
+});
+
+test('handles API error', async () => {
+  // 特定のテストでエラーハンドラーを上書き
+  server.use(
+    http.get('https://api.example.com/users', () => {
+      return HttpResponse.json(
+        { error: 'Internal Server Error' },
+        { status: 500 }
+      );
+    })
+  );
+  
+  render(<UserList />);
+  
+  // エラーメッセージが表示されることを確認
+  const errorMessage = await screen.findByText(/error/i);
+  expect(errorMessage).toBeInTheDocument();
+});
+```
+
+#### MSWのベストプラクティス
+
+1. **ハンドラーを再利用**: 共通のハンドラーを`handlers.ts`に定義
+2. **テストごとにリセット**: `afterEach`で`server.resetHandlers()`を呼び出す
+3. **エラーケースもテスト**: エラーレスポンス（4xx、5xx）もモック
+4. **実装詳細に依存しない**: fetch、axiosなど、どのHTTPクライアントでも動作
+
+### まとめ
+
+React Testing Libraryでのテストの要点：
+
+1. **テストの目的**: 実装詳細ではなく、ユーザーから見た挙動をテストする
+2. **クエリの優先順位**: Role > Label > Text の順で選択
+3. **ユーザーイベント**: `user-event`ライブラリを使用（`fireEvent`より推奨）
+4. **非同期処理**: `findBy...`で非同期要素を取得、`waitFor`で複数要素の更新を待つ
+5. **モック戦略**: MSWを使用してAPIをシミュレート（実装詳細に依存しない）
+
+これらの原則に従うことで、保守性が高く、リファクタリングに強いテストを書くことができます。

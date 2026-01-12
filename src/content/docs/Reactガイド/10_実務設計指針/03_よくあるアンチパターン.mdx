@@ -124,36 +124,74 @@ function Component() {
 
 ### D. 無限ループ
 
-#### 実際に事故った構造
+> **【まさかり】無限ループの例について**: 依存配列なしの例（`useEffect(() => { setCount(count + 1); })`）は、現代のエディタ（ESLint）が即座に赤波線を引いて教えてくれます。本当に現場で事故る無限ループは、もっと**「見えにくい」**ものです。
+
+#### 実際に事故った構造（参照型の性質による無限ループ）
 
 ```typescript
-// ❌ アンチパターン: 無限ループ
+// ❌ アンチパターン: 参照型の性質による無限ループ
 function Component() {
-  const [count, setCount] = useState(0);
+  const [user, setUser] = useState<User>({ id: 1, name: 'John' });
+  const [data, setData] = useState<Data | null>(null);
   
   useEffect(() => {
-    // 問題: 依存配列にcountが含まれていない
-    setCount(count + 1);
-    // 問題: countが変更されるたびにuseEffectが実行され、無限ループが発生
-  });
+    // 問題: userオブジェクトを更新している
+    setUser({ ...user, lastAccess: Date.now() });
+  }, [user]); // 問題: userを依存配列に入れている
   
-  return <div>{count}</div>;
+  useEffect(() => {
+    // 問題: dataオブジェクトを更新し、それを依存配列に入れている
+    fetch('/api/data')
+      .then(res => res.json())
+      .then(newData => {
+        setData(newData); // dataが更新される
+      });
+  }, [data]); // 問題: dataが変更されるたびに再実行され、無限ループが発生
+  
+  return <div>{user.name}</div>;
 }
 ```
 
 **なぜ事故るか:**
 
-1. **無限ループ**: useEffectが無限に実行され、無限ループが発生
-2. **メモリ使用量の増加**: 無限ループにより、メモリ使用量が増加
-3. **ブラウザのクラッシュ**: 無限ループにより、ブラウザがクラッシュ
+1. **参照型の性質**: オブジェクトや配列は参照型のため、`{ ...user }`で新しいオブジェクトが作成される
+2. **依存配列の検出**: `user`を依存配列に入れると、`setUser({ ...user })`で新しいオブジェクトが作成され、再び`useEffect`が実行される
+3. **無限ループ**: `useEffect`が無限に実行され、無限ループが発生
+4. **メモリ使用量の増加**: 無限ループにより、メモリ使用量が増加
+5. **ブラウザのクラッシュ**: 無限ループにより、ブラウザがクラッシュ
 
 **設計レビューでの指摘文例:**
 
 ```
 【指摘】無限ループが発生しています。
-【問題】useEffectの依存配列が適切に設定されていません。
+【問題】useEffectの中でオブジェクトをsetStateし、そのオブジェクトを別のuseEffectの依存配列に入れている。
 【影響】無限ループ、メモリ使用量の増加、ブラウザのクラッシュ
-【推奨】依存配列を適切に設定する
+【推奨】依存配列にはプリミティブ値（文字列、数値など）を入れる、または依存配列から除外する
+```
+
+**✅ 解決策: 依存配列を適切に設定する**
+
+```typescript
+function Component() {
+  const [user, setUser] = useState<User>({ id: 1, name: 'John' });
+  const [data, setData] = useState<Data | null>(null);
+  
+  // 解決: userオブジェクト全体ではなく、必要な値だけを依存配列に入れる
+  useEffect(() => {
+    setUser(prev => ({ ...prev, lastAccess: Date.now() }));
+  }, []); // 解決: 依存配列から除外する、または関数型の更新を使用
+  
+  // 解決: dataを依存配列から除外する
+  useEffect(() => {
+    fetch('/api/data')
+      .then(res => res.json())
+      .then(newData => {
+        setData(newData);
+      });
+  }, []); // 解決: 依存配列から除外する
+  
+  return <div>{user.name}</div>;
+}
 ```
 
 ### まとめ

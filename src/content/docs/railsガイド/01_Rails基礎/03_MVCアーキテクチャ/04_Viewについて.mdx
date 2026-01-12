@@ -11,12 +11,161 @@ RailsにおけるViewは、アプリケーションの「顔」です。ユー�
 
 Viewの主な仕事は、ユーザーが理解しやすいようにデータを「視覚化」することです。決してビジネスロジックやデータベース操作は行わず、表示だけに専念します。これは、MVCの原則である関心の分離を徹底するためです。
 
+#### ⚠️ View（ビュー）の定義が揺らぐ：RailsのViewとReactの違い
+
+このガイドではViewを「HTML/CSSの盛り付け」としていますが、**Reactを使う場合、その役割は大きく変わります**。
+
+**RailsのView（ERB）とReactの違い**:
+- **RailsのView（ERB）**: 「サーバーサイドで一度だけ盛り付ける」もの。サーバーでHTMLを生成し、ブラウザに送信する
+- **React**: 「ブラウザ上で動的に盛り付けを変え続ける」もの。JavaScriptで動的にUIを更新する
+
+**問題点**:
+「View = HTML」という理解だけだと、Reactコンポーネントの中にロジック（State管理など）が入ってきたときに、「これはModelなのかViewなのか？」と迷うことになります。
+
+**改善案: APIモードでの構成**
+
+Reactを使う場合、**「RailsのViewはただの『器（空のHTML）』になり、実際の盛り付けはReactが担当する」**という構成（APIモード）についても理解しておく必要があります。
+
+```ruby
+# APIモードの場合
+# app/views/layouts/application.html.erb
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>My App</title>
+  </head>
+  <body>
+    <div id="root"></div>  <!-- Reactがここにマウントされる -->
+    <%= javascript_include_tag "application" %>
+  </body>
+</html>
+```
+
+この場合、RailsのViewは最小限のHTML構造を提供するだけの「器」となり、実際のUIの動的な部分はReactコンポーネントが担当します。フルスタック開発で混乱しないよう、この違いを理解しておきましょう。
+
+#### ⚠️ JavaScript資産の「二重管理」
+
+Rails 7で導入された`importmap`やPropshaftと、React用の`esbuild/webpack`の共存についてです。
+
+**問題点**:
+RailsのViewで`javascript_include_tag`を使いつつ、React側でもNPMパッケージを管理すると、「どっちのJSがどこで動いているか」がカオスになります。
+
+```erb
+<!-- ❌ 問題のある構成 -->
+<%= javascript_include_tag "application" %>  <!-- RailsのJS（Stimulusなど） -->
+<div id="root"></div>  <!-- Reactがここで動く -->
+<%= javascript_pack_tag "react_app" %>  <!-- ReactのJS -->
+```
+
+**問題点**:
+- RailsのView（ERB）で動くStimulusと、`id="root"`内で動くReactが喧嘩したり、同じライブラリを二重にロードしたりする事故がよく起きます
+- デバッグが困難になり、バンドルサイズが無駄に大きくなる
+
+**改善案**:
+**「RailsのViewは極力JSを持たせず、すべての動的な振る舞いをReactに集約する」**という「完全分離」の原則を持つべきです。
+
+```erb
+<!-- ✅ 良い例: 完全分離 -->
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>My App</title>
+  </head>
+  <body>
+    <div id="root"></div>  <!-- Reactがすべてを担当 -->
+    <%= javascript_pack_tag "react_app" %>  <!-- ReactのJSのみ -->
+  </body>
+</html>
+```
+
+**推奨される構成**:
+- **モノリス構成**: RailsのViewでStimulusを使用し、Reactは使わない
+- **APIモード**: Reactを使用し、RailsのViewは最小限のHTMLのみ
+- **ハイブリッド**: 避けるべき（混乱の原因になる）
+
+この「完全分離」の原則により、JavaScriptの管理が明確になり、デバッグが容易になります。
+
 ### テンプレートエンジンの魔法 ✨
 
 RailsはデフォルトでERB (Embedded RuBy) というテンプレートエンジンを使います。これは、HTMLの中にRubyのコードを埋め込むことで、静的なHTMLを動的に生成する魔法のような仕組みです。ERBファイルは、`.html.erb`という拡張子を持ちます。
 
 - **`<%= ... %>`**: このタグは、Rubyコードの実行結果をHTMLに出力します。例えば、`<%= @user.name %>`と書けば、`@user`という変数の`name`属性が表示されます。
 - **`<% ... %>`**: このタグは、Rubyコードを実行するだけで、結果は出力しません。`if`文や`each`ループなど、制御構造に使われます。
+
+#### ⚠️ 「ヘルパー地獄」と「ロジックの漏洩」
+
+ERB内で`<%= ... %>`を使ってRubyが書けるのは便利ですが、これがViewを汚染する最大の原因です。
+
+**問題点**:
+Viewの中に複雑な`if`文やデータの加工処理を書くと、テストが不可能になり、デザインの変更が命取りになります。
+
+```erb
+<!-- ❌ 悪い例: Viewにロジックが漏れ出している -->
+<% if @user.last_login_at > 1.month.ago && @user.active? %>
+  <div class="badge badge-success">アクティブユーザー</div>
+<% else %>
+  <div class="badge badge-secondary">非アクティブ</div>
+<% end %>
+
+<% @posts.each do |post| %>
+  <% if post.created_at > 1.week.ago %>
+    <span class="new-badge">NEW</span>
+  <% end %>
+  <h2><%= post.title.upcase %></h2>
+  <p><%= post.content.truncate(100) %></p>
+<% end %>
+```
+
+**問題点**:
+- Railsには`app/helpers`という仕組みがありますが、ここも「グローバル関数」になりがちで管理が困難です
+- 「アクティブなユーザー」の定義が変わった際、すべてのViewを修正して回る必要があり、バグの温床になります
+
+**改善案**:
+Reactコンポーネントのように「データを受け取って表示するだけ」の状態にするため、View Model (Presenter) パターン（DraperやViewComponentライブラリなど）の導入を検討すべきです。Viewを「純粋な関数」に近づけるのが現代の流儀です。
+
+```ruby
+# ✅ 良い例1: Modelにメソッドを定義
+class User < ApplicationRecord
+  def is_eligible_for_campaign?
+    last_login_at > 1.month.ago && active?
+  end
+end
+
+<!-- Viewはシンプルに -->
+<% if @user.is_eligible_for_campaign? %>
+  <div class="badge badge-success">アクティブユーザー</div>
+<% else %>
+  <div class="badge badge-secondary">非アクティブ</div>
+<% end %>
+
+# ✅ 良い例2: ViewComponentを使用
+# app/components/user_card_component.rb
+class UserCardComponent < ViewComponent::Base
+  def initialize(user:)
+    @user = user
+  end
+  
+  private
+  
+  attr_reader :user
+  
+  def badge_class
+    user.is_eligible_for_campaign? ? "badge-success" : "badge-secondary"
+  end
+  
+  def badge_text
+    user.is_eligible_for_campaign? ? "アクティブユーザー" : "非アクティブ"
+  end
+end
+
+<!-- app/components/user_card_component.html.erb -->
+<div class="badge <%= badge_class %>"><%= badge_text %></div>
+
+<!-- 使用 -->
+<%= render UserCardComponent.new(user: @user) %>
+```
+
+これにより、Viewが「純粋な関数」に近づき、テストが容易になり、デザインの変更が安全になります。
 
 ### 📂 Viewファイルの整理術
 
@@ -37,6 +186,230 @@ RailsのViewには、同じコードを何度も書く手間を省くための�
   - ウェブページの一部として何度も再利用されるUIコンポーネント（例：ユーザーカード、投稿フォーム）を、独立したファイルに切り出します。ファイル名の先頭には`_`（アンダースコア）を付けます（例：`_user.html.erb`）。
   - `<%= render 'user' %>`のように、`render`メソッドで簡単に呼び出すことができます。
 
+#### ⚠️ Partial（部分テンプレート）の「隠れたコスト」
+
+`render 'user'`のように部分テンプレートを多用するのは再利用性の面では正解ですが、パフォーマンス面では注意が必要です。
+
+**問題点**:
+ループ（`each`）の中で`render`を繰り返すと、ファイル読み込みのオーバーヘッドが発生し、レンダリングが極端に遅くなることがあります。
+
+```erb
+<!-- ❌ 悪い例: ループ内でrenderを繰り返す -->
+<% @users.each do |user| %>
+  <%= render 'user', user: user %>  <!-- 100回renderが呼ばれる -->
+<% end %>
+
+<!-- 問題: 100人のユーザーで100回のファイル読み込みが発生 -->
+<!-- サーバーのCPUを無駄に消費する -->
+```
+
+**改善案**:
+コレクションレンダリング`<%= render partial: 'user', collection: @users %>`を使うことで、Rails側で最適化（一括レンダリング）が行われることをTipsとして覚えましょう。
+
+```erb
+<!-- ✅ 良い例: コレクションレンダリングを使用 -->
+<%= render partial: 'user', collection: @users %>
+
+<!-- Railsが自動的に最適化する -->
+<!-- 1回のファイル読み込みで、すべてのユーザーをレンダリング -->
+```
+
+**コレクションレンダリングの利点**:
+- ファイル読み込みのオーバーヘッドが1回だけになる
+- Railsが内部的に最適化を行う
+- パフォーマンスが大幅に向上する
+
+**使用例**:
+```erb
+<!-- 基本的な使い方 -->
+<%= render partial: 'user', collection: @users %>
+
+<!-- ローカル変数名を指定 -->
+<%= render partial: 'user', collection: @users, as: :member %>
+
+<!-- 追加のローカル変数を渡す -->
+<%= render partial: 'user', collection: @users, locals: { show_email: true } %>
+```
+
+Reactでコンポーネントを分割する感覚で数百個のPartialをレンダリングする場合は、必ずコレクションレンダリングを使用しましょう。
+
+#### ⚠️ セキュリティ：html_safeの誘惑
+
+RailsのViewはデフォルトでHTMLエスケープされますが、どうしても生のHTMLを出したい時に`html_safe`や`raw`を使います。
+
+**問題点**:
+`html_safe`は文字通り「セキュリティのガードを外す」行為です。ユーザーが入力したデータを`html_safe`で出力してしまうと、即座にXSS（クロスサイトスクリプティング）の脆弱性になります。
+
+```erb
+<!-- ❌ 危険: ユーザー入力にhtml_safeを使用 -->
+<%= @user.bio.html_safe %>  <!-- XSS脆弱性！ -->
+
+<!-- 攻撃例: ユーザーが以下のbioを入力 -->
+<!-- <script>alert('XSS!')</script> -->
+<!-- → スクリプトが実行されてしまう -->
+```
+
+**改善案**:
+Reactがデフォルトでエスケープしてくれるのと同様に、Railsでも`html_safe`の使用は厳格に禁止し、サニタイズ（`sanitize`メソッド）を徹底する「境界防御」の姿勢を崩さないようにしましょう。
+
+```erb
+<!-- ✅ 安全: sanitizeを使用 -->
+<%= sanitize @user.bio, tags: %w[p br strong em a], attributes: %w[href] %>
+
+<!-- 許可されたタグのみが残り、危険なスクリプトは除去される -->
+```
+
+**重要な注意点**:
+`sanitize`を使用しても、`onclick`や`onerror`などのイベントハンドラ属性は許可しないように注意が必要です。
+
+```erb
+<!-- ❌ 危険: イベントハンドラが除去されていない -->
+<%= sanitize @user.bio, tags: %w[p br strong em a img] %>
+<!-- 問題: <img src="x" onerror="alert('XSS!')"> のような攻撃が可能 -->
+<!-- React側で表示した瞬間にJavaScriptが実行され、セッションハイジャックに繋がる -->
+
+<!-- ✅ 安全: 許可する属性を厳密に制限 -->
+<%= sanitize @user.bio, 
+    tags: %w[p br strong em a], 
+    attributes: %w[href]  # onclickやonerrorは許可しない
+%>
+```
+
+**React側での二重防御**:
+Rails側でサニタイズしても、React側でも再度洗浄することで、より安全になります。
+
+```javascript
+// React側でも再度洗浄
+import DOMPurify from 'dompurify';
+
+function UserBio({ bio }) {
+  const cleanBio = DOMPurify.sanitize(bio, {
+    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'a'],
+    ALLOWED_ATTR: ['href']
+  });
+  
+  return <div dangerouslySetInnerHTML={{ __html: cleanBio }} />;
+}
+```
+
+**推奨されるアプローチ**:
+```ruby
+# ヘルパーメソッドで安全にHTMLを扱う
+module ApplicationHelper
+  def safe_html(content)
+    sanitize(content, tags: %w[p br strong em a ul ol li], attributes: %w[href])
+  end
+end
+
+# Viewで使用
+<%= safe_html(@user.bio) %>
+```
+
+**重要な原則**:
+- **デフォルトでエスケープ**: `<%= ... %>`は自動的にエスケープされる
+- **html_safeは禁止**: ユーザー入力に対しては絶対に使用しない
+- **sanitizeを使用**: どうしてもHTMLが必要な場合は、`sanitize`で許可されたタグのみを残す
+- **信頼できるソースのみ**: システム内部で生成されたHTMLのみ`html_safe`を使用（例：Markdownから変換したHTML）
+
+この「境界防御」の姿勢を崩さないことで、XSS攻撃からアプリケーションを守れます。
+
 ## まとめ
 
 RailsのViewは、単なるHTMLファイルではありません。ERB、レイアウト、そして部分テンプレートといった機能を通じて、動的で、効率的で、再利用性の高いユーザーインターフェースを構築する強力なツールです。MVCの「顔」として、アプリケーションのデータをユーザーに分かりやすく届ける重要な役割を担っています。
+
+ただし、実務では以下の点に注意が必要です：
+- **ロジックの漏洩**: Viewにビジネスロジックを書かず、View Model (Presenter) パターンやModelのメソッドを活用
+- **Partialのパフォーマンス**: ループ内でのrenderは避け、コレクションレンダリングを使用
+- **JavaScriptの二重管理**: RailsのViewとReactを混在させず、「完全分離」の原則を守る
+- **セキュリティ**: `html_safe`は厳格に禁止し、`sanitize`で安全にHTMLを扱う
+
+これらの実務的な知識を理解することで、保守性が高く、安全なアプリケーションを構築できます。
+
+## 🚀 設計レビューでの「まさかり」文例
+
+実務でのコードレビューで使用できる、具体的な指摘文例を以下に示します。
+
+### Viewにビジネスロジックが漏れ出している場合の指摘
+
+```
+【指摘】Viewにビジネスロジックが漏れ出しています。
+【問題】<% if @user.last_login_at > 1.month.ago && @user.active? %> のような判定がViewに書かれています。
+【影響】「アクティブなユーザー」の定義が変わった際、すべてのViewを修正して回る必要があり、バグの温床になります。
+【推奨】このロジックはModelに user.is_eligible_for_campaign? のようなメソッドとして定義し、Viewはその結果（真偽値）を受け取るだけにしてください。
+```
+
+### Partialのパフォーマンス問題の指摘
+
+```
+【指摘】ループ内でPartialをレンダリングしており、パフォーマンスの問題があります。
+【問題】<% @users.each do |user| %><%= render 'user', user: user %><% end %> により、100回のファイル読み込みが発生しています。
+【影響】ユーザー数が増えた際にレンダリングが極端に遅くなり、サーバーのCPUを無駄に消費します。
+【推奨】<%= render partial: 'user', collection: @users %> のようにコレクションレンダリングを使用してください。
+```
+
+### JavaScriptの二重管理の指摘
+
+```
+【指摘】RailsのViewとReactでJavaScriptが二重管理されています。
+【問題】javascript_include_tag と javascript_pack_tag が混在し、同じライブラリが二重にロードされています。
+【影響】バンドルサイズが無駄に大きくなり、デバッグが困難になります。
+【推奨】「完全分離」の原則に従い、RailsのViewは極力JSを持たせず、すべての動的な振る舞いをReactに集約してください。
+```
+
+### html_safeの使用によるセキュリティ問題の指摘
+
+```
+【指摘】ユーザー入力に対してhtml_safeが使用されており、XSS脆弱性があります。
+【問題】<%= @user.bio.html_safe %> により、ユーザーが入力した悪意のあるスクリプトが実行される可能性があります。
+【影響】XSS攻撃により、セッション情報が漏洩する可能性があります。
+【推奨】html_safeの使用を禁止し、sanitizeメソッドを使用して安全にHTMLを扱ってください。
+```
+
+### 生のHTMLのサニタイズが不十分な場合の指摘
+
+```
+【指摘】生のHTMLをhtml_safeで返していますが、サニタイズが不十分です。
+【問題】ユーザーが入力したonclickやonerrorなどのイベントハンドラが除去されていません。
+【影響】React側で表示した瞬間にJavaScriptが実行され、セッションハイジャック（クッキー盗難）に繋がります。
+【推奨】Railsのsanitizeヘルパーで許可するタグと属性を厳密に制限するか、React側で表示する前にライブラリ（DOMPurifyなど）で再度洗浄してください。
+```
+
+**詳細な説明**:
+
+`html_safe`を使用した場合でも、`<script>`タグだけでなく、`onclick`や`onerror`などのイベントハンドラ属性も危険です。
+
+```erb
+<!-- ❌ 危険: イベントハンドラが除去されていない -->
+<%= sanitize @user.bio, tags: %w[p br strong em a img] %>
+<!-- 問題: <img src="x" onerror="alert('XSS!')"> のような攻撃が可能 -->
+```
+
+**改善案**:
+
+```ruby
+# ✅ 安全: 許可する属性を厳密に制限
+<%= sanitize @user.bio, 
+    tags: %w[p br strong em a], 
+    attributes: %w[href]  # onclickやonerrorは許可しない
+%>
+```
+
+**React側での対策**:
+
+```javascript
+// React側でも再度洗浄
+import DOMPurify from 'dompurify';
+
+function UserBio({ bio }) {
+  const cleanBio = DOMPurify.sanitize(bio, {
+    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'a'],
+    ALLOWED_ATTR: ['href']
+  });
+  
+  return <div dangerouslySetInnerHTML={{ __html: cleanBio }} />;
+}
+```
+
+この「二重防御」により、Rails側とReact側の両方でセキュリティを確保できます。
+
+これらの指摘文例を参考に、コードレビューで適切なフィードバックを行い、堅牢なアプリケーションを構築しましょう。

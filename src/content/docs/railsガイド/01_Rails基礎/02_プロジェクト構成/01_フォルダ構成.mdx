@@ -78,6 +78,25 @@ Railsのフォルダ構成は、**MVC（Model-View-Controller）**の原則に�
 - **db/migrate**: データベースのスキーマを変更するためのマイグレーションファイルが置かれます。
 - **db/schema.rb**: 現在のデータベーススキーマの構造を記録したファイルです。
 
+#### ⚠️ 重要な警告: `db/schema.rb`は触ってはいけない
+
+`db/schema.rb`は、Railsが自動生成するファイルであり、**手動で編集してはいけません**。
+
+初心者がDB構造を変えようとして`schema.rb`を直接書き換えてしまうと、マイグレーションファイルと不整合が起きて環境が壊れるのは「Railsあるある」です。
+
+**正しいアプローチ**:
+- DB構造の変更は必ず`db/migrate`内のマイグレーションファイルで行う
+- `schema.rb`は、マイグレーション実行の結果が反映されるだけの「鏡」である
+- `schema.rb`をGitにコミットすることで、チーム全体で同じDB構造を共有できる
+
+```bash
+# 正しい方法: マイグレーションファイルを作成
+bundle exec rails generate migration AddTitleToArticles title:string
+
+# マイグレーションを実行すると、schema.rbが自動更新される
+bundle exec rails db:migrate
+```
+
 ### `Dockerfile`
 
 アプリケーションをDockerコンテナとして動かすための設定ファイルです。本番環境でのデプロイを想定して作成されます。
@@ -85,6 +104,31 @@ Railsのフォルダ構成は、**MVC（Model-View-Controller）**の原則に�
 ### `lib`
 
 アプリケーション全体で共有されるライブラリやモジュールを格納するフォルダです。
+
+#### ⚠️ `lib`と`app`の使い分けの注意点
+
+初心者は「どこに書けばいいか分からないロジック」をすべて`lib`に放り込みがちですが、注意が必要です。
+
+**重要な違い**:
+- **`app`配下のディレクトリ**: Railsによって自動読み込み（Autoload）されるため、`require`が不要で、開発中のオートリロードも機能する
+- **`lib`配下**: 手動で`require`するか、`config/application.rb`で設定が必要。オートリロードが効かないため、開発効率が下がる
+
+**推奨されるアプローチ**:
+ビジネスロジックを`lib`に書くのではなく、**`app/services`や`app/logic`のような独自のディレクトリを`app`内に作って管理する**ことを推奨します。これにより、Railsの仕組みに乗りやすくなり、開発効率が向上します。
+
+```ruby
+# 推奨: app/services/user_registration_service.rb
+class UserRegistrationService
+  def self.call(user_params)
+    # ビジネスロジック
+  end
+end
+
+# 非推奨: lib/user_registration_service.rb
+# （requireが必要で、オートリロードが効かない）
+```
+
+`lib`は、Railsアプリケーションの外部で使用される汎用的なライブラリや、Gem化する予定のコードを置く場所として使用するのが適切です。
 
 ### `log`
 
@@ -94,13 +138,60 @@ Railsのフォルダ構成は、**MVC（Model-View-Controller）**の原則に�
 
 ウェブサーバーから直接アクセス可能な静的ファイル（HTML、画像など）を格納します。
 
-### `test`
+### `test`と`spec`
 
 アプリケーションのテストファイルが格納されます。
+
+#### `test` vs `spec`: テストフレームワークの選択
+
+Railsの標準では`test`フォルダにMinitestのテストファイルを配置しますが、**日本のRails現場の多く（約7〜8割以上）は標準のMinitestではなくRSpecを使います**。
+
+- **`test/`**: Rails標準のMinitestを使用する場合
+- **`spec/`**: RSpecを使用する場合（デファクトスタンダード）
+
+実務に入ると、`test/`フォルダではなく`spec/`フォルダが存在するケースが圧倒的に多いです。RSpecを使用する場合は、`spec`フォルダにテストファイルを配置します。
+
+```ruby
+# test/ の場合（Minitest）
+# test/models/user_test.rb
+class UserTest < ActiveSupport::TestCase
+  test "should be valid" do
+    user = User.new
+    assert user.valid?
+  end
+end
+
+# spec/ の場合（RSpec）
+# spec/models/user_spec.rb
+RSpec.describe User, type: :model do
+  it "should be valid" do
+    user = User.new
+    expect(user).to be_valid
+  end
+end
+```
+
+プロジェクトに参加する際は、どちらのテストフレームワークを使用しているか確認しましょう。
 
 ### `vendor`
 
 外部から取得したベンダー依存のコード（サードパーティライブラリなど）を格納するフォルダです。
+
+#### ⚠️ `vendor`フォルダの「形骸化」
+
+現代のRails開発では、`vendor`フォルダを使う機会は激減しています。
+
+**理由**:
+- ほとんどのライブラリは`Gemfile`（Ruby）か`package.json`（JavaScript）で管理される
+- Bundlerやnpmなどのパッケージマネージャーが依存関係を管理する
+
+**`vendor`を使うべきケース**:
+- Gem化されていない特殊なプラグインを使う時だけ
+- 外部から取得したコードを直接プロジェクトに含める必要がある場合
+
+**重要な注意点**:
+- **自作のコードを`vendor`に置かない**こと。自作のコードは`app`配下に配置すべきです
+- `vendor`は「外部から取得したコード」専用のフォルダとして理解しましょう
 
 これらのフォルダは、Railsの「設定より規約」の思想に基づいているため、開発者はファイルを作成する場所を迷うことなく、効率的に開発を進めることができます。
 
@@ -123,5 +214,40 @@ Rails 7では、従来のSprocketsに代わる新しいアセットマネジメ�
 Rails 7では、Importmapを使用してJavaScriptの依存関係を管理する方法が標準となりました。これにより、開発者は`npm install`を使わずに、ブラウザが直接ESモジュールをロードできるようになります。
 
 - **config/importmap.rb**: このファイルは、各JavaScriptモジュールをURLにマッピングするために使用されます。これにより、フロントエンドの依存関係をNode.jsなしで管理できます。
+
+#### ⚠️ `app/javascript`とReactの共存問題
+
+Rails 7で`importmap`がデフォルトになりましたが、**Reactを使う場合は話が変わります**。
+
+**問題点**:
+- ReactやTypeScriptを本格的に使う場合、`importmap`ではライブラリの依存解決やJSXのコンパイルが困難です
+- `importmap`はESモジュールを直接ロードする仕組みであり、トランスパイルやバンドルが必要なReactには不向きです
+
+**解決策: jsbundling-railsの使用**
+
+Reactを使うプロジェクトでは、結局`jsbundling-rails`（esbuild/webpack）を選ぶことになります。
+
+```bash
+# jsbundling-railsとesbuildを追加
+bundle add jsbundling-rails
+bundle exec rails javascript:install:esbuild
+```
+
+この場合、フォルダ構成は`app/javascript`内にReactコンポーネントが並ぶ独自の構成になります：
+
+```
+app/javascript/
+├── application.js        # エントリーポイント
+├── components/          # Reactコンポーネント
+│   ├── Header.jsx
+│   └── Footer.jsx
+└── utils/               # ユーティリティ関数
+```
+
+**選択の指針**:
+- **Hotwire/Stimulusのみ**: `importmap`で十分
+- **React/TypeScriptを本格使用**: `jsbundling-rails`（esbuild/webpack）が必要
+
+プロジェクトの要件に応じて、適切なアプローチを選択しましょう。
 
 これらの変更点は、Railsの最新のトレンドを反映しており、特にフロントエンド開発におけるアプローチに大きな影響を与えています。このドキュメントにこれらのトピックを追加することで、Railsの進化を捉えた、より現代的で実践的な内容になります。

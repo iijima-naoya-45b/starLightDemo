@@ -25,6 +25,80 @@ Next.js（フロントエンド）とRails（バックエンド）を連携さ�
 - 実装の複雑性: クロスドメイン通信の場合、CORS設定や認証情報を含むリクエストの制御が必要となり、実装が少し複雑になります。
 - CSRF対策: Cookieを使用するため、別途CSRF対策（SameSite=Laxなど）が必要です。
 
+#### ⚠️ CSRF対策が「SameSite属性」だけで十分か
+
+Cookieを使用する以上、CSRF（クロスサイト・リクエスト・フォージェリ）の脅威は常に付きまといます。
+
+**重要な理解**:
+`SameSite=Lax`は現代のブラウザではデフォルトになりつつありますが、これだけで「CSRF対策完了」とするのは少し危険です。
+
+**問題点**:
+古いブラウザの存在や、サブドメイン間での攻撃など、隙を突かれる可能性があります。
+
+```ruby
+# ❌ 不十分: SameSite属性だけに依存
+cookies.signed[:jwt] = {
+  value: jwt,
+  httponly: true,
+  secure: Rails.env.production?,
+  same_site: :lax  # これだけでは不十分
+}
+```
+
+**改善案**:
+Rails標準の`form_authenticity_token`はAPIモードでは使いにくいですが、カスタムヘッダー（例: `X-Requested-With`）の存在チェックをサーバー側で行う、あるいはダブルサブミットクッキー法などの追加対策を検討しましょう。
+
+```ruby
+# ✅ 安全: 複数の対策を組み合わせる
+# 1. SameSite属性を設定
+cookies.signed[:jwt] = {
+  value: jwt,
+  httponly: true,
+  secure: Rails.env.production?,
+  same_site: :lax
+}
+
+# 2. カスタムヘッダーのチェック（ApplicationController）
+class ApplicationController < ActionController::API
+  before_action :verify_csrf_token
+  
+  private
+  
+  def verify_csrf_token
+    # X-Requested-Withヘッダーの存在をチェック
+    unless request.headers['X-Requested-With'] == 'XMLHttpRequest'
+      render json: { error: 'Invalid request' }, status: :forbidden
+    end
+  end
+end
+
+# 3. ダブルサブミットクッキー法（推奨）
+# ログイン時にCSRFトークンをCookieに保存
+cookies.signed[:csrf_token] = {
+  value: SecureRandom.hex(32),
+  httponly: true,
+  secure: Rails.env.production?,
+  same_site: :strict
+}
+
+# リクエスト時にCookieのCSRFトークンとヘッダーのCSRFトークンを比較
+def verify_csrf_token
+  cookie_token = cookies.signed[:csrf_token]
+  header_token = request.headers['X-CSRF-Token']
+  
+  unless cookie_token && cookie_token == header_token
+    render json: { error: 'Invalid CSRF token' }, status: :forbidden
+  end
+end
+```
+
+**推奨されるアプローチ**:
+- **SameSite属性**: 基本的な防御（必須）
+- **カスタムヘッダーのチェック**: 追加の防御層
+- **ダブルサブミットクッキー法**: より強力な防御（推奨）
+
+この多層防御により、CSRF攻撃からアプリケーションを守れます。
+
 ### 2. Bearerトークン (localStorage保管)
 
 この方法は、実装のシンプルさと汎用性が大きな利点です。
@@ -116,6 +190,35 @@ rails g sorcery:install jwt
 ```bash
 rails db:migrate
 ```
+
+#### ⚠️ Sorceryの設定（セキュリティ強化版）
+
+`config/initializers/sorcery.rb`の設定において、以下の「まさかり」ポイントをチェックしてください。
+
+```ruby
+# config/initializers/sorcery.rb
+Rails.application.config.sorcery.configure do |config|
+  config.user_config do |user|
+    # まさかり：ログイン失敗回数の制限（Brute Force対策）を有効にすべき
+    user.consecutive_login_retries_amount_limit = 5
+    user.login_lock_time_period = 10.minutes
+    user.unlock_token_email_method_name = :send_unlock_token_email
+  end
+  
+  # まさかり：JWTのアルゴリズムを明示（デフォルトに頼らない）
+  config.jwt do |jwt|
+    jwt.algorithm = 'HS256'
+  end
+end
+```
+
+**重要な設定ポイント**:
+1. **ログイン失敗回数の制限**: Brute Force攻撃を防ぐため、連続ログイン失敗回数を制限
+2. **JWTアルゴリズムの明示**: デフォルトに頼らず、使用するアルゴリズムを明示的に指定
+3. **パスワードの最小長**: セキュリティポリシーに応じて設定
+4. **セッションタイムアウト**: 適切なタイムアウト時間を設定
+
+この設定により、セキュリティを強化できます。
 
 ## 4. JWT認証の設定とコントローラーの実装
 
@@ -342,6 +445,86 @@ class ApplicationController < ActionController::API
       jti: SecureRandom.uuid # 一意なJWT ID
     }
   end
+end
+
+#### ⚠️ JWTの「無効化」ができない問題
+
+JWTはステートレス（サーバーが状態を持たない）であるため、発行したトークンをサーバー側から「即座に無効化」するのが難しいという性質があります。
+
+**重要な理解**:
+ユーザーがパスワードを変更したり、アカウントが停止されたりしても、アクセストークン（例：有効期限5分）は死にません。
+
+**問題点**:
+有効期限内のトークンは、無効化されても使用できてしまいます。
+
+```ruby
+# ❌ 問題: ログアウトしてもトークンは有効なまま
+class Api::V1::SessionsController < ApplicationController
+  def destroy
+    sorcery_logout
+    cookies.delete(:access_token)
+    # 問題: 既に発行されたトークンは有効期限まで使える
+  end
+end
+```
+
+**改善案**:
+ログアウト時に`jti`（トークン固有ID）をRedis等のブラックリストに登録し、有効期限内であっても拒否する仕組みが必要です。
+
+```ruby
+# ✅ 安全: JWTブラックリストを実装
+class ApplicationController < ActionController::API
+  include Sorcery::Controller
+  
+  before_action :check_jwt_blacklist
+  
+  private
+  
+  def check_jwt_blacklist
+    jti = extract_jti_from_token
+    if jti && Redis.current.exists("jwt_blacklist:#{jti}")
+      render json: { error: 'Token has been revoked' }, status: :unauthorized
+    end
+  end
+  
+  def extract_jti_from_token
+    # CookieからJWTを取得し、jtiを抽出
+    token = cookies.signed[:access_token]
+    return nil unless token
+    
+    decoded_token = JWT.decode(token, jwt_secret_key, true, { algorithm: 'HS256' })
+    decoded_token[0]['jti']
+  rescue JWT::DecodeError
+    nil
+  end
+end
+
+# ログアウト時にブラックリストに追加
+class Api::V1::SessionsController < ApplicationController
+  def destroy
+    jti = extract_jti_from_token
+    if jti
+      # トークンの有効期限までブラックリストに保存
+      token_exp = extract_exp_from_token
+      ttl = token_exp - Time.now.to_i
+      Redis.current.setex("jwt_blacklist:#{jti}", ttl, '1') if ttl > 0
+    end
+    
+    sorcery_logout
+    cookies.delete(:access_token)
+    cookies.delete(:refresh_token)
+    
+    render json: { message: 'Logged out successfully' }
+  end
+end
+```
+
+**推奨されるアプローチ**:
+- **JWTブラックリスト**: Redisに`jti`を保存し、有効期限まで保持
+- **パスワード変更時**: ユーザーの全トークンをブラックリストに追加
+- **アカウント停止時**: 即座に全トークンを無効化
+
+このアプローチにより、JWTの即座の無効化が可能になります。
 
   def jwt_secret_key
     Rails.application.credentials.jwt_secret_key
@@ -365,7 +548,8 @@ class Api::V1::SessionsController < ApplicationController
       cookies.signed[:access_token] = {
         value: access_token,
         httponly: true,
-        secure: Rails.env.production?
+        secure: Rails.env.production?,
+        domain: :all  # サブドメイン間でCookieを共有
       }
 
       # 2. リフレッシュトークンを生成し、DBとCookieに保存
@@ -374,7 +558,8 @@ class Api::V1::SessionsController < ApplicationController
         value: refresh_token.token,
         httponly: true,
         secure: Rails.env.production?,
-        expires: 1.month.from_now # 1ヶ月後に期限切れ (例)
+        expires: 1.month.from_now, # 1ヶ月後に期限切れ (例)
+        domain: :all  # サブドメイン間でCookieを共有
       }
       
       render json: { message: 'Logged in successfully' }
@@ -422,6 +607,85 @@ class Api::V1::TokenRefreshesController < ApplicationController
   end
 end
 ```
+
+#### ⚠️ リフレッシュトークンの「再利用」と「無効化」
+
+リフレッシュトークンをDBに保存する設計は素晴らしいですが、運用の懸念があります。
+
+**重要な理解**:
+リフレッシュトークンが一度漏洩すると、期限が切れるまで攻撃者が新しいアクセストークンを発行し続けられます。
+
+**問題点**:
+トークンの「回転（Rotation）」が考慮されていません。
+
+```ruby
+# ❌ 危険: リフレッシュトークンが再利用可能
+class Api::V1::TokenRefreshesController < ApplicationController
+  def create
+    refresh_token = cookies.signed[:refresh_token]
+    refresh_token_record = RefreshToken.find_by(token: refresh_token)
+    
+    if refresh_token_record
+      user = refresh_token_record.user
+      # 新しいアクセストークンを発行（リフレッシュトークンはそのまま）
+      # 問題: 同じリフレッシュトークンが何度でも使える
+    end
+  end
+end
+```
+
+**改善案**:
+Refresh Token Rotation（リフレッシュトークンを使うたびに、古いものを破棄して新しいリフレッシュトークンを発行する）を導入しましょう。これにより、一度使われた古いトークンが再利用された場合、そのユーザーの全セッションを即座に無効化するなどの高度な防御が可能になります。
+
+```ruby
+# ✅ 安全: Refresh Token Rotationを実装
+class Api::V1::TokenRefreshesController < ApplicationController
+  def create
+    old_refresh_token = cookies.signed[:refresh_token]
+    refresh_token_record = RefreshToken.find_by(token: old_refresh_token)
+    
+    if refresh_token_record
+      user = refresh_token_record.user
+      
+      # 1. 古いリフレッシュトークンを削除
+      refresh_token_record.destroy
+      
+      # 2. 新しいアクセストークンを発行
+      access_token = sorcery_login(user)
+      cookies.signed[:access_token] = {
+        value: access_token,
+        httponly: true,
+        secure: Rails.env.production?
+      }
+      
+      # 3. 新しいリフレッシュトークンを発行
+      new_refresh_token = user.refresh_tokens.create!(token: SecureRandom.uuid)
+      cookies.signed[:refresh_token] = {
+        value: new_refresh_token.token,
+        httponly: true,
+        secure: Rails.env.production?,
+        expires: 1.month.from_now
+      }
+      
+      render json: { message: 'Access token refreshed successfully' }
+    else
+      # 古いトークンが再利用された場合（攻撃の可能性）
+      # ユーザーの全セッションを無効化
+      user = User.find_by(id: extract_user_id_from_token(old_refresh_token))
+      user&.refresh_tokens.destroy_all if user
+      
+      render json: { error: 'Invalid refresh token' }, status: :unauthorized
+    end
+  end
+end
+```
+
+**推奨されるアプローチ**:
+- **Refresh Token Rotation**: 使用時に新しいトークンへ更新
+- **再利用検知**: 古いトークンが再利用された場合、全セッションを無効化
+- **ログ記録**: 異常なアクセスをログに記録
+
+このアプローチにより、リフレッシュトークンの漏洩による被害を最小限に抑えられます。
 
 Step 6: ルーティングの追加
 config/routes.rbにリフレッシュトークン用のエンドポイントを追加します。
@@ -496,3 +760,92 @@ Step 2: ログイン処理の実装
 ログインフォームのコードは前回と同じです。ブラウザが自動的に2つのCookieを保存します。
 
 この仕組みにより、ユーザーは長期間ログイン状態を維持でき、同時にセキュリティ上のリスクも軽減できます。
+
+#### ⚠️ APIドメインとNext.jsドメインの不一致（CORS）
+
+実務では`api.example.com`（Rails）と`example.com`（Next.js）のようにドメインが分かれることが多いです。
+
+**重要な理解**:
+Cookieの`domain`属性を適切に設定しないと、サブドメイン間でCookieが共有されず、ログインできないというトラブルが多発します。
+
+**問題点**:
+デフォルトの設定では、`api.example.com`で設定したCookieは`example.com`からは読み取れません。
+
+```ruby
+# ❌ 問題: サブドメイン間でCookieが共有されない
+cookies.signed[:access_token] = {
+  value: access_token,
+  httponly: true,
+  secure: Rails.env.production?
+  # domainが指定されていないため、api.example.comでのみ有効
+}
+```
+
+**改善案**:
+`domain: :all`（または特定のドメイン）を`cookies.signed`のオプションに含める設定を追記しましょう。
+
+```ruby
+# ✅ 安全: サブドメイン間でCookieを共有
+cookies.signed[:access_token] = {
+  value: access_token,
+  httponly: true,
+  secure: Rails.env.production?,
+  domain: :all  # すべてのサブドメインで有効
+  # または
+  # domain: '.example.com'  # 特定のドメインとそのサブドメインで有効
+}
+```
+
+**推奨される設定**:
+- **開発環境**: `domain: :all`または`domain: '.localhost'`（注意が必要）
+- **本番環境**: `domain: '.example.com'`（実際のドメインを指定）
+
+**CORS設定との連携**:
+```ruby
+# config/initializers/cors.rb
+Rails.application.config.middleware.insert_before 0, Rack::Cors do
+  allow do
+    origins ENV['FRONTEND_URL'] || 'http://localhost:3000'
+    
+    resource '*',
+      headers: :any,
+      methods: [:get, :post, :put, :patch, :delete, :options, :head],
+      credentials: true  # Cookieを使用する場合に必須
+  end
+end
+```
+
+この設定により、サブドメイン間でCookieが正しく共有され、ログイン機能が正常に動作します。
+
+## 🚀 設計レビューでの「まさかり」文例
+
+実務でのコードレビューで使用できる、具体的な指摘文例を以下に示します。
+
+### リフレッシュトークンの漏洩対策が不十分な場合の指摘
+
+```
+【指摘】リフレッシュトークンの漏洩対策が不十分です。
+【問題】リフレッシュトークンが盗まれた際、被害に気づく仕組みや被害を最小限に抑える仕組み（Rotation）がありません。
+【影響】攻撃者が長期間、被害者のアカウントを乗っ取り続けることが可能になります。
+【推奨】リフレッシュトークンの使用時に新しいトークンへ更新する「Rotation」を実装し、古いトークンの不正利用を検知できるようにしてください。
+```
+
+### CSRF対策が不十分な場合の指摘
+
+```
+【指摘】CSRF対策がSameSite属性のみに依存しています。
+【問題】古いブラウザやサブドメイン間での攻撃に対して脆弱です。
+【影響】CSRF攻撃により、ユーザーが意図しない操作を実行される可能性があります。
+【推奨】ダブルサブミットクッキー法やカスタムヘッダーのチェックなどの追加対策を実装してください。
+```
+
+### JWTの無効化ができない場合の指摘
+
+```
+【指摘】JWTの無効化機能が実装されていません。
+【問題】ログアウトやパスワード変更後も、有効期限内のトークンが使用可能です。
+【影響】トークンが漏洩した場合、有効期限まで不正利用される可能性があります。
+【推奨】jti（トークン固有ID）をRedisのブラックリストに登録し、有効期限内でも拒否できる仕組みを実装してください。
+```
+
+これらの指摘文例を参考に、コードレビューで適切なフィードバックを行い、堅牢なアプリケーションを構築しましょう。

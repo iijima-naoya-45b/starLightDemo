@@ -1113,6 +1113,130 @@ public class UserService {
 
 ---
 
+## Lombokとは
+
+**Lombok**は、Javaコードのボイラープレート（定型的なコード）を削減するためのライブラリです。アノテーションを使用して、コンパイル時にgetter、setter、toString、equals、hashCodeなどのメソッドを自動生成します。
+
+### Lombokの特徴
+
+- **ボイラープレートコードの削減**: 繰り返し書く必要があるコード（getter/setterなど）を自動生成
+- **コンパイル時処理**: アノテーション処理により、コンパイル時にコードを生成
+- **IDEサポート**: IntelliJ IDEA、Eclipseなどの主要IDEでサポート
+- **コードの可読性向上**: 冗長なコードを減らし、ビジネスロジックに集中できる
+
+### Lombokの動作原理
+
+Lombokは、Javaの**アノテーション処理（Annotation Processing）**機能を使用して、コンパイル時にコードを生成します。
+
+```
+1. ソースコードにLombokアノテーションを記述
+2. コンパイル時にアノテーションプロセッサが実行
+3. 必要なメソッド（getter/setterなど）を自動生成
+4. 生成されたコードがコンパイルされる
+```
+
+### Lombokの使用例（Before/After）
+
+**Lombokなし（従来のコード）:**
+
+```java
+@Entity
+public class User {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    private String email;
+    
+    // 以下、手動で記述する必要がある（ボイラープレートコード）
+    public Long getId() {
+        return id;
+    }
+    
+    public void setId(Long id) {
+        this.id = id;
+    }
+    
+    public String getName() {
+        return name;
+    }
+    
+    public void setName(String name) {
+        this.name = name;
+    }
+    
+    public String getEmail() {
+        return email;
+    }
+    
+    public void setEmail(String email) {
+        this.email = email;
+    }
+    
+    @Override
+    public String toString() {
+        return "User{" +
+            "id=" + id +
+            ", name='" + name + '\'' +
+            ", email='" + email + '\'' +
+            '}';
+    }
+    
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        User user = (User) o;
+        return Objects.equals(id, user.id) &&
+            Objects.equals(name, user.name) &&
+            Objects.equals(email, user.email);
+    }
+    
+    @Override
+    public int hashCode() {
+        return Objects.hash(id, name, email);
+    }
+}
+```
+
+**Lombokあり（簡潔なコード）:**
+
+```java
+@Data
+@Entity
+public class User {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    private String email;
+    
+    // @Dataアノテーションにより、以下が自動生成される:
+    // - getter/setter
+    // - toString()
+    // - equals()/hashCode()
+    // - コンストラクタ（finalフィールドのみ）
+}
+```
+
+### Lombokの主なアノテーション
+
+- **`@Data`**: getter、setter、toString、equals、hashCodeをまとめて生成
+- **`@Getter`/`@Setter`**: getter/setterメソッドを生成
+- **`@ToString`**: toStringメソッドを生成
+- **`@EqualsAndHashCode`**: equals/hashCodeメソッドを生成
+- **`@NoArgsConstructor`**: 引数なしコンストラクタを生成
+- **`@AllArgsConstructor`**: 全フィールドを引数に持つコンストラクタを生成
+- **`@RequiredArgsConstructor`**: finalフィールドのみを引数に持つコンストラクタを生成
+- **`@Builder`**: Builderパターンを実装
+- **`@Slf4j`**: SLF4Jロガーを生成（`log`変数が使用可能）
+
+---
+
 ## Lombokアノテーション
 
 ### @Data ★★★★★
@@ -1138,6 +1262,122 @@ public class User {
     // - toString()
     // - equals()/hashCode()
     // - 全フィールドを引数に持つコンストラクタ（finalフィールドのみ）
+}
+```
+
+**⚠️ 重要な注意点: 双方向の関連がある場合の@Exclude**
+
+もしあなたが`@Data`（または`@ToString`や`@EqualsAndHashCode`）を使い、かつ「双方向（親子両方から参照できる）」の関連を作るなら、手動で`@Exclude`を入れるのは必須の儀式だと思ってください。
+
+**問題のある例（無限ループが発生）:**
+
+```java
+// Userエンティティ
+@Entity
+@Table(name = "users")
+@Data  // ⚠️ 問題: 双方向の関連がある場合、無限ループが発生する可能性
+@NoArgsConstructor
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+    private List<Order> orders = new ArrayList<>();  // ⚠️ OrderからもUserを参照
+}
+
+// Orderエンティティ
+@Entity
+@Table(name = "orders")
+@Data  // ⚠️ 問題: 双方向の関連がある場合、無限ループが発生する可能性
+@NoArgsConstructor
+public class Order {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @ManyToOne
+    @JoinColumn(name = "user_id")
+    private User user;  // ⚠️ UserからもOrderを参照（双方向）
+    
+    private BigDecimal amount;
+}
+
+// 問題: toString()やequals()/hashCode()が無限ループを引き起こす
+// User.toString() → Order.toString() → User.toString() → ...
+```
+
+**解決方法: @Excludeを使用**
+
+```java
+// Userエンティティ
+@Entity
+@Table(name = "users")
+@Data
+@NoArgsConstructor
+@ToString(exclude = "orders")  // ✅ ordersフィールドをtoStringから除外
+@EqualsAndHashCode(exclude = "orders")  // ✅ ordersフィールドをequals/hashCodeから除外
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+    private List<Order> orders = new ArrayList<>();
+}
+
+// Orderエンティティ
+@Entity
+@Table(name = "orders")
+@Data
+@NoArgsConstructor
+@ToString(exclude = "user")  // ✅ userフィールドをtoStringから除外
+@EqualsAndHashCode(exclude = "user")  // ✅ userフィールドをequals/hashCodeから除外
+public class Order {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @ManyToOne
+    @JoinColumn(name = "user_id")
+    private User user;
+    
+    private BigDecimal amount;
+}
+```
+
+**なぜ@Excludeが必須なのか:**
+
+1. **無限ループの防止**: `@ToString`が双方向の関連フィールドを含むと、循環参照によりスタックオーバーフローが発生
+2. **パフォーマンスの問題**: `@EqualsAndHashCode`が双方向の関連フィールドを含むと、計算コストが膨大になる
+3. **予期しない動作**: 双方向の関連を含む`equals()/hashCode()`は、エンティティの管理状態によって予期しない動作を引き起こす可能性がある
+
+**ベストプラクティス:**
+
+- **双方向の関連フィールドは常に`@Exclude`で除外する**
+- **IDフィールドのみを使用して`equals()/hashCode()`を計算する（推奨）**
+
+```java
+// より安全な実装例
+@Entity
+@Table(name = "users")
+@Data
+@NoArgsConstructor
+@ToString(exclude = "orders")
+@EqualsAndHashCode(of = "id")  // ✅ IDフィールドのみを使用
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+    private List<Order> orders = new ArrayList<>();
 }
 ```
 
@@ -1254,16 +1494,194 @@ public class UserService {
 
 **用途:** メソッドがスーパークラスまたはインターフェースのメソッドをオーバーライドしていることを明示
 
-**実践例:**
+#### なぜ@Overrideを使うのか？
+
+`@Override`アノテーションを使用することで、以下のメリットがあります：
+
+- ✅ **コンパイル時の検証**: オーバーライドの誤りをコンパイル時に検出できる
+- ✅ **可読性の向上**: コードを読む人が、このメソッドがオーバーライドであることをすぐに理解できる
+- ✅ **リファクタリングの安全性**: 親クラスのメソッド名を変更した際に、エラーとして検出できる
+- ✅ **タイポの防止**: メソッド名のタイポをコンパイル時に検出できる
+
+#### 実践例
 
 ```java
+// インターフェースの定義
+public interface UserServiceInterface {
+    User findById(Long id);
+    void save(User user);
+}
+
+// 実装クラス
 public class UserService implements UserServiceInterface {
     
+    private final UserRepository userRepository;
+    
+    public UserService(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+    
+    // @Overrideを付けることで、インターフェースのメソッドを実装していることを明示
     @Override
     public User findById(Long id) {
-        // インターフェースのメソッドを実装
         return userRepository.findById(id).orElse(null);
     }
+    
+    @Override
+    public void save(User user) {
+        userRepository.save(user);
+    }
+}
+
+// 継承の場合
+public class Animal {
+    public void makeSound() {
+        System.out.println("Some sound");
+    }
+}
+
+public class Dog extends Animal {
+    // @Overrideを付けることで、親クラスのメソッドをオーバーライドしていることを明示
+    @Override
+    public void makeSound() {
+        System.out.println("Woof! Woof!");
+    }
+}
+```
+
+#### ベストプラクティス
+
+**1. オーバーライドするメソッドには必ず@Overrideを付ける**
+
+```java
+// ✅ 良い例: @Overrideを付けて明示的にオーバーライドを表明
+public class UserService implements UserServiceInterface {
+    @Override
+    public User findById(Long id) {
+        return userRepository.findById(id).orElse(null);
+    }
+}
+
+// ❌ 悪い例: @Overrideがないと、タイポに気づけない
+public class UserService implements UserServiceInterface {
+    // findByIdのタイポだが、コンパイルエラーにならない
+    public User findByIdd(Long id) {  // 新しいメソッドとして扱われる
+        return userRepository.findById(id).orElse(null);
+    }
+}
+```
+
+**2. オーバーライドの条件を満たしているか確認する**
+
+```java
+public class Animal {
+    public void makeSound() { }
+    protected String getName() { return ""; }
+}
+
+public class Dog extends Animal {
+    // ✅ 正しい: メソッド名、引数、戻り値が一致
+    @Override
+    public void makeSound() {
+        System.out.println("Woof");
+    }
+    
+    // ✅ 正しい: アクセス修飾子をpublicに変更可能
+    @Override
+    public String getName() {
+        return "Dog";
+    }
+    
+    // ❌ エラー: 引数が異なる（これはオーバーロード）
+    // @Override
+    // public void makeSound(String volume) { }
+}
+```
+
+**3. 親クラスのメソッドを呼び出す場合はsuperを使用**
+
+```java
+public class Animal {
+    public void display() {
+        System.out.println("Animal");
+    }
+}
+
+public class Dog extends Animal {
+    @Override
+    public void display() {
+        super.display();  // 親クラスのメソッドを先に呼び出す
+        System.out.println("Dog");
+    }
+}
+```
+
+#### アンチパターン
+
+**1. @Overrideを付けずにオーバーライドする**
+
+```java
+// ❌ アンチパターン: @Overrideがないと、タイポに気づけない
+public class UserService implements UserServiceInterface {
+    // findByIdのタイポだが、コンパイルエラーにならない
+    public User findByIdd(Long id) {  // 新しいメソッドとして扱われる
+        return userRepository.findById(id).orElse(null);
+    }
+}
+
+// ✅ 正しい: @Overrideを付けると、タイポがコンパイルエラーになる
+public class UserService implements UserServiceInterface {
+    @Override
+    public User findById(Long id) {  // インターフェースのメソッドを正しく実装
+        return userRepository.findById(id).orElse(null);
+    }
+}
+```
+
+**2. オーバーロードとオーバーライドを混同する**
+
+```java
+// ❌ アンチパターン: オーバーロードに@Overrideを付けようとする
+public class Animal {
+    public void makeSound() { }
+}
+
+public class Dog extends Animal {
+    @Override
+    public void makeSound() { }  // ✅ これは正しい
+    
+    // ❌ エラー: 引数が異なるため、これはオーバーロード（オーバーライドではない）
+    // @Override
+    // public void makeSound(String volume) { }
+}
+
+// ✅ 正しい: オーバーロードには@Overrideを付けない
+public class Dog extends Animal {
+    @Override
+    public void makeSound() { }  // オーバーライド
+    
+    public void makeSound(String volume) { }  // オーバーロード（@Override不要）
+}
+```
+
+**3. オーバーライドの条件を満たしていないメソッドに@Overrideを付ける**
+
+```java
+// ❌ アンチパターン: 戻り値の型が異なる
+public class Animal {
+    public String getName() { return ""; }
+}
+
+public class Dog extends Animal {
+    // ❌ エラー: 戻り値の型が異なるため、オーバーライドではない
+    // @Override
+    // public int getName() { return 0; }
+}
+
+// ✅ 正しい: 戻り値の型が一致している
+public class Dog extends Animal {
+    @Override
+    public String getName() { return "Dog"; }
 }
 ```
 
@@ -1273,21 +1691,269 @@ public class UserService implements UserServiceInterface {
 
 **用途:** 非推奨のメソッドやクラスにマーク
 
-**実践例:**
+#### なぜ@Deprecatedを使うのか？
+
+`@Deprecated`アノテーションを使用することで、以下のメリットがあります：
+
+- ✅ **段階的な移行**: 既存のコードを壊さずに、新しいAPIへの移行を促せる
+- ✅ **警告の表示**: IDEやコンパイラが非推奨の使用に対して警告を表示する
+- ✅ **ドキュメント化**: どのメソッドが非推奨で、代替手段が何かを明確にできる
+- ✅ **後方互換性の維持**: 既存のコードを壊さずに、APIを改善できる
+
+#### 実践例
 
 ```java
 @Service
 public class UserService {
     
+    private final UserRepository userRepository;
+    
+    public UserService(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+    
+    // @Deprecated: このメソッドは非推奨。findById()を使用してください
     @Deprecated
     public User findUserById(Long id) {
-        // このメソッドは非推奨。findById()を使用してください
+        // 既存のコードとの互換性のために残しているが、新しいコードでは使用しない
+        return findById(id);
+    }
+    
+    // 新しい推奨メソッド
+    public User findById(Long id) {
+        return userRepository.findById(id).orElse(null);
+    }
+    
+    // @Deprecated with since and forRemoval
+    // since: 非推奨になったバージョン
+    // forRemoval: 将来削除予定かどうか
+    @Deprecated(since = "2.0", forRemoval = true)
+    public void oldMethod() {
+        // このメソッドは将来削除される予定
+    }
+}
+
+// クラス全体を非推奨にする場合
+@Deprecated
+public class OldUserService {
+    // このクラス全体が非推奨
+}
+```
+
+#### ベストプラクティス
+
+**1. @Deprecatedと一緒にJavaDocコメントを追加する**
+
+```java
+@Service
+public class UserService {
+    
+    /**
+     * ユーザーをIDで検索します。
+     * 
+     * @deprecated このメソッドは非推奨です。{@link #findById(Long)}を使用してください。
+     * @param id ユーザーID
+     * @return ユーザー
+     */
+    @Deprecated
+    public User findUserById(Long id) {
+        return findById(id);
+    }
+    
+    /**
+     * ユーザーをIDで検索します（推奨）。
+     * 
+     * @param id ユーザーID
+     * @return ユーザー
+     */
+    public User findById(Long id) {
+        return userRepository.findById(id).orElse(null);
+    }
+}
+```
+
+**2. 代替手段を明確に示す**
+
+```java
+@Service
+public class UserService {
+    
+    // ❌ 悪い例: 代替手段が不明確
+    @Deprecated
+    public User findUserById(Long id) {
+        return findById(id);
+    }
+    
+    // ✅ 良い例: JavaDocで代替手段を明確に示す
+    /**
+     * ユーザーをIDで検索します。
+     * 
+     * @deprecated このメソッドは非推奨です。代わりに {@link #findById(Long)} を使用してください。
+     * 移行例: findUserById(id) → findById(id)
+     * 
+     * @param id ユーザーID
+     * @return ユーザー
+     */
+    @Deprecated
+    public User findUserById(Long id) {
         return findById(id);
     }
     
     public User findById(Long id) {
-        // 新しいメソッド
         return userRepository.findById(id).orElse(null);
+    }
+}
+```
+
+**3. sinceとforRemovalを適切に使用する**
+
+```java
+@Service
+public class UserService {
+    
+    // 段階的な非推奨化
+    // since: 非推奨になったバージョン
+    // forRemoval: 将来削除予定かどうか
+    @Deprecated(since = "2.0", forRemoval = true)
+    public void oldMethod() {
+        // このメソッドはバージョン2.0で非推奨になり、将来削除される予定
+    }
+    
+    @Deprecated(since = "2.1")
+    public void deprecatedButNotRemoved() {
+        // このメソッドは非推奨だが、削除予定はない
+    }
+}
+```
+
+**4. 非推奨メソッドの実装を新しいメソッドに委譲する**
+
+```java
+@Service
+public class UserService {
+    
+    // ✅ 良い例: 非推奨メソッドは新しいメソッドに委譲
+    @Deprecated
+    public User findUserById(Long id) {
+        return findById(id);  // 新しいメソッドに委譲
+    }
+    
+    public User findById(Long id) {
+        return userRepository.findById(id).orElse(null);
+    }
+}
+```
+
+#### アンチパターン
+
+**1. @Deprecatedを付けただけで、代替手段を示さない**
+
+```java
+// ❌ アンチパターン: 代替手段が不明確
+@Service
+public class UserService {
+    @Deprecated
+    public User findUserById(Long id) {
+        // 何を使えばいいのかわからない
+        return userRepository.findById(id).orElse(null);
+    }
+}
+
+// ✅ 正しい: JavaDocで代替手段を明確に示す
+@Service
+public class UserService {
+    /**
+     * @deprecated このメソッドは非推奨です。{@link #findById(Long)}を使用してください。
+     */
+    @Deprecated
+    public User findUserById(Long id) {
+        return findById(id);
+    }
+    
+    public User findById(Long id) {
+        return userRepository.findById(id).orElse(null);
+    }
+}
+```
+
+**2. 非推奨メソッドを削除せずに放置する**
+
+```java
+// ❌ アンチパターン: 非推奨メソッドを長期間放置
+@Service
+public class UserService {
+    @Deprecated(since = "1.0", forRemoval = true)  // 削除予定だが、何年も放置
+    public User findUserById(Long id) {
+        return findById(id);
+    }
+}
+
+// ✅ 正しい: 適切なタイミングで削除する
+// 1. 非推奨をマーク
+// 2. 十分な移行期間を設ける（例: 1-2バージョン）
+// 3. 削除予定を通知
+// 4. 削除
+```
+
+**3. 非推奨メソッドの実装を変更する**
+
+```java
+// ❌ アンチパターン: 非推奨メソッドの実装を変更
+@Service
+public class UserService {
+    @Deprecated
+    public User findUserById(Long id) {
+        // 非推奨メソッドの実装を変更してしまうと、既存のコードが壊れる可能性がある
+        return userRepository.findById(id)
+            .orElseThrow(() -> new UserNotFoundException());  // 動作が変わってしまう
+    }
+}
+
+// ✅ 正しい: 非推奨メソッドは新しいメソッドに委譲し、実装を変更しない
+@Service
+public class UserService {
+    @Deprecated
+    public User findUserById(Long id) {
+        return findById(id);  // 常に新しいメソッドに委譲
+    }
+    
+    public User findById(Long id) {
+        return userRepository.findById(id).orElse(null);
+    }
+}
+```
+
+**4. 新しいコードで非推奨メソッドを使用する**
+
+```java
+// ❌ アンチパターン: 新しいコードで非推奨メソッドを使用
+@Service
+public class OrderService {
+    private final UserService userService;
+    
+    public OrderService(UserService userService) {
+        this.userService = userService;
+    }
+    
+    public Order createOrder(Long userId) {
+        // 警告: 非推奨メソッドを使用している
+        User user = userService.findUserById(userId);  // ❌ 非推奨メソッド
+        // ...
+    }
+}
+
+// ✅ 正しい: 新しいコードでは推奨メソッドを使用
+@Service
+public class OrderService {
+    private final UserService userService;
+    
+    public OrderService(UserService userService) {
+        this.userService = userService;
+    }
+    
+    public Order createOrder(Long userId) {
+        User user = userService.findById(userId);  // ✅ 推奨メソッド
+        // ...
     }
 }
 ```
@@ -1298,22 +1964,300 @@ public class UserService {
 
 **用途:** 設定クラスであることを示す
 
-**実践例:**
+#### なぜ@Configurationを使うのか？
+
+`@Configuration`アノテーションを使用することで、以下のメリットがあります：
+
+- ✅ **Bean定義の集約**: 複数のBean定義を1つのクラスに集約できる
+- ✅ **設定の一元管理**: アプリケーションの設定を1箇所で管理できる
+- ✅ **条件付きBean定義**: `@ConditionalOnProperty`などと組み合わせて、条件付きでBeanを定義できる
+- ✅ **依存関係の明確化**: Bean間の依存関係を明確に定義できる
+- ✅ **テストの容易性**: テスト用の設定クラスを簡単に作成できる
+
+#### 実践例
 
 ```java
 @Configuration
 public class AppConfig {
     
+    // RestTemplateのBean定義
+    @Bean
+    public RestTemplate restTemplate() {
+        RestTemplate restTemplate = new RestTemplate();
+        restTemplate.setRequestFactory(new HttpComponentsClientHttpRequestFactory());
+        return restTemplate;
+    }
+    
+    // ObjectMapperのBean定義
+    @Bean
+    public ObjectMapper objectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        mapper.configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
+        return mapper;
+    }
+    
+    // 条件付きBean定義
+    @Bean
+    @ConditionalOnProperty(name = "app.feature.enabled", havingValue = "true")
+    public FeatureService featureService() {
+        return new FeatureService();
+    }
+    
+    // 他のBeanに依存するBean定義
+    @Bean
+    public ApiClient apiClient(RestTemplate restTemplate, ObjectMapper objectMapper) {
+        return new ApiClient(restTemplate, objectMapper);
+    }
+}
+```
+
+#### ベストプラクティス
+
+**1. 設定クラスは機能ごとに分離する**
+
+```java
+// ✅ 良い例: 機能ごとに設定クラスを分離
+@Configuration
+public class WebConfig {
+    @Bean
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
+}
+
+@Configuration
+public class DatabaseConfig {
+    @Bean
+    public DataSource dataSource() {
+        // データソースの設定
+        return new HikariDataSource();
+    }
+}
+
+@Configuration
+public class CacheConfig {
+    @Bean
+    public CacheManager cacheManager() {
+        return new ConcurrentMapCacheManager();
+    }
+}
+
+// ❌ 悪い例: すべての設定を1つのクラスに詰め込む
+@Configuration
+public class AllConfig {
+    @Bean
+    public RestTemplate restTemplate() { }
+    @Bean
+    public DataSource dataSource() { }
+    @Bean
+    public CacheManager cacheManager() { }
+    // ... 100個以上のBean定義
+}
+```
+
+**2. @ConfigurationPropertiesと組み合わせて使用する**
+
+```java
+// 設定プロパティクラス
+@ConfigurationProperties(prefix = "app")
+@Data
+public class AppProperties {
+    private String apiUrl;
+    private int timeout;
+    private boolean enabled;
+}
+
+// 設定クラス
+@Configuration
+@EnableConfigurationProperties(AppProperties.class)
+public class AppConfig {
+    
+    @Bean
+    public ApiClient apiClient(AppProperties appProperties) {
+        return new ApiClient(appProperties.getApiUrl(), appProperties.getTimeout());
+    }
+}
+```
+
+**3. プロファイル別の設定クラスを作成する**
+
+```java
+// 開発環境用の設定
+@Configuration
+@Profile("dev")
+public class DevConfig {
+    @Bean
+    public DataSource dataSource() {
+        // 開発環境用のデータソース
+        return new HikariDataSource();
+    }
+}
+
+// 本番環境用の設定
+@Configuration
+@Profile("prod")
+public class ProdConfig {
+    @Bean
+    public DataSource dataSource() {
+        // 本番環境用のデータソース
+        return new HikariDataSource();
+    }
+}
+```
+
+**4. @Conditionalアノテーションで条件付きBean定義を行う**
+
+```java
+@Configuration
+public class ConditionalConfig {
+    
+    // プロパティが有効な場合のみBeanを作成
+    @Bean
+    @ConditionalOnProperty(name = "app.feature.enabled", havingValue = "true")
+    public FeatureService featureService() {
+        return new FeatureService();
+    }
+    
+    // クラスが存在する場合のみBeanを作成
+    @Bean
+    @ConditionalOnClass(name = "com.example.ExternalLibrary")
+    public ExternalService externalService() {
+        return new ExternalService();
+    }
+}
+```
+
+#### アンチパターン
+
+**1. @Configurationを付けずに@Beanメソッドを定義する**
+
+```java
+// ❌ アンチパターン: @Configurationがないと、Bean間の依存関係が正しく解決されない
+public class AppConfig {
     @Bean
     public RestTemplate restTemplate() {
         return new RestTemplate();
     }
     
     @Bean
-    public ObjectMapper objectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        return mapper;
+    public ApiClient apiClient() {
+        // 問題: restTemplate()が毎回新しいインスタンスを作成してしまう
+        return new ApiClient(restTemplate());  // シングルトンにならない
+    }
+}
+
+// ✅ 正しい: @Configurationを付けると、Bean間の依存関係が正しく解決される
+@Configuration
+public class AppConfig {
+    @Bean
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
+    
+    @Bean
+    public ApiClient apiClient(RestTemplate restTemplate) {
+        // 正しく: restTemplate()はシングルトンとして注入される
+        return new ApiClient(restTemplate);
+    }
+}
+```
+
+**2. 設定クラスにビジネスロジックを含める**
+
+```java
+// ❌ アンチパターン: 設定クラスにビジネスロジックを含める
+@Configuration
+public class AppConfig {
+    @Bean
+    public UserService userService() {
+        UserService service = new UserService();
+        // 問題: ビジネスロジックを設定クラスに書くべきではない
+        service.processUsers();  // ビジネスロジック
+        return service;
+    }
+}
+
+// ✅ 正しい: 設定クラスはBean定義のみを行う
+@Configuration
+public class AppConfig {
+    @Bean
+    public UserService userService(UserRepository userRepository) {
+        // Bean定義のみ
+        return new UserService(userRepository);
+    }
+}
+
+// ビジネスロジックはサービスクラスに
+@Service
+public class UserService {
+    private final UserRepository userRepository;
+    
+    public UserService(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+    
+    public void processUsers() {
+        // ビジネスロジック
+    }
+}
+```
+
+**3. すべての設定を1つのクラスに詰め込む**
+
+```java
+// ❌ アンチパターン: すべての設定を1つのクラスに詰め込む
+@Configuration
+public class AllConfig {
+    @Bean
+    public RestTemplate restTemplate() { }
+    @Bean
+    public DataSource dataSource() { }
+    @Bean
+    public CacheManager cacheManager() { }
+    @Bean
+    public EmailService emailService() { }
+    @Bean
+    public PaymentService paymentService() { }
+    // ... 100個以上のBean定義
+    // 問題: 保守性が低く、テストが困難
+}
+
+// ✅ 正しい: 機能ごとに設定クラスを分離
+@Configuration
+public class WebConfig {
+    @Bean
+    public RestTemplate restTemplate() { }
+}
+
+@Configuration
+public class DatabaseConfig {
+    @Bean
+    public DataSource dataSource() { }
+}
+```
+
+**4. @Beanメソッド内でnewを直接使用する（依存性注入を使わない）**
+
+```java
+// ❌ アンチパターン: 依存関係を直接newで解決
+@Configuration
+public class AppConfig {
+    @Bean
+    public UserService userService() {
+        // 問題: 依存関係を直接newで解決している
+        UserRepository repository = new UserRepositoryImpl();
+        return new UserService(repository);
+    }
+}
+
+// ✅ 正しい: 依存性注入を使用
+@Configuration
+public class AppConfig {
+    @Bean
+    public UserService userService(UserRepository userRepository) {
+        // 依存関係をSpringに委譲
+        return new UserService(userRepository);
     }
 }
 ```
@@ -1324,24 +2268,371 @@ public class AppConfig {
 
 **用途:** メソッドの戻り値をSpring Beanとして登録
 
-**実践例:**
+#### なぜ@Beanを使うのか？
+
+`@Bean`アノテーションを使用することで、以下のメリットがあります：
+
+- ✅ **サードパーティライブラリの統合**: Springが管理していないクラスをBeanとして登録できる
+- ✅ **カスタム設定**: Beanの作成時にカスタム設定を適用できる
+- ✅ **条件付きBean定義**: 条件に応じてBeanを作成できる
+- ✅ **複数の実装**: 同じ型の複数のBeanを定義できる（名前で区別）
+- ✅ **ライフサイクル管理**: Springのライフサイクル（初期化、破棄）を利用できる
+
+#### 実践例
 
 ```java
 @Configuration
 public class AppConfig {
     
+    // 基本的なBean定義
     @Bean
-    @Primary  // 複数のBeanがある場合の優先Bean
     public RestTemplate restTemplate() {
         RestTemplate restTemplate = new RestTemplate();
         restTemplate.setRequestFactory(new HttpComponentsClientHttpRequestFactory());
         return restTemplate;
     }
     
+    // 名前を指定したBean定義
     @Bean(name = "customRestTemplate")
     public RestTemplate customRestTemplate() {
-        // カスタム設定
+        RestTemplate restTemplate = new RestTemplate();
+        restTemplate.setConnectTimeout(Duration.ofSeconds(10));
+        restTemplate.setReadTimeout(Duration.ofSeconds(30));
+        return restTemplate;
+    }
+    
+    // @Primaryで優先Beanを指定
+    @Bean
+    @Primary
+    public RestTemplate primaryRestTemplate() {
         return new RestTemplate();
+    }
+    
+    // 他のBeanに依存するBean定義
+    @Bean
+    public ApiClient apiClient(RestTemplate restTemplate) {
+        return new ApiClient(restTemplate);
+    }
+    
+    // 初期化・破棄メソッドを指定
+    @Bean(initMethod = "init", destroyMethod = "cleanup")
+    public ResourceManager resourceManager() {
+        return new ResourceManager();
+    }
+    
+    // 条件付きBean定義
+    @Bean
+    @ConditionalOnProperty(name = "app.cache.enabled", havingValue = "true")
+    public CacheManager cacheManager() {
+        return new ConcurrentMapCacheManager();
+    }
+}
+```
+
+#### ベストプラクティス
+
+**1. Bean名は明確で一貫性のあるものにする**
+
+```java
+@Configuration
+public class AppConfig {
+    
+    // ✅ 良い例: 明確なBean名
+    @Bean(name = "httpRestTemplate")
+    public RestTemplate httpRestTemplate() {
+        return new RestTemplate();
+    }
+    
+    @Bean(name = "httpsRestTemplate")
+    public RestTemplate httpsRestTemplate() {
+        return new RestTemplate();
+    }
+    
+    // ❌ 悪い例: 曖昧なBean名
+    @Bean(name = "restTemplate1")
+    public RestTemplate restTemplate1() {
+        return new RestTemplate();
+    }
+}
+```
+
+**2. 依存関係はメソッド引数で注入する**
+
+```java
+@Configuration
+public class AppConfig {
+    
+    // ✅ 良い例: 依存関係をメソッド引数で注入
+    @Bean
+    public ApiClient apiClient(RestTemplate restTemplate, ObjectMapper objectMapper) {
+        return new ApiClient(restTemplate, objectMapper);
+    }
+    
+    // ❌ 悪い例: 依存関係を直接newで解決
+    @Bean
+    public ApiClient apiClient() {
+        RestTemplate restTemplate = new RestTemplate();  // 問題: シングルトンにならない
+        return new ApiClient(restTemplate);
+    }
+}
+```
+
+**3. @PrimaryでデフォルトのBeanを指定する**
+
+```java
+@Configuration
+public class AppConfig {
+    
+    // デフォルトのRestTemplate（@Primary）
+    @Bean
+    @Primary
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
+    
+    // カスタムのRestTemplate（名前で指定して使用）
+    @Bean(name = "customRestTemplate")
+    public RestTemplate customRestTemplate() {
+        RestTemplate restTemplate = new RestTemplate();
+        restTemplate.setConnectTimeout(Duration.ofSeconds(30));
+        return restTemplate;
+    }
+}
+
+// 使用例
+@Service
+public class UserService {
+    // @Primaryが付いたBeanが自動注入される
+    private final RestTemplate restTemplate;
+    
+    public UserService(RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;  // デフォルトのRestTemplateが注入される
+    }
+}
+
+@Service
+public class ApiService {
+    // 名前を指定してカスタムのRestTemplateを注入
+    @Autowired
+    @Qualifier("customRestTemplate")
+    private RestTemplate restTemplate;
+}
+```
+
+**4. 条件付きBean定義を使用する**
+
+```java
+@Configuration
+public class AppConfig {
+    
+    // プロパティが有効な場合のみBeanを作成
+    @Bean
+    @ConditionalOnProperty(name = "app.feature.enabled", havingValue = "true")
+    public FeatureService featureService() {
+        return new FeatureService();
+    }
+    
+    // クラスが存在する場合のみBeanを作成
+    @Bean
+    @ConditionalOnClass(name = "com.example.ExternalLibrary")
+    public ExternalService externalService() {
+        return new ExternalService();
+    }
+    
+    // プロファイルが有効な場合のみBeanを作成
+    @Bean
+    @Profile("dev")
+    public DevService devService() {
+        return new DevService();
+    }
+}
+```
+
+**5. 初期化・破棄メソッドを適切に使用する**
+
+```java
+public class ResourceManager {
+    public void init() {
+        // 初期化処理
+        System.out.println("ResourceManager initialized");
+    }
+    
+    public void cleanup() {
+        // クリーンアップ処理
+        System.out.println("ResourceManager cleaned up");
+    }
+}
+
+@Configuration
+public class AppConfig {
+    @Bean(initMethod = "init", destroyMethod = "cleanup")
+    public ResourceManager resourceManager() {
+        return new ResourceManager();
+    }
+}
+```
+
+#### アンチパターン
+
+**1. @Configurationクラス内で@Beanメソッドを直接呼び出す**
+
+```java
+@Configuration
+public class AppConfig {
+    
+    @Bean
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
+    
+    // ❌ アンチパターン: @Beanメソッドを直接呼び出す
+    @Bean
+    public ApiClient apiClient() {
+        // 問題: restTemplate()が毎回新しいインスタンスを作成してしまう
+        return new ApiClient(restTemplate());  // シングルトンにならない
+    }
+}
+
+// ✅ 正しい: 依存関係をメソッド引数で注入
+@Configuration
+public class AppConfig {
+    @Bean
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
+    
+    @Bean
+    public ApiClient apiClient(RestTemplate restTemplate) {
+        // 正しく: restTemplateはシングルトンとして注入される
+        return new ApiClient(restTemplate);
+    }
+}
+```
+
+**2. 同じ型のBeanを複数定義する際に名前を付けない**
+
+```java
+@Configuration
+public class AppConfig {
+    
+    // ❌ アンチパターン: 同じ型のBeanを複数定義する際に名前を付けない
+    @Bean
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
+    
+    @Bean
+    public RestTemplate customRestTemplate() {
+        // 問題: どちらが注入されるか不明確
+        return new RestTemplate();
+    }
+}
+
+// ✅ 正しい: 名前を明確に指定する
+@Configuration
+public class AppConfig {
+    @Bean(name = "defaultRestTemplate")
+    @Primary
+    public RestTemplate defaultRestTemplate() {
+        return new RestTemplate();
+    }
+    
+    @Bean(name = "customRestTemplate")
+    public RestTemplate customRestTemplate() {
+        return new RestTemplate();
+    }
+}
+```
+
+**3. Bean定義メソッド内でビジネスロジックを実行する**
+
+```java
+@Configuration
+public class AppConfig {
+    
+    // ❌ アンチパターン: Bean定義メソッド内でビジネスロジックを実行
+    @Bean
+    public UserService userService() {
+        UserService service = new UserService();
+        // 問題: Bean定義時にビジネスロジックを実行すべきではない
+        service.processAllUsers();  // ビジネスロジック
+        return service;
+    }
+}
+
+// ✅ 正しい: Bean定義はシンプルに保つ
+@Configuration
+public class AppConfig {
+    @Bean
+    public UserService userService(UserRepository userRepository) {
+        // Bean定義のみ
+        return new UserService(userRepository);
+    }
+}
+
+// ビジネスロジックはサービスクラスに
+@Service
+public class UserService {
+    public void processAllUsers() {
+        // ビジネスロジック
+    }
+}
+```
+
+**4. 状態を持つBeanを@Beanメソッドで定義する**
+
+```java
+@Configuration
+public class AppConfig {
+    
+    // ❌ アンチパターン: 状態を持つBeanを@Beanメソッドで定義
+    private int counter = 0;  // 問題: 状態を持つ
+    
+    @Bean
+    public CounterService counterService() {
+        counter++;  // 問題: 状態を変更している
+        return new CounterService(counter);
+    }
+}
+
+// ✅ 正しい: 状態を持たないBean定義
+@Configuration
+public class AppConfig {
+    @Bean
+    public CounterService counterService() {
+        // 状態を持たない
+        return new CounterService();
+    }
+}
+```
+
+**5. @Beanメソッドをstaticにする（必要な場合を除く）**
+
+```java
+@Configuration
+public class AppConfig {
+    
+    // ❌ アンチパターン: 通常はstaticにしない
+    @Bean
+    public static RestTemplate restTemplate() {
+        // 問題: 他のBeanに依存できない
+        return new RestTemplate();
+    }
+}
+
+// ✅ 正しい: 通常はインスタンスメソッドとして定義
+@Configuration
+public class AppConfig {
+    @Bean
+    public RestTemplate restTemplate() {
+        // 他のBeanに依存できる
+        return new RestTemplate();
+    }
+    
+    @Bean
+    public ApiClient apiClient(RestTemplate restTemplate) {
+        // restTemplateに依存できる
+        return new ApiClient(restTemplate);
     }
 }
 ```
@@ -1419,6 +2710,234 @@ public class User {
     private LocalDateTime createdAt;
 }
 ```
+
+---
+
+## AOP（Aspect Oriented Programming）の専門用語
+
+**AOP（Aspect Oriented Programming、アスペクト指向プログラミング）**とは、本編のコードとは関係ない「お決まりの処理」（例：ロギング、トランザクション管理、セキュリティチェックなど）を、外側に追い出して自動で合体させる技術です。
+
+`Rails`でいう`BeforeAction`に相当する機能です。
+
+### AOPの動作原理
+
+AOPは、**動的プロキシ**を使用して、実行時にコードを生成します。具体的には、コンストラクタなどのボイラープレートテンプレートを作成し、実行時にメソッド呼び出しをインターセプトして、追加処理を実行します。
+
+```
+1. アスペクト（共通処理）を定義
+2. ポイントカット（適用箇所）を指定
+3. 実行時に動的プロキシが発動
+4. メソッド呼び出しをインターセプト
+5. アドバイス（追加処理）を実行
+6. 元のメソッドを実行
+```
+
+### AOPの専門用語
+
+#### アスペクト (Aspect)
+
+**アスペクト**は、まとまった共通処理を定義する単位です。
+
+**例:** 盛り付けルール
+
+```java
+@Aspect
+@Component
+public class LoggingAspect {
+    
+    // このアスペクトは、ロギングという共通処理を定義
+    // 例: すべてのサービスメソッドの実行前後にログを出力する
+}
+```
+
+#### アドバイス (Advice)
+
+**アドバイス**は、アスペクトの中の具体的な中身、つまり「いつ」「何を」実行するかを定義します。
+
+**例:** パセリを乗せる
+
+```java
+@Aspect
+@Component
+public class LoggingAspect {
+    
+    // @Before: メソッド実行前にログを出力
+    @Before("execution(* com.example.service.*.*(..))")
+    public void logBefore(JoinPoint joinPoint) {
+        log.info("Before method: {}", joinPoint.getSignature());
+        // 例: パセリを乗せる（ログを出力）
+    }
+    
+    // @After: メソッド実行後にログを出力
+    @After("execution(* com.example.service.*.*(..))")
+    public void logAfter(JoinPoint joinPoint) {
+        log.info("After method: {}", joinPoint.getSignature());
+    }
+}
+```
+
+#### ジョインポイント (Joinpoint)
+
+**ジョインポイント**は、アドバイスを差し込めるタイミングです。メソッドの実行前、実行後、例外発生時など、プログラムの実行における特定のポイントを指します。
+
+**例:** 料理が完成した瞬間
+
+```java
+// ジョインポイントの例:
+// - メソッド実行前 (Before)
+// - メソッド実行後 (After)
+// - メソッド実行後（正常終了時） (AfterReturning)
+// - 例外発生時 (AfterThrowing)
+// - メソッド実行の前後 (Around)
+
+@Aspect
+@Component
+public class LoggingAspect {
+    
+    // メソッド実行前（ジョインポイント: Before）
+    @Before("execution(* com.example.service.*.*(..))")
+    public void logBefore(JoinPoint joinPoint) {
+        // メソッド実行前に実行される
+    }
+    
+    // メソッド実行後（ジョインポイント: After）
+    @After("execution(* com.example.service.*.*(..))")
+    public void logAfter(JoinPoint joinPoint) {
+        // メソッド実行後に実行される（正常終了・例外発生の両方）
+    }
+}
+```
+
+#### ポイントカット (Pointcut)
+
+**ポイントカット**は、どこにアドバイスを差し込むかのルールを定義します。どのクラス、どのメソッドにアドバイスを適用するかを指定します。
+
+**例:** カレーの時だけ！
+
+```java
+@Aspect
+@Component
+public class TransactionAspect {
+    
+    // ポイントカット: サービス層のメソッドのみに適用
+    @Pointcut("execution(* com.example.service.*.*(..))")
+    public void serviceMethods() {
+        // ポイントカットの定義（例: カレーの時だけ！）
+    }
+    
+    // アドバイス: ポイントカットにマッチするメソッドに適用
+    @Around("serviceMethods()")
+    public Object aroundServiceMethod(ProceedingJoinPoint joinPoint) throws Throwable {
+        // 例: カレーの時だけトランザクションを開始
+        return joinPoint.proceed();
+    }
+}
+```
+
+### AOPの実践例（Spring Boot）
+
+```java
+// アスペクトの定義
+@Aspect
+@Component
+@Slf4j
+public class LoggingAspect {
+    
+    // ポイントカット: サービス層のすべてのメソッド
+    @Pointcut("execution(* com.example.service.*.*(..))")
+    public void serviceMethods() {
+    }
+    
+    // アドバイス: メソッド実行前にログを出力（ジョインポイント: Before）
+    @Before("serviceMethods()")
+    public void logBefore(JoinPoint joinPoint) {
+        log.info("Before method: {} with args: {}", 
+            joinPoint.getSignature(), 
+            Arrays.toString(joinPoint.getArgs()));
+    }
+    
+    // アドバイス: メソッド実行後にログを出力（ジョインポイント: AfterReturning）
+    @AfterReturning(pointcut = "serviceMethods()", returning = "result")
+    public void logAfterReturning(JoinPoint joinPoint, Object result) {
+        log.info("After method: {} returned: {}", 
+            joinPoint.getSignature(), result);
+    }
+    
+    // アドバイス: 例外発生時にログを出力（ジョインポイント: AfterThrowing）
+    @AfterThrowing(pointcut = "serviceMethods()", throwing = "ex")
+    public void logAfterThrowing(JoinPoint joinPoint, Exception ex) {
+        log.error("Exception in method: {}", joinPoint.getSignature(), ex);
+    }
+    
+    // アドバイス: メソッド実行の前後で処理（ジョインポイント: Around）
+    @Around("serviceMethods()")
+    public Object aroundMethod(ProceedingJoinPoint joinPoint) throws Throwable {
+        long start = System.currentTimeMillis();
+        try {
+            Object result = joinPoint.proceed();  // 元のメソッドを実行
+            long duration = System.currentTimeMillis() - start;
+            log.info("Method: {} took {}ms", joinPoint.getSignature(), duration);
+            return result;
+        } catch (Exception e) {
+            long duration = System.currentTimeMillis() - start;
+            log.error("Method: {} failed after {}ms", joinPoint.getSignature(), duration, e);
+            throw e;
+        }
+    }
+}
+
+// 使用例: サービスクラス（何も変更不要）
+@Service
+public class UserService {
+    
+    public User findById(Long id) {
+        // このメソッドは自動的にログ出力される（AOPにより）
+        return userRepository.findById(id).orElseThrow();
+    }
+}
+```
+
+### 動的プロキシの仕組み
+
+Spring AOPは、実行時に**動的プロキシ**を生成して、メソッド呼び出しをインターセプトします。
+
+**具体例:**
+
+1. `UserService`のメソッドを呼び出す
+2. Springが動的プロキシ（`UserService`のプロキシ）を生成
+3. プロキシがメソッド呼び出しをインターセプト
+4. アドバイス（ログ出力など）を実行
+5. 元の`UserService`のメソッドを実行
+6. アドバイス（ログ出力など）を実行
+7. 結果を返す
+
+### AOPと@Transactional
+
+Spring Bootの`@Transactional`アノテーションも、AOPの仕組みを使用して実装されています。
+
+```java
+@Service
+public class UserService {
+    
+    // @Transactionalアノテーション
+    // → AOPにより、このメソッド実行時に自動的にトランザクションを開始・終了
+    @Transactional
+    public User createUser(UserCreateRequest request) {
+        User user = new User();
+        user.setName(request.getName());
+        return userRepository.save(user);
+        // メソッド終了時に自動的にコミット（例外発生時はロールバック）
+    }
+}
+```
+
+**動作の流れ:**
+
+1. `createUser`メソッドを呼び出す
+2. AOPがメソッド呼び出しをインターセプト
+3. トランザクションを開始（アドバイス: Before）
+4. 元のメソッドを実行
+5. トランザクションをコミット（アドバイス: AfterReturning）またはロールバック（アドバイス: AfterThrowing）
 
 ---
 

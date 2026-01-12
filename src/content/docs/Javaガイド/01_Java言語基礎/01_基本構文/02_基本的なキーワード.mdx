@@ -1080,6 +1080,178 @@ public class Example {
 }
 ```
 
+#### static修飾子のベストプラクティス
+
+**1. ユーティリティメソッドにはstaticを使用**
+
+```java
+// ✅ 良い例: インスタンス不要のユーティリティメソッド
+public class StringUtils {
+    private StringUtils() { }  // インスタンス化を防ぐ
+    
+    public static boolean isEmpty(String str) {
+        return str == null || str.isEmpty();
+    }
+    
+    public static String capitalize(String str) {
+        if (isEmpty(str)) return str;
+        return str.substring(0, 1).toUpperCase() + str.substring(1);
+    }
+}
+```
+
+**2. 定数にはstatic finalを使用**
+
+```java
+// ✅ 良い例: 定数クラス
+public class Constants {
+    public static final String API_VERSION = "v1";
+    public static final int MAX_RETRY_COUNT = 3;
+    public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
+    
+    private Constants() { }  // インスタンス化を防ぐ
+}
+```
+
+**3. ファクトリーメソッドにはstaticを使用**
+
+```java
+// ✅ 良い例: ファクトリーメソッド
+public class User {
+    private String name;
+    private String email;
+    
+    private User(String name, String email) {
+        this.name = name;
+        this.email = email;
+    }
+    
+    // ファクトリーメソッド
+    public static User create(String name, String email) {
+        // バリデーションなどの処理
+        if (name == null || name.isEmpty()) {
+            throw new IllegalArgumentException("Name cannot be empty");
+        }
+        return new User(name, email);
+    }
+}
+```
+
+#### static修飾子のアンチパターン
+
+**1. インスタンスフィールドにstaticを使用**
+
+```java
+// ❌ アンチパターン: インスタンスごとに異なるべきフィールドをstaticにしている
+public class User {
+    private static String name;  // 問題: すべてのインスタンスで共有される
+    private static String email;  // 問題: すべてのインスタンスで共有される
+    
+    public void setName(String name) {
+        User.name = name;  // すべてのインスタンスに影響
+    }
+}
+
+// ✅ 正しい: インスタンスフィールドとして定義
+public class User {
+    private String name;  // 各インスタンスで独立
+    private String email;  // 各インスタンスで独立
+}
+```
+
+**2. 状態を持つインスタンスをstatic変数に保持**
+
+```java
+// ❌ アンチパターン: 状態を持つオブジェクトをstatic変数に保持
+public class ServiceRegistry {
+    private static UserService userService = new UserService();  // 問題: テストが困難
+    
+    public static UserService getUserService() {
+        return userService;
+    }
+}
+
+// ✅ 正しい: 依存性注入を使用（Spring Bootの場合）
+@Service
+public class OrderService {
+    private final UserService userService;  // コンストラクタインジェクション
+    
+    public OrderService(UserService userService) {
+        this.userService = userService;
+    }
+}
+```
+
+**3. staticメソッドからインスタンスメンバーにアクセス**
+
+```java
+// ❌ アンチパターン: staticメソッドからインスタンスメンバーに直接アクセス
+public class Example {
+    private String name;
+    
+    public static void printName() {
+        System.out.println(name);  // エラー: インスタンス変数にアクセス不可
+    }
+}
+
+// ✅ 正しい: インスタンスを引数として渡す
+public class Example {
+    private String name;
+    
+    public static void printName(Example instance) {
+        System.out.println(instance.name);  // OK: インスタンス経由でアクセス
+    }
+}
+```
+
+**4. 可変なstatic変数の共有（スレッドセーフティの問題）**
+
+```java
+// ❌ アンチパターン: 可変なstatic変数を複数スレッドからアクセス
+public class Counter {
+    private static int count = 0;  // 問題: スレッドセーフではない
+    
+    public static void increment() {
+        count++;  // 複数スレッドから同時アクセスすると競合状態が発生
+    }
+}
+
+// ✅ 正しい: AtomicIntegerを使用（スレッドセーフ）
+public class Counter {
+    private static final AtomicInteger count = new AtomicInteger(0);
+    
+    public static void increment() {
+        count.incrementAndGet();  // スレッドセーフ
+    }
+}
+```
+
+**5. staticメソッドで依存関係を解決**
+
+```java
+// ❌ アンチパターン: staticメソッド内で依存関係を解決
+public class UserService {
+    public static User findById(Long id) {
+        UserRepository repository = new UserRepositoryImpl();  // 問題: 結合度が高い
+        return repository.findById(id);
+    }
+}
+
+// ✅ 正しい: 依存性注入を使用（Spring Bootの場合）
+@Service
+public class UserService {
+    private final UserRepository userRepository;
+    
+    public UserService(UserRepository userRepository) {
+        this.userRepository = userRepository;  // 依存性注入
+    }
+    
+    public User findById(Long id) {
+        return userRepository.findById(id);
+    }
+}
+```
+
 ### thisとsuper
 
 `this`は**現在のインスタンス**を参照し、`super`は**親クラスのメンバー**を参照します。これらは、フィールド名の衝突を解決したり、親クラスのメソッドを呼び出したりする際に使用します。

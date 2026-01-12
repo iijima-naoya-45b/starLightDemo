@@ -29,41 +29,182 @@ rails generate job GuestSignup
 ジョブの定義:
 生成されたファイルに、実行したい処理をperformメソッド内に記述します。
 
-Ruby
-
+```ruby
 # app/jobs/guest_signup_job.rb
 
 class GuestSignupJob < ApplicationJob
   queue_as :default
 
-  def perform(guest)
+  def perform(guest_id)
+    # まさかり：引数にはIDを渡し、perform内で再取得する
+    guest = Guest.find(guest_id)
     # ゲストユーザーにウェルカムメールを送信
     GuestMailer.welcome_email(guest).deliver_now
   end
 end
-ジョブのキューへの追加:
-コントローラーやモデルからperform_laterメソッドを呼び出して、ジョブをキューに追加します。
+```
 
-Ruby
+#### ⚠️ 引数に「オブジェクト」を渡してはいけない
 
-# app/controllers/guests_controller.rb
+提供されたコードにある`GuestSignupJob.perform_later(@guest)`は、実はRails初心者が見事にハマる罠です。
 
+**重要な理解**:
+ジョブの引数にActive Recordのインスタンスを直接渡してはいけません。
+
+**問題点**:
+ジョブがキューに入ってから実行されるまでの間に、データベースの`@guest`が削除されたらどうなるでしょうか？ジョブ実行時に`ActiveRecord::RecordNotFound`でクラッシュします。
+
+```ruby
+# ❌ 危険: Active Recordのインスタンスを直接渡す
 def create
   @guest = Guest.new(guest_params)
   if @guest.save
-    # ジョブをキューに追加
-    GuestSignupJob.perform_later(@guest)
+    GuestSignupJob.perform_later(@guest)  # 問題: オブジェクトを直接渡している
     redirect_to @guest, notice: 'ユーザー登録が完了しました。'
   else
     render :new
   end
 end
+
+# 問題: ジョブ実行前に@guestが削除された場合、ActiveRecord::RecordNotFoundが発生
+```
+
+**改善案**:
+引数には`guest.id`（整数や文字列）を渡し、`perform`メソッドの中で`Guest.find(id)`し直すのが鉄則です。
+
+```ruby
+# ✅ 安全: IDを渡す
+def create
+  @guest = Guest.new(guest_params)
+  if @guest.save
+    GuestSignupJob.perform_later(@guest.id)  # IDを渡す
+    redirect_to @guest, notice: 'ユーザー登録が完了しました。'
+  else
+    render :new
+  end
+end
+
+# app/jobs/guest_signup_job.rb
+class GuestSignupJob < ApplicationJob
+  def perform(guest_id)
+    guest = Guest.find(guest_id)  # perform内で再取得
+    GuestMailer.welcome_email(guest).deliver_now
+  end
+end
+```
+
+**注意**:
+GlobalIDという仕組みでRailsがよしなにやってくれる場合もありますが、基本は「IDを渡す」と覚える方が安全です。
+
+ジョブのキューへの追加:
+コントローラーやモデルから`perform_later`メソッドを呼び出して、ジョブをキューに追加します。
+
+```ruby
+# app/controllers/guests_controller.rb
+
+def create
+  @guest = Guest.new(guest_params)
+  if @guest.save
+    # ジョブをキューに追加（IDを渡す）
+    GuestSignupJob.perform_later(@guest.id)
+    redirect_to @guest, notice: 'ユーザー登録が完了しました。'
+  else
+    render :new
+  end
+end
+```
+
+#### ⚠️ 「冪等性（べきとうせい）」の確保
+
+これがバックグラウンド処理において最も重要な概念です。
+
+**重要な理解**:
+「ジョブは2回実行される可能性がある」という前提でコードを書かなければなりません。
+
+**問題点**:
+Sidekiqは処理に失敗すると自動でリトライします。「メール送信」ジョブが、送信完了直後にネットワークエラーで「失敗」と判定された場合、リトライによって同じメールが2通届きます。
+
+```ruby
+# ❌ 危険: 冪等性がないジョブ
+class WelcomeEmailJob < ApplicationJob
+  def perform(user_id)
+    user = User.find(user_id)
+    UserMailer.welcome_email(user).deliver_now
+    # 問題: リトライされると、同じメールが複数回送信される
+  end
+end
+```
+
+**改善案**:
+「既に送信済みフラグが立っていたら何もしない」といった、何度実行しても結果が変わらない（冪等な）設計を徹底しましょう。
+
+```ruby
+# ✅ 安全: 冪等性のあるジョブ
+class WelcomeEmailJob < ApplicationJob
+  def perform(user_id)
+    user = User.find(user_id)
+    
+    # 既に送信済みなら何もしない（冪等性の確保）
+    return if user.welcome_email_sent?
+    
+    UserMailer.welcome_email(user).deliver_now
+    user.update(welcome_email_sent_at: Time.current)
+  end
+end
+```
+
+この設計により、リトライされても同じメールが複数回送信されることを防げます。
 ジョブの実行環境とSidekiq
 Active Jobは、ジョブを実際に実行するためのバックエンド（ジョブアダプター）を切り替えることができます。
 
 asyncアダプター: デフォルトのアダプターで、開発環境で手軽に非同期処理を試すことができます。ただし、プロセスが終了するとキューがクリアされるため、本番環境での利用は推奨されません。
 
 Sidekiq: 本番環境で最もよく使われるアダプターの一つです。Redisをバックエンドに使い、マルチスレッドで動作するため、高いスループットと低メモリ消費が特徴です。
+
+#### ⚠️ Active Job vs Sidekiq (Worker) の使い分け
+
+Rails 4.2以降はActive Jobが標準ですが、Sidekiqには独自の`Sidekiq::Worker`（現在は`Sidekiq::Job`）という書き方もあります。
+
+**重要な理解**:
+「とりあえずActive Job」は正解ですが、Sidekiq特有の高度な機能（バッチ処理、詳細なリトライ制御、レートリミット）をフル活用したい場合は、Active Jobを介さず直接SidekiqのAPIを使う方が有利なケースがあります。
+
+**問題点**:
+Active Jobは「共通規格」であるため、Sidekiq独自の便利機能が一部削ぎ落とされています。
+
+```ruby
+# Active Job経由（共通規格）
+class PaymentJob < ApplicationJob
+  queue_as :default
+  
+  def perform(order_id)
+    # 制限: Sidekiqの高度な機能が使えない
+  end
+end
+
+# Sidekiqネイティブ（直接API）
+class PaymentJob
+  include Sidekiq::Job
+  
+  sidekiq_options queue: 'default', retry: 5, backtrace: true
+  
+  def perform(order_id)
+    # 利点: Sidekiqの全機能が使える
+    # - バッチ処理
+    # - 詳細なリトライ制御
+    # - レートリミット
+  end
+end
+```
+
+**改善案**:
+基本はActive Jobで書き、パフォーマンスや複雑な制御が必要になったらSidekiqネイティブな書き方を検討するという使い分けを意識しましょう。
+
+| ケース | 使用する方法 | 理由 |
+| --- | --- | --- |
+| 基本的な非同期処理 | Active Job | 共通規格で移植性が高い |
+| バッチ処理が必要 | Sidekiq::Job | Sidekiqのバッチ機能が必要 |
+| 詳細なリトライ制御 | Sidekiq::Job | リトライ戦略の細かい制御が必要 |
+| レートリミットが必要 | Sidekiq::Job | Sidekiqのレートリミット機能が必要 |
 
 Sidekiqの導入手順
 Gemの追加:

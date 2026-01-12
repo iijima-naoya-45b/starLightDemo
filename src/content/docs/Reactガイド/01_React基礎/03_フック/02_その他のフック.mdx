@@ -5,98 +5,41 @@ label: "その他のフック"
 
 ## その他のフック
 
-### useContext
+> **注意**: このドキュメントは**TypeScript（TSX）前提**で説明しています。現在のReact開発では、TypeScriptの採用が標準となっており、型安全性によるバグの早期発見、IDEの補完機能、リファクタリングの安全性などの理由から、JSXよりもTSXが選定されることが一般的です。
 
-`useContext`は、Contextの値を取得するためのフックです。
+このドキュメントでは、`useState`と`useEffect`以外の主要なフックを、**使用頻度順**に説明します。
 
-```jsx
-import { createContext, useContext } from 'react';
+---
 
-const ThemeContext = createContext('light');
+## 使用頻度順のフック一覧
 
-function ThemedButton() {
-  const theme = useContext(ThemeContext);
-  return <button className={theme}>Themed Button</button>;
-}
-```
+1. **useRef** - DOM参照、値を保持（高頻度）
+2. **useContext** - Context APIで状態管理（中頻度）
+3. **useMemo** - 計算結果のメモ化（中頻度、React Compilerで不要になる可能性）
+4. **useCallback** - 関数のメモ化（中頻度、React Compilerで不要になる可能性）
+5. **useReducer** - 複雑な状態管理（低頻度、useStateで十分な場合が多い）
 
-### useReducer
+---
 
-`useReducer`は、複雑な状態管理に適したフックです。
+## 1. useRef（高頻度）
 
-```jsx
-import { useReducer } from 'react';
+`useRef`は、**DOM要素への参照を保持する**、または**再レンダリングを引き起こさない値を保持する**ためのフックです。
 
-function reducer(state, action) {
-  switch (action.type) {
-    case 'increment':
-      return { count: state.count + 1 };
-    case 'decrement':
-      return { count: state.count - 1 };
-    default:
-      throw new Error();
-  }
-}
+### 基本的な使い方
 
-function Counter() {
-  const [state, dispatch] = useReducer(reducer, { count: 0 });
+#### DOM要素への参照
 
-  return (
-    <div>
-      <p>Count: {state.count}</p>
-      <button onClick={() => dispatch({ type: 'increment' })}>+</button>
-      <button onClick={() => dispatch({ type: 'decrement' })}>-</button>
-    </div>
-  );
-}
-```
-
-### useMemo
-
-`useMemo`は、計算結果をメモ化するためのフックです。
-
-```jsx
-import { useMemo } from 'react';
-
-function ExpensiveComponent({ items }) {
-  const expensiveValue = useMemo(() => {
-    return items.reduce((sum, item) => sum + item.value, 0);
-  }, [items]);
-
-  return <div>Total: {expensiveValue}</div>;
-}
-```
-
-### useCallback
-
-`useCallback`は、関数をメモ化するためのフックです。
-
-```jsx
-import { useCallback, useState } from 'react';
-
-function Parent() {
-  const [count, setCount] = useState(0);
-
-  const handleClick = useCallback(() => {
-    setCount(count + 1);
-  }, [count]);
-
-  return <Child onClick={handleClick} />;
-}
-```
-
-### useRef
-
-`useRef`は、DOM要素への参照を保持するためのフックです。
-
-```jsx
+```tsx
 import { useRef } from 'react';
 
 function TextInput() {
-  const inputRef = useRef(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const focusInput = () => {
-    inputRef.current.focus();
+    // ✅ nullチェックが必要
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
   };
 
   return (
@@ -108,15 +51,762 @@ function TextInput() {
 }
 ```
 
-### カスタムフック
+#### 再レンダリングを引き起こさない値を保持
 
-```jsx
-function useCounter(initialValue = 0) {
-  const [count, setCount] = useState(initialValue);
+```tsx
+function Timer() {
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [count, setCount] = useState<number>(0);
 
-  const increment = () => setCount(count + 1);
-  const decrement = () => setCount(count - 1);
-  const reset = () => setCount(initialValue);
+  const startTimer = () => {
+    intervalRef.current = setInterval(() => {
+      setCount(prev => prev + 1);
+    }, 1000);
+  };
+
+  const stopTimer = () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  };
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={startTimer}>Start</button>
+      <button onClick={stopTimer}>Stop</button>
+    </div>
+  );
+}
+```
+
+### ベストプラクティス
+
+1. **nullチェックを必ず行う**: `ref.current`は`null`の可能性があるため、必ずチェックする
+2. **型を明示する**: TypeScriptでは、DOM要素の型を明示する（`useRef<HTMLInputElement>(null)`）
+3. **再レンダリングを引き起こさない値を保持**: タイマーID、前回の値など、再レンダリングを引き起こさない値を保持する
+
+### アンチパターン
+
+```tsx
+// ❌ 問題のあるコード: ref.currentを直接変更
+function Component() {
+  const countRef = useRef<number>(0);
+
+  const increment = () => {
+    countRef.current += 1; // 再レンダリングされない
+    // 画面に反映されない（再レンダリングが必要な場合はuseStateを使用）
+  };
+
+  return <div>{countRef.current}</div>; // 更新されない
+}
+
+// ✅ 正しいコード: 再レンダリングが必要な場合はuseStateを使用
+function Component() {
+  const [count, setCount] = useState<number>(0);
+
+  const increment = () => {
+    setCount(prev => prev + 1); // 再レンダリングされる
+  };
+
+  return <div>{count}</div>; // 更新される
+}
+```
+
+### 実践例: 前回の値の保持
+
+```tsx
+function usePrevious<T>(value: T): T | undefined {
+  const ref = useRef<T>();
+
+  useEffect(() => {
+    ref.current = value;
+  }, [value]);
+
+  return ref.current;
+}
+
+function Component({ count }: { count: number }) {
+  const previousCount = usePrevious(count);
+
+  return (
+    <div>
+      <p>Current: {count}</p>
+      <p>Previous: {previousCount}</p>
+    </div>
+  );
+}
+```
+
+---
+
+## 2. useContext（中頻度）
+
+`useContext`は、**Contextの値を取得する**ためのフックです。Context APIと組み合わせて、props drillingを避けるために使用します。
+
+### 基本的な使い方
+
+```tsx
+import { createContext, useContext, useState, ReactNode } from 'react';
+
+// Contextの型定義
+type Theme = 'light' | 'dark';
+
+type ThemeContextType = {
+  theme: Theme;
+  toggleTheme: () => void;
+};
+
+// Contextの作成
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+
+// Context Provider
+function ThemeProvider({ children }: { children: ReactNode }) {
+  const [theme, setTheme] = useState<Theme>('light');
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
+
+  return (
+    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+}
+
+// カスタムフック: useContextのラッパー
+function useTheme() {
+  const context = useContext(ThemeContext);
+  
+  if (context === undefined) {
+    throw new Error('useTheme must be used within a ThemeProvider');
+  }
+  
+  return context;
+}
+
+// 使用例
+function ThemedButton() {
+  const { theme, toggleTheme } = useTheme();
+
+  return (
+    <button onClick={toggleTheme}>
+      Current theme: {theme}
+    </button>
+  );
+}
+```
+
+### ベストプラクティス
+
+1. **カスタムフックでラップする**: `useContext`を直接使わず、カスタムフックでラップしてエラーハンドリングを行う
+2. **型安全性を確保する**: Contextの型を明示し、`undefined`チェックを行う
+3. **Providerの範囲を最小限に**: 必要なコンポーネントのみをProviderで囲む
+
+### アンチパターン
+
+```tsx
+// ❌ 問題のあるコード: useContextを直接使用、エラーハンドリングなし
+function ThemedButton() {
+  const context = useContext(ThemeContext); // contextがundefinedの可能性がある
+  return <button>{context.theme}</button>; // エラーが発生する可能性
+}
+
+// ❌ 問題のあるコード: 過度なContext使用
+// すべての状態をContextに入れる必要はない
+const AppContext = createContext({
+  user: null,
+  settings: null,
+  theme: null,
+  // ... すべての状態
+});
+
+// ✅ 正しいコード: 必要な範囲でのみContextを使用
+// グローバルな状態（テーマ、認証など）のみをContextで管理
+// ローカルな状態はuseStateで管理
+```
+
+### 実践例: 認証Context
+
+```tsx
+type User = {
+  id: string;
+  name: string;
+  email: string;
+};
+
+type AuthContextType = {
+  user: User | null;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => void;
+  isLoading: boolean;
+};
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  const login = async (email: string, password: string) => {
+    setIsLoading(true);
+    try {
+      // API呼び出し
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      });
+      const userData = await response.json();
+      setUser(userData);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const logout = () => {
+    setUser(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+}
+```
+
+---
+
+## 3. useMemo（中頻度）
+
+`useMemo`は、**計算結果をメモ化する**ためのフックです。ただし、**React Compiler（React Forget）が導入されると、手動でのメモ化が不要になる可能性があります**。
+
+### 基本的な使い方
+
+```tsx
+import { useMemo } from 'react';
+
+type Item = {
+  id: number;
+  value: number;
+};
+
+function ExpensiveComponent({ items }: { items: Item[] }) {
+  // 高価な計算をメモ化
+  const total = useMemo(() => {
+    return items.reduce((sum, item) => sum + item.value, 0);
+  }, [items]);
+
+  // フィルタリング結果をメモ化
+  const expensiveItems = useMemo(() => {
+    return items.filter(item => item.value > 1000);
+  }, [items]);
+
+  return (
+    <div>
+      <p>Total: {total}</p>
+      <p>Expensive items: {expensiveItems.length}</p>
+    </div>
+  );
+}
+```
+
+### React Compilerとの関係
+
+**重要なポイント**: React Compiler（React Forget）が導入されると、開発者が手動で`useMemo`を書く必要がなくなります。React Compilerが自動的に最適化を行います。
+
+**現在のアプローチ（React Compilerなし）:**
+```tsx
+// 開発者が手動でメモ化
+const expensiveValue = useMemo(() => {
+  return computeExpensiveValue(data);
+}, [data]);
+```
+
+**React Compilerのアプローチ:**
+```tsx
+// React Compilerが自動的に最適化
+const expensiveValue = computeExpensiveValue(data);
+```
+
+### ベストプラクティス
+
+1. **本当に高価な計算のみメモ化**: 単純な計算（加算、減算など）はメモ化しない
+2. **依存配列を正確に指定**: ESLintの`exhaustive-deps`ルールを使用
+3. **過度なメモ化を避ける**: メモ化自体にもコストがかかるため、本当に必要な場合のみ使用
+
+### アンチパターン
+
+```tsx
+// ❌ 問題のあるコード: 不要なメモ化
+function Component({ count }: { count: number }) {
+  // 単純な計算をメモ化する必要はない
+  const doubled = useMemo(() => count * 2, [count]);
+  return <div>{doubled}</div>;
+}
+
+// ✅ 正しいコード: メモ化が不要な場合は使用しない
+function Component({ count }: { count: number }) {
+  const doubled = count * 2; // メモ化不要
+  return <div>{doubled}</div>;
+}
+
+// ❌ 問題のあるコード: 依存配列が不正確
+function Component({ items, filter }: { items: Item[]; filter: string }) {
+  const filtered = useMemo(() => {
+    return items.filter(item => item.category === filter);
+  }, [items]); // ❌ filterが依存配列に含まれていない
+  return <div>{filtered.length}</div>;
+}
+
+// ✅ 正しいコード: 依存配列を正確に指定
+function Component({ items, filter }: { items: Item[]; filter: string }) {
+  const filtered = useMemo(() => {
+    return items.filter(item => item.category === filter);
+  }, [items, filter]); // ✅ すべての依存関係を含める
+  return <div>{filtered.length}</div>;
+}
+```
+
+### 実践例: ソートとフィルタリング
+
+```tsx
+type Product = {
+  id: number;
+  name: string;
+  price: number;
+  category: string;
+};
+
+function ProductList({ products, sortBy, filterBy }: {
+  products: Product[];
+  sortBy: 'name' | 'price';
+  filterBy: string;
+}) {
+  // フィルタリング結果をメモ化
+  const filteredProducts = useMemo(() => {
+    if (!filterBy) return products;
+    return products.filter(product => 
+      product.category === filterBy
+    );
+  }, [products, filterBy]);
+
+  // ソート結果をメモ化
+  const sortedProducts = useMemo(() => {
+    return [...filteredProducts].sort((a, b) => {
+      if (sortBy === 'name') {
+        return a.name.localeCompare(b.name);
+      }
+      return a.price - b.price;
+    });
+  }, [filteredProducts, sortBy]);
+
+  return (
+    <ul>
+      {sortedProducts.map(product => (
+        <li key={product.id}>
+          {product.name} - {product.price}円
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+---
+
+## 4. useCallback（中頻度）
+
+`useCallback`は、**関数をメモ化する**ためのフックです。ただし、**React Compiler（React Forget）が導入されると、手動でのメモ化が不要になる可能性があります**。
+
+### 基本的な使い方
+
+```tsx
+import { useCallback, useState } from 'react';
+
+type Product = {
+  id: number;
+  name: string;
+};
+
+function Parent() {
+  const [count, setCount] = useState<number>(0);
+
+  // 関数をメモ化（依存関係がない場合）
+  const handleClick = useCallback(() => {
+    console.log('Clicked');
+  }, []);
+
+  // 関数をメモ化（依存関係がある場合）
+  const handleProductClick = useCallback((product: Product) => {
+    console.log('Product clicked:', product);
+    setCount(prev => prev + 1);
+  }, []); // setCountは安定しているため、依存配列に含めない
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <Child onClick={handleClick} />
+      <ProductList products={products} onProductClick={handleProductClick} />
+    </div>
+  );
+}
+```
+
+### React Compilerとの関係
+
+**重要なポイント**: React Compiler（React Forget）が導入されると、開発者が手動で`useCallback`を書く必要がなくなります。React Compilerが自動的に最適化を行います。
+
+**現在のアプローチ（React Compilerなし）:**
+```tsx
+// 開発者が手動でメモ化
+const handleClick = useCallback(() => {
+  // 処理
+}, []);
+```
+
+**React Compilerのアプローチ:**
+```tsx
+// React Compilerが自動的に最適化
+const handleClick = () => {
+  // 処理
+};
+```
+
+### ベストプラクティス
+
+1. **React.memoと組み合わせて使用**: 子コンポーネントが`React.memo`でメモ化されている場合のみ効果がある
+2. **依存配列を正確に指定**: ESLintの`exhaustive-deps`ルールを使用
+3. **過度なメモ化を避ける**: メモ化自体にもコストがかかるため、本当に必要な場合のみ使用
+
+### アンチパターン
+
+```tsx
+// ❌ 問題のあるコード: React.memoなしでuseCallbackを使用
+function Parent() {
+  const [count, setCount] = useState<number>(0);
+
+  const handleClick = useCallback(() => {
+    setCount(prev => prev + 1);
+  }, []);
+
+  // ChildがReact.memoでメモ化されていない場合、useCallbackは無意味
+  return <Child onClick={handleClick} />;
+}
+
+// ✅ 正しいコード: React.memoと組み合わせて使用
+const Child = React.memo(function Child({ onClick }: { onClick: () => void }) {
+  return <button onClick={onClick}>Click me</button>;
+});
+
+function Parent() {
+  const [count, setCount] = useState<number>(0);
+
+  const handleClick = useCallback(() => {
+    setCount(prev => prev + 1);
+  }, []);
+
+  return <Child onClick={handleClick} />;
+}
+
+// ❌ 問題のあるコード: 依存配列が不正確
+function Parent({ userId }: { userId: number }) {
+  const handleClick = useCallback(() => {
+    fetchUser(userId); // userIdを使用しているが、依存配列に含まれていない
+  }, []); // ❌ userIdが依存配列に含まれていない
+
+  return <Child onClick={handleClick} />;
+}
+
+// ✅ 正しいコード: 依存配列を正確に指定
+function Parent({ userId }: { userId: number }) {
+  const handleClick = useCallback(() => {
+    fetchUser(userId);
+  }, [userId]); // ✅ すべての依存関係を含める
+
+  return <Child onClick={handleClick} />;
+}
+```
+
+### 実践例: フォームハンドラー
+
+```tsx
+import { useCallback, useState } from 'react';
+
+type FormData = {
+  name: string;
+  email: string;
+};
+
+function Form() {
+  const [formData, setFormData] = useState<FormData>({
+    name: '',
+    email: '',
+  });
+
+  // フォームハンドラーをメモ化
+  const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({ ...prev, name: e.target.value }));
+  }, []);
+
+  const handleEmailChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({ ...prev, email: e.target.value }));
+  }, []);
+
+  const handleSubmit = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    // 送信処理
+    console.log(formData);
+  }, [formData]);
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input value={formData.name} onChange={handleNameChange} />
+      <input value={formData.email} onChange={handleEmailChange} />
+      <button type="submit">Submit</button>
+    </form>
+  );
+}
+```
+
+---
+
+## 5. useReducer（低頻度）
+
+`useReducer`は、**複雑な状態管理に適した**フックです。`useState`で十分な場合が多いため、使用頻度は低めです。
+
+### 基本的な使い方
+
+```tsx
+import { useReducer } from 'react';
+
+// 状態の型定義
+type State = {
+  count: number;
+  step: number;
+};
+
+// アクションの型定義
+type Action =
+  | { type: 'increment' }
+  | { type: 'decrement' }
+  | { type: 'reset' }
+  | { type: 'setStep'; step: number };
+
+// Reducer関数
+function reducer(state: State, action: Action): State {
+  switch (action.type) {
+    case 'increment':
+      return { ...state, count: state.count + state.step };
+    case 'decrement':
+      return { ...state, count: state.count - state.step };
+    case 'reset':
+      return { ...state, count: 0 };
+    case 'setStep':
+      return { ...state, step: action.step };
+    default:
+      return state;
+  }
+}
+
+function Counter() {
+  const [state, dispatch] = useReducer(reducer, { count: 0, step: 1 });
+
+  return (
+    <div>
+      <p>Count: {state.count}</p>
+      <p>Step: {state.step}</p>
+      <button onClick={() => dispatch({ type: 'increment' })}>+</button>
+      <button onClick={() => dispatch({ type: 'decrement' })}>-</button>
+      <button onClick={() => dispatch({ type: 'reset' })}>Reset</button>
+      <input
+        type="number"
+        value={state.step}
+        onChange={(e) => dispatch({ type: 'setStep', step: Number(e.target.value) })}
+      />
+    </div>
+  );
+}
+```
+
+### ベストプラクティス
+
+1. **複雑な状態管理に使用**: 複数の状態が関連している場合、または状態の更新ロジックが複雑な場合に使用
+2. **型安全性を確保する**: TypeScriptでActionの型を明示する
+3. **useStateで十分な場合はuseStateを使用**: シンプルな状態管理は`useState`で十分
+
+### アンチパターン
+
+```tsx
+// ❌ 問題のあるコード: シンプルな状態管理にuseReducerを使用
+function SimpleCounter() {
+  const [state, dispatch] = useReducer(
+    (state: number, action: 'increment' | 'decrement') => {
+      return action === 'increment' ? state + 1 : state - 1;
+    },
+    0
+  );
+
+  return (
+    <div>
+      <p>Count: {state}</p>
+      <button onClick={() => dispatch('increment')}>+</button>
+      <button onClick={() => dispatch('decrement')}>-</button>
+    </div>
+  );
+}
+
+// ✅ 正しいコード: シンプルな状態管理はuseStateを使用
+function SimpleCounter() {
+  const [count, setCount] = useState<number>(0);
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(prev => prev + 1)}>+</button>
+      <button onClick={() => setCount(prev => prev - 1)}>-</button>
+    </div>
+  );
+}
+```
+
+### 実践例: フォーム状態管理
+
+```tsx
+type FormState = {
+  name: string;
+  email: string;
+  errors: {
+    name?: string;
+    email?: string;
+  };
+  isSubmitting: boolean;
+};
+
+type FormAction =
+  | { type: 'SET_NAME'; name: string }
+  | { type: 'SET_EMAIL'; email: string }
+  | { type: 'SET_ERRORS'; errors: FormState['errors'] }
+  | { type: 'SET_SUBMITTING'; isSubmitting: boolean }
+  | { type: 'RESET' };
+
+function formReducer(state: FormState, action: FormAction): FormState {
+  switch (action.type) {
+    case 'SET_NAME':
+      return { ...state, name: action.name };
+    case 'SET_EMAIL':
+      return { ...state, email: action.email };
+    case 'SET_ERRORS':
+      return { ...state, errors: action.errors };
+    case 'SET_SUBMITTING':
+      return { ...state, isSubmitting: action.isSubmitting };
+    case 'RESET':
+      return {
+        name: '',
+        email: '',
+        errors: {},
+        isSubmitting: false,
+      };
+    default:
+      return state;
+  }
+}
+
+function Form() {
+  const [state, dispatch] = useReducer(formReducer, {
+    name: '',
+    email: '',
+    errors: {},
+    isSubmitting: false,
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    dispatch({ type: 'SET_SUBMITTING', isSubmitting: true });
+
+    // バリデーション
+    const errors: FormState['errors'] = {};
+    if (!state.name) errors.name = '名前は必須です';
+    if (!state.email) errors.email = 'メールアドレスは必須です';
+
+    if (Object.keys(errors).length > 0) {
+      dispatch({ type: 'SET_ERRORS', errors });
+      dispatch({ type: 'SET_SUBMITTING', isSubmitting: false });
+      return;
+    }
+
+    // 送信処理
+    try {
+      await fetch('/api/submit', {
+        method: 'POST',
+        body: JSON.stringify({ name: state.name, email: state.email }),
+      });
+      dispatch({ type: 'RESET' });
+    } catch (error) {
+      dispatch({ type: 'SET_ERRORS', errors: { email: '送信に失敗しました' } });
+    } finally {
+      dispatch({ type: 'SET_SUBMITTING', isSubmitting: false });
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input
+        value={state.name}
+        onChange={(e) => dispatch({ type: 'SET_NAME', name: e.target.value })}
+      />
+      {state.errors.name && <span>{state.errors.name}</span>}
+      
+      <input
+        value={state.email}
+        onChange={(e) => dispatch({ type: 'SET_EMAIL', email: e.target.value })}
+      />
+      {state.errors.email && <span>{state.errors.email}</span>}
+      
+      <button type="submit" disabled={state.isSubmitting}>
+        {state.isSubmitting ? '送信中...' : '送信'}
+      </button>
+    </form>
+  );
+}
+```
+
+---
+
+## カスタムフック
+
+カスタムフックは、**複数のフックを組み合わせて、再利用可能なロジックを作成する**ためのパターンです。
+
+### 基本的な使い方
+
+```tsx
+import { useState, useCallback } from 'react';
+
+// カスタムフック: useCounter
+function useCounter(initialValue: number = 0) {
+  const [count, setCount] = useState<number>(initialValue);
+
+  const increment = useCallback(() => {
+    setCount(prev => prev + 1);
+  }, []);
+
+  const decrement = useCallback(() => {
+    setCount(prev => prev - 1);
+  }, []);
+
+  const reset = useCallback(() => {
+    setCount(initialValue);
+  }, [initialValue]);
 
   return { count, increment, decrement, reset };
 }
@@ -136,3 +826,124 @@ function Counter() {
 }
 ```
 
+### ベストプラクティス
+
+1. **`use`で始める**: カスタムフックの名前は`use`で始める
+2. **単一責任の原則**: 1つのカスタムフックは1つの責務を持つ
+3. **型安全性を確保する**: TypeScriptで型を明示する
+4. **再利用性を重視する**: 複数のコンポーネントで使えるように設計する
+
+### 実践例: useLocalStorage
+
+```tsx
+function useLocalStorage<T>(key: string, initialValue: T) {
+  const [storedValue, setStoredValue] = useState<T>(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : initialValue;
+    } catch (error) {
+      console.error('Error reading from localStorage:', error);
+      return initialValue;
+    }
+  });
+
+  const setValue = useCallback((value: T | ((val: T) => T)) => {
+    try {
+      const valueToStore = value instanceof Function ? value(storedValue) : value;
+      setStoredValue(valueToStore);
+      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+    } catch (error) {
+      console.error('Error saving to localStorage:', error);
+    }
+  }, [key, storedValue]);
+
+  return [storedValue, setValue] as const;
+}
+
+// 使用例
+function Settings() {
+  const [theme, setTheme] = useLocalStorage<'light' | 'dark'>('theme', 'light');
+
+  return (
+    <div>
+      <p>Current theme: {theme}</p>
+      <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+        Toggle theme
+      </button>
+    </div>
+  );
+}
+```
+
+### 実践例: useDebounce
+
+```tsx
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
+// 使用例: 検索入力のデバウンス
+function SearchInput() {
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 500);
+
+  useEffect(() => {
+    if (debouncedSearchTerm) {
+      // API呼び出し
+      fetch(`/api/search?q=${debouncedSearchTerm}`)
+        .then(res => res.json())
+        .then(data => console.log(data));
+    }
+  }, [debouncedSearchTerm]);
+
+  return (
+    <input
+      value={searchTerm}
+      onChange={(e) => setSearchTerm(e.target.value)}
+      placeholder="Search..."
+    />
+  );
+}
+```
+
+---
+
+## まとめ
+
+### 使用頻度と使い分け
+
+| フック | 使用頻度 | 主な用途 | 注意点 |
+|--------|---------|---------|--------|
+| **useRef** | 高 | DOM参照、値を保持 | nullチェック必須 |
+| **useContext** | 中 | グローバル状態管理 | カスタムフックでラップ |
+| **useMemo** | 中 | 計算結果のメモ化 | React Compilerで不要になる可能性 |
+| **useCallback** | 中 | 関数のメモ化 | React Compilerで不要になる可能性 |
+| **useReducer** | 低 | 複雑な状態管理 | useStateで十分な場合が多い |
+
+### ベストプラクティスのまとめ
+
+1. **型安全性を確保する**: TypeScriptで型を明示する
+2. **過度な最適化を避ける**: 本当に必要な場合のみメモ化する
+3. **依存配列を正確に指定**: ESLintの`exhaustive-deps`ルールを使用
+4. **カスタムフックでロジックを分離**: 再利用性とテストしやすさを向上
+5. **React Compilerの動向を把握**: useMemo/useCallbackが不要になる可能性
+
+### アンチパターンのまとめ
+
+1. **不要なメモ化**: 単純な計算や関数をメモ化する
+2. **不正確な依存配列**: 依存関係を省略または誤って指定する
+3. **過度なContext使用**: すべての状態をContextに入れる
+4. **useReducerの過度な使用**: シンプルな状態管理にuseReducerを使用する
+5. **nullチェックの欠如**: useRefでnullチェックを行わない

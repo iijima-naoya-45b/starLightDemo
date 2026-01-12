@@ -1,0 +1,397 @@
+---
+title: "パイプライン設計"
+label: "パイプライン設計"
+---
+
+## 🔄 パイプライン設計：データの型管理と画面接続のアーキテクチャ
+
+「API戦略」のさらに深いところ、つまり**「データの型をどのレイヤーで、誰が、どう管理し、どう画面に接続するか」**というアーキテクチャの話です。
+
+実務で破綻する原因は、APIの型がそのままUIに流れてしまい、UIの都合でAPIが壊れる（あるいはその逆）ことです。これを防ぐための**「3つの層」と「RHFの接続戦略」**を解説します。
+
+### 🚨 マサカリ：APIの型がそのままUIに流れてしまう
+
+**❌ 悪い例: APIの型をそのままUIで使用**
+
+```typescript
+// ❌ 問題: APIレスポンスの型をそのままUIで使用
+// API呼び出し
+const response = await fetch('https://api.example.com/users');
+const data = await response.json(); // unknown型、型チェックなし
+
+// コンポーネント
+function UserList() {
+  const [users, setUsers] = useState<any[]>([]); // any型で使用
+
+  useEffect(() => {
+    fetch('/api/users')
+      .then(res => res.json())
+      .then(data => setUsers(data)); // 型チェックなし
+  }, []);
+
+  return (
+    <div>
+      {users.map(user => (
+        <div key={user.id}>
+          {user.first_name} {user.last_name} {/* snake_caseがそのままUIに */}
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+**問題点:**
+1. **型安全性がない**: `any`型や型チェックなしで使用
+2. **API変更の影響**: APIのフィールド名（`first_name`など）が変更されると、UI全体が壊れる
+3. **UI変更の影響**: UIで使いたい形式（`fullName`など）に変更するため、APIを変更してしまう
+4. **保守性の低下**: APIとUIが密結合で、変更が困難
+
+### ✅ 正解: 3つの層で責務を分離
+
+データの型管理を3つの層に分けることで、APIとUIの責務を明確に分離できます。
+
+#### 型定義の3つのレイヤー
+
+| 層 (Layer) | 名称 | 役割 | 管理場所 |
+|-----------|------|------|---------|
+| **MSW層** | Mock Service Worker | 開発・テスト環境でAPIをモックする。 | `src/mocks/handlers.ts` |
+| **Schema層** | API Schema | APIのレスポンスそのものの形。Zodで定義。 | `src/api/schema.ts` |
+| **DTO層** | Data Transfer Object | APIの型を「UIで使いやすい形」に変換した型。 | `src/types/user.ts` |
+| **Form層** | Form Schema | RHFの`defaultValues`やバリデーション用の型。 | `src/components/UserForm/schema.ts` |
+
+> **注意**: MSW層の詳細については、[MSW（モックサービスワーカー）](./05_MSW_モックサービスワーカー.mdx)を参照してください。
+
+---
+
+## 1. Schema層: APIのレスポンス定義（Zodで洗浄）
+
+**役割**: APIから取得したデータを、`unknown`型として受け取り、Zodで型チェックして厳密な型に変換する。
+
+**重要なポイント**: **必ず`unknown`で取得してからZodで型チェックする**。
+
+### 実装例
+
+```typescript
+// src/api/schema/userSchema.ts
+import { z } from 'zod';
+
+// APIレスポンスのスキーマ定義（APIの実際の構造）
+export const userApiSchema = z.object({
+  id: z.number(),
+  first_name: z.string(), // APIはsnake_case
+  last_name: z.string(),
+  email: z.string().email(),
+  created_at: z.string(), // APIはISO文字列
+  updated_at: z.string(),
+});
+
+// TypeScript型を推論
+export type UserApiResponse = z.infer<typeof userApiSchema>;
+
+// API呼び出し関数（unknown -> Strict Schema）
+export async function fetchUser(id: number): Promise<UserApiResponse> {
+  const response = await fetch(`https://api.example.com/users/${id}`);
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch user');
+  }
+  
+  const data: unknown = await response.json(); // ✅ unknownで取得
+  
+  // Zodで型チェック（パース失敗時はエラーを投げる）
+  const validatedData = userApiSchema.parse(data);
+  
+  return validatedData; // 型安全なデータを返す
+}
+
+// 複数ユーザー取得
+export const usersApiSchema = z.array(userApiSchema);
+export type UsersApiResponse = z.infer<typeof usersApiSchema>;
+
+export async function fetchUsers(): Promise<UsersApiResponse> {
+  const response = await fetch('https://api.example.com/users');
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch users');
+  }
+  
+  const data: unknown = await response.json(); // ✅ unknownで取得
+  
+  const validatedData = usersApiSchema.parse(data); // ✅ Zodで型チェック
+  
+  return validatedData;
+}
+```
+
+**ベストプラクティス:**
+
+1. **`unknown`で受け取る**: `any`型は使わず、必ず`unknown`で取得
+2. **Zodでパース**: `.parse()`で型チェック（失敗時はエラーを投げる）
+3. **安全なパース**: エラー処理が必要な場合は`.safeParse()`を使用
+4. **スキーマの共有**: APIのスキーマ定義を一箇所にまとめる
+
+### 安全なパース（エラーハンドリング）
+
+```typescript
+// エラー処理が必要な場合
+export async function fetchUserSafely(id: number) {
+  const response = await fetch(`https://api.example.com/users/${id}`);
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch user');
+  }
+  
+  const data: unknown = await response.json();
+  
+  // safeParseでエラーを返す
+  const result = userApiSchema.safeParse(data);
+  
+  if (!result.success) {
+    // パースエラーの詳細をログに出力
+    console.error('Schema validation error:', result.error);
+    throw new Error('Invalid API response format');
+  }
+  
+  return result.data; // 型安全なデータ
+}
+```
+
+---
+
+## 2. DTO層: UIで使いやすい形に変換
+
+**役割**: APIの型（snake_caseなど）を、UIで使いやすい形（camelCase、計算プロパティなど）に変換する。
+
+### 実装例
+
+```typescript
+// src/types/user.ts
+import { UserApiResponse } from '@/api/schema/userSchema';
+
+// DTO型定義（UIで使いやすい形）
+export type User = {
+  id: number;
+  firstName: string; // snake_case -> camelCase
+  lastName: string;
+  fullName: string; // 計算プロパティ（first + last）
+  email: string;
+  createdAt: Date; // 文字列 -> Dateオブジェクト
+  updatedAt: Date;
+};
+
+// API型からDTO型への変換関数
+export function userApiToDto(apiUser: UserApiResponse): User {
+  return {
+    id: apiUser.id,
+    firstName: apiUser.first_name, // snake_case -> camelCase
+    lastName: apiUser.last_name,
+    fullName: `${apiUser.first_name} ${apiUser.last_name}`, // 計算プロパティ
+    email: apiUser.email,
+    createdAt: new Date(apiUser.created_at), // 文字列 -> Date
+    updatedAt: new Date(apiUser.updated_at),
+  };
+}
+
+// 複数ユーザーの変換
+export function usersApiToDto(apiUsers: UserApiResponse[]): User[] {
+  return apiUsers.map(userApiToDto);
+}
+```
+
+**ベストプラクティス:**
+
+1. **明確な変換**: API型とDTO型の変換を明示的に行う
+2. **計算プロパティ**: UIでよく使う値（`fullName`など）をDTO層で計算
+3. **型変換**: 文字列の日付を`Date`オブジェクトに変換するなど、型変換も行う
+4. **一方向変換**: API → DTOの変換のみを定義（逆変換は別途定義）
+
+---
+
+## 3. Form層: RHF用のスキーマ定義
+
+**役割**: React Hook Form（RHF）で使用するフォームの型とバリデーションスキーマを定義する。
+
+### 実装例
+
+```typescript
+// src/components/UserForm/schema.ts
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
+
+// フォーム入力用のスキーマ（バリデーションルール）
+export const userFormSchema = z.object({
+  firstName: z.string().min(1, '名前は必須です').max(50, '名前は50文字以内で入力してください'),
+  lastName: z.string().min(1, '姓は必須です').max(50, '姓は50文字以内で入力してください'),
+  email: z.string().email('有効なメールアドレスを入力してください'),
+});
+
+// TypeScript型を推論
+export type UserFormInput = z.infer<typeof userFormSchema>;
+
+// 初期値（defaultValues用）
+export const defaultUserFormValues: UserFormInput = {
+  firstName: '',
+  lastName: '',
+  email: '',
+};
+
+// DTOからフォーム初期値への変換
+import { User } from '@/types/user';
+
+export function userDtoToFormInput(user: User): UserFormInput {
+  return {
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+  };
+}
+
+// フォーム送信用のスキーマ（APIに送る形に変換）
+import { userApiSchema } from '@/api/schema/userSchema';
+
+export const createUserApiSchema = z.object({
+  first_name: z.string(),
+  last_name: z.string(),
+  email: z.string().email(),
+});
+
+export type CreateUserApiRequest = z.infer<typeof createUserApiSchema>;
+
+// フォーム入力からAPIリクエストへの変換
+export function userFormInputToApiRequest(
+  formInput: UserFormInput
+): CreateUserApiRequest {
+  return {
+    first_name: formInput.firstName, // camelCase -> snake_case
+    last_name: formInput.lastName,
+    email: formInput.email,
+  };
+}
+```
+
+---
+
+## 4. Page層: 司令塔としてデータを取得し、Formへ配分
+
+**役割**: データを取得し、適切な層を経由してフォームに渡す。
+
+### 実装のポイント
+
+Page層では、以下の流れでデータを処理します：
+
+1. **API層**: `unknown` → Strict Schema (Zodで洗浄)
+2. **DTO層**: API型 → UI型 (snake_case → camelCase, 計算プロパティ追加)
+3. **Form層**: DTO型 → Form型 (フォーム用の型に変換)
+
+> **注意**: フレームワーク特有の実装例については、以下を参照してください：
+> - [Next.jsでの実装例](../../nextjsガイド/02_API開発/02_データフェッチング/02_パイプライン設計.mdx)
+> - [Reactでの実装例](../../Reactガイド/02_状態管理/02_パイプライン設計.mdx)
+
+### Action層: フォームデータをAPIリクエストに変換
+
+**役割**: フォームデータをAPIリクエスト形式に変換し、APIを呼び出す。
+
+**重要なポイント: 「逆方向」の洗浄**
+
+- **APIから受け取る時**: `unknown` → `zod.parse()` → 型安全なデータ
+- **APIに送る時**: フォームデータ → `zod.parse()` → 洗浄済みデータ → API送信
+
+両方向でZodによる洗浄を行うことで、型安全性とデータの整合性を保証します。
+
+```typescript
+// 共通の実装パターン（フレームワーク非依存）
+export async function updateUserAction(
+  id: number,
+  formData: UserFormInput
+) {
+  // 1. フォームデータをAPIリクエスト形式に変換
+  const apiRequest = userFormInputToApiRequest(formData);
+
+  // 2. ✅ 重要: APIに送るデータもZodでパース（洗浄）してから送信
+  // これにより、DTOからフォームに変換した際のゴミデータがAPIに飛ぶのを防ぐ
+  const validatedRequest = createUserApiSchema.parse(apiRequest);
+
+  // 3. APIを呼び出す（洗浄済みのデータを送信）
+  const response = await fetch(`https://api.example.com/users/${id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(validatedRequest), // ✅ 洗浄済みデータ
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to update user');
+  }
+
+  const data: unknown = await response.json();
+
+  // 4. ✅ レスポンスもZodでパース（洗浄）
+  const validatedResponse = userApiSchema.parse(data);
+
+  return validatedResponse;
+}
+```
+
+---
+
+## 🏁 まとめ：データフローの正解
+
+### データフローの全体像
+
+```
+MSW層: 開発・テスト環境でAPIをモック（実際のAPIサーバーをバイパス）
+  ↓
+API層: unknown -> Strict Schema (Zodで洗浄)
+  ↓
+DTO層: API型 -> UI型 (snake_case -> camelCase, 計算プロパティ追加)
+  ↓
+Page層: 司令塔としてデータを取得し、Formへ配分
+  ↓
+Form層: RHFとZodで「ユーザー入力」をバリデーションし、Actionを叩く
+  ↓
+Action層: Form型 -> API型 (camelCase -> snake_case) -> API呼び出し
+  ↓
+MSW層: 開発・テスト環境でモックレスポンスを返す
+```
+
+### 各層の責務
+
+| 層 | 入力 | 出力 | 責務 |
+|---|------|------|------|
+| **MSW層** | HTTPリクエスト | モックレスポンス | 開発・テスト環境でAPIをモック |
+| **API層** | `unknown` | `UserApiResponse` (snake_case) | APIレスポンスの型チェック |
+| **DTO層** | `UserApiResponse` | `User` (camelCase, Date, 計算プロパティ) | UIで使いやすい形に変換 |
+| **Form層** | `User` | `UserFormInput` | フォーム用の型とバリデーション |
+| **Page層** | API層 → DTO層 → Form層 | - | データフローの統括（フレームワーク依存） |
+| **Action層** | `UserFormInput` | `UserApiResponse` | フォームデータをAPIリクエストに変換（フレームワーク依存） |
+
+### ベストプラクティス
+
+1. **MSWでのモック**: 開発・テスト環境でAPIをモックし、実際のAPIサーバーに依存しない（詳細は[MSW（モックサービスワーカー）](./05_MSW_モックサービスワーカー.mdx)を参照）
+2. **型安全性の確保**: `unknown`で受け取り、Zodで型チェック
+3. **「逆方向」の洗浄**: APIから受け取る時だけでなく、**APIに送る時もZodでパース（洗浄）**する。これにより、DTOからフォームに変換した際のゴミデータがAPIに飛ぶのを防ぐ
+4. **責務の分離**: 各層の責務を明確に分ける
+5. **一方向データフロー**: MSW → API → DTO → Formの流れを維持
+6. **変換関数の明示化**: 型変換を明示的な関数で行う
+7. **スキーマの共有**: Zodスキーマを共有して、型とバリデーションを一元管理（MSW層でも使用）
+
+### アンチパターン
+
+1. **API型をそのままUIで使用**: snake_caseがUIに直接出てくる
+2. **`any`型の使用**: 型安全性が失われる
+3. **型チェックなしのAPI呼び出し**: 実行時エラーが発生する可能性
+4. **UI都合でAPIを変更**: APIとUIが密結合になる
+5. **変換層の省略**: 型変換を怠り、型不整合が発生する
+
+このパイプライン設計を守ることで、APIとUIの責務が明確に分離され、保守性の高いアプリケーションを構築できます。
+
+---
+
+## フレームワーク別の実装例
+
+パイプライン設計の概念は共通ですが、実装はフレームワークによって異なります。各フレームワークでの実装例については、以下を参照してください：
+
+- **[Next.jsでの実装例](../../nextjsガイド/02_API開発/02_データフェッチング/02_パイプライン設計.mdx)**: Server Components、Server Actionsを使用した実装
+- **[Reactでの実装例](../../Reactガイド/02_状態管理/02_パイプライン設計.mdx)**: useEffect、useState、React Hook Formを使用した実装
