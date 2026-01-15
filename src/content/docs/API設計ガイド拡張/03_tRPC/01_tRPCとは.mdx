@@ -115,6 +115,31 @@ const user = await trpc.getUser.query({ id: 1 });
 // userの型が自動的に推論される
 ```
 
+**⚠️ 型安全性の誤解:**
+TypeScriptの型は実行時に消えます。  
+「型安全だから安心」は幻想です。**実行時の防御は別途必要**です。
+
+**✅ 実行時の防御（Zodでサニタイズ）:**
+
+```typescript
+const createUserSchema = z
+  .object({
+    name: z.string().min(1),
+    email: z.string().email(),
+    age: z.number().min(0).max(150),
+  })
+  .strict()
+  .transform((input) => ({
+    ...input,
+    email: input.email.toLowerCase().trim(),
+  }));
+```
+
+- **.strict()**: 未知のプロパティを排除する  
+- **.transform()**: 入力を正規化してサニタイズする  
+
+フロントからの`input`を盲信せず、**バックエンドで必ず整形**します。
+
 #### ✅ 2. Zodによるバリデーション
 
 **📋 定義:**
@@ -134,11 +159,41 @@ export const appRouter = t.router({
     .input(createUserSchema)
     .mutation(({ input }) => {
       // inputはcreateUserSchemaの型として推論される
-      // バリデーションも自動的に実行される
+      // バリデーションとサニタイズが自動的に実行される
       return createUser(input);
     }),
 });
 ```
+
+#### ⚠️ 2.5 密結合の罠（DTOを挟む）
+
+バックエンドのDBエンティティを**そのまま返すのは悪手**です。  
+内部構造が変わるたびにフロントが壊れます。
+
+**✅ DTOを挟む:**
+
+```typescript
+type UserDto = {
+  id: number;
+  name: string;
+  email: string;
+};
+
+const toUserDto = (user: UserEntity): UserDto => ({
+  id: user.id,
+  name: user.name,
+  email: user.email,
+});
+
+getUser: t.procedure
+  .input(z.object({ id: z.number() }))
+  .query(async ({ input }) => {
+    const user = await getUserById(input.id);
+    return toUserDto(user);
+  }),
+```
+
+`export type AppRouter`は便利ですが、**内部構造の露出を正当化しません**。
 
 #### 📋 3. プロシージャの種類
 
@@ -161,6 +216,16 @@ createUser: t.procedure
     return createUser(input);
   }),
 ```
+
+#### ⚠️ 3.5 パフォーマンスの盲点（バッチ処理の副作用）
+
+`httpBatchLink`は魔法ではありません。  
+1つの重いクエリが**全レスポンスを遅延**させます。
+
+**対策:**
+- 重い処理はバッチ対象から除外する  
+- `httpBatchLink`と通常リンクを**分離**する  
+- 優先度の高いクエリは**単独リンク**で処理する
 
 ### tRPCの実装例
 
@@ -205,6 +270,33 @@ function UserProfile({ userId }: { userId: number }) {
   return <div>{user.name}</div>;
 }
 ```
+
+#### 🔥 エラーハンドリングの解像度を上げる
+
+**TRPCErrorで構造化されたエラーを返す**ことで、クライアント側が機械的に判別できます。
+
+```typescript
+import { TRPCError } from '@trpc/server';
+
+getUser: t.procedure
+  .input(z.object({ id: z.number() }))
+  .query(async ({ input }) => {
+    const user = await getUserById(input.id);
+    if (!user) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: `User ${input.id} not found`,
+      });
+    }
+    return user;
+  }),
+```
+
+**使うべきコード例:**
+- `BAD_REQUEST`: 入力不正  
+- `UNAUTHORIZED`: 認証不足  
+- `FORBIDDEN`: 権限不足  
+- `NOT_FOUND`: 存在しない  
 
 #### Expressでの実装
 
