@@ -95,13 +95,11 @@ Rails アプリケーションの Dockerfile は、Ruby の実行環境と、必
 
 ### Dockerfile
 
-**❌ 問題のある実装:**
-
 ```dockerfile
-# ❌ 問題: apt-get update を実行するたびに、インストールされるパッケージのマイナーバージョンが変わる
+# ベースイメージは、Ruby と Node.js が含まれるものを使用
 FROM ruby:3.2.2
 
-# ❌ 問題: OSパッケージのバージョンが固定されていない
+# 必要なパッケージをインストール
 RUN apt-get update && apt-get install -y \
     postgresql-client \
     git \
@@ -109,78 +107,18 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# 作業ディレクトリを設定
 WORKDIR /app
 
+# Gemfile と Gemfile.lock をコピーして bundle install を実行
 COPY Gemfile Gemfile.lock ./
-# ❌ 問題: bundle install に jobs オプションを指定していない（並列実行されない）
 RUN bundle install
 
+# ソースコード全体をコピー
 COPY . .
 
-# ❌ 問題: PID 1 問題を無視している（SIGTERM を正しく受け取れない）
+# サーバー起動コマンド
 CMD ["rails", "s", "-b", "0.0.0.0"]
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】RailsのDockerfile：Gemfile をキャッシュしても「OSパッケージ」で死ぬ。
-【問題】apt-get update を実行するたびに、インストールされるパッケージのマイナーバージョンが変わる可能性があります。
-       本当に「完全な再現性」を謳うなら、OSパッケージのバージョン固定、あるいは
-       slimベースのイメージでパッケージを厳選し、セキュリティパッチ以外の変動要因を排除すべきです。
-       また、Rails特有の bundle install は、jobs オプションを指定して並列実行させないと、
-       ビルド時間が無駄に延びます。
-【影響】再現性の欠如、ビルド時間の増加
-【推奨】OSパッケージのバージョン固定、bundle install --jobs オプションの使用
-```
-
-**✅ 改善された実装:**
-
-```dockerfile
-# ✅ ベースイメージ: slim を使用（パッケージを厳選）
-FROM ruby:3.2.2-slim
-
-# ✅ OSパッケージのバージョン固定（再現性の確保）
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    postgresql-client=14.* \
-    git=1:2.* \
-    build-essential=12.* \
-    libpq-dev=14.* \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-COPY Gemfile Gemfile.lock ./
-# ✅ bundle install に jobs オプションを指定（並列実行で高速化）
-RUN bundle install --jobs 4 --retry 3
-
-COPY . .
-
-# ✅ PID 1 問題の解決: tini を使用
-# tini は軽量なイニシャルプロセスで、SIGTERM などの信号を正しく処理する
-RUN apt-get update && apt-get install -y --no-install-recommends tini \
-    && rm -rf /var/lib/apt/lists/*
-
-ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["rails", "s", "-b", "0.0.0.0"]
-```
-
-**代替案: Dockerの init フラグを使用**
-
-```dockerfile
-# Dockerfile（tini をインストールしない場合）
-FROM ruby:3.2.2-slim
-
-# ... 他の設定 ...
-
-CMD ["rails", "s", "-b", "0.0.0.0"]
-
-# docker run 時に --init フラグを使用
-# docker run --init my-app:latest
-# または docker-compose.yml で
-# services:
-#   app:
-#     init: true
 ```
 
 # Next.js アプリケーションの Dockerfile 構成
@@ -203,8 +141,6 @@ Next.js の Dockerfile は、マルチステージビルドを使用するのが
 
 ### Dockerfile
 
-**❌ 問題のある実装:**
-
 ```dockerfile
 # 第一ステージ: ビルド
 FROM node:18-alpine AS builder
@@ -222,178 +158,68 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# ❌ 問題: node_modules をそのままコピーしている
-# builderステージの node_modules には、ビルドにしか使わない巨大な devDependencies
-# （TypeScript, ESLint, Webpack関連）が含まれている
+# .env.production や public フォルダをコピー
 COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/node_modules ./node_modules  # ❌ 地雷
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 
-# ❌ 問題: PID 1 問題を無視している
-CMD ["npm", "start"]
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】Next.jsのDockerfile：node_modules のコピーは「地雷」です。
-【問題】builderステージから node_modules をそのまま COPY --from=builder している箇所が、最大のマサカリポイントです。
-       builderステージの node_modules には、ビルドにしか使わない巨大な devDependencies
-       （TypeScript, ESLint, Webpack関連）が含まれています。
-       これをそのまま本番環境に持っていくと、マルチステージビルドのメリットが半減します。
-【影響】イメージサイズの増大、セキュリティリスクの増加
-【推奨】Next.jsであれば、next.config.js の output: 'standalone' モードを使いましょう。
-       これを使えば、実行に必要な最小限のファイルだけを .next/standalone に集約してくれます。
-       これが現代の正解です。
-```
-
-**✅ 改善された実装（Next.js standalone モード）:**
-
-```dockerfile
-# next.config.js（事前に設定が必要）
-module.exports = {
-  output: 'standalone',  # ✅ standalone モードを有効化
-};
-
-# Dockerfile
-# 第一ステージ: ビルド
-FROM node:18-slim AS builder
-
-WORKDIR /app
-
-COPY package.json package-lock.json ./
-RUN npm ci
-
-COPY . .
-RUN npm run build
-
-# 第二ステージ: 本番環境
-FROM node:18-slim
-
-WORKDIR /app
-
-# ✅ standalone モードでビルドされたファイルのみをコピー
-# .next/standalone には、実行に必要な最小限のファイルが集約されている
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
-
-# ✅ PID 1 問題の解決: tini を使用
-RUN apt-get update && apt-get install -y --no-install-recommends tini \
-    && rm -rf /var/lib/apt/lists/*
-
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
-
+# ポートを公開
 EXPOSE 3000
 
-ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["node", "server.js"]  # ✅ standalone モードでは server.js が生成される
-```
-
-**メリット:**
-
-- **イメージサイズの削減**: devDependencies が含まれないため、イメージサイズが大幅に削減される
-- **セキュリティの向上**: 不要なパッケージが含まれないため、脆弱性のリスクが低減
-- **ビルド時間の短縮**: 本番環境に必要なファイルのみをコピーするため、コピー時間が短縮
-
-**代替案: 本番依存関係のみをインストール**
-
-```dockerfile
-# 第二ステージ: 本番環境
-FROM node:18-slim
-
-WORKDIR /app
-
-# ✅ 本番依存関係のみをインストール
-COPY --from=builder /app/package.json ./
-RUN npm ci --only=production
-
-# ビルド成果物をコピー
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-
-# ✅ PID 1 問題の解決
-RUN apt-get update && apt-get install -y --no-install-recommends tini \
-    && rm -rf /var/lib/apt/lists/*
-
-EXPOSE 3000
-
-ENTRYPOINT ["/usr/bin/tini", "--"]
+# 本番環境で起動
 CMD ["npm", "start"]
 ```
 
 ### Dockerfileの最適化テクニック
 
-#### レイヤーキャッシュの活用（キャッシュ構造の理解）
+#### レイヤーキャッシュの活用
 
-**❌ 問題のあるDockerfile:**
+**問題のあるDockerfile:**
 
 ```dockerfile
-# ❌ コードを変更するたびにすべてのレイヤーが再ビルドされる
+# 問題: コードを変更するたびにすべてのレイヤーが再ビルドされる
 FROM node:18-alpine
 
 WORKDIR /app
 
-COPY . .  # ❌ 問題: コードを最初にコピー
-RUN npm install  # ❌ 問題: package.jsonが変更されていなくても再実行される
+COPY . .  # 問題: コードを最初にコピー
+RUN npm install  # 問題: package.jsonが変更されていなくても再実行される
 RUN npm run build
 ```
 
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】レイヤーキャッシュの理解が浅いです。
-【問題】COPY . . の位置は良いですが、なぜそうするのかの「キャッシュ構造」の解説がありません。
-       Dockerは各行（命令）をレイヤーとしてキャッシュします。
-       package.json を先にコピーするのは、「ソースコードが変わっても依存関係が変わっていなければ
-       npm ci をスキップするため」です。
-【影響】この「レイヤーを意識した記述順」こそがマサカリ級に重要です。
-【推奨】変更頻度の低いファイルを先にコピーし、レイヤーキャッシュを最大限に活用してください。
-```
-
-**✅ 改善された実装（レイヤーキャッシュの最適化）:**
+**解決: レイヤーキャッシュの最適化**
 
 ```dockerfile
-# ✅ 解決: 変更頻度の低いファイルを先にコピー
+# 解決: 変更頻度の低いファイルを先にコピー
 FROM node:18-alpine
 
 WORKDIR /app
 
-# ✅ 1. package.jsonを先にコピー（変更頻度が低い）
-# 理由: ソースコードが変わっても、package.jsonが変わっていなければ
-#       このレイヤー以降（npm ci）がキャッシュから実行される
+# 1. package.jsonを先にコピー（変更頻度が低い）
 COPY package.json package-lock.json ./
 
-# ✅ 2. 依存関係をインストール（キャッシュされやすい）
-# 理由: package.jsonが変更されない限り、このレイヤーはキャッシュから実行される
-#       これにより、npm ciの実行時間（数分）をスキップできる
+# 2. 依存関係をインストール（キャッシュされやすい）
 RUN npm ci
 
-# ✅ 3. ソースコードをコピー（変更頻度が高い）
-# 理由: ソースコードは頻繁に変更されるため、最後にコピーすることで
-#       上記のレイヤーキャッシュを最大限に活用できる
+# 3. ソースコードをコピー（変更頻度が高い）
 COPY . .
 
-# ✅ 4. ビルドを実行
+# 4. ビルドを実行
 RUN npm run build
 
-# キャッシュ構造の理解:
-# - Dockerは各行（命令）をレイヤーとしてキャッシュする
-# - レイヤーが変更されると、そのレイヤー以降が再実行される
-# - package.jsonを先にコピーすることで、ソースコードが変わっても
-#   依存関係のインストール（npm ci）をスキップできる
-# - これにより、ビルド時間が大幅に短縮される（数分 → 数秒）
+# メリット:
+# - package.jsonが変更されない限り、npm ciはキャッシュから実行される
+# - ビルド時間が大幅に短縮される
 ```
 
-#### マルチステージビルドの活用（必須知識）
+#### マルチステージビルドの活用
 
-**❌ 問題のあるDockerfile（富豪的すぎる）:**
+**問題のあるDockerfile:**
 
 ```dockerfile
-# ❌ ビルドツールと実行ファイルをすべて一つのイメージに詰め込んでいる
-FROM node:18-alpine
+# 問題: ビルドツールが本番イメージに含まれる
+FROM node:18
 
 WORKDIR /app
 
@@ -403,149 +229,42 @@ RUN npm install
 COPY . .
 RUN npm run build
 
-# 問題点:
-# 1. node_modules やソースコードがそのまま残るため、イメージが巨大化
-# 2. ビルドツールやキャッシュが残っていると、脆弱性を突かれるリスクが高い
-# 3. デプロイ（Push/Pull）が遅くなる
+# 問題: node_modulesに開発依存関係も含まれる
+# 問題: ビルドツールが本番イメージに含まれる
 # イメージサイズ: 約1GB
 ```
 
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】Dockerfileが「富豪的」すぎます。マルチステージビルドの欠如があります。
-【問題】ビルドに必要なツール（npmなど）と実行に必要なファイルをすべて一つのイメージに詰め込んでいます。
-       イメージサイズが巨大化し、デプロイ（Push/Pull）が遅くなります。
-       また、ビルドツールやキャッシュが残っていると、脆弱性を突かれるリスクが高まります。
-【影響】デプロイ時間の増加、セキュリティリスクの増大
-【推奨】マルチステージビルドを必須知識として使用してください。
-       「ビルド環境」と「実行環境」を分離するのは、現代では「ベストプラクティス」ではなく「常識」です。
-```
-
-**✅ 改善された実装（マルチステージビルド）:**
+**解決: マルチステージビルド**
 
 ```dockerfile
-# ✅ 第一ステージ: ビルド環境（ビルドツールを含む）
+# 第一ステージ: ビルド環境
 FROM node:18-alpine AS builder
 
 WORKDIR /app
 
-# 依存関係をインストール
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# ソースコードをコピーしてビルド
 COPY . .
 RUN npm run build
 
-# ✅ 第二ステージ: 本番環境（実行に必要なファイルのみ）
+# 第二ステージ: 本番環境
 FROM node:18-alpine
 
 WORKDIR /app
 
-# ビルド成果物のみをコピー（ビルドツールは含まない）
+# ビルド成果物のみをコピー
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 
 # 開発依存関係を削除
 RUN npm prune --production
 
 # イメージサイズ: 約200MB（80%削減）
-# ✅ ビルドツールが含まれないため、セキュリティリスクが低減
-# ✅ デプロイ時間が大幅に短縮
 ```
 
 ### Dockerfileのベストプラクティス
-
-#### PID 1 問題の解決（必須知識）
-
-**❌ 問題のある実装:**
-
-```dockerfile
-# ❌ 問題: PID 1 問題を無視している
-FROM node:18-alpine
-
-WORKDIR /app
-
-COPY . .
-CMD ["node", "index.js"]
-
-# 問題点:
-# - コンテナ内で直接実行すると、SIGTERM などの信号を正しく受け取れない
-# - コンテナ停止時に「10秒待たされて強制終了」という挙動になる
-# - 特にRailsのようなプロセス管理が重要なアプリでは致命傷
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】「PID 1 問題」を無視しています。
-【問題】RailsもNode.jsも、コンテナ内で直接実行すると、SIGTERM などの信号を正しく受け取れず、
-       コンテナ停止時に「10秒待たされて強制終了」という挙動になります。
-【影響】正常なシャットダウンができない、データの不整合、接続の切断
-【推奨】実務での常識: Dockerの init フラグを使うか、Dockerfile内に tini などの
-       軽量イニシャルプロセスを導入すべきです。特にRailsのようなプロセス管理が重要なアプリでは致命傷になります。
-```
-
-**✅ 改善された実装（パターン1: tini を使用）:**
-
-```dockerfile
-FROM node:18-slim
-
-WORKDIR /app
-
-# ✅ tini をインストール（軽量イニシャルプロセス）
-RUN apt-get update && apt-get install -y --no-install-recommends tini \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY . .
-
-# ✅ ENTRYPOINT で tini を使用
-ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["node", "index.js"]
-
-# メリット:
-# - SIGTERM などの信号を正しく処理できる
-# - 正常なシャットダウンが可能
-# - ゾンビプロセスの問題を回避
-```
-
-**✅ 改善された実装（パターン2: Dockerの init フラグ）:**
-
-```dockerfile
-FROM node:18-slim
-
-WORKDIR /app
-
-COPY . .
-CMD ["node", "index.js"]
-
-# docker run 時に --init フラグを使用
-# docker run --init my-app:latest
-
-# または docker-compose.yml で
-# services:
-#   app:
-#     build: .
-#     init: true  # ✅ Docker Compose V2 の init オプション
-```
-
-**✅ 改善された実装（パターン3: ベースイメージに tini が含まれている場合）:**
-
-```dockerfile
-# 一部のベースイメージには tini が含まれている
-FROM node:18-slim
-
-WORKDIR /app
-
-COPY . .
-
-# ✅ ベースイメージに tini が含まれている場合は、そのまま使用
-ENTRYPOINT ["tini", "--"]
-CMD ["node", "index.js"]
-```
 
 #### セキュリティの考慮
 
@@ -565,169 +284,24 @@ COPY --chown=nextjs:nodejs . .
 # 非rootユーザーに切り替え
 USER nextjs
 
-# ✅ PID 1 問題の解決: tini を使用
-# Alpine Linux の場合は、apk でインストール
-RUN apk add --no-cache tini
-
-ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["npm", "start"]
 ```
 
 #### イメージサイズの最適化
 
-**❌ 問題のある実装（Alpine Linuxの地雷）:**
-
 ```dockerfile
-# ❌ 「とりあえずAlpine」は実務では地雷になることがある
-FROM node:18-alpine
+# 1. 軽量なベースイメージを使用
+FROM node:18-alpine  # alpine版は約5MB（通常版は約300MB）
 
-# 問題点:
-# 1. Alpine Linuxは軽量だが、libcではなくmuslを使用している
-# 2. 一部のネイティブライブラリ（Python依存や暗号化系）が動かない
-# 3. あるいはビルドに非常に時間がかかることがある
-# 4. 互換性の問題で、本番環境で予期しないエラーが発生する可能性
-```
+# 2. 不要なファイルを削除
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】node:18-alpine は「実務では地雷」になることがある。
-【問題】Alpine Linuxは軽量ですが、libc ではなく musl を使用しているため、
-       一部のネイティブライブラリ（Python依存や暗号化系）が動かない、
-       あるいはビルドに非常に時間がかかることがあります。
-【影響】本番環境で予期しないエラーが発生する可能性、ビルド時間の増加
-【推奨】「とりあえずAlpine」ではなく、互換性とビルド速度のバランスが良い
-       slim イメージ（Debianベース）との使い分けを提示すべきです。
-```
-
-**✅ 改善された実装（slim イメージとの使い分け）:**
-
-```dockerfile
-# ✅ パターン1: 互換性を重視する場合（推奨）
-# Debianベースのslimイメージを使用
-FROM node:18-slim
-
-# メリット:
-# - libcを使用しているため、ネイティブライブラリとの互換性が高い
-# - Alpineより少し大きいが、互換性の問題が少ない
-# - ビルド速度も比較的高速
-
-# ✅ パターン2: サイズを最優先する場合
-# Alpineイメージを使用（互換性を確認済みの場合のみ）
-FROM node:18-alpine
-
-# メリット:
-# - 非常に軽量（約5MB）
-# - ただし、ネイティブライブラリとの互換性を事前に確認する必要がある
-
-# ✅ パターン3: ビルドと実行で使い分ける
-# ビルドステージ: slim（互換性重視）
-FROM node:18-slim AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-
-# 実行ステージ: alpine（サイズ重視）
-FROM node:18-alpine
-WORKDIR /app
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package.json ./
-RUN npm ci --only=production
-
-# 使い分けの指針:
-# - ネイティブライブラリを使用する場合: slim を推奨
-# - 純粋なJavaScriptのみの場合: alpine でも可
-# - ビルドと実行で分離: ビルドはslim、実行はalpine
-```
-
-#### 開発環境でのマウント戦略
-
-**❌ 問題のある実装:**
-
-```bash
-# ❌ 「Dockerfileを書いて docker build する」だけでは、
-#    コードを変更するたびに数分待つことになり、開発速度が著しく低下
-docker build -t my-app .
-docker run my-app
-
-# 問題点:
-# - コードを変更するたびに、docker build を実行する必要がある
-# - ビルド時間（数分）を毎回待つ必要がある
-# - 開発速度が著しく低下する
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】「開発環境」でのマウント戦略が抜けています。
-【問題】「Dockerfileを書いて docker build する」だけでは、
-       コードを変更するたびに数分待つことになり、開発速度が著しく低下します。
-【影響】開発速度の著しい低下、開発者の生産性の低下
-【推奨】開発環境では、ローカルのソースコードをコンテナ内に bind mount し、
-       ホットリロードを効かせる手法に触れるべきです。
-       docker-compose.yml に volumes: - .:/app を書き、
-       node_modules だけはコンテナ内のものを使う「ダブルマウント」などの実務テクニックが必要です。
-```
-
-**✅ 改善された実装（開発環境でのマウント戦略）:**
-
-```yaml
-# docker-compose.yml
-version: '3.8'
-
-services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    volumes:
-      # ✅ ローカルのソースコードをコンテナ内にマウント（ホットリロード）
-      - .:/app
-      # ✅ ダブルマウント: node_modules だけはコンテナ内のものを使う
-      # 理由: ローカルの node_modules とコンテナ内の node_modules の
-      #       OS/アーキテクチャの違いによる問題を回避
-      - /app/node_modules
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=development
-    command: npm run dev  # ✅ ホットリロードを有効にする
-
-# Dockerfile.dev（開発環境用）
-FROM node:18-slim
-
-WORKDIR /app
-
-# 依存関係をインストール（node_modules をコンテナ内に作成）
-COPY package.json package-lock.json ./
-RUN npm ci
-
-# ソースコードは volumes でマウントするため、COPY しない
-# COPY . .
-
-# 開発サーバーを起動（ホットリロード有効）
-CMD ["npm", "run", "dev"]
-```
-
-**開発環境でのベストプラクティス:**
-
-```bash
-# ✅ 開発環境での使い方
-# 1. docker-compose up で起動
-docker-compose up
-
-# 2. ローカルのコードを編集すると、自動的にホットリロードされる
-#    （docker build を実行する必要がない）
-
-# 3. 依存関係を追加した場合のみ、コンテナを再ビルド
-docker-compose build
-
-# メリット:
-# - コード変更が即座に反映される（ホットリロード）
-# - ビルド時間を待つ必要がない
-# - 開発速度が大幅に向上
+# 3. マルチステージビルドを使用
+# （上記の例を参照）
 ```
 
 ### まとめ
@@ -736,26 +310,10 @@ Dockerfileの適切な設計は、コンテナのパフォーマンス、セキ�
 
 **シニアエンジニアとして考慮すべき点:**
 
-1. **マルチステージビルド（必須知識）**: 「ビルド環境」と「実行環境」を分離するのは、現代では「ベストプラクティス」ではなく「常識」です。ビルドツールを含まない軽量な本番イメージを作成することで、セキュリティリスクを低減し、デプロイ時間を短縮できます。
-2. **レイヤーキャッシュの理解**: Dockerは各行（命令）をレイヤーとしてキャッシュします。`package.json`を先にコピーするのは、「ソースコードが変わっても依存関係が変わっていなければ`npm ci`をスキップするため」です。この「レイヤーを意識した記述順」が重要です。
-3. **開発環境でのマウント戦略**: 開発環境では、ローカルのソースコードをコンテナ内にbind mountし、ホットリロードを効かせる手法が必要です。`docker-compose.yml`に`volumes: - .:/app`を書き、`node_modules`だけはコンテナ内のものを使う「ダブルマウント」などの実務テクニックを活用してください。
-4. **ベースイメージの選択**: `node:18-alpine`は軽量ですが、libcではなくmuslを使用しているため、一部のネイティブライブラリが動かないことがあります。「とりあえずAlpine」ではなく、互換性とビルド速度のバランスが良い`slim`イメージ（Debianベース）との使い分けを検討してください。
-5. **OSパッケージの再現性**: `apt-get update`を実行するたびに、インストールされるパッケージのマイナーバージョンが変わる可能性があるため、バージョン固定またはslimベースのイメージでパッケージを厳選
-6. **Rails特有の最適化**: `bundle install --jobs`オプションで並列実行し、ビルド時間を短縮
-7. **Next.js特有の最適化**: `output: 'standalone'`モードを使用し、実行に必要な最小限のファイルのみをコピー（`node_modules`をそのままコピーしない）
-8. **PID 1 問題の解決**: tiniなどの軽量イニシャルプロセスを導入し、SIGTERMなどの信号を正しく処理できるようにする
-9. **セキュリティ**: 非rootユーザーでの実行、脆弱性スキャン
-10. **ドキュメント化**: Dockerfileの各ステップの目的をコメントで説明
-
-#### コードレビューで指摘すべきポイント
-
-1. **マルチステージビルドの欠如**: ビルドツールと実行ファイルをすべて一つのイメージに詰め込んでいる場合は、マルチステージビルドを推奨
-2. **レイヤーキャッシュの無視**: `COPY . .`を最初に実行している場合は、レイヤーキャッシュを活用するよう修正を推奨
-3. **開発環境でのマウント戦略の欠如**: 開発環境で`docker build`を毎回実行している場合は、bind mountとホットリロードを推奨
-4. **Alpine Linuxの無条件使用**: ネイティブライブラリを使用する場合に`alpine`を使用している場合は、`slim`への変更を検討
-5. **OSパッケージの再現性**: `apt-get update`を実行するたびに、インストールされるパッケージのマイナーバージョンが変わる可能性がある場合は、バージョン固定を推奨
-6. **Railsの bundle install**: `--jobs`オプションを指定していない場合は、並列実行を推奨
-7. **Next.jsの node_modules コピー**: builderステージから`node_modules`をそのままコピーしている場合は、`output: 'standalone'`モードの使用を推奨
-8. **PID 1 問題**: コンテナ内で直接実行している場合は、tiniの導入またはDockerの`--init`フラグの使用を推奨
+1. **レイヤーキャッシュ**: 変更頻度の低いファイルを先にコピー
+2. **マルチステージビルド**: 本番イメージのサイズを最小化
+3. **セキュリティ**: 非rootユーザーでの実行、脆弱性スキャン
+4. **イメージサイズ**: 軽量なベースイメージの使用
+5. **ドキュメント化**: Dockerfileの各ステップの目的をコメントで説明
 
 これらの構成は一般的なものであり、各プロジェクトの要件に合わせてカスタマイズできます。

@@ -465,16 +465,273 @@ const prompt = `
 `;
 ```
 
-### まとめ
+### AI Copilotのルールベース開発手法
 
-AIを活用した開発プロセスの改善のポイント：
+#### 1. プロジェクトルールの設定
 
-- **要件定義**: 要件の自動整理、矛盾検出
-- **設計支援**: アーキテクチャの提案、データベース設計の支援
-- **実装支援**: コード生成、リファクタリングの提案
-- **テスト支援**: テストケースの自動生成、E2Eテストの自動生成
-- **ドキュメント生成**: APIドキュメント、設計書の自動生成
-- **見積もり支援**: 工数見積もりの支援
+**実践例:**
 
-適切にAIを活用することで、開発プロセスの各段階で効率と品質を向上させることができます。
+```typescript
+// .copilot/rules.md
+# プロジェクトルール
+
+## コーディング規約
+- TypeScriptを使用し、型安全性を重視する
+- 関数は純粋関数を優先する
+- エラーハンドリングは必須
+- テストカバレッジは80%以上を維持する
+
+## アーキテクチャルール
+- Clean Architectureを採用
+- ドメインロジックはインフラストラクチャから独立させる
+- DIコンテナを使用して依存関係を管理する
+
+## セキュリティルール
+- 入力値は必ずバリデーションする
+- SQLインジェクション対策を実装する
+- 認証・認可は必須
+- 機密情報はログに出力しない
+```
+
+#### 2. コンテキスト固有のルール
+
+**実践例:**
+
+```typescript
+// .copilot/context/api.md
+# API開発ルール
+
+## RESTful API設計
+- HTTPメソッドを適切に使用する
+  - GET: データ取得
+  - POST: データ作成
+  - PUT: データ更新（全体）
+  - PATCH: データ更新（部分）
+  - DELETE: データ削除
+
+## レスポンス形式
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: {
+    code: string;
+    message: string;
+  };
+  meta?: {
+    total?: number;
+    page?: number;
+    limit?: number;
+  };
+}
+
+## エラーハンドリング
+- 4xx: クライアントエラー
+- 5xx: サーバーエラー
+- エラーメッセージは分かりやすく記述する
+```
+
+#### 3. チーム固有のルール
+
+**実践例:**
+
+```typescript
+// .copilot/team-rules.md
+# チーム開発ルール
+
+## コードレビュールール
+- PRは最低2人のレビューが必要
+- セキュリティに関わる変更は必ずセキュリティチームのレビューを受ける
+- パフォーマンスに影響する変更は負荷テストを実施する
+
+## 命名規則
+- 変数名: camelCase
+- 定数名: UPPER_SNAKE_CASE
+- クラス名: PascalCase
+- ファイル名: kebab-case
+
+## コメントルール
+- 複雑なロジックには必ずコメントを記述
+- TODOコメントには期限と担当者を記載
+- 外部APIの仕様変更に関する注意点を記載
+```
+
+#### 4. 技術スタック固有のルール
+
+**実践例:**
+
+```typescript
+// .copilot/tech-stack/react.md
+# React開発ルール
+
+## コンポーネント設計
+- 関数コンポーネントを使用する
+- Hooksを適切に使用する
+- propsの型定義は必須
+- デフォルトpropsは使用しない
+
+## 状態管理
+- ローカル状態: useState
+- グローバル状態: Zustand
+- サーバー状態: React Query
+
+## パフォーマンス
+- 不要な再レンダリングを避ける
+- useMemo, useCallbackを適切に使用
+- React.memoでコンポーネントをメモ化
+
+// 例: ルールに従ったコンポーネント
+interface UserCardProps {
+  user: User;
+  onEdit: (userId: string) => void;
+}
+
+export const UserCard: React.FC<UserCardProps> = ({ user, onEdit }) => {
+  const handleEdit = useCallback(() => {
+    onEdit(user.id);
+  }, [user.id, onEdit]);
+
+  return (
+    <div className="user-card">
+      <h3>{user.name}</h3>
+      <p>{user.email}</p>
+      <button onClick={handleEdit}>編集</button>
+    </div>
+  );
+};
+```
+
+#### 5. プロンプトエンジニアリングのルール
+
+**実践例:**
+
+```typescript
+// .copilot/prompts/code-generation.md
+# コード生成プロンプトルール
+
+## 基本テンプレート
+```
+コンテキスト: [プロジェクトの概要]
+要件: [具体的な要件]
+制約: [技術的制約、ビジネス制約]
+期待する出力: [期待するコードの形式]
+
+例:
+コンテキスト: ECサイトのユーザー管理システム
+要件: ユーザー登録APIを実装したい
+制約: TypeScript, Express, PostgreSQL, JWT認証
+期待する出力: 完全なAPIエンドポイントとテストコード
+```
+
+## 品質向上のためのプロンプト
+- 「エラーハンドリングを含めて実装してください」
+- 「テストケースも一緒に生成してください」
+- 「セキュリティを考慮した実装にしてください」
+- 「パフォーマンスを最適化してください」
+```
+
+#### 6. 自動化ルールの設定
+
+**実践例:**
+
+```typescript
+// .copilot/automation/pre-commit.md
+# プリコミット自動化ルール
+
+## コード品質チェック
+- ESLintでコードスタイルをチェック
+- Prettierでコードフォーマットを統一
+- TypeScriptの型チェックを実行
+- テストを実行してパスすることを確認
+
+## セキュリティチェック
+- 依存関係の脆弱性をチェック
+- ハードコードされた機密情報をチェック
+- SQLインジェクションの可能性をチェック
+
+// GitHub Actions設定例
+name: Pre-commit Checks
+on: [push, pull_request]
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Type check
+        run: npm run type-check
+      - name: Test
+        run: npm run test
+      - name: Security audit
+        run: npm audit
+```
+
+#### 7. ルールの継続的改善
+
+**実践例:**
+
+```typescript
+// .copilot/improvement/metrics.md
+# ルール改善メトリクス
+
+## 測定指標
+interface DevelopmentMetrics {
+  codeQuality: {
+    bugCount: number;
+    codeReviewTime: number;
+    testCoverage: number;
+  };
+  productivity: {
+    featureDeliveryTime: number;
+    codeGenerationAccuracy: number;
+    refactoringFrequency: number;
+  };
+  teamSatisfaction: {
+    developerExperience: number;
+    aiAssistanceEffectiveness: number;
+    ruleCompliance: number;
+  };
+}
+
+## 改善プロセス
+1. 週次でメトリクスを収集
+2. 月次でルールの効果を評価
+3. 四半期でルールを見直し・更新
+4. 年次で大幅なルール改定を検討
+```
+
+#### 8. ルール違反の検出と修正
+
+**実践例:**
+
+```typescript
+// .copilot/validation/rule-checker.ts
+interface RuleViolation {
+  file: string;
+  line: number;
+  rule: string;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+  suggestion?: string;
+}
+
+// ルール違反の自動検出
+export class RuleChecker {
+  async checkFile(filePath: string): Promise<RuleViolation[]> {
+    const violations: RuleViolation[] = [];
+    
+    // 命名規則チェック
+    if (this.hasInvalidNaming(filePath)) {
+      violations.push({
+        file: filePath,
+        line: 1,
+        rule: 'naming-convention',
+        severity: 'warning',
+      
 

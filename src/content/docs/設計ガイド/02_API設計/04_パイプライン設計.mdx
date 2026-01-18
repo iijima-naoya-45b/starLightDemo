@@ -79,13 +79,10 @@ import { ZodSchema } from 'zod';
 
 /**
  * 汎用的なAPI呼び出し関数（ジェネリクス）
- * 正常系は真っ直ぐ、異常系は例外で落とす設計
  * @param url - APIのエンドポイントURL
  * @param schema - Zodスキーマ（型チェック用）
  * @param options - fetchのオプション（method, headers, bodyなど）
  * @returns 型安全なデータ
- * @throws ZodError - スキーマバリデーション失敗時
- * @throws Error - HTTPリクエスト失敗時
  */
 export async function fetchWithSchema<T>(
   url: string,
@@ -100,11 +97,34 @@ export async function fetchWithSchema<T>(
   
   const data: unknown = await response.json(); // ✅ unknownで取得
   
-  // Zodで型チェック（パース失敗時は例外を投げる）
-  // エラーハンドリングは上位層（ErrorBoundary、Actionの共通キャッチ機構）で処理
+  // Zodで型チェック（パース失敗時はエラーを投げる）
   const validatedData = schema.parse(data);
   
   return validatedData; // 型安全なデータを返す
+}
+
+/**
+ * 安全なパース（エラーハンドリング付き）
+ * @param data - パース対象のデータ（unknown型）
+ * @param schema - Zodスキーマ
+ * @returns パース結果（成功時はdata、失敗時はエラー情報）
+ */
+export function safeParseWithSchema<T>(
+  data: unknown,
+  schema: ZodSchema<T>
+): { success: true; data: T } | { success: false; error: z.ZodError } {
+  const result = schema.safeParse(data);
+  
+  if (!result.success) {
+    // パースエラーの詳細をログに出力
+    console.error('Schema validation error:', {
+      functionName: 'safeParseWithSchema',
+      error: result.error,
+      data: data,
+    });
+  }
+  
+  return result;
 }
 ```
 
@@ -189,12 +209,37 @@ export async function fetchProducts(): Promise<ProductsApiResponse> {
 **ベストプラクティス:**
 
 1. **`unknown`で受け取る**: `any`型は使わず、必ず`unknown`で取得
-2. **Zodでパース**: `.parse()`で型チェック（失敗時は例外を投げる）
-3. **例外戦略の統一**: 正常系は真っ直ぐ、異常系は例外で落とす。エラーハンドリングは上位層（ErrorBoundary、Actionの共通キャッチ機構）で処理する
+2. **Zodでパース**: `.parse()`で型チェック（失敗時はエラーを投げる）
+3. **安全なパース**: エラー処理が必要な場合は`.safeParse()`を使用
 4. **スキーマの共有**: APIのスキーマ定義を一箇所にまとめる
 5. **汎用関数の活用**: 同じパターンを繰り返す場合は、ジェネリクス関数を作成して再利用する
 
-> **注意**: `safeParse()` を使いたい場合は、Zodの `safeParse()` を直接使用してください。独自のラップ関数は不要です。エラーハンドリングが必要な場合は、上位層で統一して処理します。
+### 安全なパース（エラーハンドリング）
+
+```typescript
+// src/api/schema/userSchema.ts
+import { safeParseWithSchema } from '@/api/utils/schemaUtils';
+
+// エラー処理が必要な場合
+export async function fetchUserSafely(id: number) {
+  const response = await fetch(`https://api.example.com/users/${id}`);
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch user');
+  }
+  
+  const data: unknown = await response.json();
+  
+  // 汎用関数を使用して安全にパース
+  const result = safeParseWithSchema(data, userApiSchema);
+  
+  if (!result.success) {
+    throw new Error('Invalid API response format');
+  }
+  
+  return result.data; // 型安全なデータ
+}
+```
 
 ---
 
@@ -316,16 +361,10 @@ import { ZodSchema } from 'zod';
 
 /**
  * フォームデータをAPIリクエスト形式に変換し、Zodでバリデーション
- * 正常系は真っ直ぐ、異常系は例外で落とす設計
  * @param formData - フォームデータ
  * @param converter - フォームデータをAPIリクエスト形式に変換する関数
  * @param schema - APIリクエスト用のZodスキーマ
  * @returns バリデーション済みのAPIリクエストデータ
- * @throws ZodError - バリデーション失敗時
- * 
- * 注意: RHFで既にバリデーション済みのデータを送信するため、
- * この関数は主に「DTOからFormへの変換時に混入したゴミデータ」を防ぐための最終チェックとして機能します。
- * エラーハンドリングは上位層（Actionの共通キャッチ機構）で処理します。
  */
 export function validateFormToApiRequest<TForm, TApiRequest>(
   formData: TForm,
@@ -333,8 +372,23 @@ export function validateFormToApiRequest<TForm, TApiRequest>(
   schema: ZodSchema<TApiRequest>
 ): TApiRequest {
   const apiRequest = converter(formData);
-  // バリデーション失敗時は例外を投げる（上位層で処理）
   return schema.parse(apiRequest);
+}
+
+/**
+ * 安全なバリデーション（エラーハンドリング付き）
+ * @param formData - フォームデータ
+ * @param converter - フォームデータをAPIリクエスト形式に変換する関数
+ * @param schema - APIリクエスト用のZodスキーマ
+ * @returns バリデーション結果
+ */
+export function safeValidateFormToApiRequest<TForm, TApiRequest>(
+  formData: TForm,
+  converter: (formData: TForm) => unknown,
+  schema: ZodSchema<TApiRequest>
+): { success: true; data: TApiRequest } | { success: false; error: z.ZodError } {
+  const apiRequest = converter(formData);
+  return schema.safeParse(apiRequest);
 }
 ```
 
@@ -502,7 +556,6 @@ import { fetchWithSchema } from '@/api/utils/schemaUtils';
 
 /**
  * 汎用的な更新アクション（ジェネリクス）
- * 正常系は真っ直ぐ、異常系は例外で落とす設計
  * @param url - APIのエンドポイントURL
  * @param formData - フォームデータ
  * @param converter - フォームデータをAPIリクエスト形式に変換する関数
@@ -510,10 +563,6 @@ import { fetchWithSchema } from '@/api/utils/schemaUtils';
  * @param responseSchema - APIレスポンス用のZodスキーマ
  * @param method - HTTPメソッド（デフォルト: 'PUT'）
  * @returns バリデーション済みのAPIレスポンス
- * @throws ZodError - バリデーション失敗時
- * @throws Error - HTTPリクエスト失敗時
- * 
- * 注意: エラーハンドリングは上位層（Actionの共通キャッチ機構、ErrorBoundary）で処理します。
  */
 export async function updateAction<TForm, TApiRequest, TApiResponse>(
   url: string,
@@ -528,7 +577,6 @@ export async function updateAction<TForm, TApiRequest, TApiResponse>(
 
   // 2. ✅ 重要: APIに送るデータもZodでパース（洗浄）してから送信
   // これにより、DTOからフォームに変換した際のゴミデータがAPIに飛ぶのを防ぐ
-  // バリデーション失敗時は例外を投げる（上位層で処理）
   const validatedRequest = requestSchema.parse(apiRequest);
 
   // 3. APIを呼び出す（洗浄済みのデータを送信）
@@ -549,17 +597,12 @@ export async function updateAction<TForm, TApiRequest, TApiResponse>(
 
 /**
  * 汎用的な作成アクション（ジェネリクス）
- * 正常系は真っ直ぐ、異常系は例外で落とす設計
  * @param url - APIのエンドポイントURL
  * @param formData - フォームデータ
  * @param converter - フォームデータをAPIリクエスト形式に変換する関数
  * @param requestSchema - APIリクエスト用のZodスキーマ
  * @param responseSchema - APIレスポンス用のZodスキーマ
  * @returns バリデーション済みのAPIレスポンス
- * @throws ZodError - バリデーション失敗時
- * @throws Error - HTTPリクエスト失敗時
- * 
- * 注意: エラーハンドリングは上位層（Actionの共通キャッチ機構、ErrorBoundary）で処理します。
  */
 export async function createAction<TForm, TApiRequest, TApiResponse>(
   url: string,
@@ -686,12 +729,11 @@ MSW層: 開発・テスト環境でモックレスポンスを返す
 1. **MSWでのモック**: 開発・テスト環境でAPIをモックし、実際のAPIサーバーに依存しない（詳細は[MSW（モックサービスワーカー）](./05_MSW_モックサービスワーカー.mdx)を参照）
 2. **型安全性の確保**: `unknown`で受け取り、Zodで型チェック
 3. **「逆方向」の洗浄**: APIから受け取る時だけでなく、**APIに送る時もZodでパース（洗浄）**する。これにより、DTOからフォームに変換した際のゴミデータがAPIに飛ぶのを防ぐ
-4. **例外戦略の統一**: **正常系は真っ直ぐ、異常系は例外で落とす**。`parse()`を使用し、エラーハンドリングは上位層（ErrorBoundary、Actionの共通キャッチ機構）で統一して処理する。中途半端なラップ関数（`safeParseWithSchema`など）は作成しない
-5. **責務の分離**: 各層の責務を明確に分ける
-6. **一方向データフロー**: MSW → API → DTO → Formの流れを維持
-7. **変換関数の明示化**: 型変換を明示的な関数で行う
-8. **スキーマの共有**: Zodスキーマを共有して、型とバリデーションを一元管理（MSW層でも使用）
-9. **ジェネリクスの活用**: 同じパターンを繰り返す場合は、ジェネリクス関数（`fetchWithSchema`、`convertArray`、`validateFormToApiRequest`、`updateAction`など）を作成して再利用する。これにより、コードの重複を減らし、保守性を向上させる
+4. **責務の分離**: 各層の責務を明確に分ける
+5. **一方向データフロー**: MSW → API → DTO → Formの流れを維持
+6. **変換関数の明示化**: 型変換を明示的な関数で行う
+7. **スキーマの共有**: Zodスキーマを共有して、型とバリデーションを一元管理（MSW層でも使用）
+8. **ジェネリクスの活用**: 同じパターンを繰り返す場合は、ジェネリクス関数（`fetchWithSchema`、`convertArray`、`validateFormToApiRequest`、`updateAction`など）を作成して再利用する。これにより、コードの重複を減らし、保守性を向上させる
 
 ### アンチパターン
 
@@ -700,361 +742,6 @@ MSW層: 開発・テスト環境でモックレスポンスを返す
 3. **型チェックなしのAPI呼び出し**: 実行時エラーが発生する可能性
 4. **UI都合でAPIを変更**: APIとUIが密結合になる
 5. **変換層の省略**: 型変換を怠り、型不整合が発生する
-6. **例外戦略と戻り値戦略の混在**: `parse()`と`safeParse()`を混在させ、呼び出し元で`if (!result.success) throw`という二度手間を発生させる。例外戦略に統一する
-7. **中途半端なラップ関数**: Zodの`safeParse()`をラップしてログを出すだけの関数を作成する。ログは別の層（開発環境でのみ動作するインターセプター、グローバルなエラーハンドリング層）で処理する
-
-### コードレビューで指摘すべき具体的なアンチパターン
-
-コードレビュー時に、以下のパターンを見つけたら指摘してください。各パターンには、具体的な指摘文例を記載しています。
-
-#### 1. 手書きの型定義（OpenAPIから自動生成すべき）
-
-**❌ 問題のある実装:**
-
-```typescript
-// src/types/user.ts
-// ❌ OpenAPIから自動生成された型があるのに、手書きで定義している
-export interface User {
-  id: number;
-  first_name: string;
-  last_name: string;
-  email: string;
-}
-
-// src/api/schema/userSchema.ts
-// ❌ 手書きのZodスキーマ
-export const userApiSchema = z.object({
-  id: z.number(),
-  first_name: z.string(),
-  last_name: z.string(),
-  email: z.string().email(),
-});
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】手書きの型定義を削除してください。
-【問題】この User 型、OpenAPIから自動生成された generated.ts に定義があるはずです。
-       手書きするとAPI変更時に追従漏れが発生するので、自動生成された型を import してください。
-【影響】API変更時に型が更新されず、ランタイムエラーが発生する可能性
-【推奨】import type { User } from '@/api/generated/types'; を使用
-       もし型が足りないなら、まずは openapi.yaml を修正しましょう。
-```
-
-**✅ 改善された実装:**
-
-```typescript
-// src/api/generated/types.ts（自動生成）
-export interface User {
-  id: number;
-  first_name: string;
-  last_name: string;
-  email: string;
-}
-
-// src/types/user.ts
-// ✅ 自動生成された型を使用
-import type { User as UserApiResponse } from '@/api/generated/types';
-
-// DTO層で使用
-export type User = {
-  id: number;
-  firstName: string;
-  lastName: string;
-  email: string;
-};
-
-export function userApiToDto(apiUser: UserApiResponse): User {
-  return {
-    id: apiUser.id,
-    firstName: apiUser.first_name,
-    lastName: apiUser.last_name,
-    email: apiUser.email,
-  };
-}
-```
-
-**なぜこれが必要か:** 「型が合っているか」を確認するコストをゼロにするためです。
-
----
-
-#### 2. 中途半端な共通ユーティリティ（ライブラリの薄いラップ）
-
-**❌ 問題のある実装:**
-
-```typescript
-// src/utils/schemaUtils.ts
-// ❌ ZodのsafeParseを薄くラップしただけの関数
-export function safeParseWithSchema<T>(
-  data: unknown,
-  schema: ZodSchema<T>
-): { success: true; data: T } | { success: false; error: z.ZodError } {
-  const result = schema.safeParse(data);
-  if (!result.success) {
-    console.error('Schema validation error:', result.error);
-  }
-  return result;
-}
-
-// 使用箇所
-const result = safeParseWithSchema(data, userApiSchema);
-if (!result.success) {
-  throw new Error('Validation failed');
-}
-// 結局、呼び出し元でif文を書いている
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】中途半端なラップ関数を削除してください。
-【問題】この safeParseWithSchema は削除しましょう。
-       正常系は schema.parse() でストレートに流し、
-       異常系（バリデーションエラーや通信エラー）は上位の ErrorBoundary か
-       Action 層の共通 catch 処理で一括ハンドリングする設計に統一してください。
-【影響】個別に result.success を判定するコードはボイラープレート化の原因です。
-【推奨】schema.parse() を使用し、エラーハンドリングは上位層で統一
-```
-
-**✅ 改善された実装:**
-
-```typescript
-// src/api/utils/schemaUtils.ts
-// ✅ 例外を投げる設計に統一
-export async function fetchWithSchema<T>(
-  url: string,
-  schema: ZodSchema<T>,
-  options?: RequestInit
-): Promise<T> {
-  const response = await fetch(url, options);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch: ${response.statusText}`);
-  }
-  const data: unknown = await response.json();
-  // ✅ 例外を投げる（上位層で処理）
-  return schema.parse(data);
-}
-
-// 使用箇所（上位層でエラーハンドリング）
-try {
-  const user = await fetchWithSchema(url, userApiSchema);
-  // 正常系の処理
-} catch (error) {
-  // ErrorBoundary または Action 層の共通 catch 処理で一括ハンドリング
-  handleError(error);
-}
-```
-
----
-
-#### 3. ステータスコード無視（response.ok のチェック漏れ）
-
-**❌ 問題のある実装:**
-
-```typescript
-// ❌ response.ok のチェックが漏れている
-export async function fetchUser(id: number) {
-  const response = await fetch(`https://api.example.com/users/${id}`);
-  const data: unknown = await response.json(); // ❌ 401や422でもjson()してしまう
-  return userApiSchema.parse(data); // ❌ ステータスコードが422なのに、ZodErrorとして落ちる
-}
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】response.ok のチェックが漏れています。
-【問題】特に 401（未認証）や 422（バリデーション失敗）の際に、
-       型パースエラー（ZodError）として落ちると原因の切り分けが困難になります。
-【影響】エラーの原因が分からず、デバッグに時間がかかる
-【推奨】共通 fetcher を通して、ステータスコードに応じた ApiError を throw するように修正してください。
-```
-
-**✅ 改善された実装:**
-
-```typescript
-// src/api/utils/fetcher.ts
-// ✅ ステータスコードに応じたエラーを投げる
-export class ApiError extends Error {
-  constructor(
-    public statusCode: number,
-    public message: string,
-    public data?: unknown
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
-}
-
-export async function fetchWithSchema<T>(
-  url: string,
-  schema: ZodSchema<T>,
-  options?: RequestInit
-): Promise<T> {
-  const response = await fetch(url, options);
-  
-  // ✅ ステータスコードをチェック
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new ApiError(
-      response.status,
-      errorData.message || `HTTP ${response.status}: ${response.statusText}`,
-      errorData
-    );
-  }
-  
-  const data: unknown = await response.json();
-  return schema.parse(data);
-}
-
-// 使用箇所
-try {
-  const user = await fetchWithSchema(url, userApiSchema);
-} catch (error) {
-  if (error instanceof ApiError) {
-    // ✅ ステータスコードに応じた処理
-    if (error.statusCode === 401) {
-      // 認証エラー
-    } else if (error.statusCode === 422) {
-      // バリデーションエラー
-    }
-  }
-}
-```
-
----
-
-#### 4. マジックストリング（エンドポイントURLのハードコード）
-
-**❌ 問題のある実装:**
-
-```typescript
-// ❌ URLがハードコードされている
-export async function fetchUser(id: number) {
-  const response = await fetch(`https://api.example.com/users/${id}`);
-  // ...
-}
-
-// ❌ タイポのリスク
-export async function updateUser(id: number, data: UserFormInput) {
-  const response = await fetch(`https://api.example.com/user/${id}`, {
-    // ❌ /users ではなく /user とタイポしている
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
-}
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】URLがハードコードされています。
-【問題】エンドポイントのタイポを防げるだけでなく、パスパラメータの型安全性も確保できます。
-【影響】タイポによるランタイムエラー、パスパラメータの型安全性が失われる
-【推奨】OpenAPIから生成したSDK（例：api.users.get()）を使用してください。
-```
-
-**✅ 改善された実装:**
-
-```typescript
-// src/api/generated/client.ts（自動生成）
-// OpenAPIから生成されたSDK
-export const api = {
-  users: {
-    get: (id: number) => fetch(`https://api.example.com/users/${id}`),
-    update: (id: number, data: UpdateUserRequest) =>
-      fetch(`https://api.example.com/users/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(data),
-      }),
-  },
-};
-
-// 使用箇所
-// ✅ 型安全なSDKを使用
-export async function fetchUser(id: number) {
-  const response = await api.users.get(id);
-  // ...
-}
-
-// ✅ パスパラメータも型安全
-export async function updateUser(id: number, data: UserFormInput) {
-  const response = await api.users.update(id, data);
-  // ...
-}
-```
-
----
-
-#### 5. DTO層でのロジック漏れ（UI層での加工）
-
-**❌ 問題のある実装:**
-
-```typescript
-// ❌ コンポーネント内で加工している
-function UserProfile({ user }: { user: UserApiResponse }) {
-  // ❌ UI層で姓名を結合している
-  const fullName = `${user.first_name} ${user.last_name}`;
-  
-  return (
-    <div>
-      <h1>{fullName}</h1>
-      {/* 他の箇所でも同じ加工を繰り返している */}
-      <p>{user.first_name} {user.last_name}</p>
-    </div>
-  );
-}
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】姓名の結合ロジックがUI層に漏れ出しています。
-【問題】これはDTO層（userApiToDto）で fullName として定義してください。
-       UIは『加工済みのデータ（DTO）』を表示するだけに徹することで、
-       将来的に表示形式が変わった際の修正箇所を一箇所に限定できます。
-【影響】同じ加工ロジックが複数箇所に散在し、修正漏れが発生する
-【推奨】DTO層で fullName を計算し、UI層では表示のみに徹する
-```
-
-**✅ 改善された実装:**
-
-```typescript
-// src/types/user.ts
-// ✅ DTO層で加工ロジックを定義
-export type User = {
-  id: number;
-  firstName: string;
-  lastName: string;
-  fullName: string; // ✅ DTO層で計算
-  email: string;
-};
-
-export function userApiToDto(apiUser: UserApiResponse): User {
-  return {
-    id: apiUser.id,
-    firstName: apiUser.first_name,
-    lastName: apiUser.last_name,
-    fullName: `${apiUser.first_name} ${apiUser.last_name}`, // ✅ DTO層で計算
-    email: apiUser.email,
-  };
-}
-
-// コンポーネント
-// ✅ UI層は表示のみに徹する
-function UserProfile({ user }: { user: User }) {
-  return (
-    <div>
-      <h1>{user.fullName}</h1>
-      {/* ✅ 加工済みのデータを使用 */}
-      <p>{user.fullName}</p>
-    </div>
-  );
-}
-```
-
----
 
 このパイプライン設計を守ることで、APIとUIの責務が明確に分離され、保守性の高いアプリケーションを構築できます。
 

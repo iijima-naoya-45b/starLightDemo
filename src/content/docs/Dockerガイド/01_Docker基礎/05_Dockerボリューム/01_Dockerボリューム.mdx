@@ -68,180 +68,25 @@ docker volume inspect my-volume
 docker volume rm my-volume
 ```
 
-### 匿名ボリューム（注意: 運用上のリスク）
-
-**❌ 問題のある実装:**
-
-```yaml
-# docker-compose.yml
-services:
-  app:
-    build: .
-    volumes:
-      - .:/app
-      - /app/node_modules  # ❌ 匿名ボリューム（名前のない）
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】「匿名ボリューム」を推奨する危うさがあります。
-【問題】node_modules を上書きしないために匿名ボリューム（名前のない - /app/node_modules）
-       を使う手法が紹介されていますが、これは運用上のリスクがあります。
-       匿名ボリュームは docker compose down をしても削除されず、ハッシュ値のような名前で残り続けます。
-       これがディスクを圧迫し、さらに「どのコンテナの残骸か」判別不能になります。
-【影響】ゾンビデータの発生、ディスクの圧迫、管理の困難
-【推奨】node_modules も名前付きボリューム（node_modules_data:/app/node_modules）として定義し、
-       不要になったら明示的に docker volume rm できるように管理すべきです。
-```
-
-**✅ 改善された実装（名前付きボリューム）:**
-
-```yaml
-# docker-compose.yml
-services:
-  app:
-    build: .
-    volumes:
-      - .:/app
-      # ✅ 名前付きボリュームを使用（匿名ボリュームではなく）
-      - app_node_modules:/app/node_modules
-
-volumes:
-  app_node_modules:
-    # ✅ 名前付きボリュームとして管理されるため、
-    #    docker compose down -v で明示的に削除できる
-    #    または docker volume rm app_node_modules で削除可能
-
-# メリット:
-# - ゾンビデータが発生しない
-# - どのコンテナのボリュームか判別可能
-# - 明示的に削除できる
-```
-
-**匿名ボリュームの削除:**
+### 匿名ボリューム
 
 ```bash
-# ❌ 匿名ボリュームは削除が困難
+# 匿名ボリュームの作成
+docker run -d -v /data my-app:latest
+
+# 匿名ボリュームの一覧表示
 docker volume ls
-# DRIVER    VOLUME NAME
-# local     a1b2c3d4e5f6...  # ハッシュ値のような名前（判別不能）
-
-# ✅ 名前付きボリュームは削除が容易
-docker volume rm app_node_modules
-# または
-docker compose down -v  # 名前付きボリュームも削除
 ```
 
-### バインドマウント（注意: OS間パフォーマンス問題）
+### バインドマウント
 
-**❌ 問題のある実装:**
+```bash
+# バインドマウントの使用
+docker run -d -v /host/path:/container/path my-app:latest
 
-```yaml
-# docker-compose.yml
-services:
-  app:
-    build: .
-    volumes:
-      - .:/app  # ❌ macOS/Windows で圧倒的に遅い
-      - /app/node_modules  # ❌ 匿名ボリューム
-
-# 問題点:
-# 1. Node.jsの node_modules や Railsの vendor/bundle をホスト側からマウントすると、
-#    ファイルシステム（gRPC FUSE 等）のオーバーヘッドにより、ビルドや起動が数倍遅くなる
-# 2. macOS/Windows では特に顕著（仮想マシンを介しているため）
+# 絶対パスを使用
+docker run -d -v $(pwd)/data:/app/data my-app:latest
 ```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】バインドマウントの「OS間パフォーマンス問題」を無視しています。
-【問題】実務で最もトラブルになるのが、macOSやWindowsでバインドマウント（.:/app）した際の
-       圧倒的な遅さです。Node.jsの node_modules や Railsの vendor/bundle を
-       ホスト側からマウントすると、ファイルシステム（gRPC FUSE 等）のオーバーヘッドにより、
-       ビルドや起動が数倍遅くなります。
-【影響】開発速度の著しい低下、ビルド時間の増加
-【推奨】ホストとコンテナで頻繁にファイルをやり取りしないディレクトリは、
-       匿名ボリュームではなく名前付きボリュームを使うか、cached や delegated オプション、
-       あるいは最新の VirtioFS の使用を推奨すべきです。
-```
-
-**✅ 改善された実装（パフォーマンス最適化）:**
-
-```yaml
-# docker-compose.yml
-services:
-  app:
-    build: .
-    volumes:
-      # ✅ ソースコードのみマウント（頻繁に変更されるファイル）
-      - .:/app
-      # ✅ 名前付きボリュームを使用（node_modules はコンテナ内で管理）
-      - app_node_modules:/app/node_modules
-      # ✅ Rails の場合: vendor/bundle も名前付きボリューム
-      - app_vendor_bundle:/app/vendor/bundle
-
-volumes:
-  app_node_modules:
-  app_vendor_bundle:
-
-# メリット:
-# - node_modules や vendor/bundle はコンテナ内で管理されるため、
-#   ファイルシステムのオーバーヘッドが発生しない
-# - ビルドや起動が高速化される
-```
-
-**✅ 改善された実装（macOS/Windows での最適化オプション）:**
-
-```yaml
-# docker-compose.yml（macOS/Windows 用）
-services:
-  app:
-    build: .
-    volumes:
-      # ✅ cached オプション: ホスト側の変更を優先（読み取り性能向上）
-      - .:/app:cached
-      # ✅ delegated オプション: コンテナ側の変更を優先（書き込み性能向上）
-      # - .:/app:delegated
-      - app_node_modules:/app/node_modules
-
-volumes:
-  app_node_modules:
-
-# オプションの使い分け:
-# - cached: ホスト側の変更が多い場合（開発環境）
-# - delegated: コンテナ側の変更が多い場合（ビルド環境）
-```
-
-**✅ 改善された実装（VirtioFS - Docker Desktop 4.6+）:**
-
-```yaml
-# docker-compose.yml（VirtioFS を使用）
-services:
-  app:
-    build: .
-    volumes:
-      # ✅ VirtioFS: 最新のDocker Desktop（4.6+）で利用可能
-      #    パフォーマンスが大幅に向上
-      - type: bind
-        source: .
-        target: /app
-        bind:
-          propagation: shared
-      - app_node_modules:/app/node_modules
-
-volumes:
-  app_node_modules:
-
-# VirtioFS の有効化:
-# Docker Desktop → Settings → General → Use VirtioFS for file sharing
-```
-
-**推奨アプローチ:**
-
-1. **開発環境**: ソースコードのみバインドマウント、`node_modules`や`vendor/bundle`は名前付きボリューム
-2. **macOS/Windows**: `cached`または`delegated`オプション、またはVirtioFSを使用
-3. **Linux**: 通常のバインドマウントで問題なし
 
 ## 3. Docker Composeでのボリューム
 
@@ -272,32 +117,14 @@ services:
       - ./config:/app/config
 ```
 
-### 匿名ボリューム（非推奨: 名前付きボリュームを使用）
-
-**❌ 問題のある実装:**
+### 匿名ボリューム
 
 ```yaml
 services:
   app:
     build: .
     volumes:
-      - /app/node_modules  # ❌ 匿名ボリューム（非推奨）
-```
-
-**✅ 改善された実装（名前付きボリューム）:**
-
-```yaml
-services:
-  app:
-    build: .
-    volumes:
-      # ✅ 名前付きボリュームを使用
-      - app_node_modules:/app/node_modules
-
-volumes:
-  app_node_modules:
-    # ✅ 名前付きボリュームとして管理されるため、
-    #    不要になったら明示的に削除できる
+      - /app/node_modules  # node_modulesを上書きしない
 ```
 
 ## 4. ボリュームの操作
@@ -341,134 +168,26 @@ volumes:
   postgres_data:
 ```
 
-### パターン2: 開発環境でのホットリロード（パフォーマンス最適化）
-
-**❌ 問題のある実装:**
+### パターン2: 開発環境でのホットリロード
 
 ```yaml
 services:
   app:
     build: .
     volumes:
-      - .:/app  # ❌ macOS/Windows で圧倒的に遅い
-      - /app/node_modules  # ❌ 匿名ボリューム（非推奨）
+      - .:/app  # ソースコードをマウント
+      - /app/node_modules  # node_modulesは上書きしない
 ```
 
-**✅ 改善された実装（パフォーマンス最適化）:**
+### パターン3: 設定ファイルのマウント
 
 ```yaml
-services:
-  app:
-    build: .
-    volumes:
-      # ✅ ソースコードのみマウント（頻繁に変更されるファイル）
-      - .:/app:cached  # macOS/Windows では cached オプションを推奨
-      # ✅ 名前付きボリュームを使用（node_modules はコンテナ内で管理）
-      - app_node_modules:/app/node_modules
-
-volumes:
-  app_node_modules:
-
-# メリット:
-# - node_modules はコンテナ内で管理されるため、
-#   ファイルシステムのオーバーヘッドが発生しない
-# - ビルドや起動が高速化される
-# - ゾンビデータが発生しない
-```
-
-### パターン3: 設定ファイルのマウント（:ro は必須）
-
-**❌ 問題のある実装:**
-
-```yaml
-# docker-compose.yml
 services:
   nginx:
     image: nginx:alpine
     volumes:
-      # ❌ 問題: :ro が付いていない（読み書き可能）
-      - ./nginx.conf:/etc/nginx/nginx.conf
-      - ./static:/usr/share/nginx/html
-
-# 問題点:
-# 1. コンテナ側からホストのファイルを書き換えられる権限を与えるのは、
-#    コンテナブレイクアウト（脱出攻撃）の足掛かりになる
-# 2. セキュリティリスクの増大
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】:ro (Read-Only) の重要性が「おまけ」扱いです。
-【問題】設定ファイルのマウント例で :ro が出てきますが、これはベストプラクティスというより
-       「セキュリティ上の鉄則」です。設定ファイルや静的アセットをマウントする場合、
-       コンテナ側からホストのファイルを書き換えられる権限を与えるのは、
-       コンテナブレイクアウト（脱出攻撃）の足掛かりになります。
-【影響】セキュリティリスクの増大、コンテナブレイクアウトのリスク
-【推奨】「設定ファイルのマウントには必ず :ro を付ける」を徹底させてください。
-```
-
-**✅ 改善された実装（:ro は必須）:**
-
-```yaml
-# docker-compose.yml
-services:
-  nginx:
-    image: nginx:alpine
-    volumes:
-      # ✅ 設定ファイルは必ず :ro（読み取り専用）
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro  # 読み取り専用
       - ./static:/usr/share/nginx/html:ro
-    ports:
-      - "80:80"
-
-  app:
-    build: .
-    volumes:
-      # ✅ 設定ファイルは必ず :ro
-      - ./config/app.conf:/app/config/app.conf:ro
-      - ./config/env.production:/app/.env:ro
-      # ✅ 静的アセットも :ro
-      - ./public:/app/public:ro
-
-# セキュリティの原則:
-# - 設定ファイル: 必ず :ro
-# - 静的アセット: 必ず :ro
-# - ログファイル: 書き込みが必要な場合は、専用のボリュームを使用
-# - データベース: 名前付きボリュームを使用（:ro は不要、コンテナ内のパス）
-```
-
-**:ro を付けるべきファイル:**
-
-1. **設定ファイル**: `nginx.conf`、`app.conf`、`.env`など
-2. **静的アセット**: `public/`、`static/`など
-3. **証明書**: SSL証明書など
-4. **読み取り専用のデータ**: 参照データなど
-
-**:ro を付けないファイル:**
-
-1. **ログファイル**: 書き込みが必要な場合は、専用のボリュームを使用
-2. **データベース**: 名前付きボリュームを使用（コンテナ内のパス）
-3. **一時ファイル**: コンテナ内で管理
-
-**セキュリティの層別防御:**
-
-```yaml
-services:
-  app:
-    build: .
-    volumes:
-      # ✅ 読み取り専用: 設定ファイル、静的アセット
-      - ./config:/app/config:ro
-      - ./public:/app/public:ro
-      # ✅ 書き込み可能: ログファイル（専用ボリューム）
-      - app_logs:/app/logs
-      # ✅ データベース: 名前付きボリューム（コンテナ内のパス）
-      - app_data:/app/data
-
-volumes:
-  app_logs:
-  app_data:
 ```
 
 ## 6. よくある問題と解決策
@@ -502,22 +221,6 @@ docker system df -v
 # 未使用のボリュームを削除
 docker volume prune
 ```
-
-## まとめ
-
-Dockerボリュームの適切な設計は、パフォーマンス、セキュリティ、保守性に大きく影響します。
-
-**シニアエンジニアとして考慮すべき点:**
-
-1. **バインドマウントのOS間パフォーマンス問題**: macOSやWindowsでバインドマウント（`.:/app`）した際の圧倒的な遅さを考慮し、`node_modules`や`vendor/bundle`など、ホストとコンテナで頻繁にファイルをやり取りしないディレクトリは、名前付きボリュームを使うか、`cached`や`delegated`オプション、あるいは最新のVirtioFSの使用を推奨します。
-2. **匿名ボリュームの非推奨**: 匿名ボリュームは`docker compose down`をしても削除されず、ゾンビデータが発生します。`node_modules`も名前付きボリュームとして定義し、不要になったら明示的に`docker volume rm`できるように管理すべきです。
-3. **:ro (Read-Only) は必須**: 設定ファイルや静的アセットのマウントには必ず`:ro`を付ける。これはベストプラクティスではなく、「セキュリティ上の鉄則」です。コンテナ側からホストのファイルを書き換えられる権限を与えるのは、コンテナブレイクアウト（脱出攻撃）の足掛かりになります。
-
-#### コードレビューで指摘すべきポイント
-
-1. **バインドマウントのパフォーマンス問題**: macOS/Windowsで`node_modules`や`vendor/bundle`をバインドマウントしている場合は、名前付きボリュームへの変更を推奨
-2. **匿名ボリュームの使用**: 匿名ボリュームを使用している場合は、名前付きボリュームへの変更を推奨
-3. **:ro の欠如**: 設定ファイルや静的アセットのマウントに`:ro`が付いていない場合は、必ず`:ro`を付けるよう推奨
 
 これで、Dockerボリュームの基礎知識と実務での使い方を理解できるようになりました。
 
