@@ -26,14 +26,12 @@ Dockerイメージのサイズとビルド時間を最適化する方法を、�
 
 ### 基本的なマルチステージビルド
 
-**❌ 問題のある実装（npm ci を2回実行）:**
-
 ```dockerfile
 # ビルドステージ
 FROM node:18-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci  # 1回目
+RUN npm ci
 COPY . .
 RUN npm run build
 
@@ -41,102 +39,20 @@ RUN npm run build
 FROM node:18-alpine
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --only=production  # ❌ 2回目（ネットワークI/Oが発生）
+RUN npm ci --only=production
 COPY --from=builder /app/dist ./dist
 EXPOSE 3000
 CMD ["node", "dist/index.js"]
-
-# 問題点:
-# 1. npmレジストリから再度パッケージを落とすため、ビルド時間が劇的に悪化
-# 2. CI/CDの実行コストが増加
-# 3. ネットワークI/Oが無駄に発生
 ```
 
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】npm ci を2回叩くのは「最適化」ではありません。
-【問題】マルチステージビルドの例で、builderステージと本番ステージの両方で npm ci を実行しています。
-       時間の無駄: npmレジストリから再度パッケージを落とすのは、ビルド時間を劇的に悪化させます。
-       CI/CDの実行コストを考えてください。
-【影響】ビルド時間の増加、CI/CDの実行コストの増加
-【推奨】builderステージで npm ci した中から、npm prune --production を実行して開発用パッケージを削り、
-       その node_modules をそのまま COPY するのが正解です。ネットワークI/Oを最小限に抑えましょう。
-```
-
-**✅ 改善された実装（npm ci を1回のみ）:**
-
-```dockerfile
-# ビルドステージ
-FROM node:18-slim AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci  # ✅ 1回のみ実行
-COPY . .
-RUN npm run build
-
-# 本番ステージ
-FROM node:18-slim
-WORKDIR /app
-
-# ✅ builderステージの node_modules をコピーしてから、開発用パッケージを削除
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-# ✅ npm prune --production で開発用パッケージを削除（ネットワークI/Oなし）
-RUN npm prune --production
-
-# ビルド成果物をコピー
-COPY --from=builder /app/dist ./dist
-
-EXPOSE 3000
-CMD ["node", "dist/index.js"]
-
-# メリット:
-# - npm ci を1回のみ実行（ネットワークI/Oを最小限に）
-# - ビルド時間が大幅に短縮（数分 → 数秒）
-# - CI/CDの実行コストが削減
-```
-
-**さらに最適化（依存関係ステージを分離）:**
-
-```dockerfile
-# 依存関係のインストールステージ
-FROM node:18-slim AS deps
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci  # ✅ 1回のみ実行
-
-# ビルドステージ
-FROM node:18-slim AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY package*.json ./
-COPY . .
-RUN npm run build
-
-# 本番ステージ
-FROM node:18-slim
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/package.json ./package.json
-# ✅ 開発用パッケージを削除（ネットワークI/Oなし）
-RUN npm prune --production
-COPY --from=builder /app/dist ./dist
-
-EXPOSE 3000
-CMD ["node", "dist/index.js"]
-```
-
-### 複数ステージの活用（npm ci を1回のみ）
-
-**❌ 問題のある実装（npm ci を2回実行）:**
+### 複数ステージの活用
 
 ```dockerfile
 # 依存関係のインストールステージ
 FROM node:18-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci  # 1回目
+RUN npm ci
 
 # ビルドステージ
 FROM node:18-alpine AS builder
@@ -149,55 +65,10 @@ RUN npm run build
 FROM node:18-alpine
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --only=production  # ❌ 2回目（ネットワークI/Oが発生）
+RUN npm ci --only=production
 COPY --from=builder /app/dist ./dist
 EXPOSE 3000
 CMD ["node", "dist/index.js"]
-```
-
-**✅ 改善された実装（npm ci を1回のみ）:**
-
-```dockerfile
-# syntax=docker/dockerfile:1.4
-# ✅ BuildKit の構文を明示的に指定
-
-# 依存関係のインストールステージ
-FROM node:18-slim AS deps
-WORKDIR /app
-COPY package*.json ./
-
-# ✅ BuildKit のキャッシュマウントを使用
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci  # ✅ 1回のみ実行
-
-# ビルドステージ
-FROM node:18-slim AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY package*.json ./
-COPY . .
-RUN npm run build
-
-# 本番ステージ
-FROM node:18-slim
-WORKDIR /app
-
-# ✅ builderステージの node_modules をコピーしてから、開発用パッケージを削除
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/package.json ./package.json
-# ✅ npm prune --production で開発用パッケージを削除（ネットワークI/Oなし）
-RUN npm prune --production
-
-COPY --from=builder /app/dist ./dist
-
-EXPOSE 3000
-CMD ["node", "dist/index.js"]
-
-# メリット:
-# - npm ci を1回のみ実行（ネットワークI/Oを最小限に）
-# - BuildKit のキャッシュマウントで、~/.npm キャッシュを再利用
-# - ビルド時間が大幅に短縮（数分 → 数秒）
-# - CI/CDの実行コストが削減
 ```
 
 ## 3. レイヤーキャッシュの最適化
@@ -235,91 +106,16 @@ RUN npm run build
 
 ## 4. イメージサイズの削減
 
-### 軽量なベースイメージの使用（Alpine Linux の「盲信」はリスク）
-
-**❌ 問題のある実装（Alpine Linux の盲信）:**
+### 軽量なベースイメージの使用
 
 ```dockerfile
-# ❌ 問題: 「サイズ削減＝Alpine」という短絡的な選択
+# 通常版（約300MB）
+FROM node:18
+
+# Alpine版（約5MB）
 FROM node:18-alpine
 
-# 問題点:
-# 1. Alpineは musl libc を使用しているため、Node.jsのネイティブアドオン
-#    （PythonやC++依存）がある場合、ビルド済みのバイナリが使えず、
-#    コンテナ内でコンパイルが始まってしまい、逆にビルド時間が激増
-# 2. セキュリティとビルド速度、サイズのバランスが取れていない
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】Alpine Linux の「盲信」はリスクです。
-【問題】「サイズ削減＝Alpine」という短絡的な選択は、トラブルの元です。
-       ビルド速度の低下: Alpineは musl libc を使用しているため、
-       Node.jsのネイティブアドオン（PythonやC++依存）がある場合、
-       ビルド済みのバイナリが使えず、コンテナ内でコンパイルが始まってしまい、
-       逆にビルド時間が激増することがあります。
-【影響】ビルド時間の激増、セキュリティとビルド速度、サイズのバランスの欠如
-【推奨】セキュリティとビルド速度、サイズのバランスを考えるなら、
-       Debianベースの node:18-slim を第一候補にすべきです。
-```
-
-**✅ 改善された実装（slim イメージを第一候補に）:**
-
-```dockerfile
-# ✅ 推奨: Debianベースの slim イメージ（第一候補）
-FROM node:18-slim
-
-# メリット:
-# - libcを使用しているため、ネイティブアドオンとの互換性が高い
-# - ビルド済みのバイナリが使えるため、ビルド時間が短縮
-# - Alpineより少し大きいが、互換性の問題が少ない
-# - セキュリティとビルド速度、サイズのバランスが良い
-
-# サイズ比較:
-# - node:18: 約300MB
-# - node:18-slim: 約70MB（約77%削減）
-# - node:18-alpine: 約50MB（約83%削減、ただし互換性の問題あり）
-```
-
-**使い分けの指針:**
-
-```dockerfile
-# ✅ パターン1: ネイティブアドオンを使用する場合（推奨）
-FROM node:18-slim
-
-# メリット:
-# - ネイティブアドオン（bcrypt, sharp, canvas など）が正常に動作
-# - ビルド済みのバイナリが使えるため、ビルド時間が短縮
-# - 互換性の問題が少ない
-
-# ✅ パターン2: 純粋なJavaScriptのみの場合
-FROM node:18-alpine
-
-# メリット:
-# - 非常に軽量（約50MB）
-# - ネイティブアドオンを使用しない場合は問題なし
-
-# ✅ パターン3: ビルドと実行で使い分ける
-# ビルドステージ: slim（互換性重視）
-FROM node:18-slim AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-
-# 実行ステージ: alpine（サイズ重視、ネイティブアドオン不要）
-FROM node:18-alpine
-WORKDIR /app
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package.json ./
-RUN npm ci --only=production
-
-# 使い分けの判断基準:
-# - ネイティブアドオンを使用する場合: slim を推奨
-# - 純粋なJavaScriptのみの場合: alpine でも可
-# - ビルドと実行で分離: ビルドはslim、実行はalpine
+# イメージサイズが約95%削減
 ```
 
 ### 不要なファイルの削除
@@ -465,143 +261,14 @@ docker history my-app:latest
 dive my-app:latest
 ```
 
-### パターン3: ビルドキャッシュの活用（BuildKit の「マウント機能」を使い倒す）
-
-**❌ 問題のある実装（BuildKit を有効にするだけ）:**
+### パターン3: ビルドキャッシュの活用
 
 ```bash
-# ❌ 問題: DOCKER_BUILDKIT=1 と書くだけで終わっている
+# ビルドキャッシュを使用
+docker build --cache-from my-app:latest -t my-app:latest .
+
+# BuildKitを使用（高速化）
 DOCKER_BUILDKIT=1 docker build -t my-app:latest .
-
-# 問題点:
-# 1. npm ci の際に ~/.npm キャッシュをマウントしないと、毎回ゼロからダウンロードが発生
-# 2. ビルド時間が無駄に長くなる
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】BuildKit の「マウント機能」を使い倒せ。
-【問題】DOCKER_BUILDKIT=1 と書くだけで終わっていますが、真の最適化は RUN --mount にあります。
-       npm ci の際に ~/.npm キャッシュをマウントしないと、毎回ゼロからダウンロードが発生します。
-【影響】ビルド時間の増加、ネットワークI/Oの無駄
-【推奨】BuildKitのキャッシュマウントを使えば、前回のビルドでダウンロードしたパッケージを再利用でき、
-       ビルド時間を秒単位に短縮できます。
-```
-
-**✅ 改善された実装（BuildKit のキャッシュマウント）:**
-
-```dockerfile
-# syntax=docker/dockerfile:1.4
-# ✅ BuildKit の構文を明示的に指定
-
-FROM node:18-slim AS builder
-WORKDIR /app
-
-COPY package*.json ./
-
-# ✅ BuildKit のキャッシュマウントを使用
-# ~/.npm キャッシュをマウントすることで、前回のビルドでダウンロードした
-# パッケージを再利用できる
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci
-
-COPY . .
-RUN npm run build
-
-# 本番ステージ
-FROM node:18-slim
-WORKDIR /app
-
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-RUN npm prune --production
-COPY --from=builder /app/dist ./dist
-
-EXPOSE 3000
-CMD ["node", "dist/index.js"]
-
-# メリット:
-# - ~/.npm キャッシュを再利用できるため、ビルド時間が大幅に短縮
-# - ネットワークI/Oが最小限に
-# - CI/CDの実行コストが削減
-```
-
-**✅ さらに最適化（複数のキャッシュマウント）:**
-
-```dockerfile
-# syntax=docker/dockerfile:1.4
-
-FROM node:18-slim AS builder
-WORKDIR /app
-
-COPY package*.json ./
-
-# ✅ npm キャッシュをマウント
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci
-
-COPY . .
-
-# ✅ ビルドキャッシュもマウント（Next.js の場合）
-RUN --mount=type=cache,target=/app/.next/cache \
-    npm run build
-
-# 本番ステージ
-FROM node:18-slim
-WORKDIR /app
-
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-RUN npm prune --production
-COPY --from=builder /app/dist ./dist
-
-EXPOSE 3000
-CMD ["node", "dist/index.js"]
-```
-
-**✅ Rails での BuildKit キャッシュマウント:**
-
-```dockerfile
-# syntax=docker/dockerfile:1.4
-
-FROM ruby:3.2.2-slim AS builder
-WORKDIR /app
-
-COPY Gemfile Gemfile.lock ./
-
-# ✅ Bundler キャッシュをマウント
-RUN --mount=type=cache,target=/usr/local/bundle/cache \
-    bundle install --jobs 4 --retry 3
-
-COPY . .
-RUN bundle exec rails assets:precompile
-
-# 本番ステージ
-FROM ruby:3.2.2-slim
-WORKDIR /app
-
-COPY --from=builder /usr/local/bundle /usr/local/bundle
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/tmp ./tmp
-
-CMD ["bundle", "exec", "rails", "s", "-b", "0.0.0.0"]
-```
-
-**BuildKit のキャッシュマウントの種類:**
-
-1. **type=cache**: ビルド間でキャッシュを共有（推奨）
-2. **type=bind**: ホストのディレクトリをマウント
-3. **type=tmpfs**: 一時ファイルシステムをマウント
-
-**ビルドコマンド:**
-
-```bash
-# ✅ BuildKit を有効にしてビルド
-DOCKER_BUILDKIT=1 docker build -t my-app:latest .
-
-# または、Docker Compose で
-COMPOSE_DOCKER_CLI_BUILD=1 DOCKER_BUILDKIT=1 docker compose build
 ```
 
 ## 8. よくある問題と解決策
@@ -637,24 +304,6 @@ COPY package*.json ./
 RUN npm ci
 COPY . .
 ```
-
-## まとめ
-
-Dockerイメージの最適化は、ビルド時間、イメージサイズ、セキュリティに大きく影響します。
-
-**シニアエンジニアとして考慮すべき点:**
-
-1. **npm ci を2回実行しない**: builderステージと本番ステージの両方で`npm ci`を実行するのは、ネットワークI/Oが無駄に発生します。builderステージで`npm ci`した中から、`npm prune --production`を実行して開発用パッケージを削り、その`node_modules`をそのままCOPYするのが正解です。
-2. **Alpine Linux の盲信を避ける**: 「サイズ削減＝Alpine」という短絡的な選択は、ネイティブアドオンがある場合にビルド時間が激増するリスクがあります。セキュリティとビルド速度、サイズのバランスを考えるなら、Debianベースの`node:18-slim`を第一候補にすべきです。
-3. **BuildKit のマウント機能を活用**: `DOCKER_BUILDKIT=1`と書くだけでなく、`RUN --mount=type=cache`を使用して`~/.npm`キャッシュをマウントすることで、前回のビルドでダウンロードしたパッケージを再利用でき、ビルド時間を秒単位に短縮できます。
-4. **マルチステージビルド**: ビルド環境と実行環境を分離し、本番イメージのサイズを最小化
-5. **レイヤーキャッシュの最適化**: 変更頻度の低いファイルを先にコピー
-
-#### コードレビューで指摘すべきポイント
-
-1. **npm ci の2回実行**: builderステージと本番ステージの両方で`npm ci`を実行している場合は、`npm prune --production`を使用するよう推奨
-2. **Alpine Linux の無条件使用**: ネイティブアドオンを使用する場合に`alpine`を使用している場合は、`slim`への変更を推奨
-3. **BuildKit のマウント機能の未使用**: `DOCKER_BUILDKIT=1`のみで、`RUN --mount=type=cache`を使用していない場合は、キャッシュマウントの使用を推奨
 
 これで、Dockerイメージの最適化の基礎知識と実務での使い方を理解できるようになりました。
 

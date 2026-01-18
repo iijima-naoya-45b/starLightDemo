@@ -1,0 +1,254 @@
+---
+title: 技術力とシステム設計
+sidebar:
+    label: 技術力とシステム設計
+---
+
+# 技術力とシステム設計
+
+## システム単位での思考
+
+### 機能単位ではなくシステム単位で考える
+
+**ジュニア・ミドルの思考:**
+```javascript
+// 機能単位の思考: ユーザー登録機能だけを実装
+async function registerUser(email: string, password: string) {
+  const user = await db.users.create({ email, password });
+  return user;
+}
+```
+
+**シニアの思考:**
+```typescript
+// システム単位の思考: 運用・障害・将来変更まで含めて設計
+class UserRegistrationService {
+  constructor(
+    private db: Database,
+    private emailService: EmailService,
+    private auditLog: AuditLogService,
+    private rateLimiter: RateLimiter
+  ) {}
+
+  async registerUser(email: string, password: string): Promise<User> {
+    // 1. レート制限チェック
+    await this.rateLimiter.check(email);
+    
+    // 2. トランザクション境界の設計
+    return await this.db.transaction(async (tx) => {
+      // 3. 冪等性の確保（重複登録の防止）
+      const existingUser = await tx.users.findByEmail(email);
+      if (existingUser) {
+        throw new DuplicateUserError('User already exists');
+      }
+      
+      // 4. データ整合性の確保
+      const user = await tx.users.create({ email, password });
+      
+      // 5. 監査ログの記録
+      await this.auditLog.record('user_registered', { userId: user.id });
+      
+      return user;
+    });
+  }
+}
+```
+
+## 運用・障害・将来変更まで含めた設計
+
+### 1. トランザクション境界の設計
+
+```typescript
+class OrderService {
+  async createOrder(userId: number, items: OrderItem[]): Promise<Order> {
+    // トランザクション境界: 注文作成と在庫減算を同一トランザクションで
+    return await this.db.transaction(async (tx) => {
+      // 1. 在庫チェックと減算（楽観ロック）
+      for (const item of items) {
+        const product = await tx.products.findById(item.productId);
+        if (product.stock < item.quantity) {
+          throw new InsufficientStockError();
+        }
+        await tx.products.updateStock(item.productId, -item.quantity);
+      }
+      
+      // 2. 注文作成
+      const order = await tx.orders.create({ userId, items });
+      
+      return order;
+    });
+  }
+}
+```
+
+### 2. 冪等性の確保
+
+```typescript
+class PaymentService {
+  async processPayment(
+    orderId: number,
+    amount: number,
+    idempotencyKey: string
+  ): Promise<Payment> {
+    // 1. 冪等性キーで重複チェック
+    const existingPayment = await this.db.payments.findByKey(idempotencyKey);
+    if (existingPayment) {
+      return existingPayment; // 既に処理済み
+    }
+    
+    // 2. トランザクション内で処理
+    return await this.db.transaction(async (tx) => {
+      const payment = await tx.payments.create({
+        orderId,
+        amount,
+        idempotencyKey,
+        status: 'processing',
+      });
+      
+      try {
+        const result = await this.paymentGateway.charge(amount);
+        await tx.payments.update(payment.id, {
+          status: 'completed',
+          transactionId: result.transactionId,
+        });
+        return payment;
+      } catch (error) {
+        await tx.payments.update(payment.id, { status: 'failed' });
+        throw error;
+      }
+    });
+  }
+}
+```
+
+### 3. 楽観・悲観ロックの使い分け
+
+```typescript
+// 楽観ロック: 競合が少ない場合（読み取りが多い）
+class OptimisticLockingService {
+  async updateUser(userId: number, data: UserData): Promise<User> {
+    const user = await this.db.users.findById(userId);
+    
+    // バージョン番号で楽観ロック
+    const updated = await this.db.users.update(
+      { id: userId, version: user.version },
+      { ...data, version: user.version + 1 }
+    );
+    
+    if (!updated) {
+      throw new ConcurrentModificationError();
+    }
+    
+    return updated;
+  }
+}
+
+// 悲観ロック: 競合が多い場合（書き込みが多い）
+class PessimisticLockingService {
+  async updateBalance(accountId: number, amount: number): Promise<void> {
+    // SELECT FOR UPDATEで悲観ロック
+    return await this.db.transaction(async (tx) => {
+      const account = await tx.accounts.findByIdForUpdate(accountId);
+      
+      if (account.balance + amount < 0) {
+        throw new InsufficientBalanceError();
+      }
+      
+      await tx.accounts.update(accountId, {
+        balance: account.balance + amount,
+      });
+    });
+  }
+}
+```
+
+## 非機能要件
+
+### パフォーマンス・スケーラビリティ
+
+```typescript
+class ProductService {
+  constructor(
+    private db: Database,
+    private cache: Cache,
+    private searchIndex: SearchIndex
+  ) {}
+
+  async getProduct(id: number): Promise<Product> {
+    // 1. キャッシュから取得
+    const cached = await this.cache.get(`product:${id}`);
+    if (cached) {
+      return cached;
+    }
+    
+    // 2. データベースから取得（インデックスを使用）
+    const product = await this.db.products.findById(id);
+    
+    // 3. キャッシュに保存
+    await this.cache.set(`product:${id}`, product, 3600);
+    
+    return product;
+  }
+}
+```
+
+### 可観測性（ログ・メトリクス・トレース）
+
+```typescript
+class ObservableService {
+  constructor(
+    private logger: Logger,
+    private metrics: Metrics,
+    private tracer: Tracer
+  ) {}
+
+  async processOrder(orderId: number): Promise<void> {
+    const span = this.tracer.startSpan('process_order');
+    span.setTag('order.id', orderId);
+    
+    try {
+      this.metrics.increment('orders.processing');
+      const startTime = Date.now();
+      
+      this.logger.info('Processing order', { orderId });
+      
+      await this.doProcessOrder(orderId);
+      
+      this.metrics.increment('orders.completed');
+      this.metrics.histogram('orders.processing.duration', Date.now() - startTime);
+      
+      span.setStatus({ code: SpanStatusCode.OK });
+    } catch (error) {
+      this.logger.error('Order processing failed', { orderId, error });
+      this.metrics.increment('orders.failed');
+      span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
+      throw error;
+    } finally {
+      span.finish();
+    }
+  }
+}
+```
+
+## 設計判断の文書化
+
+### 設計判断の例
+
+```markdown
+## 設計判断: 楽観ロック vs 悲観ロック
+
+### 選択: 楽観ロックを採用
+
+### 理由:
+1. **競合頻度が低い**: ユーザー情報の更新は1ユーザーあたり1日1回程度
+2. **パフォーマンス**: 悲観ロックはロック待ちが発生し、スループットが低下
+3. **スケーラビリティ**: 楽観ロックは読み取りが多い場合に有利
+
+### トレードオフ:
+- **メリット**: 高いスループット、スケーラビリティ
+- **デメリット**: 競合時は再試行が必要（UXへの影響は軽微）
+
+### 代替案:
+- 悲観ロック: 競合が多い場合に有効だが、このケースでは不要
+- 最終書き込み勝利: シンプルだがデータ損失のリスク
+```

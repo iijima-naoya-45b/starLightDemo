@@ -81,65 +81,82 @@ sidebar:
 という無賃労働を強いる、知的リソースの搾取です。
 ```
 
-**✅ 改善されたアプローチ（「動くプロトタイプ」と「実行可能な仕様」）:**
+**✅ 改善されたアプローチ（「Contextは日本語」「Specはコード」）:**
 
 ```
-要件定義を「動くプロトタイプ」と「実行可能な仕様」で行う:
+要件定義を「自然言語の役割分離」と「実行可能な契約」で行う:
 
-1. **動くプロトタイプ**:
-   - 要件を「動くプロトタイプ」として実装
-   - エンジニアは、プロトタイプを見れば要件を理解できる
-   - 日本語を解釈する必要がない
+1. **自然言語の役割を再定義**:
+   - 日本語は「なぜ作るか（Context）」を語るために使う
+   - コードは「どう動くか（Spec）」を規定するために使う
+   - ADRやドキュメントは意図と意思決定を残す
 
-2. **実行可能な仕様（Executable Specifications）**:
-   - 要件を「テストコード」として定義
-   - テストコードを実行すれば、要件が満たされているか自動的に検証できる
-   - 日本語を解釈する必要がない
+2. **Executable Specificationを共通言語にする**:
+   - it('should ...') ではなく、Gherkinで仕様を記述
+   - 日本語の仕様がそのままテストとして実行される
+   - 二重管理を排除する唯一の現実解
 
-3. **契約による設計（Design by Contract）**:
-   - 要件を「型定義」や「スキーマ」として定義
-   - 型定義やスキーマから自動的にコードを生成
-   - 日本語を解釈する必要がない
+3. **契約による設計の対象を広げる**:
+   - TypeScriptだけでなく、OpenAPIやProtocol Buffersを成果物にする
+   - ドキュメントであり、同時にコード生成源になる
+   - 日本語の曖昧さを技術で排除する
 
 例:
-```typescript
-// 実行可能な仕様（Executable Specifications）
-describe('User Authentication', () => {
-  it('should login with valid email and password', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({ email: 'test@example.com', password: 'Test1234!@#$' });
-    expect(response.status).toBe(200);
-    expect(response.body).toHaveProperty('token');
-  });
-  
-  it('should reject login with invalid password', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({ email: 'test@example.com', password: 'wrong' });
-    expect(response.status).toBe(401);
-  });
-});
+```gherkin
+# Executable Specification（Gherkin）
+Feature: ログイン
+  Scenario: 正しい認証情報でログインできる
+    Given ユーザーが登録済みである
+    When 正しいメールアドレスとパスワードでログインする
+    Then ステータスコードは200である
+    And 認証トークンが返る
 
-// 契約による設計（Design by Contract）
-interface LoginRequest {
-  email: string;
-  password: string;
+  Scenario: 誤ったパスワードではログインできない
+    Given ユーザーが登録済みである
+    When 誤ったパスワードでログインする
+    Then ステータスコードは401である
+```
+
+```yaml
+# OpenAPI（契約）
+paths:
+  /api/auth/login:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: ログイン成功
+        '401':
+          description: 認証失敗
+```
+
+```proto
+// Protocol Buffers（契約）
+message LoginRequest {
+  string email = 1;
+  string password = 2;
 }
 
-interface LoginResponse {
-  token: string;
-  user: {
-    id: string;
-    email: string;
-  };
+message LoginResponse {
+  string token = 1;
 }
 ```
 
 # メリット:
-# - エンジニアが「日本語を解釈する」必要がない
-# - 要件が満たされているか自動的に検証できる
-# - 要件定義書自体が「技術的負債」にならない
+# - 日本語はContextに限定され、解釈の揺れが減る
+# - 仕様がテストとして実行され、二重管理が消える
+# - 契約がコード生成源となり、実装と乖離しない
 ```
 
 ## まとめ（注意: 「周知という名の責任転嫁」「システムへの信頼の欠如」「スケーラビリティの完全な無視」）

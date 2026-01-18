@@ -20,7 +20,7 @@ Dockerの環境構築から、実務で使えるベストプラクティスま�
 
 # インストール確認
 docker --version
-docker compose version  # ✅ V2（ハイフンなし）
+docker-compose --version
 ```
 
 ### macOS
@@ -33,19 +33,12 @@ docker compose version  # ✅ V2（ハイフンなし）
 
 # インストール確認
 docker --version
-docker compose version  # ✅ V2（ハイフンなし）
+docker-compose --version
 ```
 
 ### Linux
 
-**⚠️ 重要な注意事項:**
-
-Linuxのインストール手順は、ディストリビューションやバージョンによって異なります。また、公式のインストール手順は頻繁に変更されます。
-
-**❌ 問題のあるアプローチ:**
-
 ```bash
-# ❌ コマンドを羅列するだけのドキュメント
 # Ubuntu/Debianでのインストール
 sudo apt-get update
 sudo apt-get install -y \
@@ -53,56 +46,26 @@ sudo apt-get install -y \
     curl \
     gnupg \
     lsb-release
-# ... 以下、長いコマンドの羅列
 
-# 問題点:
-# 1. 公式のインストール手順は頻繁に変わる
-# 2. ブログ記事やWikiにこれを書くと、半年後には「動かないゴミ」になる
-# 3. メンテナンスコストが高い
-```
+# Dockerの公式GPGキーを追加
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 
-**🪓 コードレビューでの指摘文例:**
+# リポジトリを追加
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-```
-【指摘】インストール手順の「賞味期限」と「ノイズ」があります。
-【問題】Linuxのインストール手順をコマンドレベルでベタ書きしていますが、
-       公式のインストール手順は頻繁に変わります。
-       ブログ記事やWikiにこれを書くと、半年後には「動かないゴミ」になります。
-【影響】メンテナンスコストの増加、古い情報による混乱
-【推奨】コマンドを羅列するのではなく、「必ず公式ドキュメント（docs.docker.com）を確認せよ」
-       と一行書き、ディストリビューションごとの差異は公式に任せるのがプロのドキュメントです。
-```
+# Docker Engineのインストール
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-**✅ 改善されたアプローチ（プロのドキュメント）:**
+# Docker Composeのインストール
+sudo apt-get install -y docker-compose-plugin
 
-```markdown
-## Linuxでのインストール
-
-**重要**: インストール手順は、ディストリビューションやバージョンによって異なります。
-また、公式のインストール手順は頻繁に変更されます。
-
-**必ず公式ドキュメントを確認してください:**
-- [Docker公式ドキュメント - Linuxインストール](https://docs.docker.com/engine/install/)
-
-### 主要ディストリビューションの公式ガイド
-
-- **Ubuntu**: https://docs.docker.com/engine/install/ubuntu/
-- **Debian**: https://docs.docker.com/engine/install/debian/
-- **CentOS/RHEL**: https://docs.docker.com/engine/install/centos/
-- **Fedora**: https://docs.docker.com/engine/install/fedora/
-
-### インストール後の確認
-
-```bash
-# Dockerのバージョン確認
+# インストール確認
 docker --version
-
-# Docker Composeのバージョン確認（V2）
 docker compose version
-```
-
-**理由**: 公式ドキュメントは常に最新の情報を提供し、ディストリビューションごとの差異も適切に処理されています。
-コマンドをベタ書きするよりも、公式ドキュメントへのリンクを提供する方が、メンテナンスコストが低く、正確な情報を提供できます。
 ```
 
 ## 2. Dockerの基本コマンド
@@ -229,13 +192,10 @@ services:
       - DATABASE_URL=postgresql://postgres:password@db:5432/mydb
     volumes:
       - .:/app
-      # ✅ 名前付きボリュームを使用（匿名ボリュームではなく）
-      - app_node_modules:/app/node_modules
+      - /app/node_modules
     depends_on:
       - db
     restart: unless-stopped
-    networks:
-      - app-network
   
   db:
     image: postgres:14-alpine
@@ -245,48 +205,40 @@ services:
       POSTGRES_DB: mydb
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    # ✅ DBのポートは公開しない（コンテナ間通信のみ）
-    # ports:
-    #   - "5432:5432"  # デバッグ時のみ公開
+    ports:
+      - "5432:5432"
     restart: unless-stopped
-    networks:
-      - app-network
 
 volumes:
   postgres_data:
-  app_node_modules:  # ✅ 名前付きボリューム
-
-networks:
-  app-network:
-    driver: bridge
 ```
 
-### Docker Composeのコマンド（V2）
+### Docker Composeのコマンド
 
 ```bash
-# ✅ サービスの起動（V2: ハイフンなし）
-docker compose up -d
+# サービスの起動
+docker-compose up -d
 
-# ✅ サービスの停止（V2）
-docker compose down
+# サービスの停止
+docker-compose down
 
-# ✅ サービスの再ビルド（V2）
-docker compose up -d --build
+# サービスの再ビルド
+docker-compose up -d --build
 
-# ✅ ログの確認（V2）
-docker compose logs -f
+# ログの確認
+docker-compose logs -f
 
-# ✅ 特定のサービスのログ（V2）
-docker compose logs -f app
+# 特定のサービスのログ
+docker-compose logs -f app
 
-# ✅ サービスの状態確認（V2）
-docker compose ps
+# サービスの状態確認
+docker-compose ps
 
-# ✅ サービスの再起動（V2）
-docker compose restart
+# サービスの再起動
+docker-compose restart
 
-# ✅ サービスのスケール（V2）
-docker compose up -d --scale app=3
+# サービスのスケール
+docker-compose up -d --scale app=3
 ```
 
 ## 5. 実務でのベストプラクティス

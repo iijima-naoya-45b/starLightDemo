@@ -309,181 +309,42 @@ GET /api/v1/users/999
 
 #### 2. エラーハンドリング
 
-**❌ 問題のある実装:**
+**統一されたエラーレスポンス:**
 
-```typescript
-// ❌ details が any 型で、型安全性が失われる
-interface ErrorResponse {
-  error: {
-    code: string;
-    message: string;
-    details?: any; // ❌ 最悪のマサカリポイント
-  };
-}
-
-// フロントエンド側で、422エラーをRHFのsetErrorにマッピングしたいが、
-// details の型が不明なため、unknown洗浄の苦労が発生する
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】エラーハンドリングに型がありません。
-【問題】ErrorResponse の details が any 型になっています。
-       フロントエンドは 422（ValidationError）を RHF の setError にマッピングしたいため、
-       details を { field: string, message: string }[] のような厳密な構造で定義し、
-       ドキュメント化（OpenAPI）すべきです。
-【影響】フロントエンド側で unknown 洗浄の苦労が発生する
-【推奨】details を厳密な型で定義し、OpenAPI Spec に記載
-```
-
-**✅ 改善された実装:**
-
-```typescript
-// ✅ 厳密な型定義
-interface ValidationErrorDetail {
-  field: string;
-  message: string;
-}
-
-interface ErrorResponse {
-  error: {
-    code: string;
-    message: string;
-    details?: ValidationErrorDetail[]; // ✅ 厳密な型
-  };
-}
-
-// OpenAPI Spec での定義
-// openapi.yaml
-components:
-  schemas:
-    ValidationErrorDetail:
-      type: object
-      required:
-        - field
-        - message
-      properties:
-        field:
-          type: string
-        message:
-          type: string
-    ErrorResponse:
-      type: object
-      required:
-        - error
-      properties:
-        error:
-          type: object
-          required:
-            - code
-            - message
-          properties:
-            code:
-              type: string
-            message:
-              type: string
-            details:
-              type: array
-              items:
-                $ref: '#/components/schemas/ValidationErrorDetail'
-
-// フロントエンド側での使用
-// ✅ 型安全にエラーを処理できる
-try {
-  await updateUser(id, formData);
-} catch (error) {
-  if (error instanceof ValidationErrorResponse) {
-    error.error.details?.forEach((detail) => {
-      // ✅ detail.field と detail.message が型安全に使用できる
-      setError(detail.field, { message: detail.message });
-    });
+```javascript
+// エラーレスポンスの形式
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Validation failed",
+    "details": [
+      {
+        "field": "email",
+        "message": "Invalid email format"
+      }
+    ]
   }
 }
 ```
 
 #### 3. ページネーション
 
-**❌ 問題のある実装:**
+**ページネーションの実装:**
 
-```typescript
-// ❌ フロントエンドが知りたい情報が不足している
-interface PaginationResponse<T> {
-  data: T[]; // ❌ items や results の方が一般的
-  pagination: {
-    page: 1,
-    limit: 20,
-    total: 100, // ✅ これはある
-    totalPages: 5
-  };
+```javascript
+// リクエスト
+GET /api/v1/users?page=1&limit=20
+
+// レスポンス
+{
+  "data": [...],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 100,
+    "totalPages": 5
+  }
 }
-
-// フロントエンドが知りたい情報:
-// - 次のページがあるか（hasNextPage）
-// - 前のページがあるか（hasPreviousPage）
-// - 現在のページに何件あるか（currentCount）
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】ページネーションのレスポンスが不親切です。
-【問題】ページネーションにおいてフロントエンドが一番知りたいのは
-       「現在のページに何件あるか」ではなく、「次のページがあるか（hasNextPage）」
-       や 「トータルの件数」 です。
-【影響】フロントエンド側で「次のページ」ボタンの表示/非表示を判定できない
-【推奨】data ではなく items や results というキーに統一し、
-       メタ情報として totalCount を必ず含めるべきです。
-```
-
-**✅ 改善された実装:**
-
-```typescript
-// ✅ フロントエンドが知りたい情報を含む
-interface PaginationResponse<T> {
-  items: T[]; // ✅ data ではなく items に統一
-  pagination: {
-    page: number;
-    limit: number;
-    totalCount: number; // ✅ トータル件数（必須）
-    totalPages: number;
-    hasNextPage: boolean; // ✅ 次のページがあるか
-    hasPreviousPage: boolean; // ✅ 前のページがあるか
-    currentCount: number; // ✅ 現在のページの件数
-  };
-}
-
-// 実装例
-app.get('/api/v1/users', async (req, res) => {
-  const page = Number(req.query.page) || 1;
-  const limit = Number(req.query.limit) || 20;
-  const offset = (page - 1) * limit;
-  
-  const [users, totalCount] = await Promise.all([
-    User.findAll({ limit, offset }),
-    User.count(),
-  ]);
-  
-  const totalPages = Math.ceil(totalCount / limit);
-  
-  res.json({
-    items: users, // ✅ items に統一
-    pagination: {
-      page,
-      limit,
-      totalCount, // ✅ 必須
-      totalPages,
-      hasNextPage: page < totalPages, // ✅ 次のページがあるか
-      hasPreviousPage: page > 1, // ✅ 前のページがあるか
-      currentCount: users.length, // ✅ 現在のページの件数
-    },
-  });
-});
-
-// フロントエンド側での使用
-const { items, pagination } = await fetchUsers();
-// ✅ 次のページボタンの表示/非表示を判定できる
-{pagination.hasNextPage && <button>次のページ</button>}
 ```
 
 #### 4. フィルタリングとソート
@@ -511,142 +372,6 @@ GET /api/v1/users/1/orders
 
 // 注文の商品
 GET /api/v1/orders/1/items
-```
-
-#### 6. レスポンスの命名規則（Snake Case vs Camel Case）
-
-**❌ 問題のある実装:**
-
-```typescript
-// ❌ DBのカラム名をそのままレスポンスに流している
-app.get('/api/v1/users', async (req, res) => {
-  const users = await User.findAll(); // DBが first_name ならレスポンスも first_name
-  res.json(users); // ❌ { id: 1, first_name: "John", last_name: "Doe" }
-});
-
-// フロントエンドのDTO層への負担が重くなる
-// src/types/user.ts
-export function userApiToDto(apiUser: UserApiResponse): User {
-  return {
-    id: apiUser.id,
-    firstName: apiUser.first_name, // 毎回変換が必要
-    lastName: apiUser.last_name,
-    // ...
-  };
-}
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】Snake Case と Camel Case の不都合な真実があります。
-【問題】バックエンドが DB のカラム名をそのまま req.body や res.json に流しています。
-       これではフロントエンドの DTO 層への負担が重くなります。
-【影響】フロントエンド側で毎回 snake_case → camelCase の変換が必要
-【推奨】バックエンド側で「レスポンスを Camel Case に統一するシリアライザー」を導入するか、
-       最初から DTO パターンを適用すべきです。
-```
-
-**✅ 改善された実装:**
-
-```typescript
-// ✅ バックエンド側でCamel Caseに統一するシリアライザーを導入
-// src/serializers/userSerializer.ts
-export function serializeUser(user: UserModel): UserResponse {
-  return {
-    id: user.id,
-    firstName: user.first_name, // ✅ バックエンド側で変換
-    lastName: user.last_name,
-    email: user.email,
-    createdAt: user.created_at,
-  };
-}
-
-// 使用例
-app.get('/api/v1/users', async (req, res) => {
-  const users = await User.findAll();
-  const serializedUsers = users.map(serializeUser); // ✅ シリアライザーで変換
-  res.json(serializedUsers); // ✅ { id: 1, firstName: "John", lastName: "Doe" }
-});
-
-// フロントエンド側の負担が軽減される
-// src/types/user.ts
-export function userApiToDto(apiUser: UserApiResponse): User {
-  return {
-    id: apiUser.id,
-    firstName: apiUser.firstName, // ✅ 既にcamelCaseなので変換不要
-    lastName: apiUser.lastName,
-    // ...
-  };
-}
-```
-
-#### 7. PUT と PATCH の使い分け
-
-**❌ 問題のある実装:**
-
-```typescript
-// ❌ PUT も PATCH も内部で findByIdAndUpdate を呼んでいて、挙動が同じ
-app.put('/api/v1/users/:id', async (req, res) => {
-  const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
-  res.json(user);
-});
-
-app.patch('/api/v1/users/:id', async (req, res) => {
-  const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
-  res.json(user);
-});
-
-// フロントエンド側が混乱する
-// 「どっちを呼べばいいの？」
-```
-
-**🪓 コードレビューでの指摘文例:**
-
-```
-【指摘】PUT と PATCH の使い分けが名ばかりです。
-【問題】REST の定義では、PUT は「リソースの完全置換」であり、
-       送られなかったフィールドは null やデフォルト値で上書きされるべきです。
-       実際には PATCH だけあれば十分なケースが多いです。
-【影響】中途半端に両方用意して挙動が同じだと、
-       フロントエンド側が「どっちを呼べばいいの？」と混乱します。
-【推奨】「このプロジェクトでは PATCH に統一する」という意思決定の方が価値があります。
-```
-
-**✅ 改善された実装:**
-
-```typescript
-// ✅ PATCH に統一（部分更新のみ）
-app.patch('/api/v1/users/:id', async (req, res) => {
-  // ✅ 部分更新のみをサポート
-  const user = await User.findByIdAndUpdate(
-    req.params.id,
-    { $set: req.body }, // ✅ 送られたフィールドのみ更新
-    { new: true }
-  );
-  res.json(user);
-});
-
-// ✅ PUT は削除するか、完全置換として実装
-// 完全置換が必要な場合は、明示的に実装
-app.put('/api/v1/users/:id', async (req, res) => {
-  // ✅ 完全置換: 送られなかったフィールドはデフォルト値で上書き
-  const defaultValues = {
-    firstName: '',
-    lastName: '',
-    email: '',
-    // ...
-  };
-  const user = await User.findByIdAndUpdate(
-    req.params.id,
-    { ...defaultValues, ...req.body }, // ✅ 完全置換
-    { new: true }
-  );
-  res.json(user);
-});
-
-// 推奨: PATCH のみを使用
-// PUT エンドポイントは削除し、PATCH に統一する
 ```
 
 ### 実践例: 完全なAPI設計
@@ -679,20 +404,12 @@ DELETE /api/v1/products/:id       // 商品削除
 RESTful API設計のポイント：
 
 - **リソースベース**: 名詞でリソースを表現
-- **HTTPメソッド**: 適切なHTTPメソッドを使用（PUTとPATCHの使い分けに注意）
+- **HTTPメソッド**: 適切なHTTPメソッドを使用
 - **ステータスコード**: 適切なステータスコードを返す
 - **バージョン管理**: URLにバージョンを含める
-- **エラーハンドリング**: 統一されたエラーレスポンス（型安全な構造を定義）
-- **ページネーション**: 大量データのページネーション（hasNextPage、totalCountを含める）
+- **エラーハンドリング**: 統一されたエラーレスポンス
+- **ページネーション**: 大量データのページネーション
 - **フィルタリング**: フィルタリングとソート機能
-- **命名規則**: レスポンスをCamel Caseに統一するシリアライザーを導入
-
-#### バックエンドAPI設計で注意すべきポイント
-
-1. **Snake Case と Camel Case**: DBのカラム名をそのままレスポンスに流さず、バックエンド側でCamel Caseに統一するシリアライザーを導入する
-2. **PUT と PATCH**: 中途半端に両方用意せず、PATCHに統一するか、PUTは完全置換として明示的に実装する
-3. **エラーハンドリングの型**: `details?: any` ではなく、`{ field: string, message: string }[]` のような厳密な構造を定義し、OpenAPI Specに記載する
-4. **ページネーション**: `data`ではなく`items`に統一し、`hasNextPage`、`totalCount`などのメタ情報を含める
 
 RESTful API設計により、統一性があり、保守しやすいAPIを構築できます。
 

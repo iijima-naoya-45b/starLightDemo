@@ -25,39 +25,7 @@ Next.jsでは、Server ComponentsとServer Actionsを活用して、パイプラ
 
 **役割**: サーバーコンポーネント（Page）でデータを取得し、適切な層を経由してフォームに渡す。
 
-### 汎用的な実装パターン（ヘルパー関数）
-
-```typescript
-// utils/pageUtils.ts
-
-/**
- * 汎用的なページデータ取得関数（ジェネリクス）
- * @param fetchFn - APIからデータを取得する関数
- * @param apiToDto - API型をDTO型に変換する関数
- * @param dtoToForm - DTO型をフォーム型に変換する関数
- * @param params - fetchFnに渡すパラメータ
- * @returns フォーム初期値
- */
-export async function getFormInitialValues<TApi, TDto, TForm, TParams>(
-  fetchFn: (params: TParams) => Promise<TApi>,
-  apiToDto: (api: TApi) => TDto,
-  dtoToForm: (dto: TDto) => TForm,
-  params: TParams
-): Promise<TForm> {
-  // 1. API層: unknown -> Strict Schema
-  const apiData = await fetchFn(params);
-
-  // 2. DTO層: API型 -> UI型
-  const dto = apiToDto(apiData);
-
-  // 3. Form層: DTO型 -> Form型
-  const formInitialValues = dtoToForm(dto);
-
-  return formInitialValues;
-}
-```
-
-### 実装例（User型を使用した具体例）
+### 実装例（App Router）
 
 ```typescript
 // app/users/[id]/edit/page.tsx
@@ -66,7 +34,6 @@ import { userApiToDto } from '@/types/user';
 import { userDtoToFormInput } from '@/components/UserForm/schema';
 import UserForm from '@/components/UserForm/UserForm';
 import { updateUserAction } from './actions';
-import { getFormInitialValues } from '@/utils/pageUtils';
 
 type EditUserPageProps = {
   params: Promise<{
@@ -77,15 +44,15 @@ type EditUserPageProps = {
 export default async function EditUserPage({ params }: EditUserPageProps) {
   // Next.js 15以降: paramsをawaitする必要がある
   const { id } = await params;
-  const userId = Number(id);
 
-  // 汎用関数を使用してフォーム初期値を取得
-  const formInitialValues = await getFormInitialValues(
-    fetchUser,
-    userApiToDto,
-    userDtoToFormInput,
-    userId
-  );
+  // 1. API層: unknown -> Strict Schema
+  const apiUser = await fetchUser(Number(id));
+
+  // 2. DTO層: API型 -> UI型
+  const user = userApiToDto(apiUser);
+
+  // 3. Form層: DTO型 -> Form型
+  const formInitialValues = userDtoToFormInput(user);
 
   // 4. フォームに渡す
   return (
@@ -93,7 +60,7 @@ export default async function EditUserPage({ params }: EditUserPageProps) {
       <h1>ユーザー編集</h1>
       <UserForm
         initialValues={formInitialValues}
-        userId={userId}
+        userId={Number(id)}
         onSubmit={updateUserAction}
       />
     </div>
@@ -101,61 +68,16 @@ export default async function EditUserPage({ params }: EditUserPageProps) {
 }
 ```
 
-### 他の型での使用例（Product型）
-
-```typescript
-// app/products/[id]/edit/page.tsx
-import { fetchProduct } from '@/api/schema/productSchema';
-import { productApiToDto } from '@/types/product';
-import { productDtoToFormInput } from '@/components/ProductForm/schema';
-import ProductForm from '@/components/ProductForm/ProductForm';
-import { updateProductAction } from './actions';
-import { getFormInitialValues } from '@/utils/pageUtils';
-
-type EditProductPageProps = {
-  params: Promise<{
-    id: string;
-  }>;
-};
-
-export default async function EditProductPage({ params }: EditProductPageProps) {
-  const { id } = await params;
-  const productId = Number(id);
-
-  // 汎用関数を使用してフォーム初期値を取得
-  const formInitialValues = await getFormInitialValues(
-    fetchProduct,
-    productApiToDto,
-    productDtoToFormInput,
-    productId
-  );
-
-  return (
-    <div>
-      <h1>商品編集</h1>
-      <ProductForm
-        initialValues={formInitialValues}
-        productId={productId}
-        onSubmit={updateProductAction}
-      />
-    </div>
-  );
-}
-```
-
-### Server Actionでの実装（汎用関数を使用）
+### Server Actionでの実装
 
 ```typescript
 // app/users/[id]/edit/actions.ts
 'use server';
 
-import { updateAction } from '@/utils/actionUtils';
 import { userFormInputToApiRequest } from '@/components/UserForm/schema';
 import { createUserApiSchema } from '@/components/UserForm/schema';
 import { userApiSchema } from '@/api/schema/userSchema';
 import { revalidatePath } from 'next/cache';
-import type { UserFormInput } from '@/components/UserForm/schema';
-import type { UserApiResponse } from '@/api/schema/userSchema';
 
 // useActionState用の型定義
 type ActionState = {
@@ -178,146 +100,63 @@ export async function updateUserAction(
   const email = formData.get('email') as string;
   const userId = Number(formData.get('userId'));
 
-  // 2. フォームデータを構築
-  const formInput: UserFormInput = {
+  // 2. フォームデータをAPIリクエスト形式に変換
+  const apiRequest = userFormInputToApiRequest({
     firstName,
     lastName,
     email,
-  };
+  });
+
+  // 3. ✅ 重要: APIに送るデータもZodでパース（洗浄）してから送信
+  // これにより、DTOからフォームに変換した際のゴミデータがAPIに飛ぶのを防ぐ
+  const parseResult = createUserApiSchema.safeParse(apiRequest);
+  
+  if (!parseResult.success) {
+    // バリデーションエラーを返す
+    const errors: ActionState['errors'] = {};
+    parseResult.error.errors.forEach((error) => {
+      const field = error.path[0] as string;
+      if (field === 'first_name') errors.firstName = error.message;
+      else if (field === 'last_name') errors.lastName = error.message;
+      else if (field === 'email') errors.email = error.message;
+    });
+    return { errors };
+  }
+
+  const validatedRequest = parseResult.data;
 
   try {
-    // 3. 汎用関数を使用してAPIを呼び出す（内部でバリデーションも実行）
-    // updateActionは例外を投げる設計のため、ここでキャッチしてActionStateに変換
-    const validatedResponse = await updateAction(
-      `https://api.example.com/users/${userId}`,
-      formInput,
-      userFormInputToApiRequest,
-      createUserApiSchema,
-      userApiSchema,
-      'PUT'
-    );
+    // 4. APIを呼び出す（洗浄済みのデータを送信）
+    const response = await fetch(`https://api.example.com/users/${userId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(validatedRequest), // ✅ 洗浄済みデータ
+    });
 
-    // 4. キャッシュを無効化
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return {
+        errors: {
+          general: errorData.message || 'ユーザーの更新に失敗しました',
+        },
+      };
+    }
+
+    const data: unknown = await response.json();
+
+    // 5. ✅ レスポンスもZodでパース（洗浄）
+    const validatedResponse = userApiSchema.parse(data);
+
+    // 6. キャッシュを無効化
     revalidatePath(`/users/${userId}/edit`);
 
     return { success: true };
   } catch (error) {
-    // エラーハンドリング: 例外をActionStateに変換
-    // 正常系は真っ直ぐ、異常系は例外で落とす設計のため、ここで統一して処理
-    if (error instanceof Error) {
-      // Zodバリデーションエラーの場合
-      if (error.message.includes('validation') || error.name === 'ZodError') {
-        const errors: ActionState['errors'] = {
-          general: '入力データに問題があります。再度確認してください。',
-        };
-        return { errors };
-      }
-      return {
-        errors: {
-          general: error.message || 'ユーザーの更新に失敗しました',
-        },
-      };
-    }
     return {
       errors: {
-        general: '予期しないエラーが発生しました',
-      },
-    };
-  }
-}
-```
-
-### 他の型での使用例（Product型）
-
-```typescript
-// app/products/[id]/edit/actions.ts
-'use server';
-
-import { updateAction, createAction } from '@/utils/actionUtils';
-import { productFormInputToApiRequest } from '@/components/ProductForm/schema';
-import { createProductApiSchema } from '@/components/ProductForm/schema';
-import { productApiSchema } from '@/api/schema/productSchema';
-import { revalidatePath } from 'next/cache';
-import type { ProductFormInput } from '@/components/ProductForm/schema';
-import type { ProductApiResponse } from '@/api/schema/productSchema';
-
-type ProductActionState = {
-  errors?: {
-    name?: string;
-    price?: string;
-    categoryId?: string;
-    general?: string;
-  };
-  success?: boolean;
-};
-
-// 商品作成アクション
-export async function createProductAction(
-  prevState: ProductActionState | null,
-  formData: FormData
-): Promise<ProductActionState> {
-  const name = formData.get('name') as string;
-  const price = Number(formData.get('price'));
-  const categoryId = Number(formData.get('categoryId'));
-
-  const formInput: ProductFormInput = {
-    name,
-    price,
-    categoryId,
-  };
-
-  try {
-    await createAction(
-      'https://api.example.com/products',
-      formInput,
-      productFormInputToApiRequest,
-      createProductApiSchema,
-      productApiSchema
-    );
-
-    revalidatePath('/products');
-    return { success: true };
-  } catch (error) {
-    return {
-      errors: {
-        general: error instanceof Error ? error.message : '商品の作成に失敗しました',
-      },
-    };
-  }
-}
-
-// 商品更新アクション
-export async function updateProductAction(
-  prevState: ProductActionState | null,
-  formData: FormData
-): Promise<ProductActionState> {
-  const productId = Number(formData.get('productId'));
-  const name = formData.get('name') as string;
-  const price = Number(formData.get('price'));
-  const categoryId = Number(formData.get('categoryId'));
-
-  const formInput: ProductFormInput = {
-    name,
-    price,
-    categoryId,
-  };
-
-  try {
-    await updateAction(
-      `https://api.example.com/products/${productId}`,
-      formInput,
-      productFormInputToApiRequest,
-      createProductApiSchema,
-      productApiSchema,
-      'PUT'
-    );
-
-    revalidatePath(`/products/${productId}/edit`);
-    return { success: true };
-  } catch (error) {
-    return {
-      errors: {
-        general: error instanceof Error ? error.message : '商品の更新に失敗しました',
+        general: error instanceof Error ? error.message : '予期しないエラーが発生しました',
       },
     };
   }
@@ -524,7 +363,7 @@ Reactでの実装例については、[Reactガイドのパイプライン設計
 
 1. **Next.js 15のparamsはPromise**: `params`はNext.js 15以降では`Promise`型で、`await params`が必要です。`const { id } = await params;`のように必ずawaitしてください。
 2. **useActionStateの活用**: サーバーからのバリデーションエラー（「メールアドレスが既に使われています」など）をUIに返すために、React公式の`useActionState`（旧`useFormState`）を使用します。Server Actionはエラーをthrowするのではなく、エラーオブジェクトを返すように実装します。
-3. **「逆方向」の洗浄**: APIからデータをもらう時は`zod.parse`していますが、**APIにデータを送る直前にも`zod.parse`で洗浄**します。これにより、DTOからフォームに変換した際のゴミデータがAPIに飛ぶのを防げます。エラーハンドリングは上位層（Server Actionの共通キャッチ機構、ErrorBoundary）で処理します。
+3. **「逆方向」の洗浄**: APIからデータをもらう時は`zod.parse`していますが、**APIにデータを送る直前にも`zod.parse`（または`safeParse`）で洗浄**します。これにより、DTOからフォームに変換した際のゴミデータがAPIに飛ぶのを防げます。
 4. **Server Componentsの活用**: サーバー側でデータを取得し、型変換を行う
 5. **Server Actionsの活用**: フォーム送信をServer Actionで処理し、型安全性を保つ（`'use server'`は関数の先頭に記述）
 6. **Client Componentsとの分離**: フォームなどのインタラクティブな部分は`'use client'`でClient Componentとして実装
