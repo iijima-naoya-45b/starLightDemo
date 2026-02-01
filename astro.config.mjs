@@ -18,18 +18,18 @@ export default defineConfig({
             // OGP・Twitter Card ＋ Apple Touch Icon ＋ Web App Manifest（Android「ホームに追加」用）
             head: [
                 { tag: 'link', attrs: { rel: 'manifest', href: '/manifest.json' } },
-                { tag: 'link', attrs: { rel: 'apple-touch-icon', href: '/favicon.svg' } },
+                { tag: 'link', attrs: { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' } },
                 { tag: 'meta', attrs: { property: 'og:type', content: 'website' } },
                 { tag: 'meta', attrs: { property: 'og:site_name', content: 'starLightDemo' } },
                 { tag: 'meta', attrs: { property: 'og:url', content: siteUrl } },
                 { tag: 'meta', attrs: { property: 'og:title', content: 'starLightDemo' } },
                 { tag: 'meta', attrs: { property: 'og:description', content: '技術ドキュメント・組織論・API設計・開発ガイドのナレッジベース' } },
-                { tag: 'meta', attrs: { property: 'og:image', content: `${siteUrl}/favicon.svg` } },
+                { tag: 'meta', attrs: { property: 'og:image', content: `${siteUrl}/apple-touch-icon.png` } },
                 { tag: 'meta', attrs: { property: 'og:locale', content: 'ja_JP' } },
                 { tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' } },
                 { tag: 'meta', attrs: { name: 'twitter:title', content: 'starLightDemo' } },
                 { tag: 'meta', attrs: { name: 'twitter:description', content: '技術ドキュメント・組織論・API設計・開発ガイドのナレッジベース' } },
-                { tag: 'meta', attrs: { name: 'twitter:image', content: `${siteUrl}/favicon.svg` } },
+                { tag: 'meta', attrs: { name: 'twitter:image', content: `${siteUrl}/apple-touch-icon.png` } },
             ],
             customCss: [
                 './src/styles/common.css',
