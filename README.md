@@ -84,7 +84,7 @@ SNSでシェアしたときのプレビュー（OGP）を有効にするため�
 
 - **サイト全体**: `astro.config.mjs` の Starlight の `description` と `head` で、`og:title` / `og:description` / `og:image` および Twitter Card を出力しています。
 - **本番URL**: 環境変数 `PUBLIC_SITE_URL` にデプロイ先の絶対URL（例: `https://star-light-demo.vercel.app`）を設定すると、OGPのURL・画像が正しく参照されます。未設定時はデフォルトのVercel URLを使用します。
-- **OGP画像**: `public/favicon.svg`（favicon）をシェア時のサムネイルとして使用しています。別画像にしたい場合は `astro.config.mjs` の `og:image` / `twitter:image` のパスを変更してください。
+- **OGP画像**: `public/apple-touch-icon.png` をシェア時のサムネイルとして使用しています（Qiita・Twitter・Facebook などは SVG 非対応のため PNG を使用）。別画像にしたい場合は `astro.config.mjs` の `og:image` / `twitter:image` のパスを変更してください。
 - **ページごとの説明**: 各 MDX の frontmatter で `description` を書くと、そのページのメタ説明・検索結果・SNSプレビューに利用されます。
 
 ---
