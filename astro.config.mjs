@@ -3,11 +3,34 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import react from '@astrojs/react';
 
+// デプロイ先の絶対URL（OGP・canonical用）。環境変数 PUBLIC_SITE_URL で上書き可能。
+const siteUrl = typeof process.env.PUBLIC_SITE_URL === 'string' && process.env.PUBLIC_SITE_URL
+    ? process.env.PUBLIC_SITE_URL.replace(/\/$/, '')
+    : 'https://star-light-demo.vercel.app';
+
 export default defineConfig({
+    site: siteUrl,
     integrations: [
         starlight({
             title: 'starLightDemo',
+            description: 'starLightDemo — 技術ドキュメント・組織論・API設計・開発ガイドのナレッジベース',
             social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/iijima-naoya-45b' }],
+            // OGP・Twitter Card ＋ Apple Touch Icon ＋ Web App Manifest（Android「ホームに追加」用）
+            head: [
+                { tag: 'link', attrs: { rel: 'manifest', href: '/manifest.json' } },
+                { tag: 'link', attrs: { rel: 'apple-touch-icon', href: '/favicon.svg' } },
+                { tag: 'meta', attrs: { property: 'og:type', content: 'website' } },
+                { tag: 'meta', attrs: { property: 'og:site_name', content: 'starLightDemo' } },
+                { tag: 'meta', attrs: { property: 'og:url', content: siteUrl } },
+                { tag: 'meta', attrs: { property: 'og:title', content: 'starLightDemo' } },
+                { tag: 'meta', attrs: { property: 'og:description', content: '技術ドキュメント・組織論・API設計・開発ガイドのナレッジベース' } },
+                { tag: 'meta', attrs: { property: 'og:image', content: `${siteUrl}/favicon.svg` } },
+                { tag: 'meta', attrs: { property: 'og:locale', content: 'ja_JP' } },
+                { tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' } },
+                { tag: 'meta', attrs: { name: 'twitter:title', content: 'starLightDemo' } },
+                { tag: 'meta', attrs: { name: 'twitter:description', content: '技術ドキュメント・組織論・API設計・開発ガイドのナレッジベース' } },
+                { tag: 'meta', attrs: { name: 'twitter:image', content: `${siteUrl}/favicon.svg` } },
+            ],
             customCss: [
                 './src/styles/common.css',
             ],
