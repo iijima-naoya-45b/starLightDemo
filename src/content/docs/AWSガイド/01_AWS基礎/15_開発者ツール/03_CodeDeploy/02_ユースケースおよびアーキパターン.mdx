@@ -1,0 +1,502 @@
+---
+title: "CodeDeploy ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## CodeDeploy ユースケースおよびアーキテクチャパターン
+
+### 1. EC2 Blue/Green デプロイ
+
+```yaml
+構成:
+  ALB → Target Group（Blue/Green）→ EC2インスタンス
+
+デプロイフロー:
+  1. Green環境（新EC2）を起動
+  2. アプリケーションデプロイ
+  3. ヘルスチェック
+  4. ALBのトラフィックをGreenに切替
+  5. Blue環境を終了（または保持）
+
+メリット:
+  - ゼロダウンタイム
+  - 即時ロールバック
+  - 本番環境向け
+
+ユースケース:
+  - Webアプリケーション
+  - APIサーバー
+  - マイクロサービス
+```
+
+**アーキテクチャ図:**
+
+```
+[CodeDeploy]
+      ↓
+┌─────────────────────────┐
+│   Application Load      │
+│     Balancer (ALB)      │
+└──────────┬──────────────┘
+           │
+    ┌──────┴──────┐
+    ↓             ↓
+[Target Group] [Target Group]
+   Blue           Green
+    ↓               ↓
+[EC2 Instance] [EC2 Instance]
+  (Current)       (New)
+
+デプロイ前: 100% Blue
+移行中: 90% Blue, 10% Green
+デプロイ後: 100% Green
+```
+
+**appspec.yml例:**
+
+```yaml
+version: 0.0
+os: linux
+
+files:
+  - source: /
+    destination: /var/www/html
+
+hooks:
+  BeforeInstall:
+    - location: scripts/install_dependencies.sh
+      timeout: 300
+      runas: root
+      
+  AfterInstall:
+    - location: scripts/configure_app.sh
+      timeout: 300
+      runas: root
+      
+  ApplicationStart:
+    - location: scripts/start_server.sh
+      timeout: 300
+      runas: root
+      
+  ValidateService:
+    - location: scripts/health_check.sh
+      timeout: 300
+      runas: root
+```
+
+### 2. ECS Blue/Green デプロイ
+
+```yaml
+構成:
+  CodePipeline → CodeDeploy → ECS（Fargate）
+
+デプロイフロー:
+  1. 新タスク定義作成
+  2. Greenタスクセット起動
+  3. ALBにGreenターゲットグループ追加
+  4. トラフィック段階的移行（Linear/Canary）
+  5. Blueタスクセット終了
+
+利点:
+  - コンテナベース
+  - スケーラブル
+  - インフラ管理不要（Fargate）
+
+ユースケース:
+  - マイクロサービス
+  - コンテナアプリ
+  - 頻繁なデプロイ
+```
+
+**アーキテクチャ図:**
+
+```
+[CodePipeline]
+  ↓ Source Stage
+[CodeCommit/GitHub]
+  ↓ Build Stage
+[CodeBuild] → ECR（Docker Image）
+  ↓ Deploy Stage
+[CodeDeploy]
+  ↓
+┌────────────────────────┐
+│      ALB/NLB           │
+└───────┬────────────────┘
+        │
+  ┌─────┴─────┐
+  ↓           ↓
+[Blue TG]  [Green TG]
+  ↓           ↓
+[ECS Task] [ECS Task]
+ (Blue)      (Green)
+```
+
+**appspec.yml例（ECS）:**
+
+```yaml
+version: 0.0
+Resources:
+  - TargetService:
+      Type: AWS::ECS::Service
+      Properties:
+        TaskDefinition: "<TASK_DEFINITION>"
+        LoadBalancerInfo:
+          ContainerName: "my-app"
+          ContainerPort: 8080
+        PlatformVersion: "LATEST"
+        NetworkConfiguration:
+          AwsvpcConfiguration:
+            Subnets: ["subnet-12345", "subnet-67890"]
+            SecurityGroups: ["sg-12345"]
+            AssignPublicIp: "ENABLED"
+
+Hooks:
+  - BeforeInstall: "LambdaFunctionPreTrafficHook"
+  - AfterInstall: "LambdaFunctionPostTrafficHook"
+  - AfterAllowTestTraffic: "LambdaFunctionTestTrafficHook"
+  - BeforeAllowTraffic: "LambdaFunctionValidation"
+  - AfterAllowTraffic: "LambdaFunctionFinalValidation"
+```
+
+**トラフィック移行パターン:**
+
+```yaml
+Linear（線形）:
+  Linear10PercentEvery1Minute:
+    - 1分毎に10%ずつ移行
+    - 10分で完了
+    
+  Linear10PercentEvery3Minutes:
+    - 3分毎に10%ずつ移行
+    - 30分で完了
+
+Canary（カナリア）:
+  Canary10Percent5Minutes:
+    - 10%を5分間テスト
+    - 問題なければ残り90%を一度に
+    
+  Canary10Percent15Minutes:
+    - 10%を15分間テスト
+    - 問題なければ残り90%を一度に
+```
+
+### 3. Lambda Blue/Green デプロイ
+
+```yaml
+構成:
+  SAM/CloudFormation → CodeDeploy → Lambda
+
+デプロイフロー:
+  1. 新バージョン作成
+  2. エイリアスを段階的移行
+  3. CloudWatch監視
+  4. 自動ロールバック（異常検知時）
+
+特徴:
+  - エイリアスベース
+  - トラフィックシフト
+  - 自動ロールバック
+
+ユースケース:
+  - サーバーレスAPI
+  - イベント駆動処理
+  - マイクロサービス
+```
+
+**アーキテクチャ図:**
+
+```
+[SAM Template]
+      ↓
+[CodeDeploy]
+      ↓
+[Lambda Alias: live]
+      ↓
+┌─────┴─────┐
+↓           ↓
+Version 1   Version 2
+  90%         10%
+   ↓           ↓
+  80%         20%
+   ↓           ↓
+   0%        100%
+```
+
+**appspec.yml例（Lambda）:**
+
+```yaml
+version: 0.0
+Resources:
+  - myLambdaFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        Name: "MyFunction"
+        Alias: "live"
+        CurrentVersion: "1"
+        TargetVersion: "2"
+
+Hooks:
+  - BeforeAllowTraffic: "PreTrafficLambdaFunction"
+  - AfterAllowTraffic: "PostTrafficLambdaFunction"
+```
+
+**SAM template.yaml例:**
+
+```yaml
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Resources:
+  MyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      Runtime: nodejs18.x
+      CodeUri: ./src
+      AutoPublishAlias: live
+      DeploymentPreference:
+        Type: Canary10Percent5Minutes
+        Alarms:
+          - !Ref ErrorAlarm
+          - !Ref DurationAlarm
+        Hooks:
+          PreTraffic: !Ref PreTrafficFunction
+          PostTraffic: !Ref PostTrafficFunction
+
+  ErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: LambdaErrorAlarm
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanThreshold
+```
+
+### 4. オンプレミス統合
+
+```yaml
+構成:
+  CodeDeploy Agent → オンプレミスサーバー
+
+セットアップ:
+  1. CodeDeployエージェントインストール
+  2. IAM認証設定
+  3. タグ付け
+  4. デプロイグループ登録
+
+メリット:
+  - ハイブリッド環境対応
+  - 既存インフラ活用
+  - 段階的クラウド移行
+
+ユースケース:
+  - レガシーシステム
+  - ハイブリッドクラウド
+  - データセンター統合
+```
+
+**オンプレミス登録手順:**
+
+```bash
+# 1. IAM認証設定（オンプレミスサーバー上）
+aws deploy register-on-premises-instance \
+  --instance-name on-prem-server-01 \
+  --iam-user-arn arn:aws:iam::123456789012:user/CodeDeployUser
+
+# 2. タグ付け
+aws deploy add-tags-to-on-premises-instances \
+  --instance-names on-prem-server-01 \
+  --tags Key=Environment,Value=Production Key=Type,Value=WebServer
+
+# 3. エージェントインストール（Ubuntu/Debian）
+sudo apt-get update
+sudo apt-get install ruby wget
+cd /home/ubuntu
+wget https://aws-codedeploy-ap-northeast-1.s3.ap-northeast-1.amazonaws.com/latest/install
+chmod +x ./install
+sudo ./install auto
+
+# 4. エージェント起動
+sudo service codedeploy-agent start
+sudo service codedeploy-agent status
+```
+
+### 5. CI/CD パイプライン統合
+
+```yaml
+フルパイプライン:
+  GitHub → CodePipeline → CodeBuild → CodeDeploy → EC2/ECS/Lambda
+
+ステージ:
+  1. Source: コード取得
+  2. Build: テスト + ビルド（CodeBuild）
+  3. Deploy: デプロイ（CodeDeploy）
+  4. Manual Approval: 本番承認
+  5. Production Deploy: 本番デプロイ
+
+自動化:
+  - コミットでトリガー
+  - 自動テスト
+  - 自動デプロイ
+  - 自動ロールバック
+```
+
+**パイプライン例:**
+
+```
+[GitHub/CodeCommit]
+      ↓ Webhook/CloudWatch Events
+[CodePipeline]
+      ↓ Source Stage
+[Source Artifact]
+      ↓ Build Stage
+[CodeBuild]
+  - npm install
+  - npm test
+  - npm run build
+      ↓
+[Build Artifact → S3]
+      ↓ Deploy Stage (Dev)
+[CodeDeploy → Dev Environment]
+      ↓
+[Manual Approval]
+      ↓ Deploy Stage (Prod)
+[CodeDeploy → Production (Blue/Green)]
+      ↓
+[CloudWatch Monitoring]
+      ↓ (異常検知時)
+[Auto Rollback]
+```
+
+### 6. マルチリージョンデプロイ
+
+```yaml
+戦略:
+  - プライマリリージョンでビルド
+  - 各リージョンに順次デプロイ
+  - リージョン毎のロールバック
+
+構成:
+  CodePipeline → Lambda（マルチリージョン調整）→ CodeDeploy（各リージョン）
+
+メリット:
+  - グローバル展開
+  - リージョン障害対応
+  - 低レイテンシ
+
+ユースケース:
+  - グローバルアプリ
+  - DR構成
+  - 地理的分散
+```
+
+**アーキテクチャ例:**
+
+```
+[CodePipeline (us-east-1)]
+      ↓
+[CodeBuild] → [S3 Bucket]
+      ↓
+[Lambda: Cross-Region Orchestrator]
+      ↓
+  ┌───┴───┬───────┬───────┐
+  ↓       ↓       ↓       ↓
+[Deploy] [Deploy] [Deploy] [Deploy]
+us-east eu-west ap-north ap-south
+   -1      -1      east-1    -1
+```
+
+### 7. Auto Scaling 統合
+
+```yaml
+構成:
+  Auto Scaling Group → CodeDeploy
+
+動作:
+  1. 新インスタンス起動
+  2. CodeDeployエージェント自動インストール
+  3. 最新リビジョン自動デプロイ
+  4. ターゲットグループに追加
+
+メリット:
+  - スケールアウト時も自動デプロイ
+  - 一貫性のある環境
+  - 運用自動化
+
+ユースケース:
+  - 動的スケーリング環境
+  - トラフィック変動対応
+```
+
+**Auto Scaling設定例:**
+
+```yaml
+# ユーザーデータ（起動時にCodeDeployエージェントインストール）
+#!/bin/bash
+yum update -y
+yum install -y ruby wget
+
+cd /home/ec2-user
+wget https://aws-codedeploy-ap-northeast-1.s3.ap-northeast-1.amazonaws.com/latest/install
+chmod +x ./install
+./install auto
+
+service codedeploy-agent start
+service codedeploy-agent status
+```
+
+### 8. カナリアデプロイ（段階的検証）
+
+```yaml
+戦略:
+  - 小規模ユーザーに先行リリース
+  - メトリクス監視
+  - 問題なければ全体展開
+
+フロー:
+  1. 10%のトラフィックをGreenに
+  2. 5-15分間監視
+  3. CloudWatchアラーム確認
+  4. OK → 残り90%展開
+  5. NG → 自動ロールバック
+
+メリット:
+  - リスク最小化
+  - 段階的検証
+  - 自動判断
+
+ユースケース:
+  - 本番環境
+  - クリティカルアプリ
+  - 大規模サービス
+```
+
+**カナリアデプロイ監視例:**
+
+```yaml
+CloudWatch Alarms:
+  - Lambda Errors > 1%
+  - API Gateway 5xx > 0.5%
+  - Response Time > 1000ms
+  - CPU Utilization > 80%
+
+CodeDeploy設定:
+  DeploymentConfigName: CodeDeployDefault.LambdaCanary10Percent5Minutes
+  
+  AutoRollbackConfiguration:
+    Enabled: true
+    Events:
+      - DEPLOYMENT_FAILURE
+      - DEPLOYMENT_STOP_ON_ALARM
+  
+  AlarmConfiguration:
+    Enabled: true
+    Alarms:
+      - Name: LambdaErrorAlarm
+      - Name: ApiGateway5xxAlarm
+      - Name: ResponseTimeAlarm
+```

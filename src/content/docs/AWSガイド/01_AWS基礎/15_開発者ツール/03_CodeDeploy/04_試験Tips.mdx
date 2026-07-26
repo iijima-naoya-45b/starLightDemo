@@ -1,0 +1,504 @@
+---
+title: "CodeDeploy 試験Tips"
+label: "試験Tips"
+---
+
+## CodeDeploy 試験Tips (SAA/SAP)
+
+### 頻出トピック
+
+#### 1. In-place vs Blue/Green デプロイ
+
+```yaml
+In-placeデプロイ:
+  特徴:
+    - 既存インスタンスに直接デプロイ
+    - ダウンタイムあり
+    - コスト効率良い
+    
+  対応プラットフォーム:
+    - EC2
+    - オンプレミス
+    
+  ユースケース:
+    - 開発/テスト環境
+    - ダウンタイム許容可能
+    - コスト重視
+
+Blue/Greenデプロイ:
+  特徴:
+    - 新環境作成後にトラフィック切替
+    - ゼロダウンタイム
+    - 即座なロールバック可能
+    - 一時的にコスト増（2倍の環境）
+    
+  対応プラットフォーム:
+    - EC2（ALB/NLB必須）
+    - ECS
+    - Lambda
+    
+  ユースケース:
+    - 本番環境
+    - ダウンタイム不可
+    - 高可用性要件
+
+試験での選択基準:
+  Q: 本番環境、ダウンタイム不可、即座なロールバック
+  A: Blue/Green デプロイ
+
+  Q: 開発環境、コスト重視、シンプル構成
+  A: In-place デプロイ
+
+  Q: EC2 + ALB、ゼロダウンタイム
+  A: Blue/Green デプロイ（ALBでトラフィック切替）
+```
+
+#### 2. デプロイ設定（Deployment Configuration）
+
+```yaml
+EC2/オンプレミス:
+  AllAtOnce:
+    - 全インスタンス同時デプロイ
+    - 最速
+    - リスク高い
+    
+  HalfAtATime:
+    - 50%ずつデプロイ
+    - バランス型
+    
+  OneAtATime:
+    - 1台ずつデプロイ
+    - 最も安全
+    - 時間かかる
+
+Lambda/ECS:
+  Linear:
+    - 一定割合ずつ段階的移行
+    - Linear10PercentEvery1Minute
+    - 安定したトラフィックシフト
+    
+  Canary:
+    - 小規模テスト後に残りを一度に
+    - Canary10Percent5Minutes
+    - 早期検証
+
+頻出シナリオ:
+  Q: 本番環境、リスク最小化、段階的検証
+  A: Canary デプロイ（10%を数分テスト後に残り90%）
+
+  Q: Lambda、10分かけて段階的移行
+  A: LambdaLinear10PercentEvery1Minute
+
+  Q: ECS、早期問題検出、小規模テスト
+  A: ECSCanary10Percent5Minutes
+```
+
+#### 3. appspec.yml
+
+```yaml
+重要ポイント:
+  - デプロイ手順定義ファイル
+  - プラットフォーム毎に異なる形式
+  - ライフサイクルフック定義
+
+EC2/オンプレミス:
+  files: ファイル配置先
+  permissions: 権限設定
+  hooks: スクリプト実行（7つのフック）
+
+ECS:
+  Resources: タスク定義、ロードバランサー設定
+  Hooks: Lambda関数による検証
+
+Lambda:
+  Resources: 関数、エイリアス設定
+  Hooks: トラフィックシフト前後の検証
+
+頻出問題:
+  Q: デプロイ手順を定義するファイル
+  A: appspec.yml
+
+  Q: EC2デプロイ後の検証スクリプト実行フック
+  A: ValidateService
+
+  Q: ECS Blue/Greenで検証にLambda関数使用
+  A: appspec.ymlのHooksセクションでLambda ARN指定
+```
+
+#### 4. ロールバック戦略
+
+```yaml
+自動ロールバック:
+  トリガー:
+    - デプロイ失敗時
+    - CloudWatchアラーム発火時
+    - タイムアウト時
+    
+  動作:
+    In-place: 前回のリビジョンで再デプロイ
+    Blue/Green: トラフィックをBlue環境に戻す（即時）
+
+手動ロールバック:
+  - 前回のデプロイIDで再デプロイ
+  - 特定リビジョン指定
+
+重要ポイント:
+  - Blue/Greenは即座にロールバック可能（秒単位）
+  - In-placeは再デプロイ必要（数分）
+  - CloudWatchアラーム統合で自動判断
+
+頻出シナリオ:
+  Q: Lambda新バージョンでエラー増加、即座に切り戻したい
+  A: Blue/Greenデプロイ + CloudWatchアラーム自動ロールバック
+
+  Q: デプロイ後のエラー率監視、閾値超過で自動ロールバック
+  A: CloudWatchアラーム設定 + 自動ロールバック有効化
+
+  Q: ECSデプロイ、問題検知したら即座に前バージョンに戻す
+  A: Blue/Greenデプロイ（即座にトラフィック切り戻し）
+```
+
+### 頻出シナリオ
+
+#### シナリオ1: EC2 ゼロダウンタイムデプロイ
+
+```
+要件:
+  - EC2 Webアプリ
+  - ダウンタイムなしでデプロイ
+  - 問題発生時は即座にロールバック
+
+解答:
+  1. ALBを使用
+  2. Blue/Greenデプロイ設定
+  3. 2つのターゲットグループ（Blue/Green）
+  4. CodeDeployでトラフィック切替
+  5. CloudWatchアラーム設定
+  6. 自動ロールバック有効化
+
+ポイント:
+  ✓ ALB必須（トラフィック切替のため）
+  ✓ Blue/Green選択（ゼロダウンタイム）
+  ✓ 即座なロールバック可能
+  ✓ 自動ロールバック設定
+```
+
+#### シナリオ2: Lambda カナリアデプロイ
+
+```
+要件:
+  - Lambda関数の新バージョンデプロイ
+  - 10%のトラフィックで5分間テスト
+  - エラー発生時は自動ロールバック
+
+解答:
+  1. SAM/CloudFormationで定義
+  2. CodeDeployDefault.LambdaCanary10Percent5Minutes
+  3. CloudWatchアラーム設定（Errors, Duration等）
+  4. appspec.ymlで検証フック定義
+  5. 自動ロールバック有効化
+
+ポイント:
+  ✓ Canaryデプロイ選択（段階的検証）
+  ✓ CloudWatchアラーム統合
+  ✓ 10%で問題なければ自動的に90%展開
+  ✓ エラー検知で自動ロールバック
+```
+
+#### シナリオ3: ECS Blue/Green CI/CD
+
+```
+要件:
+  - ECS Fargateアプリ
+  - コミットで自動デプロイ
+  - 段階的トラフィック移行
+  - 検証フック実装
+
+解答:
+  1. CodePipeline構築
+  2. Source: CodeCommit/GitHub
+  3. Build: CodeBuild（Dockerイメージ）→ ECR
+  4. Deploy: CodeDeploy（Blue/Green）
+  5. ECSLinear10PercentEvery1Minute設定
+  6. Lambda検証フック実装
+  7. CloudWatchアラーム設定
+
+ポイント:
+  ✓ フルCI/CDパイプライン
+  ✓ Blue/Green（ECS対応）
+  ✓ Linearデプロイ（段階的移行）
+  ✓ Lambda検証フック
+  ✓ 自動化エンドツーエンド
+```
+
+#### シナリオ4: オンプレミス統合
+
+```
+要件:
+  - オンプレミスサーバー（データセンター）
+  - AWSと同じデプロイ方法
+  - 段階的にクラウド移行
+
+解答:
+  1. オンプレミスサーバーにCodeDeployエージェントインストール
+  2. IAM認証設定
+  3. タグでグループ化
+  4. デプロイグループ作成
+  5. S3にリビジョン配置
+  6. CodeDeployでデプロイ
+
+ポイント:
+  ✓ ハイブリッドクラウド対応
+  ✓ EC2と同じ方法でデプロイ
+  ✓ エージェントベース
+  ✓ IAM認証
+```
+
+#### シナリオ5: マルチリージョンデプロイ
+
+```
+要件:
+  - 複数リージョンに同じアプリをデプロイ
+  - プライマリリージョンでビルド
+  - 各リージョンに順次デプロイ
+
+解答:
+  1. プライマリリージョンでCodeBuild実行
+  2. 成果物を各リージョンのS3にコピー
+  3. 各リージョンでCodeDeploy実行
+  4. Step FunctionsまたはLambdaで調整
+  5. CloudWatch統合
+
+ポイント:
+  ✓ クロスリージョンデプロイ
+  ✓ S3クロスリージョンレプリケーション
+  ✓ リージョン毎の独立したCodeDeploy
+  ✓ オーケストレーション必要
+```
+
+### よくある間違い
+
+```yaml
+× 誤り: Blue/GreenデプロイでALB/NLBなし（EC2）
+○ 正解: Blue/Greenには ALB/NLB 必須
+
+× 誤り: In-placeデプロイで即座なロールバック期待
+○ 正解: In-placeは再デプロイ必要、Blue/Greenが即座
+
+× 誤り: Lambda にIn-placeデプロイ
+○ 正解: Lambda は Blue/Green のみ対応
+
+× 誤り: appspec.ymlなしでデプロイ
+○ 正解: appspec.yml 必須（デプロイ手順定義）
+
+× 誤り: ECS EC2起動タイプでBlue/Green不可
+○ 正解: ECSはEC2/Fargate両方でBlue/Green対応
+
+× 誤り: CodeDeployエージェント不要
+○ 正解: EC2/オンプレミスはエージェント必須
+```
+
+### SAA試験重要ポイント
+
+```yaml
+基本概念:
+  ☐ CodeDeploy の概要
+  ☐ In-place vs Blue/Green
+  ☐ 対応プラットフォーム（EC2、ECS、Lambda、オンプレミス）
+  ☐ appspec.yml の役割
+
+デプロイ戦略:
+  ☐ AllAtOnce、HalfAtATime、OneAtATime
+  ☐ Linear、Canary
+  ☐ ユースケース毎の選択
+
+ロールバック:
+  ☐ 自動ロールバック設定
+  ☐ CloudWatchアラーム統合
+  ☐ Blue/Greenの即座なロールバック
+
+統合:
+  ☐ CodePipeline連携
+  ☐ ALB/NLB統合
+  ☐ Auto Scaling統合
+
+料金:
+  ☐ EC2/ECS/オンプレミス無料
+  ☐ Lambda は $0.02/関数/月
+```
+
+### SAP試験重要ポイント
+
+```yaml
+高度なデプロイ戦略:
+  ☐ カスタムデプロイ設定作成
+  ☐ カナリアデプロイ詳細設計
+  ☐ マルチリージョンデプロイ
+  ☐ クロスアカウントデプロイ
+
+統合パターン:
+  ☐ フルCI/CDパイプライン設計
+  ☐ Lambda検証フック実装
+  ☐ CloudWatch詳細監視
+  ☐ EventBridge統合
+
+ロールバック戦略:
+  ☐ 複雑なロールバック要件
+  ☐ データベース変更との整合性
+  ☐ ステートフル vs ステートレス
+
+ハイブリッド環境:
+  ☐ オンプレミス統合詳細
+  ☐ ネットワーク設計
+  ☐ セキュリティ設計
+  ☐ 段階的移行戦略
+
+運用設計:
+  ☐ 大規模デプロイ戦略
+  ☐ 複数環境管理
+  ☐ モニタリング設計
+  ☐ 障害時対応フロー
+```
+
+### 比較表（試験頻出）
+
+#### In-place vs Blue/Green
+
+| 項目 | In-place | Blue/Green |
+|---|---|---|
+| **ダウンタイム** | あり | なし |
+| **ロールバック** | 再デプロイ（数分） | 即座（数秒） |
+| **コスト** | 低い | 高め（一時的に2倍） |
+| **対応プラットフォーム** | EC2、オンプレミス | EC2（+ALB/NLB）、ECS、Lambda |
+| **リスク** | 高い | 低い |
+| **用途** | 開発/テスト環境 | 本番環境 |
+
+#### デプロイ設定比較（Lambda/ECS）
+
+| デプロイ設定 | タイプ | 移行時間 | リスク | 用途 |
+|---|---|---|---|---|
+| **AllAtOnce** | 即座 | 0分 | 高 | 開発環境 |
+| **Canary10Percent5Minutes** | カナリア | 5分+ | 低 | 本番環境、早期検証 |
+| **Linear10PercentEvery1Minute** | 線形 | 10分 | 低 | 安定した移行 |
+| **Linear10PercentEvery3Minutes** | 線形 | 30分 | 最低 | 大規模本番環境 |
+
+#### プラットフォーム対応表
+
+| プラットフォーム | In-place | Blue/Green | ALB/NLB要否 | エージェント | 料金 |
+|---|---|---|---|---|---|
+| **EC2** | ○ | ○ | Blue/Greenは必須 | 必須 | 無料 |
+| **ECS** | × | ○ | 必須 | 不要 | 無料 |
+| **Lambda** | × | ○ | 不要 | 不要 | $0.02/関数/月 |
+| **オンプレミス** | ○ | × | - | 必須 | 無料 |
+
+### ライフサイクルフック順序（試験頻出）
+
+#### EC2/オンプレミス In-place
+
+```yaml
+1. ApplicationStop: 既存アプリ停止
+2. DownloadBundle: リビジョンダウンロード
+3. BeforeInstall: インストール前処理
+4. Install: ファイル配置（自動）
+5. AfterInstall: インストール後処理
+6. ApplicationStart: アプリ起動
+7. ValidateService: 動作検証
+
+重要:
+  - Install は自動実行（スクリプト不要）
+  - ValidateService で検証失敗→ロールバック
+  - 各フックでタイムアウト設定可能
+```
+
+#### EC2 Blue/Green 追加フック
+
+```yaml
+Blue環境（旧）:
+1. BeforeBlockTraffic: トラフィック遮断前処理
+2. BlockTraffic: トラフィック遮断（自動）
+3. AfterBlockTraffic: トラフィック遮断後処理
+
+Green環境（新）:
+（上記In-placeフロー実行）
+
+トラフィック切替:
+4. BeforeAllowTraffic: トラフィック許可前検証
+5. AllowTraffic: トラフィック許可（自動）
+6. AfterAllowTraffic: トラフィック許可後検証
+
+重要:
+  - BlockTraffic/AllowTraffic は自動実行
+  - 検証フックでCloudWatch監視
+  - 失敗時は自動ロールバック
+```
+
+### 試験対策チェックリスト
+
+```yaml
+必須理解項目:
+  ☐ In-place と Blue/Green の違いと選択基準
+  ☐ Blue/Greenには ALB/NLB 必須（EC2の場合）
+  ☐ appspec.yml の構造と役割
+  ☐ ライフサイクルフックの順序と用途
+  ☐ デプロイ設定（AllAtOnce、Linear、Canary）
+  ☐ 自動ロールバックの仕組み
+  ☐ CloudWatchアラーム統合
+  ☐ 対応プラットフォーム（EC2、ECS、Lambda、オンプレミス）
+  ☐ CodeDeployエージェントの役割
+  ☐ CodePipeline統合パターン
+
+プラットフォーム別ポイント:
+  EC2:
+    ☐ In-place/Blue/Green両対応
+    ☐ Blue/GreenにはALB/NLB必須
+    ☐ エージェント必須
+    
+  ECS:
+    ☐ Blue/Greenのみ
+    ☐ ALB/NLB必須
+    ☐ タスク定義ベース
+    
+  Lambda:
+    ☐ Blue/Greenのみ
+    ☐ エイリアスベース
+    ☐ SAM統合
+    
+  オンプレミス:
+    ☐ In-placeのみ
+    ☐ エージェント + IAM認証
+    ☐ ハイブリッドクラウド
+
+ロールバック:
+  ☐ Blue/Greenは即座（秒単位）
+  ☐ In-placeは再デプロイ（数分）
+  ☐ 自動ロールバック設定可能
+  ☐ CloudWatchアラームトリガー
+```
+
+### 試験によく出る問題パターン
+
+```yaml
+パターン1: デプロイタイプ選択
+  キーワード: ゼロダウンタイム、即座なロールバック
+  答え: Blue/Green
+
+パターン2: プラットフォーム対応
+  キーワード: Lambda、ダウンタイムなし
+  答え: Blue/Green（Lambdaは自動対応）
+
+パターン3: ALB必要性
+  キーワード: EC2 Blue/Green、トラフィック切替
+  答え: ALB/NLB必須
+
+パターン4: ロールバック速度
+  キーワード: 即座に切り戻し
+  答え: Blue/Green（秒単位で切り戻し可能）
+
+パターン5: 段階的デプロイ
+  キーワード: 10%テスト後に残り展開
+  答え: Canaryデプロイ
+
+パターン6: オンプレミス統合
+  キーワード: データセンター、同じデプロイ方法
+  答え: CodeDeployエージェント + IAM認証
+```

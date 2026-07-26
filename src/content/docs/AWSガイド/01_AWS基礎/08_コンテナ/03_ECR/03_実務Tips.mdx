@@ -1,0 +1,552 @@
+---
+title: "ECR 実務Tips"
+label: "実務Tips"
+---
+
+## ECR 実務Tips
+
+### AWS CLI
+
+#### リポジトリ管理
+
+```bash
+# リポジトリ作成
+aws ecr create-repository \
+  --repository-name myapp \
+  --image-scanning-configuration scanOnPush=true \
+  --encryption-configuration encryptionType=AES256
+
+# リポジトリ一覧
+aws ecr describe-repositories
+
+# リポジトリ削除（イメージ全削除）
+aws ecr delete-repository \
+  --repository-name myapp \
+  --force
+
+# リポジトリポリシー設定
+aws ecr set-repository-policy \
+  --repository-name myapp \
+  --policy-text file://policy.json
+```
+
+#### ECR認証
+
+```bash
+# ECRログイン（Docker）
+aws ecr get-login-password --region ap-northeast-1 | \
+  docker login --username AWS --password-stdin \
+  123456789012.dkr.ecr.ap-northeast-1.amazonaws.com
+
+# 認証トークン取得（12時間有効）
+aws ecr get-authorization-token
+
+# 複数リージョン対応
+for region in us-east-1 ap-northeast-1 eu-west-1; do
+  aws ecr get-login-password --region $region | \
+    docker login --username AWS --password-stdin \
+    123456789012.dkr.ecr.$region.amazonaws.com
+done
+```
+
+#### イメージ操作
+
+```bash
+# イメージ一覧
+aws ecr list-images \
+  --repository-name myapp
+
+# イメージ詳細
+aws ecr describe-images \
+  --repository-name myapp
+
+# イメージ削除
+aws ecr batch-delete-image \
+  --repository-name myapp \
+  --image-ids imageTag=v1.0.0
+
+# タグのないイメージ一括削除
+IMAGES_TO_DELETE=$(aws ecr list-images \
+  --repository-name myapp \
+  --filter "tagStatus=UNTAGGED" \
+  --query 'imageIds[*]' \
+  --output json)
+
+aws ecr batch-delete-image \
+  --repository-name myapp \
+  --image-ids "$IMAGES_TO_DELETE"
+```
+
+### Docker イメージ操作
+
+#### イメージpush
+
+```bash
+# 1. ECRログイン
+aws ecr get-login-password --region ap-northeast-1 | \
+  docker login --username AWS --password-stdin \
+  123456789012.dkr.ecr.ap-northeast-1.amazonaws.com
+
+# 2. イメージビルド
+docker build -t myapp:v1.0.0 .
+
+# 3. ECR用タグ付け
+docker tag myapp:v1.0.0 \
+  123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/myapp:v1.0.0
+
+# 4. ECRへpush
+docker push \
+  123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/myapp:v1.0.0
+
+# 複数タグ（latest + バージョン）
+docker tag myapp:v1.0.0 \
+  123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/myapp:latest
+
+docker push \
+  123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/myapp:latest
+```
+
+#### イメージpull
+
+```bash
+# ECRログイン
+aws ecr get-login-password --region ap-northeast-1 | \
+  docker login --username AWS --password-stdin \
+  123456789012.dkr.ecr.ap-northeast-1.amazonaws.com
+
+# pull
+docker pull \
+  123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/myapp:v1.0.0
+
+# タグ変更（ローカル用）
+docker tag \
+  123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/myapp:v1.0.0 \
+  myapp:v1.0.0
+
+# 実行
+docker run myapp:v1.0.0
+```
+
+#### マルチステージビルドでイメージ最適化
+
+```dockerfile
+# ビルドステージ
+FROM node:18 AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
+RUN npm run build
+
+# 実行ステージ
+FROM node:18-alpine
+WORKDIR /app
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+EXPOSE 3000
+CMD ["node", "dist/index.js"]
+
+# メリット:
+# - ビルドツール不要（最終イメージ小）
+# - Alpine Linuxで軽量（5MB vs 900MB）
+# - セキュリティリスク削減
+```
+
+### ライフサイクルポリシー
+
+#### ポリシー設定
+
+```bash
+# ポリシー適用
+aws ecr put-lifecycle-policy \
+  --repository-name myapp \
+  --lifecycle-policy-text file://policy.json
+
+# ポリシー確認
+aws ecr get-lifecycle-policy \
+  --repository-name myapp
+
+# ポリシー削除
+aws ecr delete-lifecycle-policy \
+  --repository-name myapp
+```
+
+#### ポリシー例1: Untaggedイメージ自動削除
+
+```json
+{
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "Delete untagged images after 7 days",
+      "selection": {
+        "tagStatus": "untagged",
+        "countType": "sinceImagePushed",
+        "countUnit": "days",
+        "countNumber": 7
+      },
+      "action": {
+        "type": "expire"
+      }
+    }
+  ]
+}
+```
+
+#### ポリシー例2: 最新N個のみ保持
+
+```json
+{
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "Keep only last 10 images",
+      "selection": {
+        "tagStatus": "any",
+        "countType": "imageCountMoreThan",
+        "countNumber": 10
+      },
+      "action": {
+        "type": "expire"
+      }
+    }
+  ]
+}
+```
+
+#### ポリシー例3: 環境別管理
+
+```json
+{
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "Keep production images",
+      "selection": {
+        "tagStatus": "tagged",
+        "tagPrefixList": ["prod", "release"],
+        "countType": "imageCountMoreThan",
+        "countNumber": 50
+      },
+      "action": {
+        "type": "expire"
+      }
+    },
+    {
+      "rulePriority": 2,
+      "description": "Keep last 5 staging images",
+      "selection": {
+        "tagStatus": "tagged",
+        "tagPrefixList": ["staging"],
+        "countType": "imageCountMoreThan",
+        "countNumber": 5
+      },
+      "action": {
+        "type": "expire"
+      }
+    },
+    {
+      "rulePriority": 3,
+      "description": "Delete dev images after 14 days",
+      "selection": {
+        "tagStatus": "tagged",
+        "tagPrefixList": ["dev"],
+        "countType": "sinceImagePushed",
+        "countUnit": "days",
+        "countNumber": 14
+      },
+      "action": {
+        "type": "expire"
+      }
+    }
+  ]
+}
+```
+
+### イメージスキャン
+
+#### スキャン実行
+
+```bash
+# 手動スキャン開始
+aws ecr start-image-scan \
+  --repository-name myapp \
+  --image-id imageTag=v1.0.0
+
+# スキャン結果確認
+aws ecr describe-image-scan-findings \
+  --repository-name myapp \
+  --image-id imageTag=v1.0.0
+
+# 重要度別カウント取得
+aws ecr describe-image-scan-findings \
+  --repository-name myapp \
+  --image-id imageTag=v1.0.0 \
+  --query 'imageScanFindings.findingSeverityCounts'
+
+# 出力例:
+# {
+#   "CRITICAL": 2,
+#   "HIGH": 5,
+#   "MEDIUM": 10,
+#   "LOW": 3
+# }
+```
+
+#### スキャン自動化
+
+```bash
+# push時自動スキャン有効化
+aws ecr put-image-scanning-configuration \
+  --repository-name myapp \
+  --image-scanning-configuration scanOnPush=true
+
+# 拡張スキャン有効化（Inspector統合）
+aws ecr put-registry-scanning-configuration \
+  --scan-type ENHANCED \
+  --rules '[{
+    "scanFrequency": "CONTINUOUS_SCAN",
+    "repositoryFilters": [{"filter": "*", "filterType": "WILDCARD"}]
+  }]'
+```
+
+#### スキャン結果をCI/CDでチェック
+
+```bash
+#!/bin/bash
+# scan-check.sh
+
+REPO_NAME="myapp"
+IMAGE_TAG="v1.0.0"
+
+# スキャン開始
+aws ecr start-image-scan \
+  --repository-name $REPO_NAME \
+  --image-id imageTag=$IMAGE_TAG
+
+# スキャン完了待機
+while true; do
+  STATUS=$(aws ecr describe-image-scan-findings \
+    --repository-name $REPO_NAME \
+    --image-id imageTag=$IMAGE_TAG \
+    --query 'imageScanStatus.status' \
+    --output text)
+  
+  if [ "$STATUS" == "COMPLETE" ]; then
+    break
+  fi
+  sleep 10
+done
+
+# 脆弱性チェック
+CRITICAL=$(aws ecr describe-image-scan-findings \
+  --repository-name $REPO_NAME \
+  --image-id imageTag=$IMAGE_TAG \
+  --query 'imageScanFindings.findingSeverityCounts.CRITICAL' \
+  --output text)
+
+HIGH=$(aws ecr describe-image-scan-findings \
+  --repository-name $REPO_NAME \
+  --image-id imageTag=$IMAGE_TAG \
+  --query 'imageScanFindings.findingSeverityCounts.HIGH' \
+  --output text)
+
+# 閾値チェック（Critical: 0, High: 5未満）
+if [ "$CRITICAL" != "None" ] && [ "$CRITICAL" -gt 0 ]; then
+  echo "❌ CRITICAL vulnerabilities found: $CRITICAL"
+  exit 1
+fi
+
+if [ "$HIGH" != "None" ] && [ "$HIGH" -ge 5 ]; then
+  echo "❌ Too many HIGH vulnerabilities: $HIGH"
+  exit 1
+fi
+
+echo "✅ Image scan passed"
+exit 0
+```
+
+### レプリケーション設定
+
+#### クロスリージョンレプリケーション
+
+```bash
+# レプリケーションルール設定
+aws ecr put-replication-configuration \
+  --replication-configuration file://replication.json
+
+# replication.json:
+{
+  "rules": [
+    {
+      "destinations": [
+        {
+          "region": "us-east-1",
+          "registryId": "123456789012"
+        },
+        {
+          "region": "eu-west-1",
+          "registryId": "123456789012"
+        }
+      ],
+      "repositoryFilters": [
+        {
+          "filter": "prod-*",
+          "filterType": "PREFIX_MATCH"
+        }
+      ]
+    }
+  ]
+}
+
+# レプリケーション設定確認
+aws ecr describe-registry
+```
+
+### ベストプラクティス
+
+#### タグ戦略
+
+```bash
+# Git SHA + セマンティックバージョン
+GIT_SHA=$(git rev-parse --short HEAD)
+VERSION="v1.2.3"
+IMAGE_URI="123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/myapp"
+
+docker build -t $IMAGE_URI:$GIT_SHA .
+docker tag $IMAGE_URI:$GIT_SHA $IMAGE_URI:$VERSION
+docker tag $IMAGE_URI:$GIT_SHA $IMAGE_URI:latest
+
+docker push $IMAGE_URI:$GIT_SHA
+docker push $IMAGE_URI:$VERSION
+docker push $IMAGE_URI:latest
+
+# タグ例:
+# - abc1234 (Git SHA)
+# - v1.2.3 (セマンティックバージョン)
+# - latest (最新)
+```
+
+#### CI/CD統合（GitHub Actions）
+
+```yaml
+name: Deploy to ECR
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: ap-northeast-1
+  ECR_REPOSITORY: myapp
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Login to ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+    
+    - name: Build, tag, and push
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+                   $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+```
+
+#### セキュリティ強化
+
+```bash
+# イミュータブルタグ有効化
+aws ecr put-image-tag-mutability \
+  --repository-name myapp \
+  --image-tag-mutability IMMUTABLE
+
+# KMS暗号化
+aws ecr create-repository \
+  --repository-name myapp \
+  --encryption-configuration \
+    encryptionType=KMS,kmsKey=arn:aws:kms:ap-northeast-1:123456789012:key/xxx
+
+# VPCエンドポイント使用
+# - com.amazonaws.ap-northeast-1.ecr.api
+# - com.amazonaws.ap-northeast-1.ecr.dkr
+# - com.amazonaws.ap-northeast-1.s3（Gateway型）
+```
+
+### トラブルシューティング
+
+#### 認証エラー
+
+```bash
+# エラー: denied: Your authorization token has expired
+# 解決: 再ログイン（トークンは12時間有効）
+aws ecr get-login-password --region ap-northeast-1 | \
+  docker login --username AWS --password-stdin \
+  123456789012.dkr.ecr.ap-northeast-1.amazonaws.com
+
+# エラー: no basic auth credentials
+# 解決: リージョン・アカウントID確認
+```
+
+#### イメージpushエラー
+
+```bash
+# エラー: denied: User is not authorized to perform ecr:PutImage
+# 解決: IAMポリシー確認
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "ecr:GetAuthorizationToken",
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:PutImage",
+      "ecr:InitiateLayerUpload",
+      "ecr:UploadLayerPart",
+      "ecr:CompleteLayerUpload"
+    ],
+    "Resource": "*"
+  }]
+}
+```
+
+#### ディスク容量エラー
+
+```bash
+# エラー: no space left on device
+# 解決: 未使用イメージ削除
+docker system prune -a
+
+# 未使用ボリューム削除
+docker volume prune
+
+# ディスク使用量確認
+docker system df
+```
+
+### まとめ
+
+**ECR実務の重要ポイント:**
+- AWS CLIで効率的なリポジトリ管理
+- Dockerログインは12時間有効（定期的な再認証必要）
+- ライフサイクルポリシーで自動クリーンアップ
+- イメージスキャンをCI/CDに組み込む
+- タグ戦略（Git SHA + バージョン）でトレーサビリティ確保
+- レプリケーションで可用性向上

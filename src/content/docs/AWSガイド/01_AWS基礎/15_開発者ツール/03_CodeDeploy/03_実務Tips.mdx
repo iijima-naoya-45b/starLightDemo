@@ -1,0 +1,575 @@
+---
+title: "CodeDeploy 実務Tips"
+label: "実務Tips"
+---
+
+## CodeDeploy 実務Tips
+
+### AWS CLI
+
+```bash
+# アプリケーション作成
+aws deploy create-application \
+  --application-name MyApp \
+  --compute-platform Server
+
+# デプロイグループ作成（EC2/オンプレミス）
+aws deploy create-deployment-group \
+  --application-name MyApp \
+  --deployment-group-name MyDeploymentGroup \
+  --service-role-arn arn:aws:iam::123456789012:role/CodeDeployRole \
+  --deployment-config-name CodeDeployDefault.OneAtATime \
+  --ec2-tag-filters Key=Environment,Value=Production,Type=KEY_AND_VALUE
+
+# デプロイグループ作成（ECS Blue/Green）
+aws deploy create-deployment-group \
+  --application-name MyECSApp \
+  --deployment-group-name MyECSDeploymentGroup \
+  --deployment-config-name CodeDeployDefault.ECSLinear10PercentEvery1Minutes \
+  --service-role-arn arn:aws:iam::123456789012:role/CodeDeployRole \
+  --ecs-services serviceName=my-service,clusterName=my-cluster \
+  --load-balancer-info targetGroupPairInfoList=[{targetGroups=[{name=TargetGroupBlue},{name=TargetGroupGreen}],prodTrafficRoute={listenerArns=[arn:aws:elasticloadbalancing:region:account-id:listener/app/my-alb/xxx]}}] \
+  --blue-green-deployment-configuration terminateBlueInstancesOnDeploymentSuccess={action=TERMINATE,terminationWaitTimeInMinutes=5},deploymentReadyOption={actionOnTimeout=CONTINUE_DEPLOYMENT}
+
+# リビジョンをS3にアップロード
+aws deploy push \
+  --application-name MyApp \
+  --s3-location s3://my-bucket/MyApp.zip \
+  --source /path/to/app
+
+# デプロイ実行
+aws deploy create-deployment \
+  --application-name MyApp \
+  --deployment-group-name MyDeploymentGroup \
+  --s3-location bucket=my-bucket,key=MyApp.zip,bundleType=zip \
+  --description "Deployment from CLI"
+
+# デプロイ状況確認
+aws deploy get-deployment \
+  --deployment-id d-XXXXX
+
+# デプロイ履歴
+aws deploy list-deployments \
+  --application-name MyApp \
+  --deployment-group-name MyDeploymentGroup \
+  --max-items 10
+
+# デプロイ停止
+aws deploy stop-deployment \
+  --deployment-id d-XXXXX \
+  --auto-rollback-enabled
+
+# デプロイ一覧
+aws deploy list-applications
+
+# デプロイグループ一覧
+aws deploy list-deployment-groups \
+  --application-name MyApp
+
+# エージェント状態確認（EC2上で実行）
+sudo service codedeploy-agent status
+```
+
+### appspec.yml 実践例
+
+#### 1. Node.js Webアプリ（EC2）
+
+```yaml
+version: 0.0
+os: linux
+
+files:
+  - source: /
+    destination: /var/www/html
+    
+permissions:
+  - object: /var/www/html
+    owner: ec2-user
+    group: ec2-user
+    mode: 755
+    type:
+      - file
+      - directory
+
+hooks:
+  ApplicationStop:
+    - location: scripts/stop_application.sh
+      timeout: 300
+      runas: root
+      
+  BeforeInstall:
+    - location: scripts/install_dependencies.sh
+      timeout: 900
+      runas: root
+      
+  AfterInstall:
+    - location: scripts/configure_application.sh
+      timeout: 300
+      runas: ec2-user
+    - location: scripts/change_permissions.sh
+      timeout: 300
+      runas: root
+      
+  ApplicationStart:
+    - location: scripts/start_application.sh
+      timeout: 300
+      runas: root
+      
+  ValidateService:
+    - location: scripts/validate_service.sh
+      timeout: 300
+      runas: root
+```
+
+**スクリプト例:**
+
+```bash
+# scripts/stop_application.sh
+#!/bin/bash
+if pgrep -f "node.*app.js" > /dev/null; then
+    echo "Stopping application..."
+    pkill -f "node.*app.js"
+    sleep 5
+fi
+
+# scripts/install_dependencies.sh
+#!/bin/bash
+cd /var/www/html
+echo "Installing Node.js dependencies..."
+npm ci --production
+
+# scripts/configure_application.sh
+#!/bin/bash
+cd /var/www/html
+echo "Setting up environment..."
+cp .env.production .env
+
+# scripts/start_application.sh
+#!/bin/bash
+cd /var/www/html
+echo "Starting application..."
+npm start > /var/log/app.log 2>&1 &
+
+# scripts/validate_service.sh
+#!/bin/bash
+echo "Validating service..."
+sleep 10
+response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/health)
+if [ $response -eq 200 ]; then
+    echo "Service validation passed"
+    exit 0
+else
+    echo "Service validation failed"
+    exit 1
+fi
+```
+
+#### 2. Javaアプリ（Tomcat on EC2）
+
+```yaml
+version: 0.0
+os: linux
+
+files:
+  - source: /target/myapp.war
+    destination: /usr/share/tomcat/webapps
+
+hooks:
+  ApplicationStop:
+    - location: scripts/stop_tomcat.sh
+      timeout: 180
+      runas: root
+      
+  BeforeInstall:
+    - location: scripts/backup_old_war.sh
+      timeout: 60
+      runas: root
+      
+  AfterInstall:
+    - location: scripts/set_permissions.sh
+      timeout: 60
+      runas: root
+      
+  ApplicationStart:
+    - location: scripts/start_tomcat.sh
+      timeout: 300
+      runas: root
+      
+  ValidateService:
+    - location: scripts/validate_tomcat.sh
+      timeout: 300
+      runas: root
+```
+
+**Tomcatスクリプト例:**
+
+```bash
+# scripts/stop_tomcat.sh
+#!/bin/bash
+systemctl stop tomcat
+sleep 5
+
+# scripts/backup_old_war.sh
+#!/bin/bash
+if [ -f /usr/share/tomcat/webapps/myapp.war ]; then
+    mv /usr/share/tomcat/webapps/myapp.war /tmp/myapp.war.backup.$(date +%Y%m%d%H%M%S)
+fi
+
+# scripts/start_tomcat.sh
+#!/bin/bash
+systemctl start tomcat
+sleep 10
+
+# scripts/validate_tomcat.sh
+#!/bin/bash
+for i in {1..30}; do
+    response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/myapp/health)
+    if [ $response -eq 200 ]; then
+        echo "Tomcat validation passed"
+        exit 0
+    fi
+    echo "Waiting for Tomcat... ($i/30)"
+    sleep 2
+done
+echo "Tomcat validation failed"
+exit 1
+```
+
+#### 3. ECS Blue/Green
+
+```yaml
+version: 0.0
+Resources:
+  - TargetService:
+      Type: AWS::ECS::Service
+      Properties:
+        TaskDefinition: "arn:aws:ecs:ap-northeast-1:123456789012:task-definition/my-app:5"
+        LoadBalancerInfo:
+          ContainerName: "my-app-container"
+          ContainerPort: 8080
+        PlatformVersion: "LATEST"
+        NetworkConfiguration:
+          AwsvpcConfiguration:
+            Subnets:
+              - "subnet-12345678"
+              - "subnet-87654321"
+            SecurityGroups:
+              - "sg-12345678"
+            AssignPublicIp: "DISABLED"
+
+Hooks:
+  - BeforeInstall: "arn:aws:lambda:ap-northeast-1:123456789012:function:PreDeploymentValidation"
+  - AfterInstall: "arn:aws:lambda:ap-northeast-1:123456789012:function:PostDeploymentValidation"
+  - AfterAllowTestTraffic: "arn:aws:lambda:ap-northeast-1:123456789012:function:TestTrafficValidation"
+  - BeforeAllowTraffic: "arn:aws:lambda:ap-northeast-1:123456789012:function:PreProductionValidation"
+  - AfterAllowTraffic: "arn:aws:lambda:ap-northeast-1:123456789012:function:PostProductionValidation"
+```
+
+**Lambda検証フック例（Python）:**
+
+```python
+import boto3
+import json
+import time
+
+def lambda_handler(event, context):
+    """
+    CodeDeploy ECS デプロイ検証フック
+    """
+    codedeploy = boto3.client('codedeploy')
+    
+    deployment_id = event['DeploymentId']
+    lifecycle_event_hook_execution_id = event['LifecycleEventHookExecutionId']
+    
+    try:
+        # タスクのヘルスチェック
+        ecs = boto3.client('ecs')
+        cluster_name = "my-cluster"
+        service_name = "my-service"
+        
+        # サービス状態確認
+        response = ecs.describe_services(
+            cluster=cluster_name,
+            services=[service_name]
+        )
+        
+        service = response['services'][0]
+        running_count = service['runningCount']
+        desired_count = service['desiredCount']
+        
+        # 実行中タスク数が期待値と一致するか確認
+        if running_count == desired_count:
+            # CloudWatchメトリクス確認
+            cloudwatch = boto3.client('cloudwatch')
+            
+            # 過去5分間のエラー率確認
+            response = cloudwatch.get_metric_statistics(
+                Namespace='AWS/ECS',
+                MetricName='HTTPCode_Target_5XX_Count',
+                Dimensions=[
+                    {'Name': 'ServiceName', 'Value': service_name},
+                    {'Name': 'ClusterName', 'Value': cluster_name}
+                ],
+                StartTime=time.time() - 300,
+                EndTime=time.time(),
+                Period=300,
+                Statistics=['Sum']
+            )
+            
+            error_count = sum([dp['Sum'] for dp in response['Datapoints']])
+            
+            if error_count < 10:
+                # 検証成功
+                codedeploy.put_lifecycle_event_hook_execution_status(
+                    deploymentId=deployment_id,
+                    lifecycleEventHookExecutionId=lifecycle_event_hook_execution_id,
+                    status='Succeeded'
+                )
+                return {'status': 'Succeeded'}
+            else:
+                # エラー率が高い
+                raise Exception(f"High error rate detected: {error_count} errors")
+        else:
+            raise Exception(f"Running count ({running_count}) != Desired count ({desired_count})")
+            
+    except Exception as e:
+        print(f"Validation failed: {str(e)}")
+        # 検証失敗
+        codedeploy.put_lifecycle_event_hook_execution_status(
+            deploymentId=deployment_id,
+            lifecycleEventHookExecutionId=lifecycle_event_hook_execution_id,
+            status='Failed'
+        )
+        return {'status': 'Failed', 'error': str(e)}
+```
+
+#### 4. Lambda デプロイ
+
+```yaml
+version: 0.0
+Resources:
+  - myFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        Name: "MyLambdaFunction"
+        Alias: "live"
+        CurrentVersion: "3"
+        TargetVersion: "4"
+
+Hooks:
+  - BeforeAllowTraffic: "arn:aws:lambda:ap-northeast-1:123456789012:function:PreTrafficHook"
+  - AfterAllowTraffic: "arn:aws:lambda:ap-northeast-1:123456789012:function:PostTrafficHook"
+```
+
+**Lambda検証フック例:**
+
+```python
+import boto3
+import json
+
+def lambda_handler(event, context):
+    """
+    Lambda デプロイ前後の検証
+    """
+    codedeploy = boto3.client('codedeploy')
+    lambda_client = boto3.client('lambda')
+    
+    deployment_id = event['DeploymentId']
+    lifecycle_event_hook_execution_id = event['LifecycleEventHookExecutionId']
+    
+    try:
+        # 新バージョンのテスト実行
+        function_name = event['CodeDeployApplicationName']
+        new_version = event['Hooks']['AfterAllowTraffic']
+        
+        # テストペイロード実行
+        test_payload = {'test': True, 'path': '/health'}
+        response = lambda_client.invoke(
+            FunctionName=function_name,
+            Qualifier='$LATEST',
+            InvocationType='RequestResponse',
+            Payload=json.dumps(test_payload)
+        )
+        
+        # レスポンス確認
+        response_payload = json.loads(response['Payload'].read())
+        
+        if response['StatusCode'] == 200 and response_payload.get('statusCode') == 200:
+            # 検証成功
+            codedeploy.put_lifecycle_event_hook_execution_status(
+                deploymentId=deployment_id,
+                lifecycleEventHookExecutionId=lifecycle_event_hook_execution_id,
+                status='Succeeded'
+            )
+            return {'status': 'Succeeded'}
+        else:
+            raise Exception("Lambda function test failed")
+            
+    except Exception as e:
+        print(f"Validation failed: {str(e)}")
+        codedeploy.put_lifecycle_event_hook_execution_status(
+            deploymentId=deployment_id,
+            lifecycleEventHookExecutionId=lifecycle_event_hook_execution_id,
+            status='Failed'
+        )
+        return {'status': 'Failed', 'error': str(e)}
+```
+
+### ロールバック戦略
+
+```yaml
+自動ロールバック設定:
+  - デプロイ失敗時
+  - CloudWatchアラーム発火時
+  - タイムアウト時
+
+手動ロールバック:
+  - 前回のデプロイIDで再デプロイ
+  - または明示的なリビジョン指定
+```
+
+**自動ロールバック設定（CLI）:**
+
+```bash
+# デプロイグループに自動ロールバック設定
+aws deploy update-deployment-group \
+  --application-name MyApp \
+  --current-deployment-group-name MyDeploymentGroup \
+  --auto-rollback-configuration enabled=true,events=DEPLOYMENT_FAILURE,DEPLOYMENT_STOP_ON_ALARM \
+  --alarm-configuration enabled=true,alarms=[{name=HighErrorRate},{name=HighResponseTime}]
+```
+
+**手動ロールバック（CLI）:**
+
+```bash
+# 1. 前回の成功したデプロイIDを取得
+aws deploy list-deployments \
+  --application-name MyApp \
+  --deployment-group-name MyDeploymentGroup \
+  --include-only-statuses Succeeded \
+  --max-items 1
+
+# 2. そのリビジョンで再デプロイ
+aws deploy create-deployment \
+  --application-name MyApp \
+  --deployment-group-name MyDeploymentGroup \
+  --s3-location bucket=my-bucket,key=MyApp-v1.0.0.zip,bundleType=zip \
+  --description "Manual rollback to v1.0.0"
+```
+
+### デプロイ設定（カスタム）
+
+```bash
+# カスタムデプロイ設定作成（EC2: 25%ずつ）
+aws deploy create-deployment-config \
+  --deployment-config-name Custom25PercentAtATime \
+  --minimum-healthy-hosts type=FLEET_PERCENT,value=75 \
+  --compute-platform Server
+
+# カスタムデプロイ設定作成（Lambda: 5%を2分間）
+aws deploy create-deployment-config \
+  --deployment-config-name CustomLambdaCanary5Percent2Minutes \
+  --traffic-routing-config type=TimeBasedCanary,timeBasedCanary={canaryPercentage=5,canaryInterval=2} \
+  --compute-platform Lambda
+
+# カスタムデプロイ設定作成（ECS: Linear 20%毎に3分）
+aws deploy create-deployment-config \
+  --deployment-config-name CustomECSLinear20Percent3Minutes \
+  --traffic-routing-config type=TimeBasedLinear,timeBasedLinear={linearPercentage=20,linearInterval=3} \
+  --compute-platform ECS
+```
+
+### トラブルシューティング
+
+```yaml
+よくある問題と解決策:
+
+1. エージェント起動失敗:
+   確認:
+     - sudo service codedeploy-agent status
+     - /var/log/aws/codedeploy-agent/codedeploy-agent.log
+   解決:
+     - IAMロール確認
+     - ネットワーク接続確認
+     - エージェント再インストール
+
+2. デプロイ失敗（権限エラー）:
+   確認:
+     - IAMロールポリシー
+     - S3バケットポリシー
+     - EC2インスタンスプロファイル
+   解決:
+     - 必要なポリシー追加
+
+3. ValidateService失敗:
+   確認:
+     - アプリケーションログ
+     - ヘルスチェックURL
+     - ポート開放状態
+   解決:
+     - スクリプト修正
+     - タイムアウト延長
+
+4. Blue/Green切替失敗:
+   確認:
+     - ターゲットグループヘルスチェック
+     - セキュリティグループ
+     - ALBリスナールール
+   解決:
+     - ヘルスチェック設定見直し
+     - ネットワーク設定確認
+```
+
+**ログ確認コマンド:**
+
+```bash
+# CodeDeployエージェントログ
+sudo tail -f /var/log/aws/codedeploy-agent/codedeploy-agent.log
+
+# デプロイログ
+sudo tail -f /opt/codedeploy-agent/deployment-root/deployment-logs/codedeploy-agent-deployments.log
+
+# スクリプト実行ログ（デプロイ毎）
+sudo ls -la /opt/codedeploy-agent/deployment-root/
+sudo cat /opt/codedeploy-agent/deployment-root/<deployment-group-id>/<deployment-id>/logs/scripts.log
+```
+
+### ベストプラクティス
+
+```yaml
+デプロイ戦略:
+  開発環境:
+    - In-place デプロイ
+    - AllAtOnce
+    - 高速イテレーション
+    
+  ステージング環境:
+    - Blue/Green
+    - OneAtATime または HalfAtATime
+    - 本番環境と同じ構成でテスト
+    
+  本番環境:
+    - Blue/Green
+    - Linear または Canary
+    - 自動ロールバック有効
+    - CloudWatch監視
+
+セキュリティ:
+  - 最小権限IAMロール
+  - S3バケット暗号化
+  - VPC内デプロイ（機密環境）
+  - CloudTrail監査ログ
+
+パフォーマンス:
+  - 適切なデプロイ設定選択
+  - ヘルスチェック最適化
+  - タイムアウト調整
+  - 並列デプロイ（複数グループ）
+
+運用:
+  - appspec.ymlのGit管理
+  - デプロイ履歴保持
+  - CloudWatch Logs統合
+  - SNS通知設定
+  - タグ活用（環境、バージョン等）
+```

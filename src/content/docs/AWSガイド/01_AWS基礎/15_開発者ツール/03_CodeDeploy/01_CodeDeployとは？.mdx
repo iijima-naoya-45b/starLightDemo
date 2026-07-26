@@ -1,0 +1,346 @@
+---
+title: "CodeDeployとは？"
+label: "CodeDeployとは？"
+---
+
+## AWS CodeDeploy とは？
+
+CodeDeployは、EC2、ECS、Lambda、オンプレミスサーバーへのアプリケーションデプロイを自動化するフルマネージドサービスです。
+
+### 基本概念
+
+```yaml
+デプロイ対象:
+  - EC2インスタンス
+  - ECS（Fargate/EC2）
+  - Lambda関数
+  - オンプレミスサーバー
+
+主要コンポーネント:
+  - Application: デプロイ対象の論理グループ
+  - Deployment Group: デプロイ先の集合
+  - Deployment Configuration: デプロイ戦略
+  - Revision: デプロイするコード
+
+appspec.yml:
+  - デプロイ手順定義
+  - フック実行順序
+  - ファイル配置指定
+```
+
+### デプロイタイプ
+
+#### 1. In-place デプロイ（インプレース）
+
+```yaml
+概要:
+  - 既存インスタンスにデプロイ
+  - インスタンスを停止→更新→起動
+
+特徴:
+  - ダウンタイムあり
+  - コスト効率良い
+  - シンプル
+
+対応プラットフォーム:
+  - EC2
+  - オンプレミス
+
+使用例:
+  - 開発/テスト環境
+  - ダウンタイム許容可能
+```
+
+**In-placeデプロイフロー:**
+
+```
+[既存インスタンス]
+      ↓
+[アプリ停止]
+      ↓
+[新バージョンデプロイ]
+      ↓
+[アプリ起動]
+      ↓
+[検証]
+```
+
+#### 2. Blue/Green デプロイ
+
+```yaml
+概要:
+  - 新環境（Green）を作成
+  - トラフィックを切替
+  - 旧環境（Blue）は保持
+
+特徴:
+  - ゼロダウンタイム
+  - 即時ロールバック可能
+  - コスト高め（一時的に2倍）
+
+対応プラットフォーム:
+  - EC2（ALB/NLB使用）
+  - ECS
+  - Lambda
+
+使用例:
+  - 本番環境
+  - ダウンタイム不可
+  - 即座なロールバック必要
+```
+
+**Blue/Greenデプロイフロー:**
+
+```
+[Blue環境（現行）] ← 100% トラフィック
+       ↓
+[Green環境作成（新）]
+       ↓
+[トラフィック段階的切替]
+  Blue 90% ← Green 10%
+  Blue 50% ← Green 50%
+  Blue  0% ← Green 100%
+       ↓
+[Blue環境終了または保持]
+```
+
+### appspec.yml 構造
+
+#### EC2/オンプレミス用
+
+```yaml
+version: 0.0
+os: linux
+
+files:
+  - source: /
+    destination: /var/www/html
+
+permissions:
+  - object: /var/www/html
+    owner: ec2-user
+    group: ec2-user
+    mode: 755
+
+hooks:
+  ApplicationStop:
+    - location: scripts/stop_server.sh
+      timeout: 300
+      runas: root
+      
+  BeforeInstall:
+    - location: scripts/install_dependencies.sh
+      timeout: 300
+      runas: root
+      
+  AfterInstall:
+    - location: scripts/change_permissions.sh
+      timeout: 300
+      runas: root
+      
+  ApplicationStart:
+    - location: scripts/start_server.sh
+      timeout: 300
+      runas: root
+      
+  ValidateService:
+    - location: scripts/validate_service.sh
+      timeout: 300
+      runas: root
+```
+
+#### ECS用
+
+```yaml
+version: 0.0
+Resources:
+  - TargetService:
+      Type: AWS::ECS::Service
+      Properties:
+        TaskDefinition: "arn:aws:ecs:region:account-id:task-definition/my-task:1"
+        LoadBalancerInfo:
+          ContainerName: "my-container"
+          ContainerPort: 80
+        PlatformVersion: "LATEST"
+
+Hooks:
+  - BeforeInstall: "LambdaFunctionToValidateBeforeInstall"
+  - AfterInstall: "LambdaFunctionToValidateAfterInstall"
+  - AfterAllowTestTraffic: "LambdaFunctionToValidateAfterTestTraffic"
+  - BeforeAllowTraffic: "LambdaFunctionToValidateBeforeTrafficShift"
+  - AfterAllowTraffic: "LambdaFunctionToValidateAfterTrafficShift"
+```
+
+#### Lambda用
+
+```yaml
+version: 0.0
+Resources:
+  - myLambdaFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        Name: "my-function"
+        Alias: "live"
+        CurrentVersion: "1"
+        TargetVersion: "2"
+
+Hooks:
+  - BeforeAllowTraffic: "LambdaFunctionToValidateBeforeTrafficShift"
+  - AfterAllowTraffic: "LambdaFunctionToValidateAfterTrafficShift"
+```
+
+### デプロイ設定（Deployment Configuration）
+
+```yaml
+EC2/オンプレミス:
+  CodeDeployDefault.AllAtOnce:
+    - 全インスタンス同時
+    - 最速だがリスク高い
+    
+  CodeDeployDefault.HalfAtATime:
+    - 50%ずつデプロイ
+    - バランス型
+    
+  CodeDeployDefault.OneAtATime:
+    - 1台ずつデプロイ
+    - 最も安全だが時間かかる
+
+ECS/Lambda:
+  CodeDeployDefault.ECSLinear10PercentEvery1Minutes:
+    - 1分毎に10%ずつトラフィック移行
+    
+  CodeDeployDefault.ECSLinear10PercentEvery3Minutes:
+    - 3分毎に10%ずつトラフィック移行
+    
+  CodeDeployDefault.ECSCanary10Percent5Minutes:
+    - 10%を5分間、その後90%
+    
+  CodeDeployDefault.LambdaCanary10Percent5Minutes:
+    - 10%を5分間、その後90%
+    
+  CodeDeployDefault.LambdaLinear10PercentEvery1Minute:
+    - 1分毎に10%ずつトラフィック移行
+```
+
+### ライフサイクルイベントフック
+
+#### EC2/オンプレミス デプロイフック順序
+
+```yaml
+In-placeデプロイ:
+  1. ApplicationStop: アプリケーション停止
+  2. DownloadBundle: リビジョンダウンロード
+  3. BeforeInstall: インストール前処理
+  4. Install: ファイル配置
+  5. AfterInstall: インストール後処理
+  6. ApplicationStart: アプリケーション起動
+  7. ValidateService: 動作確認
+
+Blue/Greenデプロイ（追加フック）:
+  1. BeforeBlockTraffic: トラフィック遮断前
+  2. BlockTraffic: トラフィック遮断
+  3. AfterBlockTraffic: トラフィック遮断後
+  （上記In-placeフロー実行）
+  4. BeforeAllowTraffic: トラフィック許可前
+  5. AllowTraffic: トラフィック許可
+  6. AfterAllowTraffic: トラフィック許可後
+```
+
+### ロールバック
+
+```yaml
+自動ロールバック設定:
+  - デプロイ失敗時
+  - CloudWatchアラーム閾値超過時
+  - 手動でのロールバック
+
+ロールバック方法:
+  In-place:
+    - 前回のリビジョンで再デプロイ
+    
+  Blue/Green:
+    - トラフィックをBlue環境に戻す
+    - 即時切り戻し可能（数秒）
+
+注意点:
+  - ロールバックもデプロイとしてカウント
+  - データベース変更は自動ロールバック対象外
+  - 手動での確認・対処が必要な場合あり
+```
+
+### 料金
+
+**CodeDeploy料金体系**
+
+#### EC2/オンプレミス
+
+```yaml
+料金: 無料
+
+条件:
+  - CodeDeployエージェント使用
+  - デプロイ回数無制限
+  - インスタンス数無制限
+
+実質コスト:
+  - EC2インスタンス料金のみ
+  - S3ストレージ料金（リビジョン保存）
+```
+
+#### ECS（Blue/Green）
+
+```yaml
+料金: 無料
+
+条件:
+  - Blue/Greenデプロイ
+  - Fargate/EC2どちらも
+
+実質コスト:
+  - ECSタスク料金
+  - ALB/NLB料金
+  - 移行期間中の二重稼働コスト
+```
+
+#### Lambda
+
+```yaml
+料金: $0.02 per active function/月
+
+active functionとは:
+  - CodeDeployで更新されたLambda関数
+  - 1ヶ月間にトラフィックシフトを実行
+
+計算例:
+  - 10関数を月1回更新: 10 × $0.02 = $0.20/月
+  - 100関数を月10回更新: 100 × $0.02 = $2.00/月
+
+実質コスト:
+  - Lambda実行料金
+  - トラフィックシフト期間中の両バージョン実行
+```
+
+#### 料金例
+
+| デプロイ先 | 対象数 | 月間デプロイ回数 | CodeDeploy料金 | 備考 |
+|---|---|---|---|---|
+| **EC2** | 10台 | 100回 | $0 | 無料 |
+| **ECS** | 5サービス | 50回 | $0 | 無料 |
+| **Lambda** | 20関数 | 5回/関数 | $0.40 | $0.02/関数 |
+| **オンプレミス** | 50台 | 30回 | $0 | 無料 |
+
+**コストメリット:**
+- EC2/ECS/オンプレミスは完全無料
+- Lambda も非常に安価（$0.02/関数/月）
+- 商用デプロイツールと比較して大幅にコスト削減
+- インフラコストのみ（EC2、ECS、Lambda等）
+
+### まとめ
+
+**CodeDeployの重要ポイント:**
+- 自動デプロイサービス
+- In-place と Blue/Green
+- appspec.yml で定義
+- 自動ロールバック対応
+- EC2/ECS/Lambda/オンプレミス対応
+- ほぼ無料（Lambda のみ安価な課金）
