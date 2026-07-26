@@ -71,18 +71,45 @@ Automation:
 
 ### 料金
 
-```yaml
-Session Manager: 無料
-Run Command: 無料
-Patch Manager: 無料
-State Manager: 無料
+#### 基本機能（無料）
 
-Parameter Store:
-  Standard: 無料（10,000個）
-  Advanced: $0.05/パラメータ/月
+| 機能 | 価格 | 備考 |
+|---|---|---|
+| **Session Manager** | 無料 | インスタンス接続 |
+| **Run Command** | 無料 | コマンド一括実行 |
+| **Patch Manager** | 無料 | パッチ管理 |
+| **State Manager** | 無料 | 状態管理 |
+| **Inventory** | 無料 | リソース情報収集 |
 
-Automation: $0.002/ステップ
-```
+#### Parameter Store料金
+
+| パラメータタイプ | 価格 | 制限 |
+|---|---|---|
+| **Standard** | 無料 | 最大10,000個、4KB以下 |
+| **Advanced** | $0.05 / パラメータ / 月 | 制限なし、8KB以下 |
+
+#### その他の料金
+
+| 機能 | 価格 | 備考 |
+|---|---|---|
+| **Automation** | $0.002 / ステップ | ワークフロー実行 |
+| **OpsCenter** | 無料 | 運用データ集約 |
+| **Distributor** | 無料 | パッケージ配布 |
+
+**料金計算例（Parameter Store、Standard 5,000個、Advanced 100個）:**
+
+| 項目 | 計算 | 料金 |
+|---|---|---|
+| Standard | 5,000 × $0 | $0.00 |
+| Advanced | 100 × $0.05 | $5.00 |
+| **合計** | - | **$5.00/月** |
+
+**料金計算例（Automation、月間10,000ステップ実行）:**
+
+| 項目 | 計算 | 料金 |
+|---|---|---|
+| Automation | 10,000 × $0.002 | $20.00 |
+| **合計** | - | **$20.00/月** |
 
 ### まとめ
 
