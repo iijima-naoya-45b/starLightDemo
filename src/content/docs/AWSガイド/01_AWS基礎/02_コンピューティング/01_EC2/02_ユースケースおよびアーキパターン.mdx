@@ -1,0 +1,117 @@
+---
+title: "EC2 ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## EC2 ユースケースおよびアーキテクチャパターン
+
+### 1. Webアプリケーション（高可用性）
+
+```yaml
+構成:
+  ALB + EC2 Auto Scaling:
+    - ALB: パブリックサブネット（マルチAZ）
+    - EC2: プライベートサブネット（マルチAZ）
+    - Auto Scaling: 2〜10インスタンス
+    - ヘルスチェック: /health
+
+インスタンス選択:
+  - t3.medium（軽量）
+  - m6i.large（標準）
+  - c6i.large（CPU集約）
+
+コスト最適化:
+  - ベースライン: Reserved Instances (2インスタンス)
+  - スパイク: On-Demand (Auto Scaling)
+```
+
+### 2. バッチ処理
+
+```yaml
+構成:
+  Spot Instances + Auto Scaling:
+    - Spot Fleet: 複数インスタンスタイプ
+    - 中断対策: チェックポイント保存
+    - スケジュール: 夜間バッチ
+
+インスタンス選択:
+  - c6i.xlarge（CPU集約）
+  - r6i.xlarge（メモリ集約）
+  - Spot混在戦略
+
+コスト削減:
+  - Spot Instances: 最大90%割引
+  - スケジューリング: 非ピーク時間
+```
+
+### 3. データベースサーバー
+
+```yaml
+構成:
+  Primary-Standby:
+    - Primary: r6i.2xlarge（プライベートサブネット）
+    - Standby: 同構成（別AZ）
+    - EBS io2: 高IOPSストレージ
+    - スナップショット: 日次
+
+高可用性:
+  - マルチAZ配置
+  - ELB ヘルスチェック
+  - 自動フェイルオーバー
+```
+
+### 4. HPC（ハイパフォーマンスコンピューティング）
+
+```yaml
+構成:
+  Placement Group (Cluster):
+    - c6i.32xlarge: 128 vCPU
+    - EFA: 超低レイテンシーネットワーク
+    - NVMe インスタンスストア
+    - FSx for Lustre: 共有ストレージ
+
+適用:
+  - 科学計算
+  - シミュレーション
+  - 金融モデリング
+```
+
+### 5. 機械学習トレーニング
+
+```yaml
+構成:
+  GPU Instances:
+    - p4d.24xlarge: 8x NVIDIA A100
+    - EBS gp3: 大容量ストレージ
+    - S3: データセット保存
+    - Spot Instances: コスト削減
+
+トレーニング戦略:
+  - チェックポイント: 定期保存
+  - Spot中断対応: 自動再開
+  - 分散トレーニング: 複数GPU
+```
+
+### 6. CI/CDビルドサーバー
+
+```yaml
+構成:
+  On-Demand + Spot:
+    - c6i.2xlarge: ビルドサーバー
+    - Spot Instances: 並列ビルド
+    - EBS gp3: ビルドキャッシュ
+    - S3: アーティファクト保存
+
+スケーリング:
+  - ビルドキュー連動
+  - 動的プロビジョニング
+  - アイドル時自動停止
+```
+
+### まとめ
+
+**EC2アーキテクチャ設計のポイント:**
+- ワークロードに応じたインスタンスタイプ選択
+- コスト最適化（RI、Spot、Savings Plans）
+- 高可用性（マルチAZ、Auto Scaling）
+- 適切なストレージ選択（EBS、インスタンスストア）

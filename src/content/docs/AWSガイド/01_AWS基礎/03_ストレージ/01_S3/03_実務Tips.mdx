@@ -1,0 +1,92 @@
+---
+title: "S3 実務Tips"
+label: "実務Tips"
+---
+
+## S3 実務Tips
+
+### AWS CLI基本操作
+
+```bash
+# バケット作成
+aws s3 mb s3://my-bucket --region ap-northeast-1
+
+# ファイルアップロード
+aws s3 cp file.txt s3://my-bucket/
+aws s3 cp . s3://my-bucket/ --recursive
+
+# ダウンロード
+aws s3 cp s3://my-bucket/file.txt .
+aws s3 sync s3://my-bucket/ ./local-folder/
+
+# 削除
+aws s3 rm s3://my-bucket/file.txt
+aws s3 rb s3://my-bucket --force
+
+# リスト
+aws s3 ls s3://my-bucket/
+```
+
+### バケットポリシー設定
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicRead",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::my-bucket/*"
+    }
+  ]
+}
+```
+
+### ライフサイクルポリシー
+
+```json
+{
+  "Rules": [
+    {
+      "Id": "Archive old files",
+      "Status": "Enabled",
+      "Transitions": [
+        {
+          "Days": 30,
+          "StorageClass": "STANDARD_IA"
+        },
+        {
+          "Days": 90,
+          "StorageClass": "GLACIER"
+        }
+      ],
+      "Expiration": {
+        "Days": 365
+      }
+    }
+  ]
+}
+```
+
+### ベストプラクティス
+
+```yaml
+命名規則:
+  - 小文字のみ
+  - DNS準拠
+  - グローバルに一意
+
+セキュリティ:
+  - パブリックアクセスブロック有効化
+  - バージョニング有効化
+  - MFA削除有効化
+  - 暗号化必須（SSE-S3/KMS）
+
+コスト最適化:
+  - Intelligent-Tiering活用
+  - ライフサイクルポリシー設定
+  - 不要データ削除
+  - Transfer Acceleration（必要時のみ）
+```
