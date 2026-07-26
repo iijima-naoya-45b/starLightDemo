@@ -1,0 +1,67 @@
+---
+title: "API Gateway ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## API Gateway ユースケースおよびアーキテクチャパターン
+
+### 1. サーバーレスAPI（REST API + Lambda）
+
+```yaml
+構成:
+  Internet → API Gateway → Lambda → DynamoDB
+  
+用途:
+  - マイクロサービスAPI
+  - モバイルバックエンド
+  - SPAバックエンド
+
+メリット:
+  - 完全サーバーレス
+  - 自動スケーリング
+  - 低コスト
+```
+
+### 2. 認証API（Cognito統合）
+
+```yaml
+構成:
+  Client → Cognito（認証）→ API Gateway → Lambda
+  
+認証フロー:
+  1. ユーザーログイン → Cognito
+  2. JWTトークン取得
+  3. API GatewayにJWT送信
+  4. 自動検証 → Lambda実行
+```
+
+### 3. WebSocket（リアルタイム）
+
+```yaml
+構成:
+  WebSocket API → Lambda → DynamoDB
+  
+用途:
+  - チャットアプリ
+  - リアルタイム通知
+  - マルチプレイヤーゲーム
+
+ルート:
+  $connect: 接続時
+  $disconnect: 切断時
+  カスタムルート: メッセージ処理
+```
+
+### 4. カナリアデプロイ
+
+```yaml
+構成:
+  prod ステージ
+    → 90% v1.0
+    → 10% v2.0（カナリア）
+
+手順:
+  1. カナリア10%
+  2. 検証OK → 50%
+  3. 完全移行 → 100%
+```

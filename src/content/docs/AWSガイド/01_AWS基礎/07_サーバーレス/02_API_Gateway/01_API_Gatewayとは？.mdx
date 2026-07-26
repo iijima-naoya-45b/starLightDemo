@@ -1,0 +1,108 @@
+---
+title: "API Gatewayとは？"
+label: "API Gatewayとは？"
+---
+
+## Amazon API Gateway とは？
+
+API Gatewayは、フルマネージドAPIサービスです。RESTful APIやWebSocket APIを簡単に作成、公開、管理できます。
+
+### APIタイプ
+
+```yaml
+REST API:
+  - RESTful API
+  - リクエスト/レスポンス
+  - キャッシング、認証、スロットリング
+
+HTTP API:
+  - シンプル、低コスト（REST APIの70%安）
+  - JWT認証
+  - CORS簡単設定
+  - 推奨: 新規プロジェクト
+
+WebSocket API:
+  - 双方向通信
+  - リアルタイムアプリ
+  - チャット、ゲーム、IoT
+```
+
+### 統合タイプ
+
+```yaml
+Lambda:
+  - Lambda関数実行
+  - 最も一般的
+
+HTTP:
+  - HTTPエンドポイント
+  - ALB、EC2、オンプレミス
+
+AWS Service:
+  - DynamoDB、S3等直接統合
+  - Lambdaなしで実行
+
+Mock:
+  - テスト用
+```
+
+### 主要機能
+
+```yaml
+認証/認可:
+  - IAM
+  - Cognito User Pools
+  - Lambda Authorizer（カスタム）
+  - API Key
+
+スロットリング:
+  - レート制限
+  - バースト制限
+  - ステージ/メソッド単位
+
+キャッシング（REST APIのみ）:
+  - レスポンスキャッシュ
+  - TTL: 0-3600秒
+  - キャパシティ: 0.5GB-237GB
+
+リクエスト/レスポンス変換:
+  - マッピングテンプレート
+  - VTL（Velocity Template Language）
+```
+
+### ステージ
+
+```yaml
+概念: デプロイ環境
+例: dev, staging, prod
+
+設定:
+  - ステージ変数
+  - カナリアデプロイ
+  - アクセスログ
+  - X-Ray
+```
+
+### 料金
+
+```yaml
+REST API:
+  リクエスト: $3.50 / 100万
+  キャッシング: $0.02 / 時間/GB
+
+HTTP API:
+  リクエスト: $1.00 / 100万（REST APIの70%安）
+
+WebSocket API:
+  接続: $0.25 / 100万
+  メッセージ: $1.00 / 100万
+```
+
+### まとめ
+
+**API Gatewayの重要ポイント:**
+- フルマネージドAPI
+- Lambda統合が主流
+- HTTP APIが低コスト（新規推奨）
+- 認証、スロットリング標準装備
+- WebSocketでリアルタイム通信

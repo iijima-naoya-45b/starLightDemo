@@ -1,0 +1,56 @@
+---
+title: "DynamoDB ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## DynamoDB ユースケースおよびアーキテクチャパターン
+
+### 1. セッション管理
+
+```yaml
+構成:
+  ALB → Lambda → DynamoDB（セッション）
+  
+パーティションキー: sessionId
+TTL: 30分
+
+メリット:
+  - 高速アクセス
+  - 自動スケール
+  - TTL自動削除
+```
+
+### 2. リアルタイム処理（Streams + Lambda）
+
+```yaml
+構成:
+  DynamoDB → Streams → Lambda → 処理
+  
+用途:
+  - 注文処理
+  - 在庫更新
+  - 通知送信
+```
+
+### 3. Global Tables（マルチリージョン）
+
+```yaml
+構成:
+  ap-northeast-1 ⇄ us-east-1
+  
+用途:
+  - グローバル展開
+  - DR対策
+  - 低レイテンシー
+```
+
+### 4. DAX（キャッシュ）
+
+```yaml
+構成:
+  Lambda → DAX → DynamoDB
+  
+レスポンス:
+  - DynamoDB: ミリ秒
+  - DAX: マイクロ秒
+```

@@ -1,0 +1,62 @@
+---
+title: "SNS/SQS ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## SNS/SQS ユースケースおよびアーキテクチャパターン
+
+### 1. ファンアウト（SNS + SQS）
+
+```yaml
+構成:
+  S3 Upload → SNS
+    → SQS1 → Lambda（画像リサイズ）
+    → SQS2 → Lambda（サムネイル生成）
+    → SQS3 → Lambda（メタデータ保存）
+
+メリット:
+  - 並列処理
+  - 独立スケール
+  - 失敗分離
+```
+
+### 2. 非同期処理（SQS + Lambda）
+
+```yaml
+構成:
+  API Gateway → Lambda（producer）→ SQS → Lambda（consumer）
+  
+用途:
+  - 重い処理の非同期化
+  - バッチ処理
+  - メール送信
+
+メリット:
+  - レスポンス高速化
+  - スロットリング回避
+```
+
+### 3. 負荷平準化（SQS）
+
+```yaml
+構成:
+  Frontend → SQS → EC2 Auto Scaling
+
+動作:
+  - キュー長監視
+  - CloudWatch Alarm
+  - Auto Scaling トリガー
+```
+
+### 4. FIFO順序保証
+
+```yaml
+構成:
+  注文システム → SQS FIFO → Lambda処理
+
+必須要件:
+  - 順序保証
+  - 重複排除
+
+例: 注文処理、在庫管理
+```
