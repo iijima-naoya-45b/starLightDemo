@@ -1,0 +1,111 @@
+---
+title: "ALB/NLB 実務Tips"
+label: "実務Tips"
+---
+
+## ALB/NLB 実務Tips
+
+### AWS CLI
+
+```bash
+# ALB作成
+aws elbv2 create-load-balancer \
+  --name my-alb \
+  --subnets subnet-12345 subnet-67890 \
+  --security-groups sg-12345 \
+  --scheme internet-facing
+
+# ターゲットグループ作成
+aws elbv2 create-target-group \
+  --name my-targets \
+  --protocol HTTP \
+  --port 80 \
+  --vpc-id vpc-12345 \
+  --health-check-path /health \
+  --health-check-interval-seconds 30 \
+  --healthy-threshold-count 2 \
+  --unhealthy-threshold-count 2
+
+# ターゲット登録
+aws elbv2 register-targets \
+  --target-group-arn arn:aws:elasticloadbalancing:... \
+  --targets Id=i-12345,Port=80 Id=i-67890,Port=80
+
+# リスナー作成
+aws elbv2 create-listener \
+  --load-balancer-arn arn:aws:elasticloadbalancing:... \
+  --protocol HTTP \
+  --port 80 \
+  --default-actions Type=forward,TargetGroupArn=arn:aws:elasticloadbalancing:...
+
+# NLB作成
+aws elbv2 create-load-balancer \
+  --name my-nlb \
+  --type network \
+  --subnets subnet-12345 subnet-67890 \
+  --scheme internet-facing
+```
+
+### パスベースルーティング例
+
+```bash
+# ルール作成（/api/* → API ターゲットグループ）
+aws elbv2 create-rule \
+  --listener-arn arn:aws:elasticloadbalancing:... \
+  --priority 10 \
+  --conditions Field=path-pattern,Values='/api/*' \
+  --actions Type=forward,TargetGroupArn=arn:aws:elasticloadbalancing:...
+
+# ホストベースルーティング
+aws elbv2 create-rule \
+  --listener-arn arn:aws:elasticloadbalancing:... \
+  --priority 20 \
+  --conditions Field=host-header,Values='api.example.com' \
+  --actions Type=forward,TargetGroupArn=arn:aws:elasticloadbalancing:...
+```
+
+### ベストプラクティス
+
+```yaml
+ALB:
+  - マルチAZ配置
+  - ヘルスチェック最適化
+  - アクセスログ有効化
+  - WAF統合
+  - Connection Draining
+
+NLB:
+  - クロスゾーン負荷分散有効化
+  - Proxy Protocol v2（クライアントIP保持）
+  - ヘルスチェック調整
+
+共通:
+  - Auto Scaling連携
+  - CloudWatch監視
+  - セキュリティグループ最適化
+```
+
+### トラブルシューティング
+
+```bash
+# ターゲットヘルス確認
+aws elbv2 describe-target-health \
+  --target-group-arn arn:aws:elasticloadbalancing:...
+
+# アクセスログ有効化
+aws elbv2 modify-load-balancer-attributes \
+  --load-balancer-arn arn:aws:elasticloadbalancing:... \
+  --attributes \
+    Key=access_logs.s3.enabled,Value=true \
+    Key=access_logs.s3.bucket,Value=my-alb-logs
+
+# メトリクス確認
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/ApplicationELB \
+  --metric-name TargetResponseTime \
+  --dimensions Name=LoadBalancer,Value=app/my-alb/... \
+  --start-time 2026-07-26T00:00:00Z \
+  --end-time 2026-07-26T23:59:59Z \
+  --period 300 \
+  --statistics Average
+```

@@ -1,0 +1,80 @@
+---
+title: "SNS/SQS 実務Tips"
+label: "実務Tips"
+---
+
+## SNS/SQS 実務Tips
+
+### AWS CLI
+
+```bash
+# SNSトピック作成
+aws sns create-topic --name MyTopic
+
+# サブスクリプション作成（SQS）
+aws sns subscribe \
+  --topic-arn arn:aws:sns:ap-northeast-1:123456789012:MyTopic \
+  --protocol sqs \
+  --notification-endpoint arn:aws:sqs:ap-northeast-1:123456789012:MyQueue
+
+# メッセージ発行
+aws sns publish \
+  --topic-arn arn:aws:sns:ap-northeast-1:123456789012:MyTopic \
+  --message "Hello from SNS"
+
+# SQSキュー作成（Standard）
+aws sqs create-queue --queue-name MyQueue
+
+# SQSキュー作成（FIFO）
+aws sqs create-queue \
+  --queue-name MyQueue.fifo \
+  --attributes FifoQueue=true,ContentBasedDeduplication=true
+
+# メッセージ送信
+aws sqs send-message \
+  --queue-url https://sqs.ap-northeast-1.amazonaws.com/123456789012/MyQueue \
+  --message-body "Hello from SQS"
+
+# メッセージ受信
+aws sqs receive-message \
+  --queue-url https://sqs.ap-northeast-1.amazonaws.com/123456789012/MyQueue \
+  --max-number-of-messages 10 \
+  --wait-time-seconds 20
+
+# メッセージ削除
+aws sqs delete-message \
+  --queue-url https://sqs.ap-northeast-1.amazonaws.com/123456789012/MyQueue \
+  --receipt-handle "..."
+```
+
+### ベストプラクティス
+
+```yaml
+SQS:
+  - Long Polling使用（コスト削減）
+  - DLQ設定
+  - 可視性タイムアウト最適化
+  - バッチ処理活用
+
+SNS:
+  - ファンアウトパターン
+  - メッセージフィルタリング
+  - 再試行ポリシー設定
+
+組み合わせ:
+  - SNS + SQS（ファンアウト）
+  - 各処理独立スケール
+```
+
+### トラブルシューティング
+
+```bash
+# DLQメッセージ確認
+aws sqs receive-message \
+  --queue-url https://sqs.ap-northeast-1.amazonaws.com/123456789012/MyDLQ
+
+# キュー属性確認
+aws sqs get-queue-attributes \
+  --queue-url https://sqs.ap-northeast-1.amazonaws.com/123456789012/MyQueue \
+  --attribute-names All
+```

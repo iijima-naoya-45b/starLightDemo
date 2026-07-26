@@ -1,0 +1,96 @@
+---
+title: "Step Functions 実務Tips"
+label: "実務Tips"
+---
+
+## Step Functions 実務Tips
+
+### AWS CLI
+
+```bash
+# ステートマシン作成
+aws stepfunctions create-state-machine \
+  --name my-state-machine \
+  --definition file://state-machine.json \
+  --role-arn arn:aws:iam::123456789012:role/StepFunctionsRole
+
+# 実行開始
+aws stepfunctions start-execution \
+  --state-machine-arn arn:aws:states:ap-northeast-1:123456789012:stateMachine:my-state-machine \
+  --input '{"orderId": "12345"}'
+
+# 実行履歴確認
+aws stepfunctions describe-execution \
+  --execution-arn arn:aws:states:ap-northeast-1:123456789012:execution:my-state-machine:exec-id
+
+# 実行停止
+aws stepfunctions stop-execution \
+  --execution-arn arn:aws:states:ap-northeast-1:123456789012:execution:my-state-machine:exec-id
+```
+
+### ステートマシン定義例
+
+```json
+{
+  "Comment": "Order Processing Workflow",
+  "StartAt": "ValidateOrder",
+  "States": {
+    "ValidateOrder": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:ap-northeast-1:123456789012:function:ValidateOrder",
+      "Retry": [
+        {
+          "ErrorEquals": ["States.TaskFailed"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["ValidationError"],
+          "Next": "OrderFailed"
+        }
+      ],
+      "Next": "ProcessPayment"
+    },
+    "ProcessPayment": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:ap-northeast-1:123456789012:function:ProcessPayment",
+      "Next": "SendNotification"
+    },
+    "SendNotification": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:ap-northeast-1:123456789012:OrderTopic",
+        "Message.$": "$.result"
+      },
+      "End": true
+    },
+    "OrderFailed": {
+      "Type": "Fail",
+      "Error": "OrderValidationFailed",
+      "Cause": "Order validation failed"
+    }
+  }
+}
+```
+
+### ベストプラクティス
+
+```yaml
+設計:
+  - ステート数最小化
+  - エラーハンドリング実装
+  - タイムアウト設定
+
+パフォーマンス:
+  - Parallel活用
+  - Express（高スループット）
+  - Lambda最適化
+
+コスト:
+  - ステート遷移数削減
+  - Express（短時間処理）
+```

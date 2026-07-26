@@ -1,0 +1,122 @@
+---
+title: "Systems Manager 試験Tips"
+label: "試験Tips"
+---
+
+## Systems Manager 試験Tips (SAA/SAP)
+
+### 頻出トピック
+
+#### 1. Session Manager vs Bastion
+
+```yaml
+Session Manager（推奨）:
+  - SSH/RDPポート不要
+  - Bastion不要
+  - IAM認証
+  - 監査ログ自動
+
+Bastion:
+  - EC2必要
+  - SSH鍵管理
+  - コスト高
+
+頻出:
+  Q: セキュアなEC2アクセス
+  A: Session Manager
+```
+
+#### 2. Parameter Store vs Secrets Manager
+
+```yaml
+Parameter Store:
+  - 設定値全般
+  - 無料枠あり
+  - KMS暗号化
+  - バージョン管理
+
+Secrets Manager:
+  - シークレット専用
+  - 自動ローテーション
+  - 有料
+  - RDS統合
+
+使い分け:
+  - 一般設定 → Parameter Store
+  - DB認証情報 → Secrets Manager
+```
+
+#### 3. Run Command
+
+```yaml
+用途:
+  - 一括コマンド実行
+  - パッチ適用
+  - 設定変更
+
+ターゲット:
+  - タグ指定
+  - インスタンスID
+```
+
+### 頻出シナリオ
+
+#### シナリオ1: Private EC2アクセス
+
+```
+要件: Private SubnetのEC2にアクセス
+解答: Session Manager
+
+ポイント:
+✓ SSH不要
+✓ Bastion不要
+✓ VPCエンドポイント（Private）
+```
+
+#### シナリオ2: 設定管理
+
+```
+要件: DB接続情報を安全に保管
+解答: Parameter Store（SecureString）
+
+ポイント:
+✓ KMS暗号化
+✓ バージョン管理
+✓ IAMアクセス制御
+```
+
+### よくある間違い
+
+```yaml
+× 誤り: Bastionホスト必須
+○ 正解: Session Manager使用
+
+× 誤り: Parameter Storeで自動ローテーション
+○ 正解: Secrets Manager使用
+
+× 誤り: 各インスタンスに個別ログイン
+○ 正解: Run Commandで一括実行
+```
+
+### SAA試験重要ポイント
+
+```yaml
+基本:
+  ☐ Session Manager
+  ☐ Parameter Store
+  ☐ Run Command
+
+セキュリティ:
+  ☐ SSH不要アクセス
+  ☐ SecureString
+```
+
+### SAP試験重要ポイント
+
+```yaml
+高度:
+  ☐ Automation詳細
+  ☐ Patch Manager
+  ☐ State Manager
+  ☐ OpsCenter
+```

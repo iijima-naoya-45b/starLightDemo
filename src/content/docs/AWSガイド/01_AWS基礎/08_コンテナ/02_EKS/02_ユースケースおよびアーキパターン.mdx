@@ -1,0 +1,525 @@
+---
+title: "ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## ユースケース
+
+### 1. マイクロサービスアプリケーション
+
+```yaml
+シナリオ:
+  - 複数のマイクロサービス
+  - サービス間通信複雑
+  - 独立したデプロイ
+
+実装:
+  EKS:
+    - 各サービスをDeploymentとして管理
+    - Service / Ingressで通信
+    - IRSA で権限分離
+  
+  サービスメッシュ:
+    - App Mesh統合
+    - トラフィック制御
+    - 可観測性向上
+```
+
+### 2. バッチ処理基盤
+
+```yaml
+シナリオ:
+  - 大量データ処理
+  - スケーラブルなジョブ実行
+  - コスト最適化
+
+実装:
+  Kubernetes Job:
+    - バッチジョブ実行
+    - 並列処理
+  
+  Spot Instances:
+    - コスト削減
+    - 中断許容ワークロード
+  
+  Karpenter:
+    - 高速スケーリング
+    - ジョブ専用ノード
+```
+
+### 3. ハイブリッドクラウド
+
+```yaml
+シナリオ:
+  - オンプレミスとAWS併用
+  - ワークロード移行
+  - Kubernetes標準化
+
+実装:
+  EKS Anywhere:
+    - オンプレミス実行
+    - 一貫した管理
+  
+  EKS Connector:
+    - 外部クラスター接続
+    - 統合管理
+```
+
+## アーキテクチャパターン
+
+### パターン1: ALB + EKS
+
+```mermaid
+graph TB
+    subgraph "AWS Cloud"
+        subgraph "VPC"
+            subgraph "Public Subnet"
+                ALB["Application Load Balancer<br/>TLS終端"]
+            end
+            
+            subgraph "Private Subnet"
+                subgraph "EKS Cluster"
+                    CP["Control Plane<br/>(AWS Managed)"]
+                    
+                    subgraph "Worker Nodes"
+                        Node1["EC2 Node 1"]
+                        Node2["EC2 Node 2"]
+                    end
+                    
+                    subgraph "Pods"
+                        Pod1["App Pod 1"]
+                        Pod2["App Pod 2"]
+                        Pod3["App Pod 3"]
+                    end
+                end
+                
+                LBC["AWS Load Balancer<br/>Controller"]
+            end
+        end
+        
+        Route53["Route 53"]
+        ECR["Amazon ECR"]
+    end
+    
+    Internet["Internet"] --> Route53
+    Route53 --> ALB
+    ALB --> LBC
+    LBC --> Pod1
+    LBC --> Pod2
+    LBC --> Pod3
+    
+    Node1 --> Pod1
+    Node1 --> Pod2
+    Node2 --> Pod3
+    
+    CP -.管理.-> Node1
+    CP -.管理.-> Node2
+    
+    Node1 -.イメージ取得.-> ECR
+    Node2 -.イメージ取得.-> ECR
+```
+
+```yaml
+構成:
+  ALB:
+    - インターネット向け
+    - TLS終端
+    - パスベースルーティング
+  
+  EKS:
+    - マネージドノードグループ
+    - 複数のDeployment
+    - ClusterIPサービス
+  
+  AWS Load Balancer Controller:
+    - IngressからALB自動作成
+    - TargetGroup管理
+
+Ingress定義:
+  annotations:
+    - alb.ingress.kubernetes.io/scheme: internet-facing
+    - alb.ingress.kubernetes.io/target-type: ip
+    - alb.ingress.kubernetes.io/certificate-arn: <ACM ARN>
+
+セキュリティ:
+  - ALB セキュリティグループ
+  - Pod セキュリティグループ
+  - IRSA でAWS権限
+```
+
+### パターン2: Fargate + EKS
+
+```yaml
+構成:
+  EKS コントロールプレーン:
+    - マネージド
+  
+  Fargate Profile:
+    - namespace: default, production
+    - サーバーレス実行
+  
+  利点:
+    - ノード管理不要
+    - Pod単位分離
+    - セキュリティ向上
+
+制約:
+  - DaemonSet使用不可
+  - Privileged Podは使用不可
+  - HostPath / HostNetwork使用不可
+  
+  対策:
+    - サイドカーコンテナ
+    - Firelens (FluentBit) ログ収集
+```
+
+```yaml
+# Fargate Profile設定例
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: my-cluster
+  region: ap-northeast-1
+
+fargateProfiles:
+  - name: fp-default
+    selectors:
+      - namespace: default
+      - namespace: production
+        labels:
+          env: production
+```
+
+### パターン3: マルチテナント
+
+```yaml
+構成:
+  単一EKSクラスター:
+    - 複数チーム共有
+    - namespace分離
+    - リソースクォータ
+  
+  セキュリティ:
+    RBAC:
+      - namespace毎のRoleBinding
+      - チーム毎のServiceAccount
+    
+    NetworkPolicy:
+      - namespace間通信制御
+      - Pod間通信制御
+    
+    IRSA:
+      - チーム毎のIAMロール
+      - リソース毎の権限
+  
+  リソース管理:
+    ResourceQuota:
+      - CPU / メモリ制限
+      - Pod数制限
+    
+    LimitRange:
+      - コンテナデフォルト値
+      - 最小/最大値
+```
+
+```yaml
+# ResourceQuota例
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: team-a-quota
+  namespace: team-a
+spec:
+  hard:
+    requests.cpu: "100"
+    requests.memory: 200Gi
+    limits.cpu: "200"
+    limits.memory: 400Gi
+    persistentvolumeclaims: "10"
+    pods: "50"
+```
+
+### パターン4: CI/CD統合
+
+```yaml
+構成:
+  CodePipeline:
+    - ソースステージ（GitHub / CodeCommit）
+    - ビルドステージ（CodeBuild）
+    - デプロイステージ（EKS）
+  
+  CodeBuild:
+    - Dockerイメージビルド
+    - ECRプッシュ
+    - kubectl apply
+  
+  ECR:
+    - コンテナイメージレジストリ
+    - イメージスキャン
+    - ライフサイクルポリシー
+
+フロー:
+  1. コードプッシュ（GitHub）
+  2. CodePipeline起動
+  3. CodeBuildでイメージビルド
+  4. ECRにプッシュ
+  5. kubectl でデプロイ
+  6. ローリングアップデート
+```
+
+### パターン5: 監視・ログ
+
+```yaml
+構成:
+  CloudWatch Container Insights:
+    - クラスターメトリクス
+    - ノードメトリクス
+    - Podメトリクス
+    - ダッシュボード
+  
+  FluentBit:
+    - ログ収集
+    - CloudWatch Logs転送
+    - フィルタリング
+  
+  Prometheus + Grafana:
+    - カスタムメトリクス
+    - 詳細ダッシュボード
+    - アラート設定
+
+ログ収集:
+  DaemonSet（EC2ノード）:
+    - FluentBit
+    - 全ノードに配置
+  
+  Sidecar（Fargate）:
+    - Firelens
+    - Pod毎にコンテナ
+```
+
+```yaml
+# CloudWatch Container Insights有効化
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: amazon-cloudwatch
+---
+# FluentBit DaemonSet など
+```
+
+## 実装例
+
+### eksctl によるクラスター作成
+
+```bash
+# クラスター設定ファイル
+cat > cluster.yaml << 'EOF'
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: production-cluster
+  region: ap-northeast-1
+  version: "1.28"
+
+vpc:
+  cidr: 10.0.0.0/16
+  nat:
+    gateway: Single
+
+managedNodeGroups:
+  - name: ng-general
+    instanceType: t3.medium
+    minSize: 2
+    maxSize: 10
+    desiredCapacity: 3
+    volumeSize: 20
+    ssh:
+      allow: false
+    labels:
+      role: general
+    tags:
+      Environment: production
+    iam:
+      withAddonPolicies:
+        ebs: true
+        efs: true
+        albIngress: true
+        cloudWatch: true
+
+  - name: ng-spot
+    instanceTypes: ["t3.medium", "t3a.medium"]
+    spot: true
+    minSize: 0
+    maxSize: 20
+    desiredCapacity: 2
+    labels:
+      role: spot
+
+iam:
+  withOIDC: true
+  serviceAccounts:
+    - metadata:
+        name: aws-load-balancer-controller
+        namespace: kube-system
+      wellKnownPolicies:
+        awsLoadBalancerController: true
+    - metadata:
+        name: ebs-csi-controller-sa
+        namespace: kube-system
+      wellKnownPolicies:
+        ebsCSIController: true
+
+cloudWatch:
+  clusterLogging:
+    enableTypes: ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+EOF
+
+# クラスター作成
+eksctl create cluster -f cluster.yaml
+```
+
+### IRSA 実装
+
+```bash
+# OIDCプロバイダー作成（eksctl で自動）
+eksctl utils associate-iam-oidc-provider \
+  --cluster production-cluster \
+  --approve
+
+# IAMロール作成
+cat > trust-policy.json << 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::123456789012:oidc-provider/oidc.eks.ap-northeast-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "oidc.eks.ap-northeast-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE:sub": "system:serviceaccount:default:my-service-account"
+        }
+      }
+    }
+  ]
+}
+EOF
+
+aws iam create-role \
+  --role-name MyAppRole \
+  --assume-role-policy-document file://trust-policy.json
+
+# ポリシーアタッチ
+aws iam attach-role-policy \
+  --role-name MyAppRole \
+  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+
+# ServiceAccount作成
+kubectl create serviceaccount my-service-account
+kubectl annotate serviceaccount my-service-account \
+  eks.amazonaws.com/role-arn=arn:aws:iam::123456789012:role/MyAppRole
+```
+
+### Deployment with IRSA
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      serviceAccountName: my-service-account
+      containers:
+      - name: app
+        image: 123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/my-app:v1.0.0
+        ports:
+        - containerPort: 8080
+        env:
+        - name: AWS_REGION
+          value: ap-northeast-1
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app
+spec:
+  type: ClusterIP
+  selector:
+    app: my-app
+  ports:
+  - port: 80
+    targetPort: 8080
+```
+
+### Ingress with ALB
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-app-ingress
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-northeast-1:123456789012:certificate/xxxxx
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/tags: Environment=production,Team=platform
+spec:
+  ingressClassName: alb
+  rules:
+  - host: app.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: my-app
+            port:
+              number: 80
+```
+
+## まとめ
+
+**アーキテクチャ設計のポイント:**
+- ALB統合でAWS完全統合
+- IRSA でセキュアなアクセス制御
+- Fargateでノード管理削減
+- マルチテナントでコスト最適化
+- CI/CD統合で自動デプロイ
+- 監視・ログで可観測性確保

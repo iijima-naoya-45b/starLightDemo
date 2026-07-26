@@ -1,0 +1,321 @@
+---
+title: "EKSとは？"
+label: "EKSとは？"
+---
+
+## Amazon EKS (Elastic Kubernetes Service) とは？
+
+EKSは、AWSで完全マネージド型のKubernetesサービスです。Kubernetesコントロールプレーンの運用管理が不要になります。
+
+### 主要機能
+
+#### 1. マネージドコントロールプレーン
+
+```yaml
+概要:
+  - Kubernetesマスターノードの管理不要
+  - 高可用性（マルチAZ）
+  - 自動スケーリング
+  - 自動パッチ適用
+
+構成:
+  - 3つのAZに分散
+  - etcdデータベース自動バックアップ
+  - ロードバランサー内蔵
+  - API Server エンドポイント
+```
+
+#### 2. ワーカーノード
+
+```yaml
+選択肢:
+  マネージドノードグループ:
+    - EC2インスタンス自動管理
+    - AMI自動更新
+    - Auto Scaling統合
+    - 最も簡単
+  
+  セルフマネージドノード:
+    - 完全制御
+    - カスタムAMI可能
+    - 運用負荷高い
+  
+  Fargate:
+    - サーバーレス
+    - ノード管理不要
+    - Pod単位課金
+```
+
+#### 3. ネットワーキング
+
+```yaml
+CNI（Container Network Interface）:
+  AWS VPC CNI:
+    - デフォルト
+    - PodにENI/セカンダリIPアドレス割り当て
+    - VPCネイティブ
+  
+  サードパーティCNI:
+    - Calico
+    - Weave Net
+    - Cilium
+
+サービスメッシュ:
+  - App Mesh統合
+  - マイクロサービス通信管理
+```
+
+#### 4. ストレージ
+
+```yaml
+対応ストレージ:
+  - EBS（Elastic Block Store）
+  - EFS（Elastic File System）
+  - FSx for Lustre
+  
+CSIドライバー:
+  - EBS CSI Driver
+  - EFS CSI Driver
+  - FSx CSI Driver
+  
+永続ボリューム:
+  - PersistentVolume
+  - PersistentVolumeClaim
+  - StorageClass
+```
+
+### アーキテクチャ
+
+```yaml
+構成要素:
+  コントロールプレーン（AWS管理）:
+    - API Server
+    - etcd
+    - Scheduler
+    - Controller Manager
+  
+  データプレーン（ユーザー管理）:
+    - ワーカーノード（EC2 / Fargate）
+    - Pod
+    - アプリケーション
+
+VPC統合:
+  - コントロールプレーン ENI
+  - ワーカーノード ENI
+  - Pod ENI（VPC CNI）
+```
+
+### セキュリティ
+
+```yaml
+認証・認可:
+  IAM:
+    - クラスターアクセス制御
+    - サービスアカウント統合（IRSA）
+  
+  RBAC:
+    - Kubernetes RBAC
+    - Role / RoleBinding
+    - ClusterRole / ClusterRoleBinding
+
+ネットワークセキュリティ:
+  - セキュリティグループ
+  - ネットワークポリシー
+  - プライベートエンドポイント
+
+データ保護:
+  - etcd暗号化（KMS）
+  - Secrets暗号化
+  - コンテナイメージスキャン（ECR）
+```
+
+### IRSA（IAM Roles for Service Accounts）
+
+```yaml
+概要:
+  - KubernetesサービスアカウントにIAMロール紐付け
+  - Pod単位で細かい権限制御
+  - 一時的な認証情報
+
+仕組み:
+  1. OIDCプロバイダー作成
+  2. IAMロール作成（信頼ポリシー設定）
+  3. サービスアカウント作成
+  4. Podにサービスアカウント指定
+
+メリット:
+  - 最小権限の原則
+  - 認証情報ハードコード不要
+  - IAM監査統合
+```
+
+### EKS Add-ons
+
+```yaml
+マネージドアドオン:
+  VPC CNI:
+    - ネットワークプラグイン
+    - 自動更新可能
+  
+  CoreDNS:
+    - DNS解決
+    - クラスター内名前解決
+  
+  kube-proxy:
+    - サービス負荷分散
+    - ネットワークルール管理
+  
+  EBS CSI Driver:
+    - EBSボリューム管理
+    - 動的プロビジョニング
+
+追加アドオン:
+  - AWS Load Balancer Controller
+  - Cluster Autoscaler
+  - Metrics Server
+  - Container Insights
+```
+
+### オートスケーリング
+
+```yaml
+Cluster Autoscaler:
+  - ノード数の自動調整
+  - Pod配置不可時に自動拡張
+  - 未使用ノード削減
+
+Horizontal Pod Autoscaler（HPA）:
+  - Pod数の自動調整
+  - CPU/メモリ使用率ベース
+  - カスタムメトリクス対応
+
+Vertical Pod Autoscaler（VPA）:
+  - リソース要求の自動調整
+  - CPU/メモリ適正化
+
+Karpenter:
+  - 高速オートスケーリング
+  - ノードプロビジョニング最適化
+  - Cluster Autoscalerの代替
+```
+
+### バージョン管理
+
+```yaml
+Kubernetesバージョン:
+  - 最新3バージョンサポート
+  - 約4ヶ月毎に新バージョン
+  - 14ヶ月サポート
+
+アップグレード:
+  - ブルーグリーン推奨
+  - インプレースアップグレード可能
+  - マネージドノードグループ自動更新
+```
+
+### 統合サービス
+
+```yaml
+コンピューティング:
+  - EC2
+  - Fargate
+  - Spot Instances
+
+ストレージ:
+  - EBS
+  - EFS
+  - FSx
+
+ネットワーク:
+  - ALB / NLB
+  - VPC
+  - Route 53
+
+監視:
+  - CloudWatch Container Insights
+  - Prometheus
+  - Grafana
+
+CI/CD:
+  - CodePipeline
+  - CodeBuild
+  - GitLab / GitHub Actions
+```
+
+### 料金
+
+#### 基本料金
+
+| 項目 | 価格 | 備考 |
+|---|---|---|
+| **コントロールプレーン** | $0.10 / クラスター / 時間 | 約$73/月 |
+
+#### ワーカーノード料金
+
+| 起動タイプ | 料金モデル | 備考 |
+|---|---|---|
+| **EC2** | インスタンス料金のみ | オンデマンド/Spot/リザーブド選択可 |
+| **Fargate** | vCPU/メモリ使用量 | Pod単位で課金 |
+
+#### その他の料金
+
+| 項目 | 価格 | 備考 |
+|---|---|---|
+| **データ転送** | 標準料金 | リージョン外への転送 |
+| **EBS** | ストレージ料金 | Persistent Volume |
+| **EFS** | ストレージ料金 | 共有ファイルシステム |
+| **ロードバランサー** | ALB/NLB料金 | Ingress Controller |
+
+**料金計算例（EC2ワーカーノード、t3.medium × 3）:**
+
+| 項目 | 計算 | 料金 |
+|---|---|---|
+| コントロールプレーン | $0.10 × 24時間 × 30日 | $72.00 |
+| ワーカーノード | $0.0416 × 3 × 24時間 × 30日 | $89.86 |
+| ALB | $16.20（基本） + $57.60（LCU） | $73.80 |
+| **合計** | - | **$235.66/月** |
+
+**料金計算例（Fargateワーカー、0.5 vCPU、1GB × 10 Pod常時稼働）:**
+
+| 項目 | 計算 | 料金 |
+|---|---|---|
+| コントロールプレーン | $0.10 × 24時間 × 30日 | $72.00 |
+| Fargate Pod | $0.02469 × 10 × 24時間 × 30日 | $177.77 |
+| **合計** | - | **$249.77/月** |
+
+### ECS vs EKS
+
+```yaml
+ECS:
+  メリット:
+    - シンプル
+    - AWS統合深い
+    - 学習コスト低い
+    - コントロールプレーン無料
+  
+  デメリット:
+    - AWSロックイン
+    - 機能制限あり
+
+EKS:
+  メリット:
+    - Kubernetes標準
+    - ポータビリティ
+    - エコシステム豊富
+    - 高度な機能
+  
+  デメリット:
+    - 学習コスト高い
+    - 運用複雑
+    - コスト高い
+```
+
+### まとめ
+
+**EKSの重要ポイント:**
+- マネージドKubernetesで運用負荷軽減
+- IRSA でセキュアなアクセス制御
+- Fargateでサーバーレス実行可能
+- AWS サービスとの深い統合
+- オートスケーリングで柔軟な対応
+- Kubernetes標準でポータビリティ確保

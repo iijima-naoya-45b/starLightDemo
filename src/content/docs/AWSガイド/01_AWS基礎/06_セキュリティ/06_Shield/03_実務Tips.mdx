@@ -1,0 +1,59 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## Shield Advanced設定
+
+### 有効化
+
+```bash
+# Shield Advanced 有効化（コンソール推奨）
+# リソース保護設定
+aws shield associate-drt-log-bucket \
+  --log-bucket s3-bucket-name
+
+# DRT アクセス許可
+aws shield associate-drt-role \
+  --role-arn arn:aws:iam::123456789012:role/DRTRole
+```
+
+## ベストプラクティス
+
+### 設計
+
+```yaml
+アーキテクチャ:
+  - CloudFront必須
+  - ALB使用推奨
+  - Auto Scaling設定
+  - マルチAZ構成
+
+準備:
+  - 緊急連絡先登録
+  - DRTアクセス許可
+  - ログバケット設定
+  - 訓練実施
+```
+
+### モニタリング
+
+```yaml
+CloudWatch:
+  - DDoSDetected
+  - メトリクス監視
+  - アラーム設定
+
+SNS通知:
+  - 攻撃検知
+  - 軽減開始/終了
+  - チーム通知
+```
+
+## まとめ
+
+**重要ポイント:**
+- Shield Standard は自動有効
+- Advanced は年間契約
+- DRT連携で安心
+- コスト保護活用

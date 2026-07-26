@@ -1,0 +1,102 @@
+---
+title: "CloudFormation 実務Tips"
+label: "実務Tips"
+---
+
+## CloudFormation 実務Tips
+
+### AWS CLI
+
+```bash
+# スタック作成
+aws cloudformation create-stack \
+  --stack-name my-stack \
+  --template-body file://template.yaml \
+  --parameters ParameterKey=InstanceType,ParameterValue=t3.micro \
+  --capabilities CAPABILITY_IAM
+
+# スタック更新（変更セット）
+aws cloudformation create-change-set \
+  --stack-name my-stack \
+  --change-set-name my-changeset \
+  --template-body file://template.yaml
+
+aws cloudformation execute-change-set \
+  --change-set-name my-changeset \
+  --stack-name my-stack
+
+# スタック削除
+aws cloudformation delete-stack --stack-name my-stack
+
+# スタック一覧
+aws cloudformation list-stacks
+
+# ドリフト検出
+aws cloudformation detect-stack-drift --stack-name my-stack
+```
+
+### テンプレート例
+
+```yaml
+AWSTemplateFormatVersion: '2010-09-09'
+Description: VPC Stack
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-vpc
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Condition: IsProduction
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+
+Outputs:
+  VPCId:
+    Value: !Ref VPC
+    Export:
+      Name: !Sub ${Environment}-VPC-ID
+```
+
+### ベストプラクティス
+
+```yaml
+設計:
+  - スタック分割（責務分離）
+  - パラメータ活用
+  - クロススタック参照
+
+運用:
+  - 変更セット使用
+  - ドリフト検出
+  - Git管理
+
+セキュリティ:
+  - IAMロール最小権限
+  - Secrets Manager参照
+```

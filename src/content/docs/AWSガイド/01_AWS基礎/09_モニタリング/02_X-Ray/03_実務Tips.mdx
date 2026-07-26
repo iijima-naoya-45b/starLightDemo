@@ -1,0 +1,37 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## 設定
+
+```bash
+# Lambda環境変数
+AWS_XRAY_TRACING_NAME=my-function
+AWS_XRAY_DAEMON_ADDRESS=169.254.79.2:2000
+
+# サンプリングルール
+aws xray create-sampling-rule \
+  --cli-input-json file://sampling-rule.json
+```
+
+## ベストプラクティス
+
+```yaml
+設定:
+  - サンプリング率調整
+  - カスタムアノテーション
+  - セグメント最適化
+
+分析:
+  - サービスマップ確認
+  - トレース詳細分析
+  - フィルター活用
+```
+
+## まとめ
+
+**重要ポイント:**
+- Lambda簡単有効化
+- サンプリングでコスト削減
+- サービスマップ活用

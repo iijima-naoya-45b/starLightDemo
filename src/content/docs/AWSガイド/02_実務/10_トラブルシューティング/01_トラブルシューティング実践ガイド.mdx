@@ -1,0 +1,406 @@
+---
+title: "AWS トラブルシューティング実践ガイド"
+label: "トラブルシューティング"
+---
+
+## AWS トラブルシューティング実践ガイド
+
+実務で頻繁に遭遇するAWSのトラブルとその解決方法をまとめました。SAA/SAP試験でも出題される実践的な内容です。
+
+### EC2のトラブルシューティング
+
+#### 1. インスタンスに接続できない
+
+**症状:**
+- SSHタイムアウト
+- RDPタイムアウト
+
+**原因と解決策:**
+
+```yaml
+セキュリティグループ:
+  確認: インバウンドルールでSSH(22)/RDP(3389)が許可されているか
+  解決: 必要なポートを許可
+  
+  # AWS CLI
+  aws ec2 describe-security-groups --group-ids sg-xxxxx
+  aws ec2 authorize-security-group-ingress \
+    --group-id sg-xxxxx \
+    --protocol tcp \
+    --port 22 \
+    --cidr 0.0.0.0/0
+
+ネットワークACL:
+  確認: サブネットのNACLで通信が許可されているか
+  解決: インバウンド/アウトバウンドルールを確認
+  
+  aws ec2 describe-network-acls --filters "Name=association.subnet-id,Values=subnet-xxxxx"
+
+パブリックIP/Elastic IP:
+  確認: インスタンスにパブリックIPが割り当てられているか
+  解決: Elastic IPを割り当て
+  
+  aws ec2 allocate-address
+  aws ec2 associate-address --instance-id i-xxxxx --allocation-id eipalloc-xxxxx
+
+ルートテーブル:
+  確認: インターネットゲートウェイへのルートがあるか
+  解決: ルートを追加
+  
+  aws ec2 create-route \
+    --route-table-id rtb-xxxxx \
+    --destination-cidr-block 0.0.0.0/0 \
+    --gateway-id igw-xxxxx
+
+キーペア:
+  確認: 正しい秘密鍵を使用しているか
+  解決: EC2 Instance Connectまたは Systems Manager Session Managerを使用
+  
+  aws ssm start-session --target i-xxxxx
+```
+
+#### 2. インスタンスステータスチェック失敗
+
+**System Status Check Failed:**
+
+```yaml
+原因:
+  - ホストの物理的な問題
+  - ネットワーク障害
+  - AWSインフラの問題
+
+解決策:
+  - インスタンスを停止して再起動（別ホストに移動）
+  - EBSスナップショットから復旧
+  
+  aws ec2 stop-instances --instance-ids i-xxxxx
+  aws ec2 start-instances --instance-ids i-xxxxx
+```
+
+**Instance Status Check Failed:**
+
+```yaml
+原因:
+  - ファイルシステム破損
+  - カーネルパニック
+  - メモリ不足
+  - ネットワーク設定ミス
+
+解決策:
+  - Systems Managerで診断
+  - EC2 Serial Consoleでログ確認
+  - スナップショットから復旧
+  
+  # Serial Console有効化
+  aws ec2 enable-serial-console-access
+```
+
+### RDSのトラブルシューティング
+
+#### 1. 接続エラー
+
+```yaml
+セキュリティグループ:
+  # RDSのセキュリティグループ確認
+  aws rds describe-db-instances \
+    --db-instance-identifier mydb \
+    --query 'DBInstances[0].VpcSecurityGroups'
+  
+  # EC2からの接続テスト
+  telnet mydb.xxxxx.ap-northeast-1.rds.amazonaws.com 3306
+
+パブリックアクセス:
+  # パブリックアクセス有効化
+  aws rds modify-db-instance \
+    --db-instance-identifier mydb \
+    --publicly-accessible \
+    --apply-immediately
+
+DNS解決:
+  # エンドポイント確認
+  aws rds describe-db-instances \
+    --db-instance-identifier mydb \
+    --query 'DBInstances[0].Endpoint'
+  
+  # 名前解決テスト
+  nslookup mydb.xxxxx.ap-northeast-1.rds.amazonaws.com
+```
+
+#### 2. パフォーマンス問題
+
+```yaml
+Performance Insights:
+  # トップSQLクエリ確認
+  - RDSコンソール > Performance Insights
+  - 遅いクエリの特定
+  - インデックス追加検討
+
+Enhanced Monitoring:
+  # CPU、メモリ、ディスクI/O監視
+  aws rds modify-db-instance \
+    --db-instance-identifier mydb \
+    --monitoring-interval 60 \
+    --monitoring-role-arn arn:aws:iam::123456789012:role/rds-monitoring-role
+
+ストレージ自動スケーリング:
+  # ディスク容量不足対策
+  aws rds modify-db-instance \
+    --db-instance-identifier mydb \
+    --max-allocated-storage 1000
+
+接続プール:
+  # RDS Proxy使用
+  - 接続数管理
+  - フェイルオーバー高速化
+  - Lambda統合
+```
+
+### S3のトラブルシューティング
+
+#### 1. アクセス拒否エラー
+
+```yaml
+バケットポリシー:
+  # バケットポリシー確認
+  aws s3api get-bucket-policy --bucket my-bucket
+  
+  # 正しいポリシー例
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::123456789012:user/john"
+        },
+        "Action": "s3:GetObject",
+        "Resource": "arn:aws:s3:::my-bucket/*"
+      }
+    ]
+  }
+
+IAMポリシー:
+  # ユーザーのIAMポリシー確認
+  aws iam list-attached-user-policies --user-name john
+  aws iam get-policy-version \
+    --policy-arn arn:aws:iam::123456789012:policy/S3Access \
+    --version-id v1
+
+ブロックパブリックアクセス:
+  # 設定確認
+  aws s3api get-public-access-block --bucket my-bucket
+  
+  # パブリックアクセス許可（注意して使用）
+  aws s3api delete-public-access-block --bucket my-bucket
+
+オブジェクトACL:
+  # ACL確認
+  aws s3api get-object-acl --bucket my-bucket --key myfile.txt
+```
+
+#### 2. パフォーマンス最適化
+
+```yaml
+Transfer Acceleration:
+  # 大容量ファイル転送の高速化
+  aws s3api put-bucket-accelerate-configuration \
+    --bucket my-bucket \
+    --accelerate-configuration Status=Enabled
+  
+  # 使用方法
+  aws s3 cp large-file.zip s3://my-bucket/ \
+    --endpoint-url https://my-bucket.s3-accelerate.amazonaws.com
+
+マルチパート:
+  # 100MB以上のファイル推奨
+  aws s3 cp large-file.zip s3://my-bucket/ \
+    --storage-class INTELLIGENT_TIERING
+
+プレフィックス設計:
+  # ハッシュプレフィックスで分散
+  良い例: s3://my-bucket/a1b2/file.txt
+  悪い例: s3://my-bucket/2026-01-15/file.txt
+```
+
+### Lambda のトラブルシューティング
+
+#### 1. タイムアウト
+
+```yaml
+実行時間確認:
+  # CloudWatch Logsで実行時間確認
+  aws logs filter-log-events \
+    --log-group-name /aws/lambda/my-function \
+    --filter-pattern "REPORT"
+
+タイムアウト設定:
+  # タイムアウト延長
+  aws lambda update-function-configuration \
+    --function-name my-function \
+    --timeout 900  # 最大15分
+
+パフォーマンス改善:
+  - コールドスタート対策: Provisioned Concurrency
+  - メモリ増加: CPU性能も向上
+  - 非同期処理: SQS、Step Functions活用
+  
+  aws lambda put-function-concurrency \
+    --function-name my-function \
+    --reserved-concurrent-executions 10
+```
+
+#### 2. メモリ不足
+
+```yaml
+メモリ使用量確認:
+  # CloudWatch Logsで確認
+  "REPORT RequestId: ... Memory Size: 512 MB Max Memory Used: 498 MB"
+
+メモリ増加:
+  aws lambda update-function-configuration \
+    --function-name my-function \
+    --memory-size 1024
+
+最適なメモリサイズ:
+  # AWS Lambda Power Tuning
+  - コストとパフォーマンスのバランス
+  - 自動最適化ツール使用
+```
+
+### VPCのトラブルシューティング
+
+#### 1. VPC Peering接続できない
+
+```yaml
+ルートテーブル:
+  # Peering接続のルート追加
+  aws ec2 create-route \
+    --route-table-id rtb-xxxxx \
+    --destination-cidr-block 10.1.0.0/16 \
+    --vpc-peering-connection-id pcx-xxxxx
+
+セキュリティグループ:
+  # Peering先CIDRを許可
+  aws ec2 authorize-security-group-ingress \
+    --group-id sg-xxxxx \
+    --protocol tcp \
+    --port 3306 \
+    --cidr 10.1.0.0/16
+
+DNS解決:
+  # DNS解決有効化
+  aws ec2 modify-vpc-peering-connection-options \
+    --vpc-peering-connection-id pcx-xxxxx \
+    --requester-peering-connection-options '{"AllowDnsResolutionFromRemoteVpc":true}' \
+    --accepter-peering-connection-options '{"AllowDnsResolutionFromRemoteVpc":true}'
+```
+
+#### 2. NAT Gatewayの問題
+
+```yaml
+ルートテーブル:
+  # プライベートサブネットのルート確認
+  aws ec2 describe-route-tables \
+    --filters "Name=association.subnet-id,Values=subnet-xxxxx"
+  
+  # デフォルトルート追加
+  aws ec2 create-route \
+    --route-table-id rtb-xxxxx \
+    --destination-cidr-block 0.0.0.0/0 \
+    --nat-gateway-id nat-xxxxx
+
+帯域制限:
+  # NAT Gatewayは5Gbps、45Gbpsまで自動スケール
+  # 超える場合は複数NAT Gateway使用
+
+コスト最適化:
+  # VPCエンドポイント使用
+  aws ec2 create-vpc-endpoint \
+    --vpc-id vpc-xxxxx \
+    --service-name com.amazonaws.ap-northeast-1.s3 \
+    --route-table-ids rtb-xxxxx
+```
+
+### CloudWatchによる診断
+
+#### 1. メトリクス監視
+
+```bash
+# EC2 CPU使用率
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/EC2 \
+  --metric-name CPUUtilization \
+  --dimensions Name=InstanceId,Value=i-xxxxx \
+  --start-time 2026-01-15T00:00:00Z \
+  --end-time 2026-01-15T23:59:59Z \
+  --period 3600 \
+  --statistics Average
+
+# RDS接続数
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/RDS \
+  --metric-name DatabaseConnections \
+  --dimensions Name=DBInstanceIdentifier,Value=mydb \
+  --start-time 2026-01-15T00:00:00Z \
+  --end-time 2026-01-15T23:59:59Z \
+  --period 300 \
+  --statistics Maximum
+```
+
+#### 2. ログ分析
+
+```bash
+# CloudWatch Logs Insights
+aws logs start-query \
+  --log-group-name /aws/lambda/my-function \
+  --start-time 1705276800 \
+  --end-time 1705363200 \
+  --query-string 'fields @timestamp, @message | filter @message like /ERROR/ | sort @timestamp desc'
+
+# クエリ結果取得
+aws logs get-query-results --query-id xxxxx-xxxxx-xxxxx
+```
+
+### ベストプラクティス
+
+```yaml
+予防的対策:
+  - CloudWatch Alarms設定
+  - AWS Health Dashboard監視
+  - Trusted Advisor確認
+
+診断ツール:
+  - VPC Reachability Analyzer
+  - Network Access Analyzer
+  - IAM Policy Simulator
+  - CloudWatch Logs Insights
+
+ドキュメント:
+  - 構成図の最新化
+  - ランブック作成
+  - インシデント記録
+
+自動化:
+  - Systems Manager Automation
+  - Lambda自動修復
+  - EventBridge統合
+```
+
+### まとめ
+
+**トラブルシューティングの重要ポイント:**
+
+1. **体系的アプローチ**: OSIレイヤーモデルで段階的診断
+2. **ログ活用**: CloudWatch Logs、CloudTrail、VPC Flow Logs
+3. **ツール活用**: Systems Manager、Reachability Analyzer
+4. **予防**: アラート、モニタリング、自動修復
+
+**SAA/SAP試験での重要ポイント:**
+
+- セキュリティグループ vs NACL
+- VPC Peering、Transit Gateway
+- RDS Performance Insights
+- Lambda タイムアウト、メモリ
+- S3アクセス拒否の原因特定
+
+適切なトラブルシューティングスキルにより、迅速な問題解決と安定したシステム運用が実現できます。

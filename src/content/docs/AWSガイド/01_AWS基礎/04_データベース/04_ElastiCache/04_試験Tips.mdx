@@ -1,0 +1,133 @@
+---
+title: "ElastiCache 試験Tips"
+label: "試験Tips"
+---
+
+## ElastiCache 試験Tips (SAA/SAP)
+
+### 頻出トピック
+
+#### 1. Redis vs Memcached
+
+```yaml
+Redis:
+  永続化: あり
+  レプリケーション: あり
+  Multi-AZ: あり
+  データ構造: 豊富
+  用途: セッション、複雑キャッシュ
+
+Memcached:
+  永続化: なし
+  レプリケーション: なし
+  Multi-AZ: なし
+  データ構造: Key-Valueのみ
+  マルチスレッド: あり
+  用途: シンプルキャッシュ
+
+頻出:
+  Q: セッション管理、Multi-AZ
+  A: Redis
+
+  Q: シンプルキャッシュ、マルチスレッド
+  A: Memcached
+```
+
+#### 2. キャッシュ戦略
+
+```yaml
+Lazy Loading:
+  - キャッシュミス時にDB取得
+  - キャッシュに保存
+  - メリット: 必要なデータのみ
+  - デメリット: 初回遅い
+
+Write-Through:
+  - 書き込み時にキャッシュ更新
+  - メリット: 常に最新
+  - デメリット: 書き込みコスト
+
+TTL:
+  - 自動期限切れ
+  - 推奨: Lazy Loading + TTL
+```
+
+#### 3. ElastiCache vs DAX
+
+```yaml
+ElastiCache:
+  - 汎用キャッシュ
+  - RDS、Aurora等
+  - アプリ側で実装
+
+DAX:
+  - DynamoDB専用
+  - 透過的
+  - アプリ変更最小
+
+頻出:
+  Q: DynamoDBキャッシュ
+  A: DAX
+```
+
+### 頻出シナリオ
+
+#### シナリオ1: DB負荷削減
+
+```
+要件: RDS読み取り負荷削減
+解答: ElastiCache Redis
+
+ポイント:
+✓ キャッシュヒット率向上
+✓ TTL適切設定
+✓ Lazy Loading
+```
+
+#### シナリオ2: セッション管理
+
+```
+要件: Auto Scaling対応セッション共有
+解答: ElastiCache Redis + Multi-AZ
+
+ポイント:
+✓ 永続化
+✓ Multi-AZ
+✓ ステートレス化
+```
+
+### よくある間違い
+
+```yaml
+× 誤り: Memcachedで永続化
+○ 正解: Redis使用
+
+× 誤り: キャッシュのみでDB不要
+○ 正解: キャッシュは補助、DBは必須
+
+× 誤り: ElastiCache for DynamoDB
+○ 正解: DAX使用
+```
+
+### SAA試験重要ポイント
+
+```yaml
+基本:
+  ☐ Redis vs Memcached
+  ☐ キャッシュ戦略
+  ☐ Multi-AZ
+
+ユースケース:
+  ☐ DBキャッシュ
+  ☐ セッション管理
+```
+
+### SAP試験重要ポイント
+
+```yaml
+高度:
+  ☐ クラスターモード
+  ☐ Read Replica
+  ☐ バックアップ戦略
+  ☐ 暗号化
+```

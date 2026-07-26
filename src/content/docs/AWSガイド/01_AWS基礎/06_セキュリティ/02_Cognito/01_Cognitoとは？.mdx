@@ -1,0 +1,141 @@
+---
+title: "Cognitoとは？"
+label: "Cognitoとは？"
+---
+
+## Amazon Cognito とは？
+
+Cognitoは、Webアプリ・モバイルアプリのユーザー認証・認可サービスです。ユーザー管理を簡単に実装できます。
+
+### 主要コンポーネント
+
+```yaml
+User Pools:
+  - ユーザーディレクトリ
+  - サインアップ/サインイン
+  - MFA、パスワードポリシー
+  - JWT発行
+
+Identity Pools:
+  - AWS認証情報取得
+  - 一時クレデンシャル
+  - ゲストアクセス
+  - ソーシャルログイン統合
+```
+
+### User Pools主要機能
+
+```yaml
+認証:
+  - Email/電話番号
+  - ユーザー名/パスワード
+  - MFA（SMS、TOTP）
+
+ソーシャルログイン:
+  - Google
+  - Facebook
+  - Amazon
+  - Apple
+
+SAML/OIDC:
+  - エンタープライズID連携
+  - Azure AD
+  - Okta
+
+カスタマイズ:
+  - Lambda Trigger
+  - UI カスタマイズ
+  - カスタム属性
+```
+
+### Lambda Triggers
+
+```yaml
+Pre Sign-up:
+  - サインアップ前処理
+  - カスタムバリデーション
+
+Post Confirmation:
+  - 確認後処理
+  - Welcome Email
+
+Pre Authentication:
+  - 認証前処理
+  - IP制限
+
+Post Authentication:
+  - 認証後処理
+  - ログ記録
+```
+
+### Identity Pools
+
+```yaml
+機能:
+  - 一時AWS認証情報
+  - IAMロール割り当て
+  - ゲストアクセス
+
+フェデレーション:
+  - User Pools
+  - ソーシャルログイン
+  - SAML
+  - 開発者認証
+```
+
+### セキュリティ
+
+```yaml
+MFA:
+  - SMS
+  - TOTP（Google Authenticator）
+
+Advanced Security:
+  - リスクベース認証
+  - 異常検知
+  - アカウント乗っ取り対策
+
+パスワードポリシー:
+  - 最小文字数
+  - 複雑さ要件
+  - 有効期限
+```
+
+### 料金
+
+#### User Pools料金
+
+| 月間アクティブユーザー（MAU） | 価格 |
+|---|---|
+| 最初の50,000 MAU | **無料** |
+| 次の450,000 MAU | $0.00550 / MAU |
+| 500,000 MAU以降 | $0.00460 / MAU |
+
+#### その他の料金
+
+| 項目 | 価格 | 備考 |
+|---|---|---|
+| **Identity Pools** | 無料 | フェデレーテッドアイデンティティ |
+| **Advanced Security** | $0.05 / MAU | リスクベース認証、不正検出 |
+
+**料金計算例:**
+
+| MAU数 | 計算 | 月額料金 |
+|---|---|---|
+| 10,000 MAU | 無料枠内 | **$0** |
+| 100,000 MAU | 50,000（無料）+ 50,000 × $0.00550 | **$275** |
+| 600,000 MAU | 50,000（無料）+ 450,000 × $0.00550 + 100,000 × $0.00460 | **$2,935** |
+
+**Advanced Security有効時（100,000 MAU）:**
+- User Pools: $275
+- Advanced Security: 100,000 × $0.05 = $5,000
+- **合計: $5,275/月**
+
+### まとめ
+
+**Cognitoの重要ポイント:**
+- ユーザー認証・認可
+- User Pools: ユーザー管理
+- Identity Pools: AWS認証情報
+- ソーシャルログイン、SAML対応
+- MFA、Advanced Security

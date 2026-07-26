@@ -1,0 +1,381 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## AWS CLI コマンド
+
+### シークレット作成
+
+```bash
+# 基本的なシークレット作成
+aws secretsmanager create-secret \
+  --name prod/db/mysql \
+  --description "Production MySQL credentials" \
+  --secret-string '{"username":"admin","password":"MySecurePassword123!","host":"db.example.com","port":"3306","dbname":"production"}'
+
+# ファイルからシークレット作成
+aws secretsmanager create-secret \
+  --name prod/api/keys \
+  --secret-string file://secret.json
+
+# タグ付き作成
+aws secretsmanager create-secret \
+  --name prod/app/config \
+  --secret-string '{"api_key":"xxx"}' \
+  --tags Key=Environment,Value=Production Key=Application,Value=WebApp
+
+# KMSキー指定
+aws secretsmanager create-secret \
+  --name prod/sensitive-data \
+  --kms-key-id arn:aws:kms:ap-northeast-1:123456789012:key/12345678-1234-1234-1234-123456789012 \
+  --secret-string '{"data":"secret"}'
+```
+
+### シークレット取得
+
+```bash
+# シークレット取得
+aws secretsmanager get-secret-value \
+  --secret-id prod/db/mysql
+
+# 特定バージョン取得
+aws secretsmanager get-secret-value \
+  --secret-id prod/db/mysql \
+  --version-id EXAMPLE1-90ab-cdef-fedc-ba987EXAMPLE
+
+# ステージング指定
+aws secretsmanager get-secret-value \
+  --secret-id prod/db/mysql \
+  --version-stage AWSPREVIOUS
+
+# JSON解析してパスワードのみ抽出
+aws secretsmanager get-secret-value \
+  --secret-id prod/db/mysql \
+  --query 'SecretString' \
+  --output text | jq -r '.password'
+```
+
+### シークレット更新
+
+```bash
+# シークレット更新
+aws secretsmanager update-secret \
+  --secret-id prod/db/mysql \
+  --secret-string '{"username":"admin","password":"NewPassword456!"}'
+
+# 説明更新
+aws secretsmanager update-secret \
+  --secret-id prod/db/mysql \
+  --description "Updated production MySQL credentials"
+
+# KMSキー変更
+aws secretsmanager update-secret \
+  --secret-id prod/db/mysql \
+  --kms-key-id arn:aws:kms:ap-northeast-1:123456789012:key/new-key-id
+```
+
+### ローテーション設定
+
+```bash
+# 自動ローテーション有効化（RDS）
+aws secretsmanager rotate-secret \
+  --secret-id prod/db/mysql \
+  --rotation-lambda-arn arn:aws:lambda:ap-northeast-1:123456789012:function:SecretsManagerRDSMySQLRotationSingleUser \
+  --rotation-rules AutomaticallyAfterDays=30
+
+# カスタムLambda関数でローテーション
+aws secretsmanager rotate-secret \
+  --secret-id prod/api/keys \
+  --rotation-lambda-arn arn:aws:lambda:ap-northeast-1:123456789012:function:CustomRotationFunction \
+  --rotation-rules AutomaticallyAfterDays=90
+
+# 即座にローテーション実行
+aws secretsmanager rotate-secret \
+  --secret-id prod/db/mysql
+
+# ローテーション設定の確認
+aws secretsmanager describe-secret \
+  --secret-id prod/db/mysql \
+  --query 'RotationEnabled'
+```
+
+### レプリケーション
+
+```bash
+# クロスリージョンレプリケーション設定
+aws secretsmanager replicate-secret-to-regions \
+  --secret-id prod/db/mysql \
+  --add-replica-regions Region=us-west-2 \
+  --add-replica-regions Region=eu-west-1,KmsKeyId=arn:aws:kms:eu-west-1:123456789012:key/example-key
+
+# レプリカステータス確認
+aws secretsmanager describe-secret \
+  --secret-id prod/db/mysql \
+  --query 'ReplicationStatus'
+
+# レプリケーション削除
+aws secretsmanager remove-regions-from-replication \
+  --secret-id prod/db/mysql \
+  --remove-replica-regions ap-southeast-1
+```
+
+### シークレット削除
+
+```bash
+# 削除（回復期間付き）
+aws secretsmanager delete-secret \
+  --secret-id prod/db/mysql \
+  --recovery-window-in-days 30
+
+# 即座に削除（回復不可）
+aws secretsmanager delete-secret \
+  --secret-id prod/db/mysql \
+  --force-delete-without-recovery
+
+# 削除をキャンセル
+aws secretsmanager restore-secret \
+  --secret-id prod/db/mysql
+```
+
+### リソースポリシー
+
+```bash
+# リソースポリシー設定
+aws secretsmanager put-resource-policy \
+  --secret-id prod/db/mysql \
+  --resource-policy file://policy.json
+
+# ポリシー確認
+aws secretsmanager get-resource-policy \
+  --secret-id prod/db/mysql
+
+# ポリシー削除
+aws secretsmanager delete-resource-policy \
+  --secret-id prod/db/mysql
+```
+
+### 一括操作
+
+```bash
+# 全シークレット一覧
+aws secretsmanager list-secrets
+
+# フィルタ付き一覧（タグ）
+aws secretsmanager list-secrets \
+  --filters Key=tag-key,Values=Environment \
+  --filters Key=tag-value,Values=Production
+
+# 特定プレフィックスのシークレット一覧
+aws secretsmanager list-secrets \
+  --filters Key=name,Values=prod/
+
+# 全シークレットの詳細取得
+for secret in $(aws secretsmanager list-secrets --query 'SecretList[*].Name' --output text); do
+  echo "=== $secret ==="
+  aws secretsmanager describe-secret --secret-id "$secret"
+done
+```
+
+## ベストプラクティス
+
+### 命名規則
+
+```yaml
+推奨パターン:
+  - {環境}/{サービス}/{リソース}
+  - 例: prod/rds/mysql
+  - 例: dev/api/stripe
+  - 例: staging/app/oauth
+
+メリット:
+  - 環境別に管理しやすい
+  - IAMポリシーで制御しやすい
+  - 検索・フィルタリングが容易
+```
+
+### アクセス制御
+
+```json
+// 最小権限の原則
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": [
+        "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:prod/app/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "secretsmanager:VersionStage": "AWSCURRENT"
+        }
+      }
+    }
+  ]
+}
+```
+
+```json
+// リソースポリシーでクロスアカウント
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::987654321098:role/AppRole"
+      },
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:SourceVpce": "vpce-12345678"
+        }
+      }
+    }
+  ]
+}
+```
+
+### キャッシング戦略
+
+```yaml
+推奨:
+  - クライアント側でキャッシュ
+  - TTL: 1時間程度
+  - ローテーション時の更新考慮
+
+実装例:
+  - アプリケーション起動時に取得
+  - メモリにキャッシュ
+  - 定期的に再取得
+  - エラー時はキャッシュ使用
+```
+
+### ローテーション設計
+
+```yaml
+ローテーション間隔:
+  高セキュリティ: 7-14日
+  通常: 30-90日
+  低頻度: 90日以上
+
+考慮点:
+  - アプリケーション再起動不要な設計
+  - キャッシュTTLとの整合性
+  - ローテーション失敗時の対応
+  - 通知・アラート設定
+```
+
+### コスト最適化
+
+```yaml
+戦略:
+  シークレット数削減:
+    - 関連する情報はJSON化して1つに
+    - 例: {"db_user":"admin","db_pass":"xxx","api_key":"yyy"}
+  
+  APIコール削減:
+    - キャッシング実装
+    - Lambda Extensionの活用
+    - バッチ取得の検討
+  
+  Parameter Store併用:
+    - 機密性の低いものはParameter Store
+    - 自動ローテーション不要ならParameter Store
+```
+
+### モニタリング
+
+```yaml
+CloudWatch Alarms:
+  - ローテーション失敗
+    - メトリクス: RotationSucceeded = 0
+  
+  - API呼び出し急増
+    - メトリクス: GetSecretValue 回数
+
+CloudTrail:
+  - シークレットアクセス監査
+  - 不正アクセス検知
+  - 設定変更履歴
+
+ログフィルタ例:
+  { $.eventName = "GetSecretValue" && $.errorCode = "AccessDenied" }
+```
+
+### トラブルシューティング
+
+```yaml
+よくある問題:
+
+1. アクセス拒否:
+   原因:
+     - IAMポリシー不足
+     - リソースポリシー制限
+     - KMS権限不足
+   
+   対処:
+     - IAMポリシー確認
+     - CloudTrailで詳細確認
+     - KMS key policyチェック
+
+2. ローテーション失敗:
+   原因:
+     - Lambda権限不足
+     - ネットワーク接続失敗
+     - データベース接続エラー
+   
+   対処:
+     - Lambda実行ロール確認
+     - VPC設定チェック
+     - CloudWatch Logsで詳細確認
+
+3. 古いバージョン取得:
+   原因:
+     - キャッシュが古い
+     - ステージング指定ミス
+   
+   対処:
+     - キャッシュクリア
+     - AWSCURRENT指定確認
+```
+
+### セキュリティ強化
+
+```yaml
+推奨設定:
+  VPCエンドポイント:
+    - インターネットゲートウェイ不要
+    - トラフィック非公開
+  
+  暗号化:
+    - カスタムKMSキー使用
+    - キーローテーション有効化
+  
+  監査:
+    - CloudTrail有効化
+    - S3バケット暗号化
+    - ログ改ざん防止
+
+  アラート:
+    - 異常なアクセスパターン検知
+    - 失敗した認証試行
+    - 設定変更通知
+```
+
+## まとめ
+
+**実務での重要ポイント:**
+- 命名規則を統一して管理を容易に
+- キャッシングでコスト削減
+- VPCエンドポイントでセキュリティ向上
+- CloudTrailで監査証跡確保
+- 自動ローテーションで運用効率化
+- Parameter Storeと適切に使い分け

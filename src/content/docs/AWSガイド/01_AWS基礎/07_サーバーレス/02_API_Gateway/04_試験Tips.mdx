@@ -1,0 +1,103 @@
+---
+title: "API Gateway 試験Tips"
+label: "試験Tips"
+---
+
+## API Gateway 試験Tips (SAA/SAP)
+
+### 頻出トピック
+
+#### 1. REST API vs HTTP API
+
+```yaml
+REST API:
+  - 機能豊富
+  - キャッシング対応
+  - リクエスト/レスポンス変換
+  - 料金: $3.50/100万
+
+HTTP API:
+  - シンプル、低コスト
+  - JWT認証
+  - CORS簡単
+  - 料金: $1.00/100万（70%安）
+
+頻出:
+  Q: 低コストでシンプルなAPI
+  A: HTTP API
+```
+
+#### 2. 認証方法
+
+```yaml
+IAM:
+  - AWS認証情報
+  - 署名バージョン4
+  - AWS SDK使用
+
+Cognito User Pools:
+  - ユーザー認証
+  - JWT検証
+  - モバイルアプリ推奨
+
+Lambda Authorizer（旧Custom Authorizer）:
+  - カスタムロジック
+  - 任意認証方式
+  - OAuth、SAML等
+
+API Key:
+  - シンプル
+  - Usage Plan組み合わせ
+  - スロットリング
+```
+
+#### 3. Lambda Proxy vs Lambda統合
+
+```yaml
+Lambda Proxy（推奨）:
+  - リクエストそのまま渡す
+  - レスポンスそのまま返す
+  - 簡単、推奨
+
+Lambda統合:
+  - マッピングテンプレート使用
+  - リクエスト/レスポンス変換
+  - 複雑、レガシー
+```
+
+### よくある間違い
+
+```yaml
+× 誤り: HTTP APIでキャッシング
+○ 正解: REST APIのみキャッシング対応
+
+× 誤り: API Keyで認証
+○ 正解: API Keyは識別のみ、認証はIAM/Cognito
+
+× 誤り: WebSocket APIでREST
+○ 正解: REST APIまたはHTTP API使用
+```
+
+### SAA試験重要ポイント
+
+```yaml
+基本:
+  ☐ REST vs HTTP API
+  ☐ Lambda統合
+  ☐ 認証方法
+
+設計:
+  ☐ ステージ
+  ☐ スロットリング
+  ☐ キャッシング
+```
+
+### SAP試験重要ポイント
+
+```yaml
+高度:
+  ☐ カナリアデプロイ
+  ☐ Lambda Authorizer詳細
+  ☐ マッピングテンプレート
+  ☐ VPCLink（プライベート統合）
+```

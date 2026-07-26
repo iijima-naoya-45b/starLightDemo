@@ -1,0 +1,72 @@
+---
+title: "Aurora ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## Aurora ユースケースおよびアーキテクチャパターン
+
+### 1. 高可用性Webアプリ
+
+```yaml
+構成:
+  ALB → EC2 → Aurora（Primary + Read Replica ×2）
+  
+設定:
+  - Multi-AZ自動配置
+  - Read Replica: 読み取り負荷分散
+  - 自動フェイルオーバー: 30秒
+
+メリット:
+  - 99.99%可用性
+  - 読み取りスケール
+```
+
+### 2. Global Database（マルチリージョン）
+
+```yaml
+構成:
+  Primary: ap-northeast-1
+  Secondary: us-east-1, eu-west-1
+
+レプリケーション:
+  - レイテンシー: 1秒未満
+  - RPO: 1秒
+  - RTO: 1分未満
+
+用途:
+  - グローバル展開
+  - DR対策
+```
+
+### 3. Serverless（変動負荷）
+
+```yaml
+構成:
+  API Gateway → Lambda → Aurora Serverless v2
+
+スケーリング:
+  - 最小: 0.5 ACU
+  - 最大: 128 ACU
+  - 1秒以内にスケール
+
+用途:
+  - 開発/テスト環境
+  - 予測不可能な負荷
+  - コスト最適化
+```
+
+### 4. 機械学習統合
+
+```yaml
+構成:
+  Aurora → SageMaker/Comprehend
+
+SQL例:
+  SELECT
+    product_id,
+    aws_sagemaker_invoke_endpoint(
+      'recommendation-model',
+      user_id
+    ) AS recommendation
+  FROM products;
+```

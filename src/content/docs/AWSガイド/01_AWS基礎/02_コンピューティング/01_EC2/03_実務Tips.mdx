@@ -1,0 +1,140 @@
+---
+title: "EC2 実務Tips"
+label: "実務Tips"
+---
+
+## EC2 実務Tips
+
+### AWS Console でのEC2起動
+
+```
+手順:
+1. EC2ダッシュボード → 「インスタンスを起動」
+2. 名前: my-web-server
+3. AMI: Amazon Linux 2023
+4. インスタンスタイプ: t3.medium
+5. キーペア: 新規作成または既存選択
+6. ネットワーク: VPC、サブネット選択
+7. セキュリティグループ: SSH, HTTP, HTTPS許可
+8. ストレージ: 30 GB gp3
+9. 「インスタンスを起動」
+```
+
+### AWS CLI での起動
+
+```bash
+# インスタンス起動
+aws ec2 run-instances \
+  --image-id ami-0d52744d6551d851e \
+  --instance-type t3.medium \
+  --key-name my-key \
+  --security-group-ids sg-xxxxx \
+  --subnet-id subnet-xxxxx \
+  --block-device-mappings '[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":30,"VolumeType":"gp3"}}]' \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=my-web-server}]' \
+  --user-data file://userdata.sh
+
+# インスタンス一覧
+aws ec2 describe-instances \
+  --filters "Name=instance-state-name,Values=running" \
+  --query 'Reservations[].Instances[].[InstanceId,InstanceType,State.Name,Tags[?Key==`Name`].Value|[0]]' \
+  --output table
+
+# インスタンス停止
+aws ec2 stop-instances --instance-ids i-xxxxx
+
+# インスタンス起動
+aws ec2 start-instances --instance-ids i-xxxxx
+
+# インスタンス削除
+aws ec2 terminate-instances --instance-ids i-xxxxx
+```
+
+### User Data（起動スクリプト）
+
+```bash
+#!/bin/bash
+yum update -y
+yum install -y httpd
+systemctl start httpd
+systemctl enable httpd
+echo "<h1>Hello from EC2</h1>" > /var/www/html/index.html
+```
+
+### Auto Scaling設定
+
+```bash
+# 起動テンプレート作成
+aws ec2 create-launch-template \
+  --launch-template-name my-template \
+  --version-description "v1" \
+  --launch-template-data '{
+    "ImageId": "ami-0d52744d6551d851e",
+    "InstanceType": "t3.medium",
+    "KeyName": "my-key",
+    "SecurityGroupIds": ["sg-xxxxx"],
+    "UserData": "'"$(base64 userdata.sh)"'"
+  }'
+
+# Auto Scaling Group作成
+aws autoscaling create-auto-scaling-group \
+  --auto-scaling-group-name my-asg \
+  --launch-template LaunchTemplateName=my-template \
+  --min-size 2 \
+  --max-size 10 \
+  --desired-capacity 3 \
+  --vpc-zone-identifier "subnet-xxxxx,subnet-yyyyy" \
+  --target-group-arns arn:aws:elasticloadbalancing:...
+
+# スケーリングポリシー
+aws autoscaling put-scaling-policy \
+  --auto-scaling-group-name my-asg \
+  --policy-name cpu-scaling \
+  --policy-type TargetTrackingScaling \
+  --target-tracking-configuration '{
+    "PredefinedMetricSpecification": {
+      "PredefinedMetricType": "ASGAverageCPUUtilization"
+    },
+    "TargetValue": 70.0
+  }'
+```
+
+### ベストプラクティス
+
+```yaml
+セキュリティ:
+  - IAMロール使用（アクセスキー不要）
+  - セキュリティグループ最小権限
+  - Systems Manager Session Manager（SSH不要）
+  - パッチ管理自動化
+
+コスト最適化:
+  - インスタンスタイプ最適化
+  - Reserved Instances活用
+  - Spot Instances活用
+  - アイドル時停止自動化
+
+運用:
+  - CloudWatch監視
+  - 自動バックアップ（AMI、スナップショット）
+  - タグ付け徹底
+  - Auto Scaling活用
+```
+
+### トラブルシューティング
+
+```bash
+# ステータスチェック失敗
+aws ec2 describe-instance-status --instance-ids i-xxxxx
+
+# システムログ確認
+aws ec2 get-console-output --instance-id i-xxxxx
+
+# インスタンス再起動
+aws ec2 reboot-instances --instance-ids i-xxxxx
+
+# インスタンス停止→起動（ホスト変更）
+aws ec2 stop-instances --instance-ids i-xxxxx
+aws ec2 wait instance-stopped --instance-ids i-xxxxx
+aws ec2 start-instances --instance-ids i-xxxxx
+```

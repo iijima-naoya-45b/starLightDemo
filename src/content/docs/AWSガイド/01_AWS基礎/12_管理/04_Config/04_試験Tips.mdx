@@ -1,0 +1,118 @@
+---
+title: "試験Tips"
+label: "試験Tips"
+---
+
+## SAA（ソリューションアーキテクト アソシエイト）
+
+### 頻出ポイント
+
+#### 1. Config基本概念
+
+```yaml
+出題パターン:
+  「リソース設定変更の追跡」
+
+正解:
+  - AWS Config
+  - 設定履歴記録
+  - 変更通知
+
+キーワード:
+  ✅ 設定変更追跡 → Config
+  ✅ コンプライアンス監査 → Config
+  ✅ 非準拠検知 → Config Rules
+```
+
+#### 2. Config Rules
+
+```yaml
+シナリオ:
+  「暗号化されていないEBS検知」
+
+正解:
+  - Config Rule: encrypted-volumes
+  - 自動評価
+  - 非準拠アラート
+```
+
+#### 3. CloudTrail との違い
+
+```yaml
+Config:
+  - リソース設定変更
+  - 「何が」変わったか
+  - コンプライアンス
+
+CloudTrail:
+  - API呼び出し記録
+  - 「誰が」「いつ」実行
+  - セキュリティ監査
+```
+
+## SAP（ソリューションアーキテクト プロフェッショナル）
+
+### 高度なシナリオ
+
+```yaml
+組織全体のコンプライアンス:
+  要件:
+    - マルチアカウント監視
+    - 統一ルール適用
+    - 自動修復
+
+  設計:
+    - Config Aggregator
+    - Organizations統合
+    - Conformance Pack
+    - EventBridge連携
+    - 自動修復Runbook
+```
+
+## よくある間違い
+
+### 間違い 1: CloudTrailとの混同
+
+```yaml
+❌ 誤り:
+  「Config で誰が変更したか分かる」
+
+✅ 正解:
+  Config:
+    - 設定変更の「内容」
+    - Before/After
+  
+  CloudTrail:
+    - 「誰が」実行
+    - API呼び出し
+  
+  併用推奨
+```
+
+### 間違い 2: リアルタイム性の誤解
+
+```yaml
+❌ 誤り:
+  「Config は即座に検知」
+
+✅ 正解:
+  - 数分の遅延
+  - 定期評価
+  - リアルタイムではない
+```
+
+## まとめ
+
+**試験ポイント:**
+
+SAA:
+- Config = 設定変更追跡
+- Config Rules = コンプライアンス
+- CloudTrail との使い分け
+- 自動修復理解
+
+SAP:
+- Config Aggregator
+- Conformance Pack
+- Organizations統合
+- 大規模環境設計

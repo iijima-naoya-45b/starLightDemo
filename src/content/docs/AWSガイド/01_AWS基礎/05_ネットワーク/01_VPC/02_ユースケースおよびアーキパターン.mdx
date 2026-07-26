@@ -1,0 +1,303 @@
+---
+title: "VPC ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## VPC ユースケースおよびアーキテクチャパターン
+
+実務で頻出するVPCのアーキテクチャパターンを解説します。
+
+### 1. 基本的な3層Webアプリケーション
+
+```mermaid
+graph TB
+    subgraph "VPC 10.0.0.0/16"
+        subgraph "AZ-1a"
+            PubSub1["パブリックサブネット<br/>10.0.1.0/24"]
+            PrivSub1["プライベートサブネット App<br/>10.0.11.0/24"]
+            DBSub1["プライベートサブネット DB<br/>10.0.21.0/24"]
+        end
+        
+        subgraph "AZ-1c"
+            PubSub2["パブリックサブネット<br/>10.0.2.0/24"]
+            PrivSub2["プライベートサブネット App<br/>10.0.12.0/24"]
+            DBSub2["プライベートサブネット DB<br/>10.0.22.0/24"]
+        end
+        
+        IGW["Internet Gateway"]
+        ALB["Application Load Balancer"]
+        NAT1["NAT Gateway"]
+        NAT2["NAT Gateway"]
+        
+        EC2-1["EC2 Instance"]
+        EC2-2["EC2 Instance"]
+        RDS["RDS Multi-AZ"]
+        
+        IGW --> ALB
+        ALB --> PubSub1
+        ALB --> PubSub2
+        
+        PubSub1 --> NAT1
+        PubSub2 --> NAT2
+        
+        NAT1 --> PrivSub1
+        NAT2 --> PrivSub2
+        
+        PrivSub1 --> EC2-1
+        PrivSub2 --> EC2-2
+        
+        EC2-1 --> DBSub1
+        EC2-2 --> DBSub2
+        DBSub1 --> RDS
+        DBSub2 --> RDS
+    end
+    
+    Internet["Internet"] --> IGW
+```
+
+```yaml
+構成:
+  VPC: 10.0.0.0/16
+  
+  パブリックサブネット (Web層):
+    - 10.0.1.0/24 (ap-northeast-1a)
+    - 10.0.2.0/24 (ap-northeast-1c)
+    - ALB、Bastionホスト配置
+  
+  プライベートサブネット (App層):
+    - 10.0.11.0/24 (ap-northeast-1a)
+    - 10.0.12.0/24 (ap-northeast-1c)
+    - EC2 Auto Scaling Group
+  
+  プライベートサブネット (DB層):
+    - 10.0.21.0/24 (ap-northeast-1a)
+    - 10.0.22.0/24 (ap-northeast-1c)
+    - RDS Multi-AZ
+
+セキュリティ:
+  Web層SG:
+    インバウンド: 80/443 from 0.0.0.0/0
+  App層SG:
+    インバウンド: 8080 from Web層SG
+  DB層SG:
+    インバウンド: 3306 from App層SG
+
+高可用性:
+  - マルチAZ配置
+  - ALBでヘルスチェック
+  - RDS自動フェイルオーバー
+```
+
+### 2. マイクロサービスアーキテクチャ
+
+```yaml
+VPC設計:
+  Shared Services VPC:
+    - ALB/NLB
+    - API Gateway
+    - Service Discovery
+  
+  Microservice VPC (各サービス):
+    - ECS/EKS クラスター
+    - 専用データベース
+    - サービス固有のリソース
+
+接続:
+  - VPC Peering (サービス間通信)
+  - Transit Gateway (ハブアンドスポーク)
+  - PrivateLink (サービス公開)
+
+メリット:
+  - サービス独立性
+  - セキュリティ境界明確
+  - 障害分離
+```
+
+### 3. ハイブリッドクラウド
+
+```yaml
+オンプレミス接続:
+  AWS Direct Connect:
+    - 専用線接続 (1Gbps/10Gbps)
+    - 低レイテンシー、安定した帯域
+    - Virtual Private Gateway経由
+  
+  VPN接続:
+    - Site-to-Site VPN
+    - バックアップ回線
+    - 暗号化通信
+
+VPC設計:
+  Transit Gateway:
+    - 複数VPC、オンプレミス集約
+    - ルートテーブル分離
+    - スケーラブル
+
+DNS統合:
+  - Route 53 Resolver
+  - 双方向DNS解決
+  - オンプレミスDNSフォワーディング
+```
+
+### 4. マルチリージョン構成
+
+```yaml
+プライマリリージョン (ap-northeast-1):
+  - フル構成VPC
+  - Aurora Global Database (Primary)
+  - アプリケーションスタック
+
+セカンダリリージョン (us-east-1):
+  - スタンバイVPC
+  - Aurora Global Database (Secondary)
+  - 最小構成またはフル構成
+
+グローバルサービス:
+  - Route 53 (Geolocation Routing)
+  - CloudFront (グローバルCDN)
+  - Global Accelerator (最適ルーティング)
+
+DR戦略:
+  - RPO: 1秒
+  - RTO: 1分
+  - 自動フェイルオーバー
+```
+
+### 5. セキュリティ強化パターン
+
+```yaml
+多層防御:
+  境界層:
+    - AWS WAF (Webアプリ保護)
+    - AWS Shield (DDoS対策)
+    - Network Firewall (高度なフィルタリング)
+  
+  ネットワーク層:
+    - プライベートサブネット配置
+    - NACL (ステートレスフィルタ)
+    - セキュリティグループ (ステートフルフィルタ)
+  
+  アクセス制御:
+    - VPC Endpoints (プライベート接続)
+    - PrivateLink (サービス間接続)
+    - Session Manager (踏み台不要)
+
+監視:
+  - VPC Flow Logs
+  - GuardDuty (脅威検出)
+  - Security Hub (一元管理)
+```
+
+### 6. コスト最適化パターン
+
+```yaml
+NAT Gateway削減:
+  - VPC Endpoints使用 (S3, DynamoDB)
+  - PrivateLink (その他サービス)
+  - シングルNAT Gateway (開発環境)
+
+データ転送コスト削減:
+  - VPC Peering (同一リージョン無料)
+  - VPC Endpoints (データ転送料削減)
+  - CloudFront (エッジキャッシング)
+
+リソース共有:
+  - Transit Gateway (複数VPC共有)
+  - Shared Services VPC
+  - AWS Resource Access Manager
+```
+
+### 7. 大規模環境パターン
+
+```yaml
+マルチアカウント戦略:
+  Network Account:
+    - Transit Gateway
+    - Direct Connect
+    - Shared Services
+  
+  Production Accounts:
+    - 事業部ごとにVPC
+    - Transit Gatewayで接続
+  
+  Development Accounts:
+    - 開発チームごとにVPC
+    - 限定的な本番接続
+
+スケーリング:
+  - Transit Gateway (5,000 VPC接続)
+  - VPC Peering (125 Peering/VPC)
+  - PrivateLink (エンドポイント拡張)
+```
+
+### 8. コンテナワークロード
+
+```yaml
+ECS/EKS on VPC:
+  サブネット設計:
+    - コンテナ用サブネット (大きめCIDR)
+    - ENI多数作成のため
+    - /24よりも/20推奨
+  
+  ネットワークモード:
+    - awsvpc (推奨)
+    - タスクごとにENI
+    - セキュリティグループ適用可能
+
+サービスメッシュ:
+  - AWS App Mesh
+  - サービス間通信制御
+  - 可観測性向上
+```
+
+### 9. サーバーレスアーキテクチャ
+
+```yaml
+Lambda in VPC:
+  使用ケース:
+    - RDS/ElastiCacheアクセス
+    - プライベートAPI呼び出し
+  
+  注意点:
+    - コールドスタート遅延
+    - ENI作成時間
+    - Hyperplane ENI (改善済み)
+
+VPC統合:
+  - API Gateway (VPC Link)
+  - AppSync (プライベートデータソース)
+  - Step Functions (VPC内リソース)
+```
+
+### 10. データ分析基盤
+
+```yaml
+Data Lake on VPC:
+  VPC Endpoints:
+    - S3 Gateway Endpoint
+    - Glue Interface Endpoint
+    - Athena Interface Endpoint
+  
+  プライベート接続:
+    - Redshift (プライベートサブネット)
+    - EMR (プライベートサブネット)
+    - QuickSight (VPC接続)
+
+セキュリティ:
+  - データ暗号化 (KMS)
+  - S3バケットポリシー
+  - IAMロールベースアクセス
+```
+
+### まとめ
+
+**VPCアーキテクチャ設計のポイント:**
+
+1. **要件定義**: 可用性、セキュリティ、コスト、スケーラビリティ
+2. **CIDR設計**: 将来の拡張を考慮した適切なサイズ
+3. **マルチAZ**: 高可用性のため最低2AZ
+4. **セキュリティ**: 多層防御、最小権限の原則
+5. **コスト最適化**: VPC Endpoints、適切なNAT Gateway配置
+6. **スケーラビリティ**: Transit Gateway、適切なサブネット設計
+
+適切なVPC設計により、安全で拡張可能なクラウドインフラを構築できます。

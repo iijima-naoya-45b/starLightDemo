@@ -1,0 +1,496 @@
+---
+title: "AWS アーキテクチャパターン 実践ガイド"
+label: "アーキテクチャパターン"
+---
+
+## AWS アーキテクチャパターン 実践ガイド
+
+実務とAWS試験で頻出のアーキテクチャパターンをまとめました。SAA/SAP試験では、これらのパターンを理解し、適切に選択できることが求められます。
+
+### 3層Webアプリケーション
+
+#### 1. 基本構成（高可用性）
+
+```yaml
+構成:
+  Web層:
+    - Application Load Balancer (マルチAZ)
+    - EC2 Auto Scaling Group
+    - CloudFront (CDN)
+  
+  アプリケーション層:
+    - EC2 Auto Scaling Group (プライベートサブネット)
+    - Lambda (サーバーレスオプション)
+  
+  データベース層:
+    - RDS Multi-AZ
+    - ElastiCache (Redis/Memcached)
+    - S3 (静的コンテンツ)
+
+特徴:
+  - 99.99%の可用性
+  - 自動スケーリング
+  - マルチAZ配置
+  - 障害時の自動フェイルオーバー
+```
+
+#### 2. グローバル展開
+
+```yaml
+マルチリージョン構成:
+  プライマリリージョン: ap-northeast-1
+    - Application Stack
+    - Aurora Global Database (Primary)
+    - S3 Cross-Region Replication
+  
+  セカンダリリージョン: us-east-1
+    - Standby Application Stack
+    - Aurora Global Database (Secondary)
+    - S3 Replica
+  
+  グローバルサービス:
+    - Route 53:
+        - Geolocation Routing (地理的ルーティング)
+        - Health Checks (ヘルスチェック)
+        - Failover Routing (フェイルオーバー)
+    - CloudFront:
+        - Origin Group (オリジングループ)
+        - Cache Optimization
+
+RPO: 1秒
+RTO: 1分
+```
+
+### サーバーレスアーキテクチャ
+
+#### 1. イベント駆動型
+
+```yaml
+構成:
+  APIゲートウェイ:
+    - API Gateway (REST/WebSocket)
+    - Cognito (認証)
+  
+  コンピューティング:
+    - Lambda (ビジネスロジック)
+    - Step Functions (ワークフロー)
+  
+  データストア:
+    - DynamoDB (NoSQL)
+    - S3 (オブジェクトストレージ)
+  
+  非同期処理:
+    - EventBridge (イベントバス)
+    - SQS/SNS (メッセージング)
+
+メリット:
+  - 運用不要
+  - 自動スケーリング
+  - 従量課金
+  - 開発速度向上
+```
+
+#### 2. サーバーレスデータパイプライン
+
+```yaml
+データ収集:
+  - API Gateway + Lambda
+  - Kinesis Data Streams
+  - IoT Core
+
+データ処理:
+  - Lambda (リアルタイム処理)
+  - Kinesis Data Firehose (バッチ処理)
+  - Step Functions (複雑なワークフロー)
+
+データストレージ:
+  - S3 (Data Lake)
+  - DynamoDB (高速アクセス)
+  - Redshift (分析)
+
+データ分析:
+  - Athena (クエリ)
+  - QuickSight (可視化)
+  - SageMaker (機械学習)
+```
+
+### マイクロサービスアーキテクチャ
+
+#### 1. コンテナベース
+
+```yaml
+コンテナ基盤:
+  - EKS/ECS
+  - Fargate (サーバーレスコンテナ)
+  - ECR (コンテナレジストリ)
+
+サービスメッシュ:
+  - App Mesh
+  - Service Discovery
+  - Circuit Breaker
+
+APIゲートウェイ:
+  - API Gateway
+  - Application Load Balancer
+  - GraphQL (AppSync)
+
+データストア:
+  - Database per Service
+  - DynamoDB
+  - Aurora Serverless
+  - ElastiCache
+
+メッセージング:
+  - EventBridge (イベント駆動)
+  - SQS (キュー)
+  - SNS (Pub/Sub)
+  - Kinesis (ストリーミング)
+```
+
+#### 2. サービス間通信
+
+```yaml
+同期通信:
+  - REST API (API Gateway)
+  - gRPC (ALB + ECS)
+  - GraphQL (AppSync)
+
+非同期通信:
+  - EventBridge (イベント駆動)
+  - SQS (ポイントツーポイント)
+  - SNS (Pub/Sub)
+
+データ整合性:
+  - Sagaパターン (Step Functions)
+  - イベントソーシング
+  - CQRS
+```
+
+### ハイブリッドクラウド
+
+#### 1. オンプレミス統合
+
+```yaml
+ネットワーク接続:
+  - AWS Direct Connect (専用線)
+    - 1Gbps / 10Gbps
+    - LAG (Link Aggregation Group)
+  
+  - AWS VPN (バックアップ)
+    - Site-to-Site VPN
+    - Client VPN
+
+ハイブリッドサービス:
+  - Storage Gateway:
+      - File Gateway (NFS/SMB)
+      - Volume Gateway (iSCSI)
+      - Tape Gateway (バックアップ)
+  
+  - AWS Outposts:
+      - オンプレミスでAWSサービス実行
+      - 一貫したハイブリッド環境
+  
+  - VMware Cloud on AWS:
+      - VMware環境のクラウド拡張
+      - vSphere互換
+
+データ同期:
+  - DataSync (大容量データ転送)
+  - Database Migration Service
+  - Snow Family (物理転送)
+```
+
+#### 2. エッジコンピューティング
+
+```yaml
+エッジサービス:
+  - CloudFront:
+      - Lambda@Edge
+      - CloudFront Functions
+  
+  - AWS Wavelength:
+      - 5Gネットワーク統合
+      - 超低レイテンシー
+  
+  - AWS Local Zones:
+      - 主要都市近郊
+      - 低レイテンシーアプリ
+
+ユースケース:
+  - IoT処理
+  - ゲーミング
+  - ライブ配信
+  - AR/VR
+```
+
+### ディザスタリカバリ
+
+#### 1. バックアップと復元
+
+```yaml
+構成:
+  - AWS Backup (一元管理)
+  - Cross-Region Backup
+  - Point-in-Time Recovery
+
+特徴:
+  RPO: 1時間〜24時間
+  RTO: 数時間〜数日
+  コスト: 最低
+
+適用:
+  - 非クリティカルシステム
+  - コスト重視
+```
+
+#### 2. パイロットライト
+
+```yaml
+構成:
+  プライマリリージョン:
+    - フル構成
+  
+  DRリージョン:
+    - コアサービスのみ稼働
+    - RDS (最小スペック)
+    - EC2 AMI準備
+    - Auto Scaling設定（Min=0）
+
+災害時:
+  1. RDSスケールアップ
+  2. EC2 Auto Scaling起動
+  3. Route 53フェイルオーバー
+
+特徴:
+  RPO: 数分
+  RTO: 10分〜30分
+  コスト: 中
+
+適用:
+  - ビジネスクリティカル
+  - コストとRTOのバランス
+```
+
+#### 3. ウォームスタンバイ
+
+```yaml
+構成:
+  プライマリリージョン:
+    - フル構成
+  
+  DRリージョン:
+    - 縮小版が常時稼働
+    - RDS (小スペック、レプリケーション)
+    - EC2 (最小台数)
+
+災害時:
+  1. Auto Scalingでスケールアウト
+  2. RDSスケールアップ
+  3. Route 53フェイルオーバー
+
+特徴:
+  RPO: 数秒
+  RTO: 数分
+  コスト: 中〜高
+
+適用:
+  - ミッションクリティカル
+  - 短いRTO要件
+```
+
+#### 4. マルチサイトアクティブ/アクティブ
+
+```yaml
+構成:
+  両リージョン:
+    - フル構成で稼働
+    - Aurora Global Database
+    - DynamoDB Global Tables
+    - S3 Cross-Region Replication
+
+ルーティング:
+  - Route 53 Geolocation Routing
+  - CloudFront (グローバル配信)
+  - Global Accelerator
+
+特徴:
+  RPO: 0秒
+  RTO: 0秒（自動フェイルオーバー）
+  コスト: 最高
+
+適用:
+  - ゼロダウンタイム要件
+  - グローバルサービス
+```
+
+### ビッグデータ処理
+
+#### 1. バッチ処理
+
+```yaml
+データ収集:
+  - S3 (Data Lake)
+  - Database Migration Service
+  - DataSync
+
+データ処理:
+  - AWS Glue (ETL)
+  - EMR (Hadoop/Spark)
+  - Batch (コンテナバッチ)
+
+データウェアハウス:
+  - Redshift
+  - Redshift Spectrum (S3クエリ)
+
+可視化:
+  - QuickSight
+  - Athena + BI Tools
+```
+
+#### 2. リアルタイム処理
+
+```yaml
+ストリーミング:
+  - Kinesis Data Streams
+  - Managed Streaming for Kafka (MSK)
+
+リアルタイム処理:
+  - Kinesis Data Analytics
+  - Lambda (Stream Processing)
+  - Flink on EMR
+
+リアルタイムDB:
+  - DynamoDB (高速書き込み)
+  - OpenSearch (検索・分析)
+  - Timestream (時系列)
+
+通知:
+  - SNS
+  - EventBridge
+  - CloudWatch Alarms
+```
+
+### セキュリティアーキテクチャ
+
+#### 1. 多層防御
+
+```yaml
+ネットワーク層:
+  - VPC (論理的分離)
+  - Security Groups (ステートフル)
+  - Network ACL (ステートレス)
+  - AWS WAF (Webアプリ保護)
+  - AWS Shield (DDoS対策)
+
+アプリケーション層:
+  - Cognito (認証)
+  - API Gateway (認可)
+  - Secrets Manager (シークレット管理)
+
+データ層:
+  - KMS (暗号化キー管理)
+  - S3 Encryption
+  - RDS Encryption
+  - EBS Encryption
+
+監視・検知:
+  - GuardDuty (脅威検出)
+  - Security Hub (一元管理)
+  - CloudTrail (監査ログ)
+  - Config (設定変更追跡)
+```
+
+#### 2. ゼロトラストアーキテクチャ
+
+```yaml
+アイデンティティ:
+  - AWS SSO
+  - IAM Identity Center
+  - MFA強制
+
+ネットワーク:
+  - VPC Endpoints (プライベート接続)
+  - PrivateLink (サービス間接続)
+  - Transit Gateway (セグメント分離)
+
+アクセス制御:
+  - 最小権限の原則
+  - Just-in-Time Access
+  - Session Manager (踏み台不要)
+
+継続的検証:
+  - CloudTrail監視
+  - GuardDuty異常検知
+  - Security Hub自動修復
+```
+
+### コスト最適化パターン
+
+#### 1. スポットインスタンス活用
+
+```yaml
+適用シナリオ:
+  - バッチ処理
+  - コンテナワークロード
+  - CI/CD
+  - ビッグデータ処理
+
+構成:
+  - Auto Scaling Mixed Instances
+  - Spot + On-Demand 混在
+  - Spot Fleet
+  - EKS Spot Instances
+
+節約率: 最大90%
+```
+
+#### 2. リザーブド/Savings Plans
+
+```yaml
+リザーブドインスタンス:
+  - 1年/3年コミット
+  - 最大72%割引
+  - EC2, RDS, ElastiCache等
+
+Savings Plans:
+  - Compute Savings Plans (EC2, Lambda, Fargate)
+  - EC2 Instance Savings Plans
+  - 最大72%割引
+
+推奨:
+  - ベースラインはリザーブド
+  - スパイクはオンデマンド/Spot
+```
+
+### まとめ
+
+**アーキテクチャパターンの選択基準:**
+
+```yaml
+可用性要件:
+  - 99.9%: シングルAZ
+  - 99.99%: マルチAZ
+  - 99.999%: マルチリージョン
+
+パフォーマンス:
+  - 低レイテンシー: CloudFront, ElastiCache, DynamoDB
+  - 高スループット: Kinesis, DynamoDB, Aurora
+
+コスト:
+  - 低コスト: Spot, Lambda, S3
+  - 予測可能: Reserved, Savings Plans
+
+スケーラビリティ:
+  - 自動: Lambda, DynamoDB, Fargate
+  - 手動: EC2, RDS
+```
+
+**SAA/SAP試験での重要ポイント:**
+
+1. **Well-Architected Framework**: 5つの柱（運用、セキュリティ、信頼性、パフォーマンス、コスト）
+2. **DR戦略**: RPO/RTOに応じたパターン選択
+3. **マイクロサービス**: サービス間通信、データ整合性
+4. **ハイブリッド**: Direct Connect、Storage Gateway
+5. **コスト最適化**: Spot、Reserved、Savings Plans
+
+適切なアーキテクチャパターンの選択により、ビジネス要件に最適なシステムを構築できます。

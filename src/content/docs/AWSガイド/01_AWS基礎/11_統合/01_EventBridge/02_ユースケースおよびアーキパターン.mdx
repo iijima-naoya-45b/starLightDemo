@@ -1,0 +1,64 @@
+---
+title: "EventBridge ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## EventBridge ユースケースおよびアーキテクチャパターン
+
+### 1. イベント駆動処理
+
+```yaml
+構成:
+  S3 Upload → EventBridge → Lambda（画像処理）
+
+イベントパターン:
+  source: aws.s3
+  detail-type: Object Created
+  detail.bucket.name: my-bucket
+
+メリット:
+  - 疎結合
+  - フィルタリング
+```
+
+### 2. スケジュール実行
+
+```yaml
+構成:
+  EventBridge（cron） → Lambda（日次バッチ）
+
+スケジュール:
+  cron(0 3 * * ? *)  # 毎日3:00 UTC
+
+用途:
+  - 日次レポート
+  - データバックアップ
+  - クリーンアップ
+```
+
+### 3. クロスアカウント統合
+
+```yaml
+構成:
+  アカウントA（ソース）→ EventBridge
+    → アカウントB（ターゲット）
+
+用途:
+  - 組織全体のイベント集約
+  - セキュリティイベント監視
+```
+
+### 4. SaaS統合
+
+```yaml
+構成:
+  Zendesk → EventBridge → Lambda → Slack通知
+
+イベント:
+  - チケット作成
+  - ステータス変更
+
+自動化:
+  - 通知
+  - ワークフロー起動
+```

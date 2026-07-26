@@ -1,0 +1,95 @@
+---
+title: "ALB/NLB ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## ALB/NLB ユースケースおよびアーキテクチャパターン
+
+### 1. Webアプリ（ALB）
+
+```yaml
+構成:
+  Internet → ALB → Auto Scaling Group（EC2）
+  
+設定:
+  - HTTPS（ACM証明書）
+  - ヘルスチェック: /health
+  - Sticky Session: 有効
+
+メリット:
+  - 負荷分散
+  - SSL終端
+  - マルチAZ高可用性
+```
+
+### 2. マイクロサービス（ALB）
+
+```yaml
+構成:
+  ALB → パスベースルーティング
+    → /api/users → Users Service
+    → /api/orders → Orders Service
+    → /api/products → Products Service
+
+メリット:
+  - 単一エンドポイント
+  - サービス独立デプロイ
+```
+
+### 3. Blue/Greenデプロイ（ALB）
+
+```yaml
+構成:
+  ALB
+    → Blue（90%）
+    → Green（10%）
+
+手順:
+  1. Greenデプロイ
+  2. トラフィック10%（検証）
+  3. トラフィック100%（完全移行）
+  4. Blue削除
+```
+
+### 4. 高パフォーマンスTCP（NLB）
+
+```yaml
+構成:
+  Internet → NLB → EC2（ゲームサーバー）
+  
+用途:
+  - オンラインゲーム
+  - 金融取引システム
+  - IoTデータ収集
+
+メリット:
+  - 超低レイテンシー
+  - 静的IP
+  - 数百万接続対応
+```
+
+### 5. NLB + ALB組み合わせ
+
+```yaml
+構成:
+  Internet → NLB（静的IP） → ALB → EC2
+  
+用途:
+  - ホワイトリスト必要（静的IP）
+  - ALBの機能も必要（パスルーティング）
+```
+
+### 6. Lambda統合（ALB）
+
+```yaml
+構成:
+  ALB → Lambda関数
+  
+用途:
+  - サーバーレスHTTPエンドポイント
+  - API Gateway代替
+
+メリット:
+  - VPC内配置
+  - ALBの機能活用
+```

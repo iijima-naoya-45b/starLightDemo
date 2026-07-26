@@ -1,0 +1,70 @@
+---
+title: "Cognito ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## Cognito ユースケースおよびアーキテクチャパターン
+
+### 1. Webアプリ認証
+
+```yaml
+構成:
+  ブラウザ → Cognito User Pool → API Gateway → Lambda
+
+フロー:
+  1. ユーザーサインアップ
+  2. Email確認
+  3. ログイン → JWT取得
+  4. API GatewayにJWT送信
+  5. 自動検証 → Lambda実行
+
+メリット:
+  - ユーザー管理不要
+  - JWT自動検証
+  - セキュア
+```
+
+### 2. モバイルアプリ（AWS リソースアクセス）
+
+```yaml
+構成:
+  Mobile App → User Pool → Identity Pool → S3/DynamoDB
+
+フロー:
+  1. User Poolでログイン → JWT
+  2. Identity PoolでAWS認証情報取得
+  3. S3/DynamoDB直接アクセス
+
+メリット:
+  - サーバーレス
+  - 直接アクセス
+  - IAMロール自動割り当て
+```
+
+### 3. ソーシャルログイン
+
+```yaml
+構成:
+  App → Google/Facebook → Cognito → AWS
+
+設定:
+  - ソーシャルプロバイダー登録
+  - Cognito統合
+  - 属性マッピング
+
+メリット:
+  - 簡単ログイン
+  - パスワード管理不要
+```
+
+### 4. エンタープライズID連携
+
+```yaml
+構成:
+  企業 → SAML/OIDC → Cognito → AWS
+
+用途:
+  - Azure AD統合
+  - Okta統合
+  - シングルサインオン
+```

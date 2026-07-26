@@ -1,0 +1,83 @@
+---
+title: "CloudFront 実務Tips"
+label: "実務Tips"
+---
+
+## CloudFront 実務Tips
+
+### AWS CLI
+
+```bash
+# ディストリビューション作成
+aws cloudfront create-distribution \
+  --origin-domain-name my-bucket.s3.amazonaws.com \
+  --default-root-object index.html
+
+# ディストリビューション一覧
+aws cloudfront list-distributions
+
+# キャッシュ無効化
+aws cloudfront create-invalidation \
+  --distribution-id E1234567890ABC \
+  --paths "/*"
+
+# 特定パス無効化
+aws cloudfront create-invalidation \
+  --distribution-id E1234567890ABC \
+  --paths "/images/*" "/css/style.css"
+```
+
+### S3 + CloudFront設定
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CloudFrontAccess",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity E1234567890ABC"
+      },
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::my-bucket/*"
+    }
+  ]
+}
+```
+
+### ベストプラクティス
+
+```yaml
+パフォーマンス:
+  - 適切なTTL設定
+  - Gzip圧縮有効化
+  - HTTP/2、HTTP/3有効化
+  - バージョニング（キャッシュバスティング）
+
+セキュリティ:
+  - HTTPS必須
+  - WAF統合
+  - OAI使用（S3オリジン）
+  - Signed URL（プライベートコンテンツ）
+
+コスト最適化:
+  - キャッシュ最大化
+  - Invalidation最小化
+  - プライスクラス選択
+```
+
+### トラブルシューティング
+
+```bash
+# ディストリビューション状態確認
+aws cloudfront get-distribution \
+  --id E1234567890ABC
+
+# キャッシュ統計
+aws cloudfront get-distribution-statistics \
+  --distribution-id E1234567890ABC
+
+# CloudFrontログ（S3）
+aws s3 ls s3://my-cloudfront-logs/
+```

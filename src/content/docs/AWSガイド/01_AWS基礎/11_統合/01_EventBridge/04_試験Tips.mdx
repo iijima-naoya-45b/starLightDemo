@@ -1,0 +1,119 @@
+---
+title: "EventBridge 試験Tips"
+label: "試験Tips"
+---
+
+## EventBridge 試験Tips (SAA/SAP)
+
+### 頻出トピック
+
+#### 1. EventBridge vs CloudWatch Events
+
+```yaml
+EventBridge（推奨）:
+  - CloudWatch Eventsの進化版
+  - SaaS統合
+  - カスタムイベントバス
+  - スキーマレジストリ
+
+CloudWatch Events（レガシー）:
+  - 基本機能のみ
+  - AWS サービスのみ
+
+頻出:
+  Q: イベント駆動アーキテクチャ
+  A: EventBridge（CloudWatch Eventsも正解）
+```
+
+#### 2. EventBridge vs SNS
+
+```yaml
+EventBridge:
+  - イベントルーティング
+  - フィルタリング
+  - 複数ターゲット（5個/ルール）
+  - スケジュール
+
+SNS:
+  - Pub/Sub
+  - 即時配信
+  - 多数サブスクライバー
+
+使い分け:
+  - 複雑ルーティング → EventBridge
+  - シンプル通知 → SNS
+```
+
+#### 3. スケジュール実行
+
+```yaml
+cron式:
+  - cron(0 12 * * ? *)
+  - 詳細制御
+
+rate式:
+  - rate(5 minutes)
+  - シンプル
+
+頻出:
+  Q: 日次バッチ実行
+  A: EventBridge cron → Lambda
+```
+
+### 頻出シナリオ
+
+#### シナリオ1: イベント駆動
+
+```
+要件: S3アップロード時に自動処理
+解答: S3 → EventBridge → Lambda
+
+ポイント:
+✓ イベントパターンフィルタリング
+✓ 疎結合
+✓ 拡張性
+```
+
+#### シナリオ2: スケジュール実行
+
+```
+要件: 毎日3:00にバッチ処理
+解答: EventBridge cron → Lambda
+
+ポイント:
+✓ cron(0 3 * * ? *)
+✓ サーバーレス
+```
+
+### よくある間違い
+
+```yaml
+× 誤り: EventBridgeで大量サブスクライバー
+○ 正解: SNS使用（EventBridgeは5ターゲット/ルール）
+
+× 誤り: EventBridgeでメッセージキュー
+○ 正解: SQS使用
+```
+
+### SAA試験重要ポイント
+
+```yaml
+基本:
+  ☐ EventBridge用途
+  ☐ イベントパターン
+  ☐ スケジュール（cron）
+
+統合:
+  ☐ Lambda統合
+  ☐ Step Functions統合
+```
+
+### SAP試験重要ポイント
+
+```yaml
+高度:
+  ☐ クロスアカウント
+  ☐ SaaS統合
+  ☐ スキーマレジストリ
+  ☐ アーカイブ・リプレイ
+```

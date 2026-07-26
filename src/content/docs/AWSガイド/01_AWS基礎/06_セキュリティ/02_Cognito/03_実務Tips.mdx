@@ -1,0 +1,97 @@
+---
+title: "Cognito 実務Tips"
+label: "実務Tips"
+---
+
+## Cognito 実務Tips
+
+### AWS CLI
+
+```bash
+# User Pool作成
+aws cognito-idp create-user-pool \
+  --pool-name my-user-pool \
+  --policies "PasswordPolicy={MinimumLength=8,RequireUppercase=true,RequireLowercase=true,RequireNumbers=true,RequireSymbols=true}" \
+  --auto-verified-attributes email \
+  --mfa-configuration OPTIONAL
+
+# App Client作成
+aws cognito-idp create-user-pool-client \
+  --user-pool-id us-east-1_xxxxx \
+  --client-name my-app \
+  --generate-secret
+
+# ユーザー作成
+aws cognito-idp admin-create-user \
+  --user-pool-id us-east-1_xxxxx \
+  --username user@example.com \
+  --user-attributes Name=email,Value=user@example.com \
+  --temporary-password TempPass123!
+
+# Identity Pool作成
+aws cognito-identity create-identity-pool \
+  --identity-pool-name my-identity-pool \
+  --allow-unauthenticated-identities \
+  --cognito-identity-providers \
+    ProviderName=cognito-idp.us-east-1.amazonaws.com/us-east-1_xxxxx,ClientId=xxxxx
+```
+
+### JavaScript SDK例
+
+```javascript
+import { CognitoUserPool, CognitoUser, AuthenticationDetails } from 'amazon-cognito-identity-js';
+
+// User Pool設定
+const poolData = {
+  UserPoolId: 'us-east-1_xxxxx',
+  ClientId: 'xxxxx'
+};
+const userPool = new CognitoUserPool(poolData);
+
+// サインアップ
+userPool.signUp('user@example.com', 'Password123!', [], null, (err, result) => {
+  if (err) {
+    console.error(err);
+    return;
+  }
+  console.log('User:', result.user);
+});
+
+// ログイン
+const authenticationData = {
+  Username: 'user@example.com',
+  Password: 'Password123!'
+};
+const authenticationDetails = new AuthenticationDetails(authenticationData);
+
+const userData = {
+  Username: 'user@example.com',
+  Pool: userPool
+};
+const cognitoUser = new CognitoUser(userData);
+
+cognitoUser.authenticateUser(authenticationDetails, {
+  onSuccess: (result) => {
+    const accessToken = result.getAccessToken().getJwtToken();
+    console.log('Access Token:', accessToken);
+  },
+  onFailure: (err) => {
+    console.error(err);
+  }
+});
+```
+
+### ベストプラクティス
+
+```yaml
+セキュリティ:
+  - MFA有効化
+  - Advanced Security
+  - パスワードポリシー強化
+  - トークン検証
+
+運用:
+  - Lambda Trigger活用
+  - CloudWatch Logs監視
+  - バックアップ（User Export）
+```

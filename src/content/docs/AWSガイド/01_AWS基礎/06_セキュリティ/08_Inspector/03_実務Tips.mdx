@@ -1,0 +1,40 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## AWS CLI
+
+```bash
+# Inspector有効化
+aws inspector2 enable
+
+# Finding一覧
+aws inspector2 list-findings
+
+# 抑制ルール作成
+aws inspector2 create-filter \
+  --action SUPPRESS \
+  --filter-criteria file://filter.json
+```
+
+## ベストプラクティス
+
+```yaml
+運用:
+  - 全アカウント有効化
+  - Critical/High優先対応
+  - 抑制ルール活用
+
+統合:
+  - Security Hub連携
+  - EventBridge自動化
+  - パッチ管理統合
+```
+
+## まとめ
+
+**重要ポイント:**
+- 自動継続スキャン
+- CVE即座検出
+- Security Hub統合

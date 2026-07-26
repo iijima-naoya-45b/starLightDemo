@@ -1,0 +1,47 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## AWS CLI
+
+```bash
+# 組織作成
+aws organizations create-organization
+
+# アカウント作成
+aws organizations create-account \
+  --email account@example.com \
+  --account-name "Production Account"
+
+# OU作成
+aws organizations create-organizational-unit \
+  --parent-id r-xxxx \
+  --name "Production"
+
+# SCP適用
+aws organizations attach-policy \
+  --policy-id p-xxxx \
+  --target-id ou-xxxx
+```
+
+## ベストプラクティス
+
+```yaml
+設計:
+  - OU階層は浅く
+  - アカウント分離明確
+  - SCP段階適用
+
+運用:
+  - アカウント命名規則
+  - タグ戦略
+  - コスト配分
+```
+
+## まとめ
+
+**重要ポイント:**
+- SCP で統制
+- OU で階層管理
+- 一括請求でコスト削減

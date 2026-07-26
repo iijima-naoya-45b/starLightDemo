@@ -1,0 +1,92 @@
+---
+title: "Route 53 実務Tips"
+label: "実務Tips"
+---
+
+## Route 53 実務Tips
+
+### AWS CLI
+
+```bash
+# ホストゾーン作成
+aws route53 create-hosted-zone \
+  --name example.com \
+  --caller-reference $(date +%s)
+
+# Aレコード作成
+aws route53 change-resource-record-sets \
+  --hosted-zone-id Z1234567890ABC \
+  --change-batch '{
+    "Changes": [{
+      "Action": "CREATE",
+      "ResourceRecordSet": {
+        "Name": "www.example.com",
+        "Type": "A",
+        "TTL": 300,
+        "ResourceRecords": [{"Value": "1.2.3.4"}]
+      }
+    }]
+  }'
+
+# Aliasレコード作成（ALB）
+aws route53 change-resource-record-sets \
+  --hosted-zone-id Z1234567890ABC \
+  --change-batch '{
+    "Changes": [{
+      "Action": "CREATE",
+      "ResourceRecordSet": {
+        "Name": "app.example.com",
+        "Type": "A",
+        "AliasTarget": {
+          "HostedZoneId": "Z14GRHDCWA56QT",
+          "DNSName": "my-alb-123456789.ap-northeast-1.elb.amazonaws.com",
+          "EvaluateTargetHealth": true
+        }
+      }
+    }]
+  }'
+
+# ヘルスチェック作成
+aws route53 create-health-check \
+  --health-check-config \
+    IPAddress=1.2.3.4,\
+Port=443,\
+Type=HTTPS,\
+ResourcePath=/health,\
+RequestInterval=30,\
+FailureThreshold=3
+```
+
+### ベストプラクティス
+
+```yaml
+パフォーマンス:
+  - Aliasレコード使用（無料、ヘルスチェック対応）
+  - 適切なTTL設定
+  - レイテンシーベースルーティング（グローバル）
+
+可用性:
+  - ヘルスチェック設定
+  - フェイルオーバールーティング
+  - 複数リージョン展開
+
+コスト最適化:
+  - Aliasレコード（クエリ無料）
+  - 不要なヘルスチェック削除
+```
+
+### トラブルシューティング
+
+```bash
+# DNS解決確認
+dig app.example.com
+nslookup app.example.com
+
+# ヘルスチェック状態確認
+aws route53 get-health-check-status \
+  --health-check-id abc123
+
+# レコード確認
+aws route53 list-resource-record-sets \
+  --hosted-zone-id Z1234567890ABC
+```

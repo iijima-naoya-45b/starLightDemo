@@ -1,0 +1,122 @@
+---
+title: "Cognito 試験Tips"
+label: "試験Tips"
+---
+
+## Cognito 試験Tips (SAA/SAP)
+
+### 頻出トピック
+
+#### 1. User Pools vs Identity Pools
+
+```yaml
+User Pools:
+  - ユーザーディレクトリ
+  - サインアップ/サインイン
+  - JWT発行
+  - 用途: ユーザー認証
+
+Identity Pools:
+  - AWS認証情報取得
+  - 一時クレデンシャル
+  - IAMロール
+  - 用途: AWSリソースアクセス
+
+頻出:
+  Q: ユーザー認証のみ
+  A: User Pools
+
+  Q: S3直接アクセス
+  A: User Pools + Identity Pools
+```
+
+#### 2. Cognito vs IAM
+
+```yaml
+Cognito:
+  - アプリユーザー認証
+  - 外部ユーザー
+  - 大量ユーザー
+
+IAM:
+  - AWSアカウント管理
+  - 社内ユーザー
+  - 少数ユーザー
+```
+
+#### 3. Lambda Triggers
+
+```yaml
+Pre Sign-up:
+  - カスタムバリデーション
+  - ドメイン制限
+
+Post Confirmation:
+  - Welcome Email
+  - DB登録
+
+Pre Authentication:
+  - IP制限
+  - カスタム認証
+```
+
+### 頻出シナリオ
+
+#### シナリオ1: モバイルアプリ認証
+
+```
+要件: モバイルアプリユーザー認証、S3アクセス
+解答: Cognito User Pools + Identity Pools
+
+ポイント:
+✓ User Pools: 認証
+✓ Identity Pools: S3アクセス
+✓ IAMロール自動割り当て
+```
+
+#### シナリオ2: ソーシャルログイン
+
+```
+要件: Google/Facebookログイン
+解答: Cognito User Pools + ソーシャルプロバイダー
+
+ポイント:
+✓ 簡単統合
+✓ 属性マッピング
+```
+
+### よくある間違い
+
+```yaml
+× 誤り: IAMユーザーでアプリユーザー管理
+○ 正解: Cognito User Pools
+
+× 誤り: User Poolsのみでs3アクセス
+○ 正解: Identity Pools必要
+
+× 誤り: Identity Poolsで認証
+○ 正解: User Poolsで認証、Identity PoolsでAWS認証情報
+```
+
+### SAA試験重要ポイント
+
+```yaml
+基本:
+  ☐ User Pools vs Identity Pools
+  ☐ JWT
+  ☐ ソーシャルログイン
+
+統合:
+  ☐ API Gateway統合
+  ☐ S3アクセス
+```
+
+### SAP試験重要ポイント
+
+```yaml
+高度:
+  ☐ Lambda Triggers詳細
+  ☐ SAML/OIDC統合
+  ☐ Advanced Security
+  ☐ カスタム認証フロー
+```

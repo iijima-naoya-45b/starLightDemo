@@ -1,0 +1,72 @@
+---
+title: "Lambda ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## Lambda ユースケースおよびアーキテクチャパターン
+
+### 1. REST API（API Gateway + Lambda）
+
+```yaml
+構成:
+  API Gateway → Lambda → DynamoDB
+  
+用途:
+  - マイクロサービスAPI
+  - モバイルバックエンド
+  - SPA バックエンド
+  
+メリット:
+  - スケーラブル
+  - 低コスト
+  - サーバー管理不要
+```
+
+### 2. 画像処理（S3トリガー）
+
+```yaml
+構成:
+  S3 Upload → Lambda → 画像リサイズ → S3保存
+  
+処理:
+  1. 元画像アップロード
+  2. Lambda自動起動
+  3. サムネイル生成
+  4. 別S3バケット保存
+```
+
+### 3. データ処理（ストリーム）
+
+```yaml
+構成:
+  Kinesis/DynamoDB Streams → Lambda → 集計
+  
+用途:
+  - リアルタイム集計
+  - ETL処理
+  - ログ分析
+```
+
+### 4. スケジュール実行
+
+```yaml
+構成:
+  EventBridge cron → Lambda → バッチ処理
+  
+用途:
+  - 日次レポート
+  - データクリーンアップ
+  - ヘルスチェック
+```
+
+### 5. Step Functions統合
+
+```yaml
+構成:
+  Step Functions → 複数Lambda → ワークフロー
+  
+用途:
+  - 注文処理
+  - 承認フロー
+  - ETLパイプライン
+```

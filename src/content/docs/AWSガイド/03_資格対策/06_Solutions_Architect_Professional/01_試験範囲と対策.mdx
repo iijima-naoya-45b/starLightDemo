@@ -1,0 +1,526 @@
+---
+title: "Solutions Architect Professional 試験範囲と対策"
+label: "Solutions Architect Professional 試験範囲と対策"
+---
+
+## Solutions Architect Professional 試験範囲と対策
+
+AWS Solutions Architect Professional (SAP-C02) は、上級レベルのAWS認定試験です。複雑なエンタープライズアーキテクチャの設計・実装能力が求められます。
+
+### 試験概要
+
+#### 試験の基本情報
+
+- **試験時間**: 180分
+- **問題数**: 75問
+- **合格ライン**: 750点/1000点
+- **試験形式**: 選択問題、複数回答問題
+- **試験言語**: 日本語、英語
+- **受験料**: $300 USD
+
+#### 推奨される経験
+
+- **AWS実務経験**: 2年以上
+- **クラウドアーキテクチャ経験**: 複数のプロジェクト
+- **マルチアカウント運用経験**: AWS Organizations、Control Tower
+- **大規模システム設計**: 100以上のリソース管理
+
+### 試験範囲の詳細
+
+#### 1. 複雑な組織向けの設計（26%）
+
+**主要トピック:**
+
+- AWS Organizationsによるマルチアカウント戦略
+- AWS Control Towerによるガバナンス
+- AWS Service Catalogによるサービス提供
+- クロスアカウントアクセスとIAM設計
+- コスト配分とタグ付け戦略
+- リソースシェアリング（AWS RAM）
+
+**よく出る問題例:**
+
+```yaml
+# シナリオ: 複数事業部を持つ企業の組織構造設計
+要件:
+  - 100以上のAWSアカウント管理
+  - 事業部ごとのコスト可視化
+  - セキュリティポリシーの一元管理
+  - 開発/本番環境の分離
+
+推奨アーキテクチャ:
+  Organizations:
+    - Root OU
+    - Security OU (ログ集約、セキュリティ監査)
+    - Infrastructure OU (共有サービス)
+    - Production OU (本番環境)
+    - Development OU (開発環境)
+  
+  実装ポイント:
+    - SCPs (Service Control Policies)でOU単位の権限制御
+    - AWS Control Towerでアカウントプロビジョニング自動化
+    - Cost Allocation Tagsで事業部別コスト配分
+    - AWS RAMでVPCやTransit Gatewayを共有
+    - AWS SSOで統合認証
+```
+
+**重要サービス:**
+
+- **AWS Organizations**: マルチアカウント管理の基盤
+- **AWS Control Tower**: ガバナンスの自動化
+- **AWS SSO (IAM Identity Center)**: 統合認証
+- **AWS Service Catalog**: 承認済みサービスの提供
+- **AWS Resource Access Manager (RAM)**: リソース共有
+
+#### 2. 新しいソリューションの設計（29%）
+
+**主要トピック:**
+
+- ハイブリッドクラウドアーキテクチャ
+- マイクロサービスアーキテクチャ
+- イベント駆動アーキテクチャ
+- サーバーレスアーキテクチャ
+- コンテナオーケストレーション
+- データレイクとビッグデータ
+
+**よく出る問題例:**
+
+```yaml
+# シナリオ1: ハイブリッドクラウド設計
+要件:
+  - オンプレミスとAWSの統合
+  - 低遅延接続（1Gbps以上）
+  - Active Directory統合
+  - ファイルサーバーのクラウド移行
+
+推奨アーキテクチャ:
+  接続:
+    - AWS Direct Connect (専用線接続)
+    - AWS Transit Gateway (ハブアンドスポーク)
+    - AWS VPN (バックアップ回線)
+  
+  認証:
+    - AWS Directory Service (Managed AD)
+    - AWS SSO連携
+  
+  ストレージ:
+    - AWS Storage Gateway (File Gateway)
+    - Amazon FSx for Windows File Server
+    - AWS DataSync (データ転送)
+
+# シナリオ2: マイクロサービスアーキテクチャ
+要件:
+  - サービス間疎結合
+  - 独立したデプロイ
+  - サービスディスカバリ
+  - 分散トレーシング
+
+推奨アーキテクチャ:
+  コンテナ基盤:
+    - Amazon EKS (Kubernetes)
+    - AWS App Mesh (サービスメッシュ)
+    - Amazon ECR (コンテナレジストリ)
+  
+  通信:
+    - Amazon EventBridge (イベントバス)
+    - Amazon SQS/SNS (メッセージキュー)
+    - AWS AppSync (GraphQL API)
+  
+  監視:
+    - AWS X-Ray (分散トレーシング)
+    - Amazon CloudWatch ServiceLens
+    - AWS CloudTrail (監査ログ)
+```
+
+**重要サービス:**
+
+- **ネットワーク**: Direct Connect, Transit Gateway, PrivateLink
+- **コンテナ**: EKS, ECS, Fargate, App Mesh
+- **サーバーレス**: Lambda, Step Functions, EventBridge
+- **データ**: Kinesis, Glue, Athena, Lake Formation
+
+#### 3. 既存ソリューションの継続的な改善（25%）
+
+**主要トピック:**
+
+- パフォーマンス最適化
+- コスト最適化
+- セキュリティ改善
+- 運用効率化
+- 可用性向上
+
+**よく出る問題例:**
+
+```yaml
+# シナリオ1: パフォーマンス最適化
+現状の課題:
+  - データベースの読み取り遅延
+  - APIレスポンスタイムの増加
+  - グローバルユーザーからの遅延報告
+
+最適化案:
+  データベース:
+    - Amazon Aurora Global Database (グローバル読み取りレプリカ)
+    - Amazon ElastiCache (Redis/Memcached)
+    - DynamoDB Global Tables (低遅延グローバルアクセス)
+  
+  API:
+    - Amazon CloudFront (エッジキャッシング)
+    - AWS Global Accelerator (最適ルーティング)
+    - Lambda@Edge (エッジコンピューティング)
+  
+  モニタリング:
+    - CloudWatch Contributor Insights (ボトルネック特定)
+    - AWS X-Ray (レイテンシー分析)
+    - Amazon RDS Performance Insights
+
+# シナリオ2: コスト最適化
+現状の課題:
+  - EC2インスタンスの過剰プロビジョニング
+  - S3ストレージコストの増加
+  - データ転送コストの高騰
+
+最適化案:
+  コンピュート:
+    - AWS Compute Optimizer (推奨サイズ分析)
+    - Reserved Instances / Savings Plans
+    - Spot Instances (バッチ処理)
+    - Auto Scaling (需要に応じた調整)
+  
+  ストレージ:
+    - S3 Intelligent-Tiering (自動階層化)
+    - S3 Lifecycle Policies (古いデータの削除/Glacier移行)
+    - EBS Snapshot Lifecycle (スナップショット管理)
+  
+  データ転送:
+    - CloudFront (データ転送料削減)
+    - VPC Endpoints (プライベート接続)
+    - AWS DataSync (効率的な大容量転送)
+```
+
+**重要な最適化手法:**
+
+- **コスト**: Cost Explorer, Trusted Advisor, Compute Optimizer
+- **パフォーマンス**: CloudWatch Insights, X-Ray, RDS Performance Insights
+- **セキュリティ**: Security Hub, GuardDuty, Macie
+- **運用**: Systems Manager, OpsCenter, Service Catalog
+
+#### 4. ワークロードの移行と最適化（20%）
+
+**主要トピック:**
+
+- 大規模移行戦略（6R）
+- データベース移行
+- ストレージ移行
+- アプリケーション最適化
+- ディザスタリカバリ
+
+**よく出る問題例:**
+
+```yaml
+# シナリオ: 大規模データベース移行
+要件:
+  - オンプレミスOracle DBをAWSに移行
+  - ダウンタイム最小化（4時間以内）
+  - データ整合性の保証
+  - ロールバック戦略
+
+推奨移行手順:
+  フェーズ1: 準備
+    - AWS Schema Conversion Tool (スキーマ変換)
+    - AWS DMS (Database Migration Service)セットアップ
+    - ターゲット: Aurora PostgreSQL Compatible
+  
+  フェーズ2: 初期同期
+    - DMSでFull Loadモード実行
+    - 初期データ移行（数日〜数週間）
+  
+  フェーズ3: CDC（変更データキャプチャ）
+    - DMSでCDCモード有効化
+    - リアルタイム同期開始
+    - レプリケーション遅延監視
+  
+  フェーズ4: カットオーバー
+    - アプリケーション停止
+    - 最終データ同期確認
+    - 接続文字列切り替え
+    - 動作確認
+  
+  フェーズ5: ロールバック対策
+    - オンプレミスDBを数日間保持
+    - 逆方向DMS設定準備
+    - スナップショット取得
+
+# 6R戦略の選択
+Rehost (Lift & Shift):
+  - 最速の移行
+  - 最小限の変更
+  - EC2 + EBS
+  
+Replatform (Lift, Tinker & Shift):
+  - 一部最適化
+  - RDS, ECS等のマネージドサービス活用
+  
+Repurchase (Drop & Shop):
+  - SaaS製品への移行
+  - カスタムアプリから既製品へ
+  
+Refactor (Re-architect):
+  - クラウドネイティブ化
+  - Lambda, DynamoDB, Fargate等
+  
+Retire:
+  - 不要なアプリケーションの廃止
+  
+Retain:
+  - オンプレミスに残す
+```
+
+**重要サービス:**
+
+- **移行**: AWS MGN, DMS, DataSync, Snow Family
+- **評価**: AWS Migration Hub, Application Discovery Service
+- **計画**: AWS Migration Evaluator
+
+### 試験対策のポイント
+
+#### 1. ケーススタディの理解
+
+SAP試験は長文のシナリオ問題が多く出題されます。
+
+**読解のコツ:**
+
+```
+問題文の構造:
+1. 企業背景（業種、規模、現状システム）
+2. 技術的要件（パフォーマンス、可用性、セキュリティ）
+3. ビジネス要件（コスト、納期、コンプライアンス）
+4. 制約条件（既存システム、スキル、予算）
+
+重要なキーワード:
+- "最小限のダウンタイム" → マルチAZ, Blue/Green
+- "コスト最適化" → Spot, Reserved, Savings Plans
+- "即座にスケール" → Auto Scaling, DynamoDB
+- "グローバル展開" → CloudFront, Global Accelerator
+- "データ主権" → リージョン制限, AWS Outposts
+```
+
+#### 2. サービスの深い理解
+
+**主要サービスの詳細理解が必要:**
+
+```yaml
+EC2:
+  - 全インスタンスタイプの特徴（Compute/Memory/Storage Optimized）
+  - プレイスメントグループ（Cluster/Partition/Spread）
+  - Nitroシステムの利点
+  - Dedicated Hosts vs Dedicated Instances
+
+VPC:
+  - Transit Gateway（ハブアンドスポーク）
+  - PrivateLink（サービスエンドポイント）
+  - VPN（Site-to-Site, Client VPN）
+  - Direct Connect（専用線、LAG、VIF）
+
+RDS/Aurora:
+  - Multi-AZ vs Read Replicas
+  - Aurora Global Database
+  - Aurora Serverless v2
+  - Database Proxy
+
+Lambda:
+  - VPC統合
+  - Lambda@Edge vs CloudFront Functions
+  - Step Functionsとの連携
+  - EventBridge統合
+
+ECS/EKS:
+  - Fargateのユースケース
+  - サービスディスカバリ
+  - App Mesh統合
+  - Secrets Manager連携
+```
+
+#### 3. 複数解の比較
+
+SAP試験では「最適な」解を選ぶ必要があります。
+
+**比較基準:**
+
+```yaml
+コスト vs パフォーマンス:
+  低コスト優先:
+    - Spot Instances
+    - S3 Standard-IA, Glacier
+    - Lambda
+  
+  パフォーマンス優先:
+    - Provisioned IOPS
+    - ElastiCache
+    - CloudFront
+    - Aurora
+
+可用性 vs 複雑性:
+  高可用性:
+    - マルチリージョン
+    - Global Accelerator
+    - Route 53 Failover
+  
+  シンプル:
+    - シングルリージョン
+    - マルチAZ
+    - Auto Scaling
+
+オンプレミス統合:
+  セキュア:
+    - Direct Connect
+    - PrivateLink
+    - VPN
+  
+  コスト重視:
+    - VPN over Internet
+    - Storage Gateway
+```
+
+### 実践的な学習方法
+
+#### 1. ハンズオンラボ
+
+**必須の実践項目:**
+
+```bash
+# マルチアカウント環境構築
+aws organizations create-organization
+aws organizations create-account --email dev@example.com --account-name "Dev Account"
+
+# Transit Gateway構築
+aws ec2 create-transit-gateway --description "Hub VPC"
+aws ec2 create-transit-gateway-vpc-attachment --transit-gateway-id tgw-xxx --vpc-id vpc-xxx
+
+# Direct Connect設定
+aws directconnect create-connection --location "Tokyo" --bandwidth 1Gbps
+
+# EKSクラスタ構築
+eksctl create cluster --name production --region ap-northeast-1 --nodegroup-name standard-workers
+
+# Step Functions + Lambda
+aws stepfunctions create-state-machine --definition file://workflow.json
+```
+
+#### 2. AWS Well-Architected Framework
+
+**5つの柱の理解:**
+
+1. **運用上の優秀性**
+   - Infrastructure as Code（CloudFormation, CDK）
+   - CI/CDパイプライン（CodePipeline）
+   - 自動化（Systems Manager）
+
+2. **セキュリティ**
+   - 多層防御
+   - IAM最小権限
+   - データ暗号化（KMS）
+
+3. **信頼性**
+   - マルチAZ/リージョン
+   - 自動復旧
+   - バックアップ戦略
+
+4. **パフォーマンス効率**
+   - 適切なサービス選択
+   - スケーラビリティ
+   - モニタリング
+
+5. **コスト最適化**
+   - 適切なサイジング
+   - リザーブドインスタンス
+   - 未使用リソースの削除
+
+#### 3. ホワイトペーパーの読み込み
+
+**必読ホワイトペーパー:**
+
+- AWS Well-Architected Framework
+- AWS Security Best Practices
+- Architecting for the Cloud: AWS Best Practices
+- AWS Migration Whitepaper
+- Hybrid Cloud with AWS
+
+### 頻出問題パターン
+
+#### パターン1: マルチリージョン高可用性
+
+```yaml
+要件:
+  - グローバルユーザー
+  - RPO: 1時間
+  - RTO: 15分
+  - 自動フェイルオーバー
+
+解答:
+  - Route 53 Health Checks + Failover Routing
+  - Aurora Global Database
+  - S3 Cross-Region Replication
+  - CloudFront (グローバル配信)
+  - AWS Backup (クロスリージョンバックアップ)
+```
+
+#### パターン2: ハイブリッドクラウド統合
+
+```yaml
+要件:
+  - オンプレミス統合
+  - Active Directory連携
+  - 低遅延（10ms以下）
+  - プライベート接続
+
+解答:
+  - AWS Direct Connect (専用線)
+  - AWS Directory Service (Managed AD)
+  - AWS Storage Gateway (ファイル共有)
+  - VPC Endpoints (プライベートアクセス)
+```
+
+#### パターン3: 大規模データ処理
+
+```yaml
+要件:
+  - ペタバイト級データ
+  - リアルタイム分析
+  - 機械学習活用
+  - コスト最適化
+
+解答:
+  - Amazon S3 (Data Lake)
+  - AWS Glue (ETL)
+  - Amazon Athena (クエリ)
+  - Amazon Kinesis (ストリーミング)
+  - Amazon SageMaker (ML)
+  - S3 Intelligent-Tiering (コスト削減)
+```
+
+### まとめ
+
+**SAP試験合格のための重要ポイント:**
+
+1. **実務経験**: 2年以上のAWS実践経験が理想
+2. **深い理解**: サービスの仕様、制限、ユースケースの把握
+3. **比較思考**: 複数のアーキテクチャオプションを比較検討
+4. **全体最適**: コスト、パフォーマンス、セキュリティのバランス
+5. **継続学習**: 新サービスや機能のキャッチアップ
+
+**学習時間の目安:**
+
+- **初学者**: 6〜12ヶ月（SAA取得後）
+- **経験者**: 3〜6ヶ月（実務経験2年以上）
+- **ハンズオン**: 週10時間以上推奨
+
+**次のステップ:**
+
+1. AWS公式トレーニング受講
+2. ハンズオンラボの実践
+3. 模擬試験の受験（スコア750以上で合格レベル）
+4. ホワイトペーパーの読み込み
+5. 本番試験受験
+
+SAP試験は難易度が高いですが、体系的な学習と実践経験を積むことで合格できます。AWS Well-Architected Frameworkを理解し、複雑なエンタープライズシステムの設計経験を積むことが最も重要です。

@@ -1,0 +1,76 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## AWS CLI コマンド
+
+### Web ACL管理
+
+```bash
+# Web ACL作成
+aws wafv2 create-web-acl \
+  --name my-web-acl \
+  --scope REGIONAL \
+  --default-action Allow={} \
+  --rules file://rules.json \
+  --visibility-config SampledRequestsEnabled=true,CloudWatchMetricsEnabled=true,MetricName=MyWebACL
+
+# Web ACL一覧
+aws wafv2 list-web-acls --scope REGIONAL
+
+# Web ACL詳細
+aws wafv2 get-web-acl \
+  --name my-web-acl \
+  --scope REGIONAL \
+  --id <web-acl-id>
+
+# ALBに関連付け
+aws wafv2 associate-web-acl \
+  --web-acl-arn <web-acl-arn> \
+  --resource-arn <alb-arn>
+
+# 関連付け解除
+aws wafv2 disassociate-web-acl \
+  --resource-arn <alb-arn>
+```
+
+## ベストプラクティス
+
+### ルール設計
+
+```yaml
+優先順位:
+  1. ホワイトリスト（許可）
+  2. レート制限
+  3. マネージドルール
+  4. カスタムルール
+  5. デフォルトアクション
+
+段階的適用:
+  1. Count モードで観察
+  2. ログ分析
+  3. 誤検知確認
+  4. Block モードへ
+```
+
+### モニタリング
+
+```yaml
+CloudWatch Metrics:
+  - BlockedRequests
+  - AllowedRequests
+  - CountedRequests
+
+アラーム:
+  - Block急増
+  - レート制限到達
+```
+
+## まとめ
+
+**重要ポイント:**
+- マネージドルールから開始
+- Count モードでテスト
+- ログで継続的改善
+- レート制限で コスト削減

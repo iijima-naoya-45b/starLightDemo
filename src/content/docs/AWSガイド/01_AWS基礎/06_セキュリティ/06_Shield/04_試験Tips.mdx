@@ -1,0 +1,85 @@
+---
+title: "試験Tips"
+label: "試験Tips"
+---
+
+## SAA（ソリューションアーキテクト アソシエイト）
+
+### 頻出ポイント
+
+#### 1. Shield Standard vs Advanced
+
+```yaml
+出題パターン:
+  「DDoS攻撃対策」
+
+Shield Standard:
+  - 無料
+  - 自動有効
+  - Layer 3/4
+  - 基本的な保護
+
+Shield Advanced:
+  - $3,000/月
+  - 高度な保護
+  - 24/7サポート
+  - コスト保護
+```
+
+#### 2. WAF連携
+
+```yaml
+シナリオ:
+  「Layer 7攻撃対策」
+
+正解:
+  - Shield（Layer 3/4）
+  - WAF（Layer 7）
+  - 併用推奨
+```
+
+## SAP（ソリューションアーキテクト プロフェッショナル）
+
+### 高度なシナリオ
+
+```yaml
+ミッションクリティカル:
+  要件:
+    - 99.99%可用性
+    - DDoS対策
+    - コスト予測可能
+
+  設計:
+    - Shield Advanced
+    - CloudFront + ALB
+    - マルチリージョン
+    - Auto Scaling
+    - コスト保護
+```
+
+## よくある間違い
+
+```yaml
+❌ 誤り:
+  「Shield で全攻撃対策完璧」
+
+✅ 正解:
+  - Shield: DDoS（Layer 3/4）
+  - WAF: アプリケーション（Layer 7）
+  - 併用が最適
+```
+
+## まとめ
+
+**試験ポイント:**
+
+SAA:
+- Standard: 無料・自動
+- Advanced: 有料・高度
+- WAF併用
+- コスト保護理解
+
+SAP:
+- マルチリージョン設計
+- DRT活用
+- コスト保護戦略

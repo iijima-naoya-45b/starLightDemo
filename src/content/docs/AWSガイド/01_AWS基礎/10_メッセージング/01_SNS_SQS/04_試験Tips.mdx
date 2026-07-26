@@ -1,0 +1,127 @@
+---
+title: "SNS/SQS 試験Tips"
+label: "試験Tips"
+---
+
+## SNS/SQS 試験Tips (SAA/SAP)
+
+### 頻出トピック
+
+#### 1. SNS vs SQS
+
+```yaml
+SNS:
+  - Pub/Sub（1対多）
+  - プッシュ型
+  - 即時配信
+  - 用途: 通知、ファンアウト
+
+SQS:
+  - キュー（1対1）
+  - プル型
+  - 非同期処理
+  - 用途: 負荷平準化、疎結合
+```
+
+#### 2. Standard vs FIFO
+
+```yaml
+Standard:
+  - 無制限スループット
+  - At Least Once（重複可能）
+  - 順序保証なし
+  - 用途: 一般的な非同期処理
+
+FIFO:
+  - 3,000メッセージ/秒
+  - Exactly Once（重複なし）
+  - 順序保証あり
+  - 用途: 順序重要、金融取引
+```
+
+#### 3. 可視性タイムアウト
+
+```yaml
+概念:
+  - メッセージ受信後の非表示期間
+  - デフォルト: 30秒
+  - 処理中は他から見えない
+
+ベストプラクティス:
+  - 処理時間より長く設定
+  - ChangeMessageVisibility で延長可能
+```
+
+### 頻出シナリオ
+
+#### シナリオ1: ファンアウト
+
+```
+要件: 1つのイベントで複数の処理
+解答: SNS + 複数SQS
+
+構成:
+  S3 → SNS
+    → SQS1 → Lambda（処理A）
+    → SQS2 → Lambda（処理B）
+```
+
+#### シナリオ2: 順序保証
+
+```
+要件: メッセージ順序保証、重複排除
+解答: SQS FIFO
+
+ポイント:
+✓ Exactly Once
+✓ 順序保証
+✓ .fifo拡張子
+```
+
+#### シナリオ3: 負荷平準化
+
+```
+要件: スパイク対応、処理平準化
+解答: SQS Standard + Auto Scaling
+
+CloudWatch:
+  ApproximateNumberOfMessages
+  → Alarm → Auto Scaling
+```
+
+### よくある間違い
+
+```yaml
+× 誤り: FIFOで高スループット
+○ 正解: Standard使用（FIFOは3,000/秒制限）
+
+× 誤り: SNSでメッセージ保持
+○ 正解: SQS使用（SNSは即時配信のみ）
+
+× 誤り: 可視性タイムアウト短すぎ
+○ 正解: 処理時間より長く設定
+```
+
+### SAA試験重要ポイント
+
+```yaml
+基本:
+  ☐ SNS vs SQS
+  ☐ Standard vs FIFO
+  ☐ ファンアウトパターン
+
+設計:
+  ☐ 可視性タイムアウト
+  ☐ DLQ
+  ☐ Long Polling
+```
+
+### SAP試験重要ポイント
+
+```yaml
+高度:
+  ☐ メッセージフィルタリング
+  ☐ バッチ処理最適化
+  ☐ クロスアカウントアクセス
+  ☐ 暗号化（KMS）
+```

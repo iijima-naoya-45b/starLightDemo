@@ -1,0 +1,79 @@
+---
+title: "S3 ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## S3 ユースケースおよびアーキテクチャパターン
+
+### 1. 静的Webサイトホスティング
+
+```yaml
+構成:
+  S3 + CloudFront:
+    - S3: 静的コンテンツ（HTML, CSS, JS）
+    - CloudFront: CDN、HTTPS
+    - Route 53: カスタムドメイン
+
+コスト:
+  - 月数ドル〜
+  - サーバー不要
+```
+
+### 2. Data Lake
+
+```yaml
+構成:
+  S3 + Glue + Athena:
+    - S3: データ保存
+    - Glue: ETL、カタログ
+    - Athena: SQLクエリ
+
+データ階層化:
+  - Hot: S3 Standard
+  - Warm: S3 Standard-IA
+  - Cold: S3 Glacier
+```
+
+### 3. バックアップ・アーカイブ
+
+```yaml
+構成:
+  S3 + Lifecycle:
+    - 即時バックアップ: S3 Standard
+    - 30日後: S3 Standard-IA
+    - 90日後: S3 Glacier
+    - 7年後: 削除
+
+クロスリージョンレプリケーション:
+  - 災害対策
+  - データ主権対応
+```
+
+### 4. ログ集約
+
+```yaml
+構成:
+  CloudTrail/VPC Flow Logs → S3:
+    - パーティション: 日付/時間
+    - 圧縮: gzip
+    - ライフサイクル: 自動削除
+
+分析:
+  - Athena: SQLクエリ
+  - QuickSight: 可視化
+```
+
+### 5. メディア配信
+
+```yaml
+構成:
+  S3 + CloudFront:
+    - S3: 動画、画像保存
+    - CloudFront: グローバル配信
+    - Lambda@Edge: 画像リサイズ
+
+最適化:
+  - 複数解像度保存
+  - Transfer Acceleration
+  - Intelligent-Tiering
+```

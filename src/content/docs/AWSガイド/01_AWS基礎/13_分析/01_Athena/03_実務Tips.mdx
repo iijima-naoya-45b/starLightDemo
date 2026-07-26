@@ -1,0 +1,407 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## AWS CLI コマンド
+
+### データベース・テーブル管理
+
+```bash
+# データベース作成
+aws athena start-query-execution \
+  --query-string "CREATE DATABASE IF NOT EXISTS my_database" \
+  --result-configuration "OutputLocation=s3://my-results-bucket/"
+
+# テーブル作成（Parquet）
+aws athena start-query-execution \
+  --query-string "CREATE EXTERNAL TABLE my_table (
+    id INT,
+    name STRING,
+    created_at TIMESTAMP
+  )
+  STORED AS PARQUET
+  LOCATION 's3://my-data-bucket/table-data/';" \
+  --query-execution-context "Database=my_database" \
+  --result-configuration "OutputLocation=s3://my-results-bucket/"
+
+# テーブル一覧
+aws glue get-tables --database-name my_database
+
+# テーブル詳細
+aws glue get-table \
+  --database-name my_database \
+  --name my_table
+```
+
+### クエリ実行
+
+```bash
+# クエリ実行
+QUERY_ID=$(aws athena start-query-execution \
+  --query-string "SELECT * FROM my_table LIMIT 10" \
+  --query-execution-context "Database=my_database" \
+  --result-configuration "OutputLocation=s3://my-results-bucket/" \
+  --query 'QueryExecutionId' \
+  --output text)
+
+echo "Query ID: $QUERY_ID"
+
+# クエリ状態確認
+aws athena get-query-execution \
+  --query-execution-id $QUERY_ID
+
+# クエリ完了待ち
+while true; do
+  STATUS=$(aws athena get-query-execution \
+    --query-execution-id $QUERY_ID \
+    --query 'QueryExecution.Status.State' \
+    --output text)
+  
+  echo "Status: $STATUS"
+  
+  if [ "$STATUS" = "SUCCEEDED" ] || [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELLED" ]; then
+    break
+  fi
+  
+  sleep 2
+done
+
+# 結果取得
+aws athena get-query-results \
+  --query-execution-id $QUERY_ID \
+  --max-results 100
+
+# 結果ページネーション
+aws athena get-query-results \
+  --query-execution-id $QUERY_ID \
+  --max-results 100 \
+  --next-token <token>
+```
+
+### ワークグループ管理
+
+```bash
+# ワークグループ作成
+aws athena create-work-group \
+  --name my-workgroup \
+  --configuration '{
+    "ResultConfigurationUpdates": {
+      "OutputLocation": "s3://my-results-bucket/workgroup-results/",
+      "EncryptionConfiguration": {
+        "EncryptionOption": "SSE_S3"
+      }
+    },
+    "EnforceWorkGroupConfiguration": true,
+    "PublishCloudWatchMetricsEnabled": true,
+    "BytesScannedCutoffPerQuery": 10737418240
+  }' \
+  --description "Production analytics workgroup"
+
+# ワークグループ一覧
+aws athena list-work-groups
+
+# ワークグループ詳細
+aws athena get-work-group \
+  --work-group my-workgroup
+
+# ワークグループ更新
+aws athena update-work-group \
+  --work-group my-workgroup \
+  --configuration-updates '{
+    "BytesScannedCutoffPerQuery": 21474836480
+  }'
+
+# ワークグループ削除
+aws athena delete-work-group \
+  --work-group my-workgroup \
+  --recursive-delete-option
+```
+
+### Named Query管理
+
+```bash
+# Named Query作成（よく使うクエリ保存）
+aws athena create-named-query \
+  --name "Daily Active Users" \
+  --description "Count daily active users" \
+  --database my_database \
+  --query-string "SELECT 
+    date, 
+    COUNT(DISTINCT user_id) as dau 
+  FROM user_events 
+  WHERE date = CURRENT_DATE 
+  GROUP BY date"
+
+# Named Query一覧
+aws athena list-named-queries
+
+# Named Query詳細
+aws athena get-named-query \
+  --named-query-id <query-id>
+
+# Named Query削除
+aws athena delete-named-query \
+  --named-query-id <query-id>
+```
+
+## ベストプラクティス
+
+### データ形式最適化
+
+```yaml
+推奨フォーマット:
+  Parquet:
+    - 列指向
+    - 高圧縮率
+    - クエリ高速
+    - 最もコスト効率
+  
+  ORC:
+    - 列指向
+    - Parquet同等
+    - Hive互換性高い
+
+避けるべき:
+  - 非圧縮CSV
+  - 小ファイル多数
+  - JSONの直接利用（大容量時）
+
+変換:
+  - CTASで最適化
+  - Glue ETLジョブ
+  - EMR
+```
+
+### パーティション設計
+
+```yaml
+適切な粒度:
+  良い例:
+    - 日次: s3://bucket/year=2024/month=01/day=15/
+    - 時間: s3://bucket/date=2024-01-15/hour=14/
+  
+  悪い例:
+    - 過剰: 秒単位
+    - 不足: 年単位のみ
+
+パーティション数:
+  - 推奨: 100〜1000個
+  - 避ける: 10万個以上
+  - パーティション追加コスト考慮
+
+ネーミング:
+  - Hive形式推奨: year=2024/month=01/
+  - パスベース可能: 2024/01/
+```
+
+### ファイルサイズ最適化
+
+```yaml
+推奨サイズ:
+  - 128MB〜1GB
+  - S3での並列読み込み最適化
+
+問題:
+  小ファイル問題:
+    - オーバーヘッド大
+    - クエリ遅延
+  
+  対策:
+    - ファイル統合
+    - CTASで再作成
+    - Glue ETLでマージ
+
+確認:
+  aws s3 ls --recursive s3://bucket/path/ --summarize
+```
+
+### コスト最適化
+
+```yaml
+スキャン量削減:
+  - SELECT *避ける
+  - 必要な列のみ指定
+  - パーティション活用
+  - Parquet/ORC使用
+  - LIMIT活用（開発時）
+
+例:
+  # ❌ 高コスト
+  SELECT * FROM logs
+  WHERE timestamp > '2024-01-01'
+  
+  # ✅ 低コスト
+  SELECT user_id, event_type
+  FROM logs
+  WHERE year='2024' AND month='01'
+  LIMIT 1000
+
+ワークグループ制限:
+  - BytesScannedCutoffPerQuery設定
+  - 意図しない大量スキャン防止
+```
+
+### クエリ最適化
+
+```yaml
+JOIN最適化:
+  - 小さいテーブルを左側に
+  - フィルタリング後にJOIN
+  - 不要なJOIN削除
+
+集計最適化:
+  - GROUP BYの順序
+  - DISTINCT最小化
+  - サブクエリ活用
+
+例:
+  # ✅ 効率的
+  WITH filtered AS (
+    SELECT user_id, product_id
+    FROM purchases
+    WHERE year='2024' AND month='01'
+  )
+  SELECT 
+    p.product_name,
+    COUNT(f.user_id) as purchase_count
+  FROM filtered f
+  JOIN products p ON f.product_id = p.id
+  GROUP BY p.product_name
+```
+
+### セキュリティ
+
+```yaml
+暗号化:
+  クエリ結果:
+    - S3バケット暗号化
+    - SSE-S3 / SSE-KMS
+  
+  ソースデータ:
+    - S3暗号化
+    - クライアント側暗号化
+
+アクセス制御:
+  IAMポリシー:
+    - athena:StartQueryExecution
+    - athena:GetQueryResults
+    - s3:GetObject（ソース）
+    - s3:PutObject（結果）
+    - glue:GetTable（カタログ）
+  
+  Lake Formation:
+    - 列レベル制御
+    - 行レベルフィルタ
+    - タグベースアクセス
+```
+
+### モニタリング
+
+```yaml
+CloudWatch Metrics:
+  - DataScannedInBytes
+  - EngineExecutionTime
+  - QueryPlanningTime
+  - TotalExecutionTime
+
+アラーム設定:
+  - 高コストクエリ検知
+  - 長時間実行クエリ
+  - 失敗クエリ増加
+
+クエリ履歴:
+  - Athenaコンソール
+  - CloudTrail
+  - S3クエリ結果ログ
+```
+
+### トラブルシューティング
+
+```yaml
+よくある問題:
+
+1. HIVE_PARTITION_SCHEMA_MISMATCH:
+   原因:
+     - パーティション毎にスキーマ不一致
+   
+   対処:
+     - スキーマ統一
+     - MSCK REPAIR TABLE実行
+     - パーティション再作成
+
+2. EXCEEDED_MEMORY_LIMIT:
+   原因:
+     - 大量データのJOIN
+     - GROUP BY高カーディナリティ
+   
+   対処:
+     - フィルタリング強化
+     - CTASで事前集計
+     - データ分割
+
+3. S3 Access Denied:
+   原因:
+     - IAM権限不足
+     - バケットポリシー
+   
+   対処:
+     - IAMポリシー確認
+     - S3バケットポリシー確認
+     - VPCエンドポイント確認
+
+4. Too many partitions:
+   原因:
+     - パーティション過多（10万+）
+   
+   対処:
+     - パーティション粒度見直し
+     - 古いパーティション削除
+     - パーティション統合
+```
+
+### Glue Crawler設定
+
+```bash
+# Crawler作成
+aws glue create-crawler \
+  --name my-crawler \
+  --role AWSGlueServiceRole-Crawler \
+  --database-name my_database \
+  --targets '{
+    "S3Targets": [
+      {
+        "Path": "s3://my-bucket/data/",
+        "Exclusions": ["**.tmp", "**_$folder$"]
+      }
+    ]
+  }' \
+  --schema-change-policy '{
+    "UpdateBehavior": "UPDATE_IN_DATABASE",
+    "DeleteBehavior": "LOG"
+  }' \
+  --configuration '{
+    "Version": 1.0,
+    "CrawlerOutput": {
+      "Partitions": {"AddOrUpdateBehavior": "InheritFromTable"}
+    }
+  }'
+
+# Crawler実行
+aws glue start-crawler --name my-crawler
+
+# Crawler状態確認
+aws glue get-crawler --name my-crawler
+```
+
+## まとめ
+
+**実務での重要ポイント:**
+- Parquet/ORC で大幅コスト削減
+- パーティション設計が最重要
+- ファイルサイズ最適化（128MB以上）
+- SELECT * を避ける
+- ワークグループでコスト管理
+- Glue Crawler で自動化
+- クエリ結果は暗号化
+- CloudWatch で継続監視

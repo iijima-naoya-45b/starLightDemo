@@ -1,0 +1,435 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## AWS CLI コマンド
+
+### Crawler管理
+
+```bash
+# Crawler作成
+aws glue create-crawler \
+  --name my-crawler \
+  --role AWSGlueServiceRole-Crawler \
+  --database-name my_database \
+  --targets '{
+    "S3Targets": [
+      {
+        "Path": "s3://my-bucket/data/",
+        "Exclusions": ["**.tmp"]
+      }
+    ]
+  }'
+
+# Crawler実行
+aws glue start-crawler --name my-crawler
+
+# Crawler状態確認
+aws glue get-crawler --name my-crawler
+
+# Crawler一覧
+aws glue list-crawlers
+
+# Crawler停止
+aws glue stop-crawler --name my-crawler
+
+# Crawler削除
+aws glue delete-crawler --name my-crawler
+```
+
+### ETL Job管理
+
+```bash
+# Job作成
+aws glue create-job \
+  --name my-etl-job \
+  --role AWSGlueServiceRole-ETL \
+  --command '{
+    "Name": "glueetl",
+    "ScriptLocation": "s3://my-scripts/etl-job.py",
+    "PythonVersion": "3"
+  }' \
+  --default-arguments '{
+    "--TempDir": "s3://my-temp/",
+    "--job-bookmark-option": "job-bookmark-enable",
+    "--enable-metrics": "true",
+    "--enable-spark-ui": "true",
+    "--spark-event-logs-path": "s3://my-logs/"
+  }' \
+  --max-retries 1 \
+  --timeout 120 \
+  --glue-version "4.0" \
+  --number-of-workers 10 \
+  --worker-type "G.1X"
+
+# Job実行
+JOB_RUN_ID=$(aws glue start-job-run \
+  --job-name my-etl-job \
+  --arguments '{
+    "--input_path": "s3://my-bucket/input/",
+    "--output_path": "s3://my-bucket/output/"
+  }' \
+  --query 'JobRunId' \
+  --output text)
+
+# Job実行状態確認
+aws glue get-job-run \
+  --job-name my-etl-job \
+  --run-id $JOB_RUN_ID
+
+# Job一覧
+aws glue list-jobs
+
+# Job実行履歴
+aws glue get-job-runs \
+  --job-name my-etl-job \
+  --max-results 10
+
+# Job削除
+aws glue delete-job --job-name my-etl-job
+```
+
+### Data Catalog管理
+
+```bash
+# データベース作成
+aws glue create-database \
+  --database-input '{
+    "Name": "my_database",
+    "Description": "My data lake database"
+  }'
+
+# データベース一覧
+aws glue get-databases
+
+# テーブル取得
+aws glue get-table \
+  --database-name my_database \
+  --name my_table
+
+# テーブル一覧
+aws glue get-tables --database-name my_database
+
+# パーティション追加
+aws glue create-partition \
+  --database-name my_database \
+  --table-name my_table \
+  --partition-input '{
+    "Values": ["2024", "01", "15"],
+    "StorageDescriptor": {
+      "Location": "s3://my-bucket/data/year=2024/month=01/day=15/"
+    }
+  }'
+
+# パーティション一覧
+aws glue get-partitions \
+  --database-name my_database \
+  --table-name my_table
+```
+
+## ベストプラクティス
+
+### Crawler設定
+
+```yaml
+スケジュール:
+  推奨:
+    - データ追加頻度に合わせる
+    - 日次: cron(0 0 * * ? *)
+    - 時間: cron(0 * * * ? *)
+  
+  注意:
+    - 頻繁実行はコスト増
+    - Data Catalogの変更頻度考慮
+
+除外パターン:
+  - 一時ファイル: **.tmp
+  - システムファイル: **_$folder$
+  - 処理中: **_processing/
+
+スキーマ変更ポリシー:
+  UpdateBehavior: UPDATE_IN_DATABASE
+  DeleteBehavior: LOG
+  → 自動更新、削除はログのみ
+```
+
+### ETL Job最適化
+
+```yaml
+Worker設定:
+  Standard:
+    - 16GB メモリ、4 vCPU
+    - 50 DPU
+    - 一般的な処理
+  
+  G.1X:
+    - 16GB メモリ、4 vCPU
+    - 1 DPU
+    - メモリ集約的
+  
+  G.2X:
+    - 32GB メモリ、8 vCPU
+    - 2 DPU
+    - 大規模処理
+
+Worker数:
+  - 開始: 2〜5
+  - 最大: データ量に応じて
+  - 自動スケーリング推奨
+
+タイムアウト:
+  - デフォルト: 48時間
+  - 設定推奨: 実行時間 + バッファ
+  - 長時間ジョブは分割検討
+```
+
+### ジョブブックマーク
+
+```yaml
+有効化:
+  --job-bookmark-option: job-bookmark-enable
+
+動作:
+  S3:
+    - 最終処理ファイル記録
+    - 新規ファイルのみ処理
+  
+  JDBC:
+    - 指定列の最大値記録
+    - 増分データのみ取得
+
+注意点:
+  - ファイル名ソート順依存
+  - パーティション構造重要
+  - リセット可能（job-bookmark-reset）
+
+推奨用途:
+  - 日次バッチ
+  - 増分ロード
+  - ログ処理
+```
+
+### パーティション設計
+
+```yaml
+粒度:
+  適切:
+    - year/month/day
+    - date/hour
+  
+  避ける:
+    - 過剰: 秒単位
+    - 不足: 年のみ
+
+パス構造:
+  Hive形式（推奨）:
+    s3://bucket/data/year=2024/month=01/day=15/
+  
+  パスベース:
+    s3://bucket/data/2024/01/15/
+
+自動パーティション:
+  - Crawler自動検出
+  - ETL Jobで作成
+  - MSCK REPAIR TABLE不要
+```
+
+### コスト最適化
+
+```yaml
+DPU最適化:
+  - 小規模: 2〜5 DPU
+  - 中規模: 10〜20 DPU
+  - 大規模: 50〜100 DPU
+  - 過剰プロビジョニング避ける
+
+実行頻度:
+  - 必要最小限
+  - バッチ処理推奨
+  - リアルタイム不要ならSchedule
+
+Data Catalog:
+  - 不要テーブル削除
+  - 古いパーティション削除
+  - 100万オブジェクト超で課金
+
+ジョブブックマーク:
+  - 増分処理でDPU削減
+  - 全件処理避ける
+```
+
+### エラーハンドリング
+
+```python
+# リトライ設定
+job_config = {
+    "MaxRetries": 3,
+    "Timeout": 120
+}
+
+# カスタムエラーハンドリング
+try:
+    # ETL処理
+    result = perform_transformation(data)
+except Exception as e:
+    # CloudWatch Logsへ
+    print(f"Error: {str(e)}")
+    
+    # SNS通知
+    sns.publish(
+        TopicArn='arn:aws:sns:region:account:topic',
+        Message=f"Job failed: {str(e)}"
+    )
+    
+    # ジョブ失敗
+    raise
+```
+
+### モニタリング
+
+```yaml
+CloudWatch Metrics:
+  - glue.driver.aggregate.numCompletedStages
+  - glue.driver.aggregate.numCompletedTasks
+  - glue.driver.BlockManager.disk.diskSpaceUsed_MB
+  - glue.driver.ExecutorAllocationManager.executors.numberAllExecutors
+
+アラーム設定:
+  - ジョブ失敗
+  - 実行時間超過
+  - DPU使用率
+  - メモリ不足
+
+Spark UI:
+  - 有効化推奨
+  - パフォーマンス分析
+  - ボトルネック特定
+```
+
+### セキュリティ
+
+```yaml
+IAMロール:
+  Crawler:
+    - glue:*
+    - s3:GetObject, s3:PutObject
+    - logs:CreateLogGroup
+  
+  ETLジョブ:
+    - glue:*
+    - s3:*
+    - データソース権限
+    - 暗号化キー権限
+
+暗号化:
+  Data Catalog:
+    - メタデータ暗号化（自動）
+  
+  ETLジョブ:
+    - S3バケット暗号化
+    - CloudWatch Logs暗号化
+    - ジョブブックマーク暗号化
+
+VPC:
+  - プライベートリソースアクセス
+  - VPCエンドポイント
+  - セキュリティグループ
+```
+
+### トラブルシューティング
+
+```yaml
+よくある問題:
+
+1. OutOfMemoryError:
+   原因:
+     - データサイズ過大
+     - Worker不足
+     - メモリ集約的処理
+   
+   対処:
+     - Worker数増加
+     - G.2X使用
+     - データ分割処理
+     - パーティション活用
+
+2. Job Timeout:
+   原因:
+     - 処理時間長い
+     - タイムアウト設定短い
+   
+   対処:
+     - タイムアウト延長
+     - DPU増加
+     - 処理最適化
+     - ジョブ分割
+
+3. Schema Mismatch:
+   原因:
+     - データ型不一致
+     - 列追加・削除
+   
+   対処:
+     - ResolveChoice使用
+     - Crawler再実行
+     - スキーマバージョン管理
+
+4. S3 Access Denied:
+   原因:
+     - IAM権限不足
+     - バケットポリシー
+   
+   対処:
+     - IAMロール確認
+     - S3バケットポリシー
+     - KMS権限確認
+```
+
+### DataBrew活用
+
+```bash
+# Dataset作成
+aws databrew create-dataset \
+  --name my-dataset \
+  --input '{
+    "S3InputDefinition": {
+      "Bucket": "my-bucket",
+      "Key": "data/sample.csv"
+    }
+  }'
+
+# Project作成
+aws databrew create-project \
+  --name my-project \
+  --dataset-name my-dataset \
+  --recipe-name my-recipe \
+  --role-arn arn:aws:iam::123456789012:role/DataBrewRole
+
+# Recipe Job実行
+aws databrew create-recipe-job \
+  --name my-recipe-job \
+  --dataset-name my-dataset \
+  --recipe-reference '{
+    "Name": "my-recipe"
+  }' \
+  --outputs '[{
+    "Location": {
+      "Bucket": "my-output-bucket"
+    },
+    "Format": "PARQUET"
+  }]' \
+  --role-arn arn:aws:iam::123456789012:role/DataBrewRole
+```
+
+## まとめ
+
+**実務での重要ポイント:**
+- Crawler でスキーマ自動管理
+- ジョブブックマークで増分処理
+- Worker設定最適化
+- パーティション設計重要
+- Spark UI でパフォーマンス分析
+- VPC統合でセキュリティ強化
+- DataBrew でデータ品質向上
+- CloudWatch で継続監視

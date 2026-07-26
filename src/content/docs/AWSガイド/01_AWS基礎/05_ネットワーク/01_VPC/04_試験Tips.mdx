@@ -1,0 +1,397 @@
+---
+title: "VPC 試験Tips"
+label: "試験Tips"
+---
+
+## VPC 試験Tips (SAA/SAP)
+
+AWS Solutions Architect Associate/Professional試験でのVPC頻出問題と対策を解説します。
+
+### 頻出トピック
+
+#### 1. セキュリティグループ vs NACL
+
+**必須理解ポイント:**
+
+```yaml
+セキュリティグループ:
+  - ステートフル: 戻りトラフィック自動許可
+  - インスタンスレベル
+  - 許可ルールのみ (拒否ルール不可)
+  - デフォルト: 全てインバウンド拒否、全てアウトバウンド許可
+
+NACL:
+  - ステートレス: 戻りトラフィック明示的許可必要
+  - サブネットレベル
+  - 許可・拒否ルール両方可能
+  - ルール番号順に評価 (低い番号優先)
+  - デフォルトNACL: 全て許可
+  - カスタムNACL: デフォルトで全て拒否
+```
+
+**頻出問題パターン:**
+
+```
+Q: Webサーバー(パブリックサブネット)からDBサーバー(プライベートサブネット)へ
+   の接続を許可するが、インターネットからのアクセスは拒否したい。
+
+A: 
+1. WebサーバーSG:
+   - インバウンド: 80/443 from 0.0.0.0/0
+   - アウトバウンド: 3306 to DBサーバーSG
+
+2. DBサーバーSG:
+   - インバウンド: 3306 from WebサーバーSG
+   - アウトバウンド: デフォルト
+
+ポイント: SGは送信元/宛先にSG IDを指定可能
+```
+
+#### 2. NAT Gateway vs NAT Instance
+
+**比較表:**
+
+```yaml
+NAT Gateway:
+  - AWSマネージド
+  - 高可用性 (AZ内)
+  - 自動スケーリング (45Gbps)
+  - セキュリティグループ不要
+  - Elastic IP必須
+  - コスト: 高 ($0.045/時間 + データ転送)
+  - 本番環境推奨
+
+NAT Instance:
+  - 自己管理
+  - 単一障害点
+  - スケーリング制限
+  - セキュリティグループ必要
+  - Elastic IP必須
+  - コスト: 低 (EC2コストのみ)
+  - 開発環境、コスト重視
+```
+
+**頻出問題:**
+
+```
+Q: プライベートサブネットのEC2からインターネットへのアウトバウンド通信を
+   許可したいが、インバウンド通信は拒否したい。高可用性も必要。
+
+A: NAT Gateway を各AZに配置
+   - マルチAZ構成で高可用性
+   - AZ障害時も他AZで継続
+   - プライベートサブネットのルートテーブルに 0.0.0.0/0 → NAT Gateway
+
+× 誤答例:
+   - NAT Instance: 単一障害点、本番非推奨
+   - インターネットゲートウェイ: インバウンド通信も許可されてしまう
+```
+
+#### 3. VPC Peering
+
+**重要ポイント:**
+
+```yaml
+特徴:
+  - 2つのVPC間プライベート接続
+  - 推移的ルーティング不可
+  - CIDRブロック重複不可
+  - 同一/異なるリージョン対応
+  - 同一/異なるアカウント対応
+
+制限:
+  VPC A --- Peering --- VPC B
+           ×
+  VPC C ← 直接接続必要
+
+正しい:
+  VPC A --- Peering --- VPC B
+    |                      |
+  Peering              Peering
+    |                      |
+  VPC C --- Peering --- VPC C
+```
+
+**頻出問題:**
+
+```
+Q: VPC A (10.0.0.0/16) と VPC B (10.1.0.0/16) を接続したい。
+   両VPCのEC2間でプライベート通信を実現する方法は？
+
+A: VPC Peering
+1. Peering接続作成
+2. 各VPCでルートテーブル更新
+   - VPC A: 10.1.0.0/16 → pcx-xxxxx
+   - VPC B: 10.0.0.0/16 → pcx-xxxxx
+3. セキュリティグループ更新
+   - 相手VPCのCIDRまたはSG IDを許可
+
+× 誤答例:
+   - VPN接続: コスト高、設定複雑
+   - Transit Gateway: 小規模なら過剰
+```
+
+#### 4. VPC Endpoints
+
+**タイプ別理解:**
+
+```yaml
+Gateway Endpoint:
+  対象サービス: S3, DynamoDB のみ
+  実装: ルートテーブル更新
+  コスト: 無料
+  用途: 大量データ転送
+
+Interface Endpoint (PrivateLink):
+  対象サービス: ほとんどのAWSサービス
+  実装: ENI作成
+  コスト: $0.01/時間 + データ転送
+  用途: プライベート接続必須
+```
+
+**頻出問題:**
+
+```
+Q: プライベートサブネットのEC2からS3へのアクセスをNAT Gateway経由せず、
+   コストを最小化したい。
+
+A: S3 Gateway Endpoint
+   - プライベートサブネットのルートテーブルに追加
+   - NAT Gateway不要 → コスト削減
+   - データ転送料も削減
+   - 無料
+
+× 誤答例:
+   - S3 Interface Endpoint: コストが発生
+   - NAT Gateway経由: データ転送料がかかる
+```
+
+#### 5. Direct Connect
+
+**重要ポイント:**
+
+```yaml
+用途:
+  - オンプレミスとAWSをプライベート接続
+  - 低レイテンシー、安定した帯域
+  - 大容量データ転送
+
+構成:
+  専用線:
+    - 1Gbps / 10Gbps
+    - AWS Direct Connect Location経由
+  
+  Hosted接続:
+    - 50Mbps 〜 10Gbps
+    - パートナー経由
+
+接続タイプ:
+  Private VIF: VPC接続
+  Public VIF: AWS公開サービス接続
+  Transit VIF: Transit Gateway接続
+```
+
+**頻出問題:**
+
+```
+Q: オンプレミスから複数VPCへの接続を冗長化したい。
+   Direct Connect障害時の対策も必要。
+
+A: 
+1. プライマリ: Direct Connect + Transit Gateway
+2. バックアップ: Site-to-Site VPN
+3. Transit Gateway Route Tableで優先度設定
+   - Direct Connect: 優先
+   - VPN: フェイルオーバー用
+
+メリット:
+- 複数VPC一元管理
+- 自動フェイルオーバー
+- コスト効率的
+```
+
+### 頻出シナリオ問題
+
+#### シナリオ1: 高可用性Webアプリ
+
+```
+要件:
+- 99.99%の可用性
+- インターネットからHTTPS接続
+- DBはインターネットアクセス不要
+- アプリケーションからインターネットアクセス必要 (API呼び出し)
+
+解答:
+VPC: 10.0.0.0/16
+  パブリックサブネット (AZ-1a, 1c):
+    - ALB
+    - NAT Gateway (各AZ)
+  
+  プライベートサブネット (AZ-1a, 1c):
+    - EC2 Auto Scaling Group
+    - RDS Multi-AZ
+  
+  ルーティング:
+    - パブリック: 0.0.0.0/0 → IGW
+    - プライベート-1a: 0.0.0.0/0 → NAT-GW-1a
+    - プライベート-1c: 0.0.0.0/0 → NAT-GW-1c
+  
+  セキュリティ:
+    - ALB SG: 443 from 0.0.0.0/0
+    - EC2 SG: 8080 from ALB SG
+    - RDS SG: 3306 from EC2 SG
+
+採点ポイント:
+✓ マルチAZ配置
+✓ NAT Gateway冗長化
+✓ セキュリティグループ適切な設定
+✓ プライベートサブネットにDB配置
+```
+
+#### シナリオ2: コスト最適化
+
+```
+要件:
+- 開発環境のコスト削減
+- S3への大量データアクセス
+- インターネットアクセスも必要
+
+現状問題:
+- NAT Gateway経由のS3アクセス → 高コスト
+
+解答:
+1. S3 Gateway Endpoint追加
+   - プライベートサブネットのルートテーブルに追加
+   - S3アクセスはNAT Gateway経由不要
+   - データ転送料削減
+   - Endpoint自体は無料
+
+2. NAT Gatewayを1つに集約 (開発環境)
+   - マルチAZから単一AZに変更
+   - 時間課金削減
+
+3. VPC Endpoints追加検討
+   - DynamoDB Gateway Endpoint (無料)
+   - その他サービス Interface Endpoint
+
+コスト削減効果:
+- NAT Gateway: 50%削減
+- データ転送料: 70%削減
+```
+
+#### シナリオ3: マイクロサービス
+
+```
+要件:
+- 10個のマイクロサービス
+- サービス間プライベート通信
+- 独立したデプロイ
+- セキュリティ境界明確
+
+解答:
+オプション1: 単一VPC + セキュリティグループ
+  - シンプル
+  - セキュリティグループでサービス分離
+  - コスト低
+
+オプション2: マルチVPC + VPC Peering
+  - サービスごとにVPC
+  - Peering接続
+  - 管理複雑
+
+オプション3: マルチVPC + Transit Gateway (推奨)
+  - サービスごとにVPC
+  - Transit Gateway でハブアンドスポーク
+  - スケーラブル
+  - ルーティング制御容易
+
+SAP試験での推奨: オプション3
+- 大規模環境想定
+- 拡張性重視
+- 管理容易性
+```
+
+### よくある間違い
+
+#### 1. セキュリティグループの理解不足
+
+```
+× 誤り: セキュリティグループで拒否ルール設定
+○ 正解: セキュリティグループは許可ルールのみ。拒否はNACL使用
+
+× 誤り: 戻りトラフィック用にアウトバウンドルール追加
+○ 正解: ステートフルなので不要。自動的に許可される
+```
+
+#### 2. NATの選択ミス
+
+```
+× 誤り: 本番環境でNAT Instance使用
+○ 正解: 本番環境はNAT Gateway (高可用性、自動スケーリング)
+
+× 誤り: 単一NAT Gateway (本番環境)
+○ 正解: 各AZにNAT Gateway配置 (AZ障害対策)
+```
+
+#### 3. VPC Endpoints理解不足
+
+```
+× 誤り: S3アクセスにInterface Endpoint使用
+○ 正解: S3はGateway Endpoint使用 (無料)
+
+× 誤り: NAT Gateway経由でS3アクセス
+○ 正解: Gateway Endpoint使用でコスト削減
+```
+
+### 試験対策チェックリスト
+
+```yaml
+基本概念:
+  ☐ VPCコンポーネント全理解
+  ☐ CIDR計算
+  ☐ サブネット設計
+
+セキュリティ:
+  ☐ SG vs NACL完全理解
+  ☐ ステートフル vs ステートレス
+  ☐ デフォルト動作理解
+
+接続:
+  ☐ NAT Gateway vs NAT Instance
+  ☐ VPC Peering制限理解
+  ☐ VPC Endpoints タイプ別理解
+  ☐ Transit Gateway ユースケース
+
+ハイブリッド:
+  ☐ Direct Connect構成
+  ☐ VPN接続
+  ☐ 冗長化構成
+
+コスト:
+  ☐ NAT Gatewayコスト
+  ☐ VPC Endpointsコスト削減効果
+  ☐ データ転送料理解
+```
+
+### まとめ
+
+**SAA試験重要ポイント:**
+- セキュリティグループとNACLの違い
+- NAT Gateway vs NAT Instance
+- VPC Peering基本
+- VPC Endpoints (Gateway vs Interface)
+
+**SAP試験重要ポイント:**
+- 大規模VPC設計
+- Transit Gateway
+- Direct Connect冗長化
+- マルチアカウント戦略
+- コスト最適化パターン
+
+**共通の重要ポイント:**
+- マルチAZ配置
+- セキュリティ多層防御
+- 高可用性設計
+- コスト意識
+
+適切なVPC設計により、安全で拡張可能なクラウドインフラを実現できます。

@@ -1,0 +1,77 @@
+---
+title: "DynamoDB 試験Tips"
+label: "試験Tips"
+---
+
+## DynamoDB 試験Tips (SAA/SAP)
+
+### 頻出トピック
+
+#### 1. DynamoDB vs RDS
+
+```yaml
+DynamoDB:
+  - NoSQL
+  - 無制限スケール
+  - ミリ秒レスポンス
+  - キーバリュー、ドキュメント
+  - 用途: セッション、IoT、ゲーム
+
+RDS:
+  - RDBMS
+  - スケール制限あり
+  - SQL、JOIN、トランザクション
+  - 用途: 複雑なクエリ、集計
+```
+
+#### 2. GSI vs LSI
+
+```yaml
+GSI:
+  - 別のパーティション/ソートキー
+  - 後から追加可能
+  - 独立キャパシティ
+  - 非同期更新
+
+LSI:
+  - 同じパーティションキー
+  - テーブル作成時のみ
+  - テーブルと同じキャパシティ
+```
+
+#### 3. Eventually Consistent vs Strongly Consistent
+
+```yaml
+Eventually Consistent（デフォルト）:
+  - RCU: 1
+  - レスポンス: 速い
+  - コスト: 低い
+
+Strongly Consistent:
+  - RCU: 2倍
+  - レスポンス: やや遅い
+  - コスト: 高い
+```
+
+### よくある間違い
+
+```yaml
+× 誤り: DynamoDBで複雑なSQL
+○ 正解: RDS使用
+
+× 誤り: LSIを後から追加
+○ 正解: GSI使用（LSIはテーブル作成時のみ）
+```
+
+### SAA試験重要ポイント
+
+```yaml
+基本:
+  ☐ パーティション/ソートキー
+  ☐ GSI/LSI
+  ☐ DynamoDB Streams
+
+選択:
+  ☐ DynamoDB vs RDS
+  ☐ オンデマンド vs プロビジョニング
+```

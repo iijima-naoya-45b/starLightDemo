@@ -1,0 +1,79 @@
+---
+title: "API Gateway 実務Tips"
+label: "実務Tips"
+---
+
+## API Gateway 実務Tips
+
+### AWS CLI
+
+```bash
+# REST API作成
+aws apigateway create-rest-api \
+  --name "My API" \
+  --description "My REST API"
+
+# リソース作成
+aws apigateway create-resource \
+  --rest-api-id abc123 \
+  --parent-id xyz789 \
+  --path-part users
+
+# メソッド作成（GET）
+aws apigateway put-method \
+  --rest-api-id abc123 \
+  --resource-id xyz789 \
+  --http-method GET \
+  --authorization-type "NONE"
+
+# Lambda統合
+aws apigateway put-integration \
+  --rest-api-id abc123 \
+  --resource-id xyz789 \
+  --http-method GET \
+  --type AWS_PROXY \
+  --integration-http-method POST \
+  --uri arn:aws:apigateway:ap-northeast-1:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-northeast-1:123456789012:function:my-function/invocations
+
+# デプロイ
+aws apigateway create-deployment \
+  --rest-api-id abc123 \
+  --stage-name prod
+```
+
+### ベストプラクティス
+
+```yaml
+設計:
+  - HTTP API推奨（新規）
+  - Lambda Proxy統合
+  - ステージ変数活用
+
+セキュリティ:
+  - IAM/Cognito認証
+  - API Key + Usage Plan
+  - CORS適切設定
+  - スロットリング設定
+
+パフォーマンス:
+  - キャッシング有効化
+  - Lambda最適化
+  - CloudFront統合
+```
+
+### トラブルシューティング
+
+```bash
+# CloudWatch Logs有効化
+aws apigateway update-stage \
+  --rest-api-id abc123 \
+  --stage-name prod \
+  --patch-operations \
+    op=replace,path=/accessLogSettings/destinationArn,value=arn:aws:logs:...
+
+# X-Ray有効化
+aws apigateway update-stage \
+  --rest-api-id abc123 \
+  --stage-name prod \
+  --patch-operations op=replace,path=/tracingEnabled,value=true
+```
