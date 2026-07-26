@@ -1,0 +1,639 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## AWS CLI コマンド
+
+### 証明書リクエスト
+
+```bash
+# パブリック証明書リクエスト（DNS検証）
+aws acm request-certificate \
+  --domain-name www.example.com \
+  --subject-alternative-names example.com api.example.com \
+  --validation-method DNS \
+  --idempotency-token $(uuidgen) \
+  --region ap-northeast-1
+
+# ワイルドカード証明書
+aws acm request-certificate \
+  --domain-name "*.example.com" \
+  --subject-alternative-names example.com \
+  --validation-method DNS \
+  --region ap-northeast-1
+
+# メール検証
+aws acm request-certificate \
+  --domain-name www.example.com \
+  --validation-method EMAIL \
+  --region ap-northeast-1
+
+# タグ付きリクエスト
+aws acm request-certificate \
+  --domain-name www.example.com \
+  --validation-method DNS \
+  --tags Key=Environment,Value=Production Key=Application,Value=WebApp \
+  --region ap-northeast-1
+
+# CloudFront用（us-east-1）
+aws acm request-certificate \
+  --domain-name www.example.com \
+  --validation-method DNS \
+  --region us-east-1
+```
+
+### 証明書情報取得
+
+```bash
+# 証明書一覧
+aws acm list-certificates \
+  --region ap-northeast-1
+
+# 証明書詳細
+aws acm describe-certificate \
+  --certificate-arn arn:aws:acm:ap-northeast-1:123456789012:certificate/xxxxx \
+  --region ap-northeast-1
+
+# DNS検証情報取得（整形）
+aws acm describe-certificate \
+  --certificate-arn arn:aws:acm:ap-northeast-1:123456789012:certificate/xxxxx \
+  --region ap-northeast-1 \
+  --query 'Certificate.DomainValidationOptions[*].[DomainName,ResourceRecord.Name,ResourceRecord.Value]' \
+  --output table
+
+# 証明書のステータス確認
+aws acm describe-certificate \
+  --certificate-arn arn:aws:acm:ap-northeast-1:123456789012:certificate/xxxxx \
+  --region ap-northeast-1 \
+  --query 'Certificate.Status' \
+  --output text
+
+# 期限確認
+aws acm describe-certificate \
+  --certificate-arn arn:aws:acm:ap-northeast-1:123456789012:certificate/xxxxx \
+  --region ap-northeast-1 \
+  --query 'Certificate.NotAfter' \
+  --output text
+```
+
+### 証明書インポート
+
+```bash
+# 証明書インポート
+aws acm import-certificate \
+  --certificate fileb://certificate.pem \
+  --certificate-chain fileb://certificate-chain.pem \
+  --private-key fileb://private-key.pem \
+  --region ap-northeast-1
+
+# タグ付きインポート
+aws acm import-certificate \
+  --certificate fileb://certificate.pem \
+  --private-key fileb://private-key.pem \
+  --tags Key=Name,Value=imported-cert Key=Source,Value=ThirdParty \
+  --region ap-northeast-1
+
+# 証明書再インポート（更新）
+aws acm import-certificate \
+  --certificate-arn arn:aws:acm:ap-northeast-1:123456789012:certificate/xxxxx \
+  --certificate fileb://new-certificate.pem \
+  --certificate-chain fileb://new-certificate-chain.pem \
+  --private-key fileb://new-private-key.pem \
+  --region ap-northeast-1
+```
+
+### 証明書削除
+
+```bash
+# 証明書削除
+aws acm delete-certificate \
+  --certificate-arn arn:aws:acm:ap-northeast-1:123456789012:certificate/xxxxx \
+  --region ap-northeast-1
+
+# 複数証明書削除（使用していないもの）
+aws acm list-certificates \
+  --region ap-northeast-1 \
+  --certificate-statuses EXPIRED VALIDATION_TIMED_OUT \
+  --query 'CertificateSummaryList[*].CertificateArn' \
+  --output text | \
+xargs -I {} aws acm delete-certificate \
+  --certificate-arn {} \
+  --region ap-northeast-1
+```
+
+### タグ管理
+
+```bash
+# タグ追加
+aws acm add-tags-to-certificate \
+  --certificate-arn arn:aws:acm:ap-northeast-1:123456789012:certificate/xxxxx \
+  --tags Key=Environment,Value=Production Key=CostCenter,Value=CC-1234 \
+  --region ap-northeast-1
+
+# タグ一覧
+aws acm list-tags-for-certificate \
+  --certificate-arn arn:aws:acm:ap-northeast-1:123456789012:certificate/xxxxx \
+  --region ap-northeast-1
+
+# タグ削除
+aws acm remove-tags-from-certificate \
+  --certificate-arn arn:aws:acm:ap-northeast-1:123456789012:certificate/xxxxx \
+  --tags Key=OldTag \
+  --region ap-northeast-1
+```
+
+### 証明書使用状況確認
+
+```bash
+# ALBで使用されている証明書確認
+aws elbv2 describe-listeners \
+  --region ap-northeast-1 \
+  --query 'Listeners[*].[LoadBalancerArn,Certificates[0].CertificateArn]' \
+  --output table
+
+# CloudFrontで使用されている証明書確認
+aws cloudfront list-distributions \
+  --query 'DistributionList.Items[*].[Id,ViewerCertificate.ACMCertificateArn]' \
+  --output table
+
+# API Gatewayで使用されている証明書確認
+aws apigateway get-domain-names \
+  --region ap-northeast-1 \
+  --query 'items[*].[domainName,regionalCertificateArn]' \
+  --output table
+```
+
+## Route 53 統合（自動DNS検証）
+
+### スクリプト例
+
+```bash
+#!/bin/bash
+# ACM証明書リクエスト & Route 53 DNS検証自動化
+
+DOMAIN="www.example.com"
+REGION="ap-northeast-1"
+HOSTED_ZONE_ID="Z1234567890ABC"
+
+# 証明書リクエスト
+echo "証明書をリクエスト中..."
+CERT_ARN=$(aws acm request-certificate \
+  --domain-name "$DOMAIN" \
+  --validation-method DNS \
+  --region "$REGION" \
+  --output text \
+  --query CertificateArn)
+
+echo "証明書ARN: $CERT_ARN"
+
+# DNS検証情報取得（少し待機）
+echo "DNS検証情報を取得中..."
+sleep 5
+
+# DNS検証レコード取得
+VALIDATION_RECORD=$(aws acm describe-certificate \
+  --certificate-arn "$CERT_ARN" \
+  --region "$REGION" \
+  --query 'Certificate.DomainValidationOptions[0].ResourceRecord')
+
+RECORD_NAME=$(echo $VALIDATION_RECORD | jq -r '.Name')
+RECORD_VALUE=$(echo $VALIDATION_RECORD | jq -r '.Value')
+RECORD_TYPE=$(echo $VALIDATION_RECORD | jq -r '.Type')
+
+echo "DNS検証レコード:"
+echo "  Name: $RECORD_NAME"
+echo "  Type: $RECORD_TYPE"
+echo "  Value: $RECORD_VALUE"
+
+# Route 53にレコード追加
+echo "Route 53にレコードを追加中..."
+cat > /tmp/change-batch.json << EOF
+{
+  "Changes": [
+    {
+      "Action": "CREATE",
+      "ResourceRecordSet": {
+        "Name": "$RECORD_NAME",
+        "Type": "$RECORD_TYPE",
+        "TTL": 300,
+        "ResourceRecords": [
+          {
+            "Value": "$RECORD_VALUE"
+          }
+        ]
+      }
+    }
+  ]
+}
+EOF
+
+aws route53 change-resource-record-sets \
+  --hosted-zone-id "$HOSTED_ZONE_ID" \
+  --change-batch file:///tmp/change-batch.json
+
+echo "完了！証明書の検証を待機中..."
+
+# 検証完了待機
+while true; do
+  STATUS=$(aws acm describe-certificate \
+    --certificate-arn "$CERT_ARN" \
+    --region "$REGION" \
+    --query 'Certificate.Status' \
+    --output text)
+  
+  echo "現在のステータス: $STATUS"
+  
+  if [ "$STATUS" = "ISSUED" ]; then
+    echo "証明書が発行されました！"
+    break
+  elif [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "VALIDATION_TIMED_OUT" ]; then
+    echo "証明書の発行に失敗しました"
+    exit 1
+  fi
+  
+  sleep 10
+done
+```
+
+### Terraform での自動化
+
+```hcl
+# ACM証明書
+resource "aws_acm_certificate" "main" {
+  domain_name               = "www.example.com"
+  subject_alternative_names = ["example.com", "api.example.com"]
+  validation_method         = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = {
+    Name        = "example-cert"
+    Environment = "production"
+  }
+}
+
+# Route 53 DNS検証レコード自動作成
+resource "aws_route53_record" "cert_validation" {
+  for_each = {
+    for dvo in aws_acm_certificate.main.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  }
+
+  allow_overwrite = true
+  name            = each.value.name
+  records         = [each.value.record]
+  ttl             = 60
+  type            = each.value.type
+  zone_id         = var.hosted_zone_id
+}
+
+# 証明書検証完了待機
+resource "aws_acm_certificate_validation" "main" {
+  certificate_arn         = aws_acm_certificate.main.arn
+  validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
+}
+
+# ALBリスナー（検証完了後）
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
+  certificate_arn   = aws_acm_certificate_validation.main.certificate_arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.main.arn
+  }
+}
+```
+
+## ベストプラクティス
+
+### 証明書ライフサイクル管理
+
+```yaml
+発行:
+  DNS検証推奨:
+    - Route 53で自動化
+    - 検証レコード削除厳禁
+    - 自動更新に必須
+  
+  命名規則:
+    - タグで管理
+    - Environment: production
+    - Service: web-app
+    - Domain: www.example.com
+
+更新:
+  ACM発行証明書:
+    - 完全自動（DNS検証）
+    - 60日前から開始
+    - 通知不要（EventBridge監視推奨）
+  
+  インポート証明書:
+    - 手動更新必須
+    - 期限45日前に通知
+    - EventBridge + Lambda自動化
+
+削除:
+  事前確認:
+    - 使用中のサービス確認
+    - ALB/CloudFront/API Gateway
+    - 削除前にバックアップ（インポート証明書）
+  
+  削除後:
+    - DNS検証レコード保持（自動更新用）
+    - CloudTrailで監査
+```
+
+### マルチリージョン戦略
+
+```yaml
+証明書発行:
+  CloudFront:
+    - us-east-1 のみ
+    - グローバルサービス
+  
+  リージョナル（ALB, API Gateway）:
+    - 使用リージョンごとに発行
+    - 同じドメイン名でOK
+    - DNS検証レコードは共通
+
+自動化:
+  CloudFormation StackSets:
+    - 複数リージョンに一括デプロイ
+    - 証明書 + ALB + Route 53
+  
+  Terraform:
+    - provider alias で複数リージョン
+    - モジュール化
+    - for_each でリージョンループ
+
+例:
+  ap-northeast-1: api.example.com
+  us-west-2:      api.example.com
+  eu-west-1:      api.example.com
+  → 同じDNS検証CNAMEで全リージョン検証可能
+```
+
+### セキュリティ強化
+
+```yaml
+TLSポリシー:
+  ALB:
+    - ELBSecurityPolicy-TLS-1-2-2017-01（推奨）
+    - ELBSecurityPolicy-TLS13-1-2-2021-06（最新）
+    - TLS 1.0/1.1 は非推奨
+  
+  CloudFront:
+    - TLSv1.2_2021（推奨）
+    - TLS 1.2 以上
+  
+  API Gateway:
+    - TLS 1.2 デフォルト
+    - カスタムドメインで設定
+
+HTTPSリダイレクト:
+  ALB:
+    - HTTPリスナーで301リダイレクト
+    - HTTPSリスナーに転送
+  
+  CloudFront:
+    - viewer_protocol_policy: redirect-to-https
+    - 全通信HTTPS化
+
+IAMアクセス制御:
+  最小権限:
+    - acm:RequestCertificate
+    - acm:DescribeCertificate
+    - acm:ListCertificates
+    - acm:AddTagsToCertificate
+  
+  タグベース制御:
+    Condition:
+      StringEquals:
+        acm:ResourceTag/Environment: Production
+```
+
+### 監視とアラート
+
+```yaml
+EventBridge:
+  証明書期限切れアラート:
+    - DaysToExpiry < 45 日
+    - インポート証明書対象
+    - SNS通知
+  
+  証明書発行・削除:
+    - RequestCertificate
+    - DeleteCertificate
+    - ImportCertificate
+    - 監査ログ
+
+CloudWatch Alarms:
+  メトリクス:
+    - DaysToExpiry
+    - しきい値: 30日
+  
+  アクション:
+    - SNS Topic → Email
+    - Lambda → Slack通知
+```
+
+### EventBridge ルール例
+
+```json
+{
+  "source": ["aws.acm"],
+  "detail-type": ["ACM Certificate Approaching Expiration"],
+  "detail": {
+    "DaysToExpiry": [
+      { "numeric": ["<", 45] }
+    ]
+  }
+}
+```
+
+### Lambda 自動更新スクリプト
+
+```python
+import boto3
+import os
+from datetime import datetime
+
+acm = boto3.client('acm')
+sns = boto3.client('sns')
+
+def lambda_handler(event, context):
+    """インポート証明書の期限チェックと通知"""
+    
+    region = os.environ['AWS_REGION']
+    sns_topic_arn = os.environ['SNS_TOPIC_ARN']
+    
+    # 全証明書取得
+    certificates = acm.list_certificates(
+        CertificateStatuses=['ISSUED']
+    )
+    
+    expiring_certs = []
+    
+    for cert_summary in certificates['CertificateSummaryList']:
+        cert_arn = cert_summary['CertificateArn']
+        
+        # 詳細取得
+        cert_detail = acm.describe_certificate(
+            CertificateArn=cert_arn
+        )
+        
+        certificate = cert_detail['Certificate']
+        
+        # インポート証明書のみチェック
+        if certificate.get('Type') == 'IMPORTED':
+            not_after = certificate['NotAfter']
+            domain_name = certificate['DomainName']
+            
+            # 期限までの日数計算
+            days_to_expiry = (not_after - datetime.now(not_after.tzinfo)).days
+            
+            if days_to_expiry <= 45:
+                expiring_certs.append({
+                    'domain': domain_name,
+                    'arn': cert_arn,
+                    'days': days_to_expiry,
+                    'expiry_date': not_after.isoformat()
+                })
+    
+    # 通知
+    if expiring_certs:
+        message = "以下のインポート証明書が期限切れに近づいています:\n\n"
+        
+        for cert in expiring_certs:
+            message += f"ドメイン: {cert['domain']}\n"
+            message += f"残り日数: {cert['days']}日\n"
+            message += f"期限: {cert['expiry_date']}\n"
+            message += f"ARN: {cert['arn']}\n\n"
+        
+        sns.publish(
+            TopicArn=sns_topic_arn,
+            Subject='ACM証明書期限アラート',
+            Message=message
+        )
+        
+        print(f"{len(expiring_certs)}件の証明書が期限切れに近づいています")
+    else:
+        print("期限切れに近づいている証明書はありません")
+    
+    return {
+        'statusCode': 200,
+        'body': f'Checked {len(certificates["CertificateSummaryList"])} certificates'
+    }
+```
+
+## トラブルシューティング
+
+### よくある問題
+
+```yaml
+問題1: DNS検証が完了しない:
+  原因:
+    - CNAMEレコード未追加
+    - TTL設定ミス
+    - ホストゾーンID間違い
+    - レコード名の重複
+  
+  対処:
+    1. DNS検証情報確認:
+       aws acm describe-certificate --certificate-arn xxx
+    
+    2. Route 53レコード確認:
+       aws route53 list-resource-record-sets --hosted-zone-id xxx
+    
+    3. dig で確認:
+       dig _xxx.example.com CNAME
+    
+    4. 待機（最大72時間）
+
+問題2: CloudFrontで証明書が見つからない:
+  原因:
+    - us-east-1以外で発行
+    - 検証未完了
+  
+  対処:
+    - us-east-1で証明書発行
+    - ステータスがISSUEDか確認
+
+問題3: ALBリスナーにアタッチできない:
+  原因:
+    - 異なるリージョン
+    - 検証未完了
+  
+  対処:
+    - 同一リージョンで発行
+    - 証明書ステータス確認
+
+問題4: インポート証明書が期限切れ:
+  原因:
+    - 自動更新なし
+    - 通知見逃し
+  
+  対処:
+    - 新証明書インポート（同じARN）
+    - EventBridge監視設定
+    - Lambda自動化
+
+問題5: ワイルドカード証明書でカバーされない:
+  原因:
+    - 2階層目のサブドメイン
+    - *.example.com は sub.api.example.com 非対応
+  
+  対処:
+    - 追加の証明書発行
+    - SANで複数ドメイン指定
+```
+
+### デバッグコマンド
+
+```bash
+# 証明書状態詳細確認
+aws acm describe-certificate \
+  --certificate-arn arn:aws:acm:ap-northeast-1:123456789012:certificate/xxxxx \
+  --region ap-northeast-1 | jq
+
+# DNS検証レコード確認
+dig _xxx.example.com CNAME +short
+
+# ALBリスナー証明書確認
+aws elbv2 describe-listeners \
+  --load-balancer-arn arn:aws:elasticloadbalancing:... \
+  --region ap-northeast-1 | jq '.Listeners[].Certificates'
+
+# CloudFront証明書確認
+aws cloudfront get-distribution \
+  --id EXAMPLEID | jq '.Distribution.ViewerCertificate'
+
+# 証明書使用状況一括確認
+aws acm describe-certificate \
+  --certificate-arn arn:aws:acm:... \
+  --region ap-northeast-1 \
+  --query 'Certificate.InUseBy'
+```
+
+## まとめ
+
+**実務での重要ポイント:**
+- DNS検証で完全自動化（Route 53推奨）
+- CloudFrontは us-east-1 の証明書必須
+- ワイルドカード証明書で管理簡素化
+- インポート証明書は EventBridge で監視
+- Terraform/CloudFormation で IaC化
+- タグで証明書を体系的に管理
+- HTTPSリダイレクトでセキュリティ強化
+- CloudTrailで監査証跡確保
+- マルチリージョンは各リージョンで発行

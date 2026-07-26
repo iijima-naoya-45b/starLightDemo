@@ -1,0 +1,535 @@
+---
+title: "ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## ユースケース
+
+### 1. CloudFront + S3 静的サイト
+
+```yaml
+シナリオ:
+  - 静的ウェブサイト（S3）
+  - カスタムドメイン
+  - HTTPS必須
+  - グローバル配信
+
+実装:
+  ACM（us-east-1）:
+    - ドメイン: www.example.com
+    - 検証: DNS検証
+    - ワイルドカード: *.example.com
+  
+  CloudFront:
+    - オリジン: S3バケット
+    - カスタムドメイン設定
+    - ACM証明書アタッチ
+    - HTTPS only
+  
+  Route 53:
+    - Aレコード（Alias）
+    - CloudFront向け
+    - DNS検証CNAME
+
+注意点:
+  - ACM証明書は us-east-1 必須
+  - CloudFrontディストリビューション作成前に証明書発行
+  - CNAMEは CloudFront設定にも必要
+```
+
+### 2. ALB + EC2 Webアプリケーション
+
+```yaml
+シナリオ:
+  - EC2でWebアプリ稼働
+  - ALB経由でアクセス
+  - HTTPS通信
+  - オートスケーリング
+
+実装:
+  ACM（ap-northeast-1）:
+    - ドメイン: api.example.com
+    - 検証: DNS検証（Route 53自動）
+  
+  ALB:
+    - HTTPSリスナー（443）
+    - ターゲットグループ: EC2インスタンス
+    - セキュリティポリシー: ELBSecurityPolicy-TLS-1-2-2017-01
+    - ACM証明書アタッチ
+  
+  EC2:
+    - HTTPで通信（内部）
+    - セキュリティグループ: ALBからのみ
+  
+  Route 53:
+    - Aレコード（Alias）
+    - ALB向け
+
+メリット:
+  - TLS Termination（ALBで復号化）
+  - EC2はHTTPで処理（負荷軽減）
+  - 証明書更新自動化
+```
+
+### 3. API Gateway カスタムドメイン
+
+```yaml
+シナリオ:
+  - REST API
+  - カスタムドメイン
+  - Lambda統合
+  - マルチステージ
+
+実装:
+  ACM（ap-northeast-1）:
+    - ドメイン: api.example.com
+    - 検証: DNS検証
+  
+  API Gateway:
+    - カスタムドメイン設定
+    - エンドポイントタイプ: Regional
+    - ACM証明書選択
+    - ベースパスマッピング:
+      - /prod → Production ステージ
+      - /dev → Development ステージ
+  
+  Route 53:
+    - Aレコード（Alias）
+    - API Gateway向け
+
+エッジ最適化の場合:
+  ACM（us-east-1）:
+    - CloudFrontディストリビューション経由
+    - us-east-1の証明書必須
+```
+
+## アーキテクチャパターン
+
+### パターン1: CloudFront + ALB マルチリージョン
+
+```yaml
+構成:
+  CloudFront:
+    - グローバルエッジロケーション
+    - ACM証明書（us-east-1）
+    - カスタムドメイン: www.example.com
+  
+  ALB（複数リージョン）:
+    - ap-northeast-1: ALB + ACM証明書
+    - us-west-2: ALB + ACM証明書
+    - オリジン選択: CloudFront Origin Groups
+  
+  Route 53:
+    - CloudFront向けAレコード
+    - フェイルオーバー設定
+
+証明書設計:
+  CloudFront用（us-east-1）:
+    - ドメイン: www.example.com
+    - ワイルドカード: *.example.com
+  
+  ALB用（各リージョン）:
+    - 各リージョンで同じドメインの証明書発行
+    - DNS検証は同じCNAME使用可能
+
+メリット:
+  - グローバルな低レイテンシ
+  - 高可用性
+  - DDoS保護（CloudFront + Shield）
+  - エッジでのTLS Termination
+```
+
+### パターン2: ALB + SNI（複数証明書）
+
+```yaml
+シナリオ:
+  - 1つのALBで複数ドメイン
+  - マルチテナント
+  - コスト最適化
+
+構成:
+  ALB:
+    - HTTPSリスナー
+    - デフォルト証明書: *.example.com
+    - 追加証明書（SNI）:
+      - tenant1.example.com
+      - tenant2.example.com
+      - custom-domain.com
+  
+  ACM証明書:
+    - 証明書1: *.example.com
+    - 証明書2: tenant1.example.com
+    - 証明書3: custom-domain.com
+  
+  ターゲットグループ:
+    - ホストベースルーティング
+    - パスベースルーティング
+
+実装例:
+  リスナールール:
+    - ホストヘッダー: tenant1.example.com → TG1
+    - ホストヘッダー: tenant2.example.com → TG2
+    - ホストヘッダー: custom-domain.com → TG3
+    - デフォルト → TG0
+
+メリット:
+  - 1つのALBで複数ドメイン対応
+  - コスト削減
+  - 管理簡素化
+```
+
+### パターン3: ワイルドカード証明書
+
+```yaml
+シナリオ:
+  - 多数のサブドメイン
+  - マイクロサービス
+  - SaaS アプリケーション
+
+証明書設計:
+  ACM証明書:
+    - ドメイン: *.example.com
+    - カバー範囲:
+      ✅ api.example.com
+      ✅ auth.example.com
+      ✅ admin.example.com
+      ✅ user.example.com
+      ❌ sub.api.example.com（2階層目は不可）
+
+利用例:
+  マイクロサービス:
+    - api.example.com → API Gateway
+    - auth.example.com → Cognito
+    - admin.example.com → ALB + Admin App
+    - static.example.com → CloudFront + S3
+
+メリット:
+  - 証明書管理簡素化
+  - 新サブドメイン追加容易
+  - コスト効率（1証明書）
+
+注意点:
+  - セキュリティ影響範囲拡大
+  - 秘密鍵漏洩時の影響大
+  - 環境分離には向かない
+```
+
+### パターン4: マルチリージョン DR（ディザスタリカバリ）
+
+```yaml
+構成:
+  プライマリリージョン（ap-northeast-1）:
+    - ALB + ACM証明書
+    - EC2 Auto Scaling
+    - RDS（Multi-AZ）
+  
+  DRリージョン（ap-southeast-1）:
+    - ALB + ACM証明書（同じドメイン）
+    - EC2 Auto Scaling（最小構成）
+    - RDS Read Replica
+  
+  Route 53:
+    - フェイルオーバールーティング
+    - ヘルスチェック
+    - 自動切り替え
+
+証明書設計:
+  各リージョン:
+    - 同じドメインで証明書発行
+    - DNS検証（同じCNAMEでOK）
+    - 自動更新設定
+
+フェイルオーバーフロー:
+  1. プライマリ障害検知（ヘルスチェック）
+  2. Route 53がDRリージョンへ切り替え
+  3. DRのALB + ACM証明書で継続
+  4. ダウンタイム最小化
+
+メリット:
+  - 高可用性
+  - RPO/RTO目標達成
+  - 自動フェイルオーバー
+```
+
+### パターン5: API Gateway + Lambda マイクロサービス
+
+```yaml
+構成:
+  API Gateway:
+    - カスタムドメイン: api.example.com
+    - ACM証明書（Regional）
+    - リソース:
+      - /users → Lambda（ユーザー管理）
+      - /products → Lambda（商品管理）
+      - /orders → Lambda（注文管理）
+  
+  Lambda関数:
+    - 各マイクロサービス独立
+    - DynamoDB統合
+    - VPC Lambda（必要に応じて）
+  
+  Route 53:
+    - api.example.com → API Gateway
+
+カスタムドメイン設定:
+  エンドポイント: Regional
+  証明書: ACM（同一リージョン）
+  ベースパスマッピング:
+    - /v1 → Production ステージ
+    - /v2 → V2 ステージ
+    - /beta → Beta ステージ
+
+メリット:
+  - サーバーレス
+  - スケーラブル
+  - コスト効率
+  - 独立したデプロイ
+```
+
+### パターン6: CloudFront + S3 + API Gateway（SPA）
+
+```yaml
+構成:
+  CloudFront:
+    - カスタムドメイン: www.example.com
+    - ACM証明書（us-east-1）
+    - オリジン:
+      - / → S3（SPA静的ファイル）
+      - /api/* → API Gateway
+  
+  S3:
+    - React/Vue.js等のSPA
+    - 静的ホスティング
+  
+  API Gateway:
+    - REST API
+    - Lambda統合
+    - DynamoDB
+  
+  Route 53:
+    - www.example.com → CloudFront
+
+ビヘイビア設定:
+  デフォルト（/）:
+    - オリジン: S3
+    - キャッシング: 有効
+  
+  /api/*:
+    - オリジン: API Gateway
+    - キャッシング: 無効
+    - カスタムヘッダー転送
+
+セキュリティ:
+  S3:
+    - OAI（Origin Access Identity）
+    - CloudFrontからのみアクセス
+  
+  API Gateway:
+    - カスタムヘッダー検証
+    - CloudFront経由のみ許可
+```
+
+## 実装例
+
+### CloudFormation（ACM + ALB）
+
+```yaml
+Resources:
+  # ACM証明書
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: www.example.com
+      SubjectAlternativeNames:
+        - example.com
+        - api.example.com
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: www.example.com
+          HostedZoneId: !Ref HostedZoneId
+      Tags:
+        - Key: Name
+          Value: example-com-cert
+
+  # Application Load Balancer
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: my-alb
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: my-alb
+
+  # HTTPSリスナー
+  HTTPSListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref Certificate
+      SslPolicy: ELBSecurityPolicy-TLS-1-2-2017-01
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  # HTTPリスナー（HTTPSへリダイレクト）
+  HTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: 443
+            StatusCode: HTTP_301
+
+  # Route 53レコード
+  DNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: www.example.com
+      Type: A
+      AliasTarget:
+        HostedZoneId: !GetAtt ALB.CanonicalHostedZoneID
+        DNSName: !GetAtt ALB.DNSName
+```
+
+### Terraform（ACM + CloudFront）
+
+```hcl
+# ACM証明書（us-east-1）
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+}
+
+resource "aws_acm_certificate" "cloudfront_cert" {
+  provider          = aws.us_east_1
+  domain_name       = "www.example.com"
+  validation_method = "DNS"
+
+  subject_alternative_names = [
+    "example.com",
+    "*.example.com"
+  ]
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = {
+    Name = "cloudfront-cert"
+  }
+}
+
+# DNS検証
+resource "aws_route53_record" "cert_validation" {
+  for_each = {
+    for dvo in aws_acm_certificate.cloudfront_cert.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  }
+
+  allow_overwrite = true
+  name            = each.value.name
+  records         = [each.value.record]
+  ttl             = 60
+  type            = each.value.type
+  zone_id         = var.hosted_zone_id
+}
+
+# 証明書検証完了待機
+resource "aws_acm_certificate_validation" "cloudfront_cert" {
+  provider                = aws.us_east_1
+  certificate_arn         = aws_acm_certificate.cloudfront_cert.arn
+  validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
+}
+
+# CloudFront
+resource "aws_cloudfront_distribution" "s3_distribution" {
+  enabled             = true
+  default_root_object = "index.html"
+  aliases             = ["www.example.com", "example.com"]
+
+  origin {
+    domain_name = aws_s3_bucket.website.bucket_regional_domain_name
+    origin_id   = "S3-Website"
+
+    s3_origin_config {
+      origin_access_identity = aws_cloudfront_origin_access_identity.oai.cloudfront_access_identity_path
+    }
+  }
+
+  default_cache_behavior {
+    target_origin_id       = "S3-Website"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+  }
+
+  viewer_certificate {
+    acm_certificate_arn      = aws_acm_certificate.cloudfront_cert.arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+}
+```
+
+### AWS CLI（ACM証明書リクエスト）
+
+```bash
+# 証明書リクエスト（DNS検証）
+CERT_ARN=$(aws acm request-certificate \
+  --domain-name www.example.com \
+  --subject-alternative-names example.com api.example.com \
+  --validation-method DNS \
+  --idempotency-token $(uuidgen) \
+  --region ap-northeast-1 \
+  --output text \
+  --query CertificateArn)
+
+echo "Certificate ARN: $CERT_ARN"
+
+# 検証情報取得
+aws acm describe-certificate \
+  --certificate-arn $CERT_ARN \
+  --region ap-northeast-1 \
+  --query 'Certificate.DomainValidationOptions'
+```
+
+## まとめ
+
+**アーキテクチャ設計のポイント:**
+- CloudFrontは us-east-1 の証明書必須
+- リージョナルサービスは同一リージョン
+- ワイルドカード証明書で管理簡素化
+- SNIで複数証明書を1つのALBに
+- DNS検証で完全自動化
+- マルチリージョン構成は各リージョンで証明書発行
+- Route 53で自動化・フェイルオーバー
