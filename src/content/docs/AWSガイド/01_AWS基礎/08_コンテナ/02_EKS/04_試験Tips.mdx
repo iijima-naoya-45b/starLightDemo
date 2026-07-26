@@ -1,0 +1,491 @@
+---
+title: "試験Tips"
+label: "試験Tips"
+---
+
+## SAA（ソリューションアーキテクト アソシエイト）
+
+### 頻出ポイント
+
+#### 1. EKS vs ECS
+
+```yaml
+出題パターン:
+  「コンテナオーケストレーションサービスを選択」
+
+選択基準:
+  EKS:
+    - Kubernetes標準が必要
+    - ポータビリティ重視
+    - 複雑なワークロード
+    - オンプレミス統合
+  
+  ECS:
+    - AWS特化でOK
+    - シンプル構成
+    - 学習コスト低減
+    - コスト最適化
+
+キーワード:
+  ✅ Kubernetes → EKS
+  ✅ AWS完全統合 → ECS
+  ✅ ハイブリッド → EKS
+```
+
+#### 2. ワーカーノードの選択
+
+```yaml
+シナリオ:
+  「ワーカーノードの運用負荷を削減したい」
+
+選択肢:
+  マネージドノードグループ:
+    - 推奨
+    - AMI自動更新
+    - Auto Scaling統合
+  
+  Fargate:
+    - サーバーレス
+    - ノード管理不要
+    - Pod単位課金
+  
+  セルフマネージド:
+    - 完全制御必要時のみ
+
+キーワード:
+  - 運用負荷削減 → マネージドノードグループ
+  - サーバーレス → Fargate
+  - カスタムAMI → セルフマネージド
+```
+
+#### 3. IRSA（IAM Roles for Service Accounts）
+
+```yaml
+問題:
+  「Pod毎に異なるAWS権限を付与したい」
+
+正解アプローチ:
+  - IRSA使用
+  - ServiceAccount作成
+  - IAMロール紐付け
+  - Pod に ServiceAccount 指定
+
+メリット:
+  - 最小権限の原則
+  - 一時的な認証情報
+  - 認証情報ハードコード不要
+
+よくある間違い:
+  ❌ ノードのIAMロールに全権限
+  ❌ 環境変数にアクセスキー
+  ✅ IRSA使用
+```
+
+#### 4. ネットワーキング
+
+```yaml
+シナリオ:
+  「PodにVPCのIPアドレスを割り当てたい」
+
+正解:
+  - VPC CNI（デフォルト）
+  - ENI / セカンダリIPアドレス
+  - VPCネイティブ
+
+特徴:
+  - PodにVPC IPアドレス
+  - セキュリティグループ適用可能
+  - VPC内リソースと直接通信
+
+注意:
+  - IPアドレス枯渇リスク
+  - サブネット設計重要
+```
+
+## SAP（ソリューションアーキテクト プロフェッショナル）
+
+### 高度なシナリオ
+
+#### 1. マルチテナント設計
+
+```yaml
+要件:
+  「単一EKSクラスターで複数チーム利用」
+
+設計:
+  namespace分離:
+    - チーム毎にnamespace
+    - ResourceQuota設定
+    - LimitRange設定
+  
+  RBAC:
+    - チーム毎のRole/RoleBinding
+    - ServiceAccount分離
+    - ClusterRoleの制限
+  
+  NetworkPolicy:
+    - namespace間通信制御
+    - 外部通信制御
+  
+  IRSA:
+    - チーム毎のIAMロール
+    - リソース毎の権限分離
+
+監査:
+  - CloudTrail（EKS API）
+  - Kubernetes監査ログ
+  - クラスター毎の分離も検討
+```
+
+#### 2. Fargate vs EC2ノード
+
+```yaml
+シナリオ:
+  「ワークロード特性に応じた最適なコンピューティング選択」
+
+設計:
+  Fargate:
+    用途:
+      - バースト型ワークロード
+      - 小規模Pod
+      - セキュリティ重視
+    
+    制約:
+      - DaemonSet使用不可
+      - Privileged Pod不可
+      - HostPath不可
+    
+    対策:
+      - サイドカーコンテナ
+      - Firelens（ログ）
+
+  EC2ノード:
+    用途:
+      - 常時稼働
+      - DaemonSet必要
+      - GPU/高性能
+    
+    最適化:
+      - Spot Instances
+      - マルチインスタンスタイプ
+      - Cluster Autoscaler
+
+ハイブリッド:
+  - 両方使用
+  - namespace毎に選択
+  - Fargate Profile設定
+```
+
+#### 3. 大規模クラスター運用
+
+```yaml
+要件:
+  「数千Podの大規模クラスター運用」
+
+設計:
+  ノード:
+    - マルチAZ分散
+    - 複数ノードグループ
+    - インスタンスタイプ多様化
+  
+  ネットワーク:
+    - サブネット設計（IPアドレス）
+    - VPC CNI prefix delegation
+    - ENI制限考慮
+  
+  スケーリング:
+    - Cluster Autoscaler
+    - Karpenter（推奨）
+    - Pod Disruption Budget
+  
+  監視:
+    - Container Insights
+    - Prometheus + Grafana
+    - カスタムメトリクス
+
+制限値:
+  - クラスター: 最大5000ノード
+  - ノード: 最大110 Pod（VPC CNI）
+  - API Server: レート制限あり
+```
+
+#### 4. ハイブリッドクラウド
+
+```yaml
+要件:
+  「オンプレミスとAWS EKSの統合管理」
+
+アプローチ:
+  EKS Anywhere:
+    - オンプレミス実行
+    - 同一管理体験
+    - バージョン統一
+  
+  EKS Connector:
+    - 外部クラスター接続
+    - AWSコンソール統合
+    - 既存クラスター活用
+
+  ネットワーク:
+    - Direct Connect
+    - VPN接続
+    - サービスメッシュ（App Mesh）
+
+  ワークロード配置:
+    - Federation（マルチクラスター）
+    - GitOps（統一デプロイ）
+    - データローカリティ考慮
+```
+
+#### 5. CI/CD統合戦略
+
+```yaml
+要件:
+  「セキュアで効率的なCI/CDパイプライン」
+
+設計:
+  ビルド:
+    CodeBuild:
+      - Dockerイメージビルド
+      - セキュリティスキャン
+      - ECRプッシュ
+  
+  イメージ管理:
+    ECR:
+      - プライベートレジストリ
+      - イメージスキャン
+      - ライフサイクルポリシー
+      - レプリケーション
+  
+  デプロイ:
+    GitOps:
+      - ArgoCD / Flux
+      - Git中心
+      - 宣言的
+      - 監査証跡
+    
+    ブルーグリーン:
+      - カナリアデプロイ
+      - トラフィック分割
+      - 自動ロールバック
+
+  セキュリティ:
+    - イメージ署名検証
+    - ポリシー適用（OPA）
+    - シークレット管理（Secrets Manager）
+```
+
+#### 6. コスト最適化戦略
+
+```yaml
+要件:
+  「大規模環境でのコスト最適化」
+
+戦略:
+  Spot Instances:
+    - 適切なワークロード選択
+    - 複数インスタンスタイプ
+    - スポット中断処理
+    - 70-90%削減
+  
+  Savings Plans:
+    - 1年/3年コミット
+    - コンピュート Savings Plans
+    - 柔軟性とコスト削減
+  
+  リソース適正化:
+    - VPA（Vertical Pod Autoscaler）
+    - リソース使用率分析
+    - 過剰プロビジョニング削減
+  
+  クラスター統合:
+    - マルチテナント
+    - namespace分離
+    - クラスター数削減
+  
+  Fargate活用:
+    - 小規模Pod
+    - バースト型
+    - ノード管理コスト削減
+
+分析:
+  - Cost Explorer
+  - kubecost
+  - タグ戦略
+```
+
+## よくある間違い
+
+### 間違い 1: ワーカーノード選択の誤解
+
+```yaml
+❌ 誤り:
+  「Fargateで全てのワークロード実行可能」
+
+✅ 正解:
+  Fargate制約:
+    - DaemonSet使用不可
+    - Privileged Pod不可
+    - HostPath / HostNetwork不可
+    - GPUサポートなし
+  
+  適切な選択:
+    - 一般的なアプリケーション → Fargate
+    - DaemonSet必要 → EC2ノード
+    - GPU必要 → EC2ノード（GPU型）
+```
+
+### 間違い 2: IRSA設定の誤解
+
+```yaml
+❌ 誤り:
+  「ServiceAccount作成だけでAWSアクセス可能」
+
+✅ 正解:
+  必要な設定:
+    1. OIDCプロバイダー作成
+    2. IAMロール作成（信頼ポリシー）
+    3. ServiceAccount作成（annotation付き）
+    4. Pod にServiceAccount指定
+  
+  全て必要
+```
+
+### 間違い 3: ネットワーク設計の誤解
+
+```yaml
+❌ 誤り:
+  「Podは無制限に作成可能」
+
+✅ 正解:
+  VPC CNI制限:
+    - ノード毎のENI数制限
+    - ENI毎のIPアドレス数制限
+    - インスタンスタイプ依存
+  
+  例（t3.medium）:
+    - ENI: 3個
+    - IP/ENI: 6個
+    - 最大Pod: 17個（(3 × 6) - 1）
+  
+  対策:
+    - サブネット設計
+    - prefix delegation機能
+    - 適切なインスタンスタイプ選択
+```
+
+### 間違い 4: コストの誤解
+
+```yaml
+❌ 誤り:
+  「EKSコントロールプレーンは無料」
+
+✅ 正解:
+  料金:
+    コントロールプレーン: $0.10/時間（約$73/月）
+    ワーカーノード: EC2 / Fargate料金
+    データ転送: 通常料金
+  
+  注意:
+    - クラスター毎に課金
+    - 多数の小規模クラスターは非効率
+    - マルチテナント検討
+```
+
+### 間違い 5: Fargate料金の誤解
+
+```yaml
+❌ 誤り:
+  「FargateはEC2より常に高い」
+
+✅ 正解:
+  比較:
+    Fargate:
+      - Pod単位課金
+      - 使用時間のみ
+      - 管理コスト不要
+    
+    EC2:
+      - インスタンス全体課金
+      - 未使用リソースも課金
+      - 管理コスト必要
+  
+  適切な選択:
+    - 小規模Pod多数 → Fargate有利
+    - 大規模常時稼働 → EC2有利
+    - ハイブリッド → 両方使用
+```
+
+### 間違い 6: スケーリングの誤解
+
+```yaml
+❌ 誤り:
+  「HPAだけで自動スケーリング完結」
+
+✅ 正解:
+  必要な設定:
+    HPA:
+      - Pod数のスケーリング
+      - CPU/メモリベース
+    
+    Cluster Autoscaler:
+      - ノード数のスケーリング
+      - Pod配置不可時に拡張
+    
+    両方必要:
+      1. HPA で Pod 増加
+      2. リソース不足
+      3. Cluster Autoscaler でノード追加
+```
+
+## 試験対策チェックリスト
+
+### 基本概念
+- [ ] EKS vs ECS 使い分け
+- [ ] コントロールプレーンとデータプレーン
+- [ ] マネージドノードグループ理解
+- [ ] Fargate特性と制約
+
+### ネットワーク
+- [ ] VPC CNI 仕組み
+- [ ] ENI / IPアドレス制限
+- [ ] Service タイプ（ClusterIP/NodePort/LoadBalancer）
+- [ ] Ingress / ALB統合
+
+### セキュリティ
+- [ ] IRSA 設定手順
+- [ ] RBAC 基本
+- [ ] Pod Security Standards
+- [ ] NetworkPolicy
+
+### 運用（SAP）
+- [ ] マルチテナント設計
+- [ ] 大規模クラスター運用
+- [ ] CI/CD統合
+- [ ] コスト最適化戦略
+
+### スケーリング
+- [ ] HPA 設定
+- [ ] Cluster Autoscaler
+- [ ] Karpenter
+- [ ] リソース管理（requests/limits）
+
+## まとめ
+
+**試験で押さえるべき重要ポイント:**
+
+SAA:
+- EKS vs ECS の使い分け
+- IRSA によるセキュアなアクセス制御
+- マネージドノードグループ vs Fargate
+- VPC CNI とネットワーク制限
+- 基本的なKubernetes概念
+
+SAP:
+- マルチテナント設計戦略
+- 大規模環境でのスケーリング
+- ハイブリッドクラウド統合
+- CI/CD統合とGitOps
+- コスト最適化戦略
+- Fargate vs EC2 の詳細な使い分け
+- 高度なネットワーク設計

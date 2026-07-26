@@ -1,0 +1,531 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## AWS CLI / kubectl / eksctl コマンド
+
+### クラスター管理
+
+```bash
+# クラスター作成（シンプル）
+eksctl create cluster \
+  --name my-cluster \
+  --region ap-northeast-1 \
+  --nodegroup-name standard-workers \
+  --node-type t3.medium \
+  --nodes 3 \
+  --nodes-min 1 \
+  --nodes-max 10 \
+  --managed
+
+# クラスター作成（詳細設定）
+eksctl create cluster -f cluster.yaml
+
+# クラスター一覧
+eksctl get cluster
+
+# クラスター詳細
+aws eks describe-cluster \
+  --name my-cluster \
+  --region ap-northeast-1
+
+# クラスター削除
+eksctl delete cluster \
+  --name my-cluster \
+  --region ap-northeast-1
+
+# kubeconfig更新
+aws eks update-kubeconfig \
+  --name my-cluster \
+  --region ap-northeast-1
+
+# クラスターバージョン確認
+kubectl version --short
+```
+
+### ノードグループ管理
+
+```bash
+# マネージドノードグループ作成
+eksctl create nodegroup \
+  --cluster my-cluster \
+  --name ng-spot \
+  --node-type t3.medium \
+  --nodes 3 \
+  --nodes-min 1 \
+  --nodes-max 10 \
+  --spot
+
+# ノードグループ一覧
+eksctl get nodegroup \
+  --cluster my-cluster
+
+# ノードグループスケール
+eksctl scale nodegroup \
+  --cluster my-cluster \
+  --name ng-general \
+  --nodes 5 \
+  --nodes-min 2 \
+  --nodes-max 10
+
+# ノードグループ削除
+eksctl delete nodegroup \
+  --cluster my-cluster \
+  --name ng-spot \
+  --drain=true
+
+# ノード一覧
+kubectl get nodes
+
+# ノード詳細
+kubectl describe node <node-name>
+```
+
+### アドオン管理
+
+```bash
+# アドオン一覧確認
+eksctl get addons --cluster my-cluster
+
+aws eks list-addons \
+  --cluster-name my-cluster
+
+# VPC CNI アドオン追加
+eksctl create addon \
+  --cluster my-cluster \
+  --name vpc-cni \
+  --version latest \
+  --service-account-role-arn arn:aws:iam::123456789012:role/AmazonEKSVPCCNIRole
+
+# CoreDNS アドオン更新
+eksctl update addon \
+  --cluster my-cluster \
+  --name coredns \
+  --version latest
+
+# EBS CSI Driver追加
+eksctl create addon \
+  --cluster my-cluster \
+  --name aws-ebs-csi-driver \
+  --service-account-role-arn arn:aws:iam::123456789012:role/AmazonEKS_EBS_CSI_DriverRole
+
+# アドオン削除
+eksctl delete addon \
+  --cluster my-cluster \
+  --name vpc-cni
+```
+
+### IRSA（IAM Roles for Service Accounts）
+
+```bash
+# OIDC プロバイダー作成
+eksctl utils associate-iam-oidc-provider \
+  --cluster my-cluster \
+  --approve
+
+# OIDC プロバイダーURL取得
+aws eks describe-cluster \
+  --name my-cluster \
+  --query "cluster.identity.oidc.issuer" \
+  --output text
+
+# ServiceAccount with IAM Role作成
+eksctl create iamserviceaccount \
+  --cluster my-cluster \
+  --namespace default \
+  --name my-service-account \
+  --attach-policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess \
+  --approve
+
+# ServiceAccount一覧
+eksctl get iamserviceaccount --cluster my-cluster
+
+# ServiceAccount削除
+eksctl delete iamserviceaccount \
+  --cluster my-cluster \
+  --namespace default \
+  --name my-service-account
+```
+
+### Fargate Profile
+
+```bash
+# Fargate Profile作成
+eksctl create fargateprofile \
+  --cluster my-cluster \
+  --name fp-default \
+  --namespace default
+
+# ラベルセレクター付き
+eksctl create fargateprofile \
+  --cluster my-cluster \
+  --name fp-production \
+  --namespace production \
+  --labels env=production,tier=backend
+
+# Fargate Profile一覧
+eksctl get fargateprofile \
+  --cluster my-cluster
+
+# Fargate Profile削除
+eksctl delete fargateprofile \
+  --cluster my-cluster \
+  --name fp-default
+```
+
+### kubectl 基本操作
+
+```bash
+# Pod一覧
+kubectl get pods
+kubectl get pods -n kube-system
+kubectl get pods --all-namespaces
+kubectl get pods -o wide
+
+# Pod詳細
+kubectl describe pod <pod-name>
+
+# Podログ
+kubectl logs <pod-name>
+kubectl logs <pod-name> -c <container-name>
+kubectl logs -f <pod-name>  # フォロー
+
+# Pod内でコマンド実行
+kubectl exec -it <pod-name> -- /bin/bash
+kubectl exec <pod-name> -- env
+
+# Deployment作成
+kubectl create deployment my-app --image=nginx:latest
+
+# Deployment一覧
+kubectl get deployments
+
+# Deployment スケール
+kubectl scale deployment my-app --replicas=5
+
+# Deployment ローリングアップデート
+kubectl set image deployment/my-app nginx=nginx:1.21
+
+# ロールバック
+kubectl rollout undo deployment/my-app
+kubectl rollout history deployment/my-app
+kubectl rollout status deployment/my-app
+
+# Service作成
+kubectl expose deployment my-app --port=80 --target-port=8080 --type=LoadBalancer
+
+# Service一覧
+kubectl get services
+kubectl get svc
+
+# ConfigMap作成
+kubectl create configmap my-config --from-literal=key1=value1 --from-file=config.txt
+
+# Secret作成
+kubectl create secret generic my-secret --from-literal=password=mypassword
+
+# リソース削除
+kubectl delete pod <pod-name>
+kubectl delete deployment my-app
+kubectl delete service my-app
+```
+
+### 高度なkubectl操作
+
+```bash
+# リソース使用状況
+kubectl top nodes
+kubectl top pods
+
+# Podのデバッグ
+kubectl debug <pod-name> -it --image=busybox
+
+# Port Forward
+kubectl port-forward svc/my-app 8080:80
+
+# Dry Run
+kubectl apply -f deployment.yaml --dry-run=client
+kubectl apply -f deployment.yaml --dry-run=server
+
+# リソース適用
+kubectl apply -f deployment.yaml
+kubectl apply -f ./ -R  # ディレクトリ配下全て
+
+# リソース差分確認
+kubectl diff -f deployment.yaml
+
+# ラベル操作
+kubectl label pods <pod-name> env=production
+kubectl get pods -l env=production
+
+# アノテーション操作
+kubectl annotate pods <pod-name> description="my application"
+
+# JSONPath
+kubectl get pods -o jsonpath='{.items[*].metadata.name}'
+kubectl get pods -o jsonpath='{.items[*].spec.containers[*].image}'
+```
+
+## ベストプラクティス
+
+### クラスター設計
+
+```yaml
+本番環境:
+  推奨:
+    - マルチAZ構成
+    - マネージドノードグループ
+    - プライベートエンドポイント
+    - VPCエンドポイント活用
+  
+  ノード:
+    - 複数インスタンスタイプ
+    - Spot Instances併用
+    - オートスケーリング設定
+
+開発環境:
+  推奨:
+    - 小規模構成
+    - コスト最適化
+    - Fargate活用
+```
+
+### セキュリティ強化
+
+```yaml
+ネットワーク:
+  - プライベートサブネット配置
+  - セキュリティグループ厳格化
+  - NetworkPolicy実装
+  - Pod Security Standards
+
+認証・認可:
+  - IRSA活用
+  - RBAC詳細設定
+  - 最小権限の原則
+  - ServiceAccount分離
+
+データ保護:
+  - Secrets暗号化（KMS）
+  - etcd暗号化
+  - イメージスキャン（ECR）
+  - プライベートレジストリ
+```
+
+### RBAC設定例
+
+```yaml
+# Role（namespace内権限）
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: production
+  name: pod-reader
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "watch", "list"]
+---
+# RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: read-pods
+  namespace: production
+subjects:
+- kind: ServiceAccount
+  name: my-service-account
+  namespace: production
+roleRef:
+  kind: Role
+  name: pod-reader
+  apiGroup: rbac.authorization.k8s.io
+```
+
+### リソース管理
+
+```yaml
+推奨設定:
+  requests:
+    - 必須設定
+    - スケジューリング基準
+    - 最小値
+  
+  limits:
+    - 推奨設定
+    - 上限値
+    - OOM Killerトリガー
+
+例:
+  CPU:
+    requests: 250m
+    limits: 500m
+  
+  Memory:
+    requests: 256Mi
+    limits: 512Mi
+```
+
+### オートスケーリング設定
+
+```yaml
+# Horizontal Pod Autoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: my-app-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-app
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+```
+
+### コスト最適化
+
+```yaml
+戦略:
+  Spot Instances:
+    - 適切なワークロード選択
+    - 中断許容設計
+    - 70-90%コスト削減
+  
+  Fargate:
+    - 小規模Pod
+    - バースト型ワークロード
+    - ノード管理コスト削減
+
+  リソース適正化:
+    - requests/limits最適化
+    - 未使用リソース削減
+    - HPAで効率的スケーリング
+
+  クラスター統合:
+    - マルチテナント
+    - namespace分離
+    - クラスター数削減
+```
+
+### モニタリング
+
+```yaml
+必須監視項目:
+  クラスターレベル:
+    - CPU / メモリ使用率
+    - ノード数
+    - Pod数
+    - API Server応答時間
+  
+  ノードレベル:
+    - CPU / メモリ
+    - ディスクI/O
+    - ネットワーク
+  
+  Podレベル:
+    - CPU / メモリ
+    - 再起動回数
+    - レスポンスタイム
+    - エラー率
+
+ツール:
+  - CloudWatch Container Insights
+  - Prometheus + Grafana
+  - X-Ray（分散トレーシング）
+```
+
+### トラブルシューティング
+
+```yaml
+よくある問題:
+
+1. Pod起動失敗:
+   確認:
+     - kubectl describe pod <pod-name>
+     - kubectl logs <pod-name>
+     - イメージプル失敗
+     - リソース不足
+   
+   対処:
+     - イメージ名確認
+     - ECR認証確認
+     - ノード追加
+
+2. Service接続不可:
+   確認:
+     - kubectl get endpoints
+     - セレクター確認
+     - NetworkPolicy
+   
+   対処:
+     - ラベル確認
+     - セキュリティグループ
+     - ポート番号確認
+
+3. ノード NotReady:
+   確認:
+     - kubectl describe node
+     - kubelet ログ
+     - VPC CNI状態
+   
+   対処:
+     - ノード再起動
+     - ノード削除・追加
+     - CNI再インストール
+
+4. IRSA動作しない:
+   確認:
+     - OIDC プロバイダー
+     - IAMロール信頼ポリシー
+     - ServiceAccount annotation
+   
+   対処:
+     - アノテーション確認
+     - IAMポリシー確認
+     - Pod再作成
+```
+
+### バックアップ・DR
+
+```yaml
+推奨:
+  etcd バックアップ:
+    - EKSマネージド（自動）
+    - スナップショット保持
+  
+  アプリケーション:
+    - Velero活用
+    - 定期バックアップ
+    - クロスリージョン
+
+  ディザスタリカバリ:
+    - マルチリージョン構成
+    - IaC（Terraform/CloudFormation）
+    - GitOps（ArgoCD/Flux）
+```
+
+## まとめ
+
+**実務での重要ポイント:**
+- eksctl でクラスター管理効率化
+- IRSA でセキュアなアクセス制御
+- kubectl を使いこなす
+- リソース管理でコスト最適化
+- モニタリングで可観測性確保
+- RBAC で細かい権限制御
+- オートスケーリングで柔軟な対応
