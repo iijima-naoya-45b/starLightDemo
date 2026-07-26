@@ -1,0 +1,78 @@
+---
+title: "CloudFront ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## CloudFront ユースケースおよびアーキテクチャパターン
+
+### 1. 静的コンテンツ配信（S3）
+
+```yaml
+構成:
+  CloudFront → S3バケット
+  
+用途:
+  - 画像、CSS、JS配信
+  - 静的ウェブサイト
+
+メリット:
+  - 高速配信
+  - S3転送コスト削減
+  - グローバル対応
+```
+
+### 2. 動的コンテンツ配信（ALB）
+
+```yaml
+構成:
+  CloudFront → ALB → EC2
+  
+設定:
+  - TTL: 0（キャッシュなし）
+  - すべてのヘッダー転送
+  - セッション維持
+
+メリット:
+  - DDoS保護
+  - WAF適用
+  - グローバルエッジ経由
+```
+
+### 3. 動的・静的混在
+
+```yaml
+構成:
+  CloudFront
+    → /api/* → ALB（動的）
+    → /static/* → S3（静的）
+  
+設定:
+  - パスパターン別ビヘイビア
+  - TTL最適化
+```
+
+### 4. プライベートコンテンツ
+
+```yaml
+構成:
+  CloudFront + Signed URL → S3（OAI）
+  
+用途:
+  - 有料コンテンツ
+  - 会員限定動画
+  
+設定:
+  - Signed URL発行（有効期限）
+  - OAI（Origin Access Identity）
+  - S3バケットポリシー
+```
+
+### 5. Lambda@Edge活用
+
+```yaml
+用途:
+  - A/Bテスト（Viewer Request）
+  - 画像リサイズ（Origin Response）
+  - 認証（Viewer Request）
+  - SEO最適化（Origin Response）
+```

@@ -1,0 +1,139 @@
+---
+title: "CloudWatch 試験Tips"
+label: "試験Tips"
+---
+
+## CloudWatch 試験Tips (SAA/SAP)
+
+### 頻出トピック
+
+#### 1. 標準メトリクス vs カスタムメトリクス
+
+```yaml
+標準メトリクス:
+  - AWS提供
+  - 無料
+  - 5分間隔（詳細: 1分）
+  - 例: CPUUtilization, NetworkIn
+
+カスタムメトリクス:
+  - ユーザー定義
+  - 有料
+  - 任意間隔
+  - 例: メモリ使用率、アプリメトリクス
+
+頻出:
+  Q: EC2メモリ監視
+  A: CloudWatch Agent + カスタムメトリクス
+```
+
+#### 2. CloudWatch Logs
+
+```yaml
+機能:
+  - ログ収集、保存
+  - Logs Insights（クエリ）
+  - メトリクスフィルタ
+  - ログサブスクリプション
+
+保持期間:
+  - デフォルト: 無期限
+  - 設定可能: 1日〜10年
+  - コスト削減: 適切な保持期間設定
+```
+
+#### 3. アラームアクション
+
+```yaml
+可能なアクション:
+  - SNS通知
+  - Auto Scalingトリガー
+  - EC2アクション（停止/再起動）
+  - Systems Managerアクション
+
+頻出:
+  Q: CPU高負荷時に自動スケール
+  A: CloudWatch Alarm → Auto Scaling
+```
+
+### 頻出シナリオ
+
+#### シナリオ1: メモリ監視
+
+```
+要件: EC2のメモリ使用率を監視
+解答: CloudWatch Agent + カスタムメトリクス
+
+ポイント:
+✓ 標準メトリクスにメモリなし
+✓ CloudWatch Agent必須
+✓ カスタムメトリクス送信
+```
+
+#### シナリオ2: ログ分析
+
+```
+要件: Lambdaエラーログを検索
+解答: CloudWatch Logs Insights
+
+クエリ例:
+fields @timestamp, @message
+| filter @message like /ERROR/
+| sort @timestamp desc
+```
+
+#### シナリオ3: 異常検知
+
+```
+要件: 通常と異なる動作を検知
+解答: CloudWatch Anomaly Detection
+
+ポイント:
+✓ 機械学習ベース
+✓ 静的しきい値不要
+✓ 自動学習
+```
+
+### よくある間違い
+
+```yaml
+× 誤り: 標準メトリクスでメモリ監視
+○ 正解: CloudWatch Agent + カスタムメトリクス
+
+× 誤り: CloudWatch Logsで無期限保存
+○ 正解: 適切な保持期間設定（コスト削減）
+
+× 誤り: 詳細モニタリング常に有効
+○ 正解: 必要なリソースのみ（コスト）
+```
+
+### SAA試験重要ポイント
+
+```yaml
+基本:
+  ☐ 標準メトリクス vs カスタムメトリクス
+  ☐ CloudWatch Logs基礎
+  ☐ アラームアクション
+
+監視:
+  ☐ メモリ監視（Agent必須）
+  ☐ ログ収集
+  ☐ Auto Scaling連携
+```
+
+### SAP試験重要ポイント
+
+```yaml
+高度:
+  ☐ Logs Insights高度なクエリ
+  ☐ メトリクスフィルタ
+  ☐ ログサブスクリプション
+  ☐ 複合アラーム
+  ☐ Anomaly Detection
+  ☐ Contributor Insights
+
+統合:
+  ☐ EventBridge連携
+  ☐ Kinesis Data Firehose統合
+  ☐ クロスアカウント監視
+```

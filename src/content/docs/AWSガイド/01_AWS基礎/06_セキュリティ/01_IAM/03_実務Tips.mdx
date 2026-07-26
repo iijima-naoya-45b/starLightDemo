@@ -1,0 +1,109 @@
+---
+title: "IAM 実務Tips"
+label: "実務Tips"
+---
+
+## IAM 実務Tips
+
+### AWS CLI
+
+```bash
+# ユーザー作成
+aws iam create-user --user-name developer1
+
+# グループ作成とユーザー追加
+aws iam create-group --group-name Developers
+aws iam add-user-to-group \
+  --user-name developer1 \
+  --group-name Developers
+
+# ポリシーアタッチ
+aws iam attach-group-policy \
+  --group-name Developers \
+  --policy-arn arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess
+
+# ロール作成
+aws iam create-role \
+  --role-name EC2-S3-Role \
+  --assume-role-policy-document file://trust-policy.json
+
+# ポリシー作成
+aws iam create-policy \
+  --policy-name S3-Custom-Policy \
+  --policy-document file://policy.json
+
+# アクセスキー作成
+aws iam create-access-key --user-name developer1
+
+# 認証情報レポート
+aws iam generate-credential-report
+aws iam get-credential-report > credentials.csv
+```
+
+### カスタムポリシー例
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/data/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::my-bucket",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": "data/*"
+        }
+      }
+    }
+  ]
+}
+```
+
+### ベストプラクティス
+
+```yaml
+セキュリティ:
+  - Rootユーザー使用禁止
+  - MFA必須化
+  - 最小権限の原則
+  - アクセスキーのローテーション
+  - パスワードポリシー強化
+
+運用:
+  - グループでポリシー管理
+  - ロールベースアクセス（EC2, Lambda等）
+  - 定期的なアクセスレビュー
+  - 未使用の認証情報削除
+  - CloudTrailでログ監視
+
+組織:
+  - AWS Organizations活用
+  - SCP（Service Control Policies）
+  - IAM Access Analyzer
+```
+
+### トラブルシューティング
+
+```bash
+# アクセス拒否時の確認
+aws iam simulate-principal-policy \
+  --policy-source-arn arn:aws:iam::123456789012:user/developer1 \
+  --action-names s3:GetObject \
+  --resource-arns arn:aws:s3:::my-bucket/data.txt
+
+# ポリシー評価
+aws iam get-context-keys-for-principal-policy \
+  --policy-source-arn arn:aws:iam::123456789012:user/developer1
+
+# IAM Access Analyzer
+aws accessanalyzer list-findings
+```

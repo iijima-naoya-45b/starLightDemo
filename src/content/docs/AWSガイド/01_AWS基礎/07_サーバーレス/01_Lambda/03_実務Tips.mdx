@@ -1,0 +1,104 @@
+---
+title: "Lambda 実務Tips"
+label: "実務Tips"
+---
+
+## Lambda 実務Tips
+
+### AWS CLI
+
+```bash
+# 関数作成
+aws lambda create-function \
+  --function-name my-function \
+  --runtime python3.12 \
+  --role arn:aws:iam::123456789012:role/lambda-role \
+  --handler lambda_function.lambda_handler \
+  --zip-file fileb://function.zip \
+  --timeout 30 \
+  --memory-size 256
+
+# 関数更新
+aws lambda update-function-code \
+  --function-name my-function \
+  --zip-file fileb://function.zip
+
+# 関数実行
+aws lambda invoke \
+  --function-name my-function \
+  --payload '{"key":"value"}' \
+  response.json
+
+# ログ確認
+aws logs tail /aws/lambda/my-function --follow
+```
+
+### Python実装例
+
+```python
+import json
+import boto3
+
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('Users')
+
+def lambda_handler(event, context):
+    try:
+        # DynamoDB書き込み
+        response = table.put_item(
+            Item={
+                'userId': event['userId'],
+                'name': event['name']
+            }
+        )
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps('Success')
+        }
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps('Error')
+        }
+```
+
+### ベストプラクティス
+
+```yaml
+パフォーマンス:
+  - グローバル変数で接続再利用
+  - /tmp活用
+  - メモリ最適化（CPU性能も向上）
+  - Provisioned Concurrency（コールドスタート対策）
+
+セキュリティ:
+  - IAMロール最小権限
+  - 環境変数暗号化
+  - VPC配置（必要時のみ）
+  - Secrets Manager使用
+
+コスト最適化:
+  - 適切なメモリサイズ
+  - タイムアウト最適化
+  - 不要な実行削減
+```
+
+### トラブルシューティング
+
+```bash
+# CloudWatch Logs確認
+aws logs get-log-events \
+  --log-group-name /aws/lambda/my-function \
+  --log-stream-name latest
+
+# X-Ray有効化
+aws lambda update-function-configuration \
+  --function-name my-function \
+  --tracing-config Mode=Active
+
+# 同時実行数確認
+aws lambda get-function-concurrency \
+  --function-name my-function
+```

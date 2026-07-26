@@ -1,0 +1,67 @@
+---
+title: "CloudWatch ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## CloudWatch ユースケースおよびアーキテクチャパターン
+
+### 1. CPU高負荷時のAuto Scaling
+
+```yaml
+構成:
+  CloudWatch Alarm → Auto Scaling Group → EC2追加
+  
+設定:
+  メトリクス: CPUUtilization
+  条件: > 70% for 5 minutes
+  アクション: スケールアウト（+2インスタンス）
+```
+
+### 2. アプリケーションログ分析
+
+```yaml
+構成:
+  EC2 → CloudWatch Agent → CloudWatch Logs → Logs Insights
+  
+用途:
+  - エラーログ検出
+  - アクセスパターン分析
+  - セキュリティ監視
+```
+
+### 3. Lambda監視とアラート
+
+```yaml
+構成:
+  Lambda → CloudWatch → Alarm → SNS → Email/Slack
+  
+アラーム:
+  - エラー率 > 5%
+  - Duration > 3秒
+  - スロットル発生
+```
+
+### 4. 複合アラーム
+
+```yaml
+構成:
+  Alarm1（CPU高）AND Alarm2（メモリ高）→ SNS
+  
+用途:
+  - 複数条件の組み合わせ
+  - ノイズ削減
+```
+
+### 5. カスタムダッシュボード
+
+```yaml
+ダッシュボード構成:
+  - EC2 CPU/メモリ
+  - RDS接続数
+  - Lambda実行回数
+  - カスタムメトリクス（注文数）
+  
+用途:
+  - 統合監視
+  - 役員向けレポート
+```

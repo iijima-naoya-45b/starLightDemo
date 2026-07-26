@@ -1,0 +1,145 @@
+---
+title: "CloudWatchとは？"
+label: "CloudWatchとは？"
+---
+
+## Amazon CloudWatch とは？
+
+CloudWatchは、AWSリソースとアプリケーションの監視サービスです。メトリクス収集、ログ管理、アラーム設定が可能です。
+
+### 主要機能
+
+#### 1. メトリクス（Metrics）
+
+```yaml
+標準メトリクス（無料）:
+  EC2:
+    - CPUUtilization
+    - NetworkIn/Out
+    - DiskReadOps/WriteOps
+    間隔: 5分
+  
+  RDS:
+    - DatabaseConnections
+    - ReadLatency/WriteLatency
+    - FreeStorageSpace
+  
+  Lambda:
+    - Invocations
+    - Duration
+    - Errors
+
+詳細モニタリング（有料）:
+  間隔: 1分
+  料金: $0.10/メトリクス/月
+```
+
+#### 2. カスタムメトリクス
+
+```yaml
+用途:
+  - アプリケーション固有メトリクス
+  - ビジネスメトリクス
+  - カスタムヘルスチェック
+
+送信方法:
+  - AWS CLI
+  - SDK
+  - CloudWatch Agent
+
+例:
+  - ActiveUsers（同時接続ユーザー数）
+  - QueueSize（処理待ちキュー）
+  - OrderCount（注文数）
+```
+
+#### 3. CloudWatch Logs
+
+```yaml
+ログソース:
+  - EC2（CloudWatch Agent）
+  - Lambda（自動）
+  - CloudTrail
+  - VPC Flow Logs
+  - RDS
+  - ECS/EKS
+
+機能:
+  - ログ収集、保存
+  - ログクエリ（Logs Insights）
+  - メトリクスフィルタ
+  - ログサブスクリプション
+```
+
+#### 4. CloudWatch Alarms
+
+```yaml
+アラームタイプ:
+  メトリクスアラーム:
+    - 静的しきい値
+    - 異常検知
+  
+  複合アラーム:
+    - 複数アラームの組み合わせ
+
+アクション:
+  - SNS通知
+  - Auto Scaling
+  - EC2アクション（停止/再起動）
+  - Systems Manager
+```
+
+### CloudWatch Agent
+
+```yaml
+機能:
+  - カスタムメトリクス収集
+  - ログ収集
+  - システムメトリクス
+
+メトリクス例:
+  - メモリ使用率
+  - ディスク使用率
+  - プロセス数
+  - TCP接続数
+```
+
+### CloudWatch Logs Insights
+
+```sql
+-- EC2エラーログ抽出
+fields @timestamp, @message
+| filter @message like /ERROR/
+| sort @timestamp desc
+| limit 100
+
+-- Lambda実行時間統計
+fields @duration
+| stats avg(@duration), max(@duration), min(@duration)
+```
+
+### 料金
+
+```yaml
+メトリクス:
+  標準: 無料
+  カスタム: $0.30 / メトリクス/月
+  
+Logs:
+  取り込み: $0.50 / GB
+  保存: $0.03 / GB/月
+  
+Alarms:
+  標準: $0.10 / アラーム/月
+  
+Logs Insights:
+  クエリ: $0.005 / GB スキャン
+```
+
+### まとめ
+
+**CloudWatchの重要ポイント:**
+- メトリクス、ログ、アラームの統合監視
+- カスタムメトリクスで独自監視
+- Logs Insightsで高度なログ分析
+- Auto Scalingやアクションの自動化

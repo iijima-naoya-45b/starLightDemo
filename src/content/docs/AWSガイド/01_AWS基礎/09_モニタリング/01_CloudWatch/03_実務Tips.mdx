@@ -1,0 +1,123 @@
+---
+title: "CloudWatch 実務Tips"
+label: "実務Tips"
+---
+
+## CloudWatch 実務Tips
+
+### AWS CLI
+
+```bash
+# カスタムメトリクス送信
+aws cloudwatch put-metric-data \
+  --namespace "MyApp" \
+  --metric-name "ActiveUsers" \
+  --value 150 \
+  --unit Count
+
+# アラーム作成
+aws cloudwatch put-metric-alarm \
+  --alarm-name "HighCPU" \
+  --alarm-description "CPU over 80%" \
+  --metric-name CPUUtilization \
+  --namespace AWS/EC2 \
+  --statistic Average \
+  --period 300 \
+  --threshold 80 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 2 \
+  --alarm-actions arn:aws:sns:ap-northeast-1:123456789012:MyTopic
+
+# ログクエリ
+aws logs start-query \
+  --log-group-name "/aws/lambda/my-function" \
+  --start-time 1640995200 \
+  --end-time 1641081600 \
+  --query-string 'fields @timestamp, @message | filter @message like /ERROR/'
+
+# メトリクス取得
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/EC2 \
+  --metric-name CPUUtilization \
+  --dimensions Name=InstanceId,Value=i-1234567890abcdef0 \
+  --start-time 2026-07-26T00:00:00Z \
+  --end-time 2026-07-26T23:59:59Z \
+  --period 3600 \
+  --statistics Average
+```
+
+### CloudWatch Agent設定
+
+```json
+{
+  "metrics": {
+    "namespace": "CustomMetrics",
+    "metrics_collected": {
+      "mem": {
+        "measurement": [
+          {
+            "name": "mem_used_percent",
+            "rename": "MemoryUtilization",
+            "unit": "Percent"
+          }
+        ],
+        "metrics_collection_interval": 60
+      },
+      "disk": {
+        "measurement": [
+          {
+            "name": "used_percent",
+            "rename": "DiskUtilization",
+            "unit": "Percent"
+          }
+        ],
+        "metrics_collection_interval": 60
+      }
+    }
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/app.log",
+            "log_group_name": "/aws/ec2/app",
+            "log_stream_name": "{instance_id}"
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+### ベストプラクティス
+
+```yaml
+メトリクス:
+  - 重要メトリクスのアラーム設定
+  - カスタムメトリクスで独自監視
+  - ダッシュボードで可視化
+
+ログ:
+  - ログ保持期間最適化（コスト削減）
+  - Logs Insights活用
+  - メトリクスフィルタで異常検知
+
+アラーム:
+  - SNS通知設定
+  - アクション自動化
+  - 複合アラームでノイズ削減
+```
+
+### トラブルシューティング
+
+```bash
+# ログストリーム確認
+aws logs describe-log-streams \
+  --log-group-name "/aws/lambda/my-function"
+
+# アラーム履歴
+aws cloudwatch describe-alarm-history \
+  --alarm-name "HighCPU"
+```

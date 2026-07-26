@@ -1,0 +1,142 @@
+---
+title: "CloudFront 試験Tips"
+label: "試験Tips"
+---
+
+## CloudFront 試験Tips (SAA/SAP)
+
+### 頻出トピック
+
+#### 1. CloudFront vs S3 Transfer Acceleration
+
+```yaml
+CloudFront:
+  用途: コンテンツ配信（キャッシュ）
+  対象: GET、HEAD（読み取り）
+  キャッシュ: あり
+  エッジロケーション: 450+
+
+S3 Transfer Acceleration:
+  用途: S3アップロード高速化
+  対象: PUT（書き込み）
+  キャッシュ: なし
+  エッジロケーション経由
+
+頻出:
+  Q: グローバルユーザーへコンテンツ配信
+  A: CloudFront
+  
+  Q: 世界中から大容量S3アップロード
+  A: S3 Transfer Acceleration
+```
+
+#### 2. OAI（Origin Access Identity）
+
+```yaml
+目的:
+  - S3への直接アクセス禁止
+  - CloudFront経由のみ許可
+
+設定:
+  1. OAI作成
+  2. CloudFrontにOAI紐付け
+  3. S3バケットポリシーでOAIのみ許可
+
+頻出:
+  Q: S3バケットをCloudFront経由のみアクセス
+  A: OAI使用
+```
+
+#### 3. Signed URL vs Signed Cookie
+
+```yaml
+Signed URL:
+  - 個別ファイルアクセス
+  - URL単位で制御
+  - 例: 動画ファイル1つ
+
+Signed Cookie:
+  - 複数ファイルアクセス
+  - Cookie単位で制御
+  - 例: 会員エリア全体
+```
+
+### 頻出シナリオ
+
+#### シナリオ1: 静的サイト配信
+
+```
+要件: S3静的サイトをグローバル高速配信
+解答: CloudFront + S3 + OAI
+
+ポイント:
+✓ エッジキャッシュ
+✓ S3直接アクセス禁止（OAI）
+✓ コスト削減
+```
+
+#### シナリオ2: DDoS対策
+
+```
+要件: Webアプリへの大量アクセス対策
+解答: CloudFront + WAF
+
+ポイント:
+✓ CloudFrontでDDoS保護
+✓ WAFでアプリケーション層保護
+✓ Shield Standard（無料）
+```
+
+#### シナリオ3: プライベートコンテンツ
+
+```
+要件: 有料動画、会員限定アクセス
+解答: CloudFront + Signed URL + OAI
+
+ポイント:
+✓ Signed URLで有効期限設定
+✓ OAIでS3直接アクセス禁止
+✓ アプリケーション側でURL発行
+```
+
+### よくある間違い
+
+```yaml
+× 誤り: S3バケットをパブリックアクセス
+○ 正解: OAIでCloudFront経由のみ
+
+× 誤り: 動的コンテンツにCloudFront不要
+○ 正解: DDoS保護、WAF、エッジ経由メリット
+
+× 誤り: Invalidation頻繁実行
+○ 正解: バージョニング推奨（コスト削減）
+```
+
+### SAA試験重要ポイント
+
+```yaml
+基本:
+  ☐ CloudFrontの用途理解
+  ☐ OAI設定
+  ☐ キャッシュ動作
+
+セキュリティ:
+  ☐ HTTPS対応
+  ☐ Signed URL/Cookie
+  ☐ WAF統合
+```
+
+### SAP試験重要ポイント
+
+```yaml
+高度:
+  ☐ Lambda@Edge詳細
+  ☐ Origin Failover
+  ☐ Field Level Encryption
+  ☐ カスタムエラーページ
+
+最適化:
+  ☐ キャッシュ戦略
+  ☐ コスト最適化
+  ☐ パフォーマンスチューニング
+```

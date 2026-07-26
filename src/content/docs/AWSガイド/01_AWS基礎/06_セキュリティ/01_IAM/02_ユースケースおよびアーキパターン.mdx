@@ -1,0 +1,88 @@
+---
+title: "IAM ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## IAM ユースケースおよびアーキテクチャパターン
+
+### 1. EC2からS3アクセス
+
+```yaml
+構成:
+  EC2 → IAMロール → S3バケット
+  
+IAMロール:
+  名前: EC2-S3-Access-Role
+  信頼ポリシー: EC2サービス
+  アクセス許可:
+    - s3:GetObject
+    - s3:PutObject
+    - Resource: arn:aws:s3:::my-bucket/*
+
+メリット:
+  - アクセスキー不要
+  - 認証情報自動ローテーション
+  - セキュア
+```
+
+### 2. クロスアカウントアクセス
+
+```yaml
+シナリオ:
+  アカウントA（開発）→ アカウントB（本番）のS3
+
+設定:
+  アカウントB（本番）:
+    ロール: CrossAccountRole
+    信頼ポリシー: アカウントA
+  
+  アカウントA（開発）:
+    ポリシー: sts:AssumeRole許可
+
+使用:
+  aws sts assume-role \
+    --role-arn arn:aws:iam::AccountB:role/CrossAccountRole \
+    --role-session-name session1
+```
+
+### 3. Lambda実行ロール
+
+```yaml
+構成:
+  Lambda → IAMロール → DynamoDB + S3
+  
+IAMロール:
+  信頼ポリシー: Lambda サービス
+  アクセス許可:
+    - dynamodb:PutItem
+    - dynamodb:GetItem
+    - s3:GetObject
+    - logs:CreateLogGroup（CloudWatch）
+```
+
+### 4. 組織全体のアクセス管理
+
+```yaml
+グループ構造:
+  Developers:
+    - EC2, Lambda, DynamoDB: フルアクセス
+    - RDS: 読み取りのみ
+  
+  QA:
+    - 全サービス: 読み取りのみ
+  
+  Admins:
+    - AdministratorAccess
+```
+
+### 5. フェデレーション（外部ID連携）
+
+```yaml
+構成:
+  外部IdP（Okta/Azure AD）→ SAML → IAMロール
+  
+用途:
+  - 企業ディレクトリ統合
+  - シングルサインオン（SSO）
+  - 一時認証情報発行
+```
