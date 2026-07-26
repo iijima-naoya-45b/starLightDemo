@@ -1,0 +1,149 @@
+---
+title: "Aurora 試験Tips"
+label: "試験Tips"
+---
+
+## Aurora 試験Tips (SAA/SAP)
+
+### 頻出トピック
+
+#### 1. Aurora vs RDS
+
+```yaml
+Aurora:
+  性能: MySQL 5倍、PostgreSQL 3倍
+  ストレージ: 自動拡張、最大128TB
+  可用性: 6コピー、3AZ
+  Read Replica: 最大15台
+  フェイルオーバー: 30秒
+  料金: やや高い
+
+RDS:
+  性能: 標準
+  ストレージ: 手動拡張必要
+  可用性: Multi-AZ（2コピー）
+  Read Replica: 5-15台
+  フェイルオーバー: 60-120秒
+  料金: 低い
+
+頻出:
+  Q: 高性能、高可用性が必要
+  A: Aurora
+
+  Q: コスト重視、標準性能で十分
+  A: RDS
+```
+
+#### 2. Aurora Serverless
+
+```yaml
+v1:
+  - ACU単位スケール
+  - 数分でスケール
+  - 用途: 開発/テスト
+
+v2（推奨）:
+  - 1秒以内スケール
+  - きめ細かいスケール
+  - 用途: 本番環境
+
+頻出:
+  Q: 予測不可能な負荷
+  A: Aurora Serverless v2
+```
+
+#### 3. Global Database
+
+```yaml
+特徴:
+  - レイテンシー: 1秒未満
+  - RPO: 1秒
+  - RTO: 1分未満
+  - セカンダリ: 最大5リージョン
+
+用途:
+  - グローバル展開
+  - DR対策
+
+頻出:
+  Q: マルチリージョンDB、低レイテンシー
+  A: Aurora Global Database
+```
+
+### 頻出シナリオ
+
+#### シナリオ1: 高可用性
+
+```
+要件: 99.99%可用性、自動フェイルオーバー
+解答: Aurora（6コピー、30秒フェイルオーバー）
+
+ポイント:
+✓ RDSより高可用性
+✓ 自動修復
+✓ 3AZ配置
+```
+
+#### シナリオ2: 読み取りスケール
+
+```
+要件: 大量の読み取り、書き込みは少ない
+解答: Aurora + Read Replica最大15台
+
+ポイント:
+✓ RDS（5-15台）より多い
+✓ 自動負荷分散
+```
+
+#### シナリオ3: グローバルDR
+
+```
+要件: RPO 1秒、RTO 1分、マルチリージョン
+解答: Aurora Global Database
+
+ポイント:
+✓ クロスリージョンRead Replicaより速い
+✓ 1秒未満レプリケーション
+```
+
+### よくある間違い
+
+```yaml
+× 誤り: コスト重視でAurora
+○ 正解: コスト重視ならRDS
+
+× 誤り: Serverless v1で本番環境
+○ 正解: Serverless v2使用
+
+× 誤り: Global Database = Read Replica
+○ 正解: Global Databaseは専用機能、より高速
+```
+
+### SAA試験重要ポイント
+
+```yaml
+基本:
+  ☐ Aurora vs RDS
+  ☐ 性能（5倍/3倍）
+  ☐ Read Replica最大15台
+
+高可用性:
+  ☐ 6コピー、3AZ
+  ☐ 30秒フェイルオーバー
+  ☐ 自動修復
+```
+
+### SAP試験重要ポイント
+
+```yaml
+高度:
+  ☐ Aurora Serverless v2詳細
+  ☐ Global Database詳細
+  ☐ Aurora Machine Learning
+  ☐ Backtrack（巻き戻し機能）
+
+最適化:
+  ☐ コスト最適化戦略
+  ☐ パフォーマンスチューニング
+  ☐ クロスリージョン戦略
+```

@@ -1,0 +1,100 @@
+---
+title: "Step Functionsとは？"
+label: "Step Functionsとは？"
+---
+
+## AWS Step Functions とは？
+
+Step Functionsは、分散アプリケーションのワークフローを視覚的にオーケストレーションするサーバーレスサービスです。
+
+### 基本概念
+
+```yaml
+ステートマシン:
+  - ワークフロー定義
+  - JSON（ASL: Amazon States Language）
+
+ステート:
+  - Task: Lambda、ECS等実行
+  - Choice: 条件分岐
+  - Parallel: 並列実行
+  - Wait: 待機
+  - Pass: パススルー
+  - Succeed/Fail: 終了
+```
+
+### ワークフロータイプ
+
+```yaml
+Standard:
+  - 最大実行時間: 1年
+  - 実行履歴: 90日保持
+  - Exactly-Once実行
+  - 料金: ステート遷移数
+  - 用途: 長時間ワークフロー
+
+Express:
+  - 最大実行時間: 5分
+  - 実行履歴: CloudWatch Logs
+  - At-Least-Once実行
+  - 料金: 実行時間+メモリ
+  - 用途: 高スループット、短時間
+```
+
+### 統合サービス
+
+```yaml
+コンピュート:
+  - Lambda
+  - ECS/Fargate
+  - Batch
+  - Glue
+
+データベース:
+  - DynamoDB
+  - Athena
+
+メッセージング:
+  - SNS
+  - SQS
+  - EventBridge
+
+その他:
+  - SageMaker
+  - Step Functions（ネスト）
+```
+
+### エラーハンドリング
+
+```yaml
+Retry:
+  - 自動リトライ
+  - 指数バックオフ
+  - 最大試行回数
+
+Catch:
+  - エラーキャッチ
+  - フォールバック処理
+  - エラータイプ別対応
+```
+
+### 料金
+
+```yaml
+Standard:
+  ステート遷移: $0.025 / 1,000遷移
+  月4,000遷移無料
+
+Express:
+  実行時間: $1.00 / 100万リクエスト
+  メモリ: $0.0000166667 / GB秒
+```
+
+### まとめ
+
+**Step Functionsの重要ポイント:**
+- ワークフローオーケストレーション
+- 視覚的な定義
+- Standard: 長時間、Express: 高スループット
+- エラーハンドリング、リトライ
+- Lambda、ECS等統合

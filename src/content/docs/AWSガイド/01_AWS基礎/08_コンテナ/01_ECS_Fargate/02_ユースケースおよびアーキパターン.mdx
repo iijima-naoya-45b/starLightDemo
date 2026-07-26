@@ -1,0 +1,67 @@
+---
+title: "ECS/Fargate ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## ECS/Fargate ユースケースおよびアーキテクチャパターン
+
+### 1. マイクロサービス（Fargate + ALB）
+
+```yaml
+構成:
+  ALB → Fargate Service
+    → Users Service（タスク ×3）
+    → Orders Service（タスク ×2）
+    → Products Service（タスク ×2）
+
+メリット:
+  - サービス独立デプロイ
+  - 独立スケール
+  - サーバー管理不要
+```
+
+### 2. バッチ処理（Fargate）
+
+```yaml
+構成:
+  EventBridge Scheduler → ECS Task
+
+設定:
+  - タスク起動タイプ: Fargate
+  - スケジュール: cron式
+  - 完了後自動削除
+
+用途:
+  - 日次バッチ
+  - ETL処理
+  - レポート生成
+```
+
+### 3. CI/CD（CodePipeline + ECS）
+
+```yaml
+構成:
+  CodeCommit → CodeBuild → ECR → ECS
+
+デプロイ:
+  - Blue/Greenデプロイ
+  - Rolling Update
+  - カナリアデプロイ
+
+自動化:
+  - イメージビルド
+  - タスク定義更新
+  - サービス更新
+```
+
+### 4. サービスメッシュ（App Mesh）
+
+```yaml
+構成:
+  ECS Tasks → App Mesh → 通信制御
+
+機能:
+  - トラフィック管理
+  - サービス間認証
+  - 可観測性
+```

@@ -1,0 +1,141 @@
+---
+title: "Auroraとは？"
+label: "Auroraとは？"
+---
+
+## Amazon Aurora とは？
+
+Auroraは、MySQL/PostgreSQL互換のクラウドネイティブリレーショナルデータベースです。商用DBの性能とオープンソースのコスト効率を両立します。
+
+### 基本特徴
+
+```yaml
+互換性:
+  Aurora MySQL: MySQL 5.7/8.0互換
+  Aurora PostgreSQL: PostgreSQL 13-16互換
+
+性能:
+  MySQL: 5倍の性能
+  PostgreSQL: 3倍の性能
+  
+可用性: 99.99%
+```
+
+### アーキテクチャ
+
+```yaml
+ストレージ:
+  - 3AZ × 2コピー = 6コピー自動レプリケーション
+  - 自動修復
+  - 最大128TB
+  - 10GBから自動拡張
+
+コンピュート:
+  - プライマリ（書き込み）: 1台
+  - Read Replica: 最大15台
+  - 自動フェイルオーバー: 30秒以内
+```
+
+### 主要機能
+
+#### 1. Aurora Serverless
+
+```yaml
+v1:
+  - オンデマンド自動スケール
+  - ACU（Aurora Capacity Units）
+  - 使用時のみ課金
+  - 用途: 開発/テスト、予測不可能な負荷
+
+v2（推奨）:
+  - 瞬時スケーリング（1秒以内）
+  - きめ細かいスケーリング
+  - Reader自動スケール
+  - 用途: 本番環境
+```
+
+#### 2. Aurora Global Database
+
+```yaml
+特徴:
+  - クロスリージョンレプリケーション
+  - レイテンシー: 1秒未満
+  - セカンダリリージョン: 最大5つ
+  - RPO: 1秒、RTO: 1分未満
+
+用途:
+  - グローバル展開
+  - DR対策
+  - 読み取り負荷分散
+```
+
+#### 3. バックアップ
+
+```yaml
+自動バックアップ:
+  - 継続的バックアップ（S3）
+  - 保持期間: 1-35日
+  - ポイントインタイムリカバリ
+  - パフォーマンス影響なし
+
+スナップショット:
+  - ユーザー起動
+  - クロスリージョンコピー
+```
+
+#### 4. Aurora Machine Learning
+
+```yaml
+統合:
+  - SageMaker
+  - Comprehend
+
+SQL関数:
+  - 機械学習モデル呼び出し
+  - リアルタイム推論
+```
+
+### 料金
+
+```yaml
+インスタンス:
+  db.r6g.large: $0.29/時間
+  db.r6g.xlarge: $0.58/時間
+
+ストレージ:
+  $0.10/GB/月
+
+I/O:
+  $0.20/100万リクエスト
+
+Aurora Serverless v2:
+  ACU: $0.12/ACU時間
+  最小: 0.5 ACU
+```
+
+### RDS vs Aurora
+
+```yaml
+Aurora:
+  ☑ 高性能（5倍/3倍）
+  ☑ 高可用性（6コピー）
+  ☑ 自動スケーリングストレージ
+  ☑ Read Replica最大15台
+  ☑ Global Database
+  ☒ 料金やや高い
+
+RDS:
+  ☑ 多様なエンジン
+  ☑ 料金低い
+  ☒ 性能標準
+  ☒ Read Replica最大5-15台
+```
+
+### まとめ
+
+**Auroraの重要ポイント:**
+- MySQL/PostgreSQL互換
+- 5倍/3倍の高性能
+- 6コピー自動レプリケーション
+- Serverlessで自動スケール
+- Global Databaseでマルチリージョン

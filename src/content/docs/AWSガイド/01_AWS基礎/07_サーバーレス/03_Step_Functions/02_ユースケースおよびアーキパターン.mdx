@@ -1,0 +1,61 @@
+---
+title: "Step Functions ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## Step Functions ユースケースおよびアーキテクチャパターン
+
+### 1. 注文処理ワークフロー
+
+```yaml
+構成:
+  1. 注文検証（Lambda）
+  2. 在庫確認（Lambda → DynamoDB）
+  3. 決済処理（Lambda → 外部API）
+  4. Parallel:
+     - 在庫更新（Lambda）
+     - メール送信（SNS）
+  5. 完了
+
+エラーハンドリング:
+  - 決済失敗 → Retry 3回
+  - 在庫なし → キャンセル処理
+```
+
+### 2. ETLパイプライン
+
+```yaml
+構成:
+  1. データ抽出（Glue Job）
+  2. Wait（1時間）
+  3. データ変換（Lambda）
+  4. データロード（Athena）
+  5. 通知（SNS）
+
+スケジュール: EventBridge cron
+```
+
+### 3. 機械学習パイプライン
+
+```yaml
+構成:
+  1. データ準備（Glue）
+  2. モデルトレーニング（SageMaker）
+  3. モデル評価（Lambda）
+  4. Choice:
+     - 精度 > 90% → デプロイ
+     - 精度 <= 90% → 再トレーニング
+  5. モデルデプロイ（SageMaker）
+```
+
+### 4. 人間承認フロー
+
+```yaml
+構成:
+  1. 申請処理（Lambda）
+  2. Task Token送信（SNS）
+  3. 人間承認待機
+  4. Choice:
+     - 承認 → 処理実行
+     - 却下 → キャンセル処理
+```

@@ -1,0 +1,124 @@
+---
+title: "Step Functions 試験Tips"
+label: "試験Tips"
+---
+
+## Step Functions 試験Tips (SAA/SAP)
+
+### 頻出トピック
+
+#### 1. Standard vs Express
+
+```yaml
+Standard:
+  実行時間: 最大1年
+  実行履歴: 90日
+  実行モデル: Exactly-Once
+  用途: 長時間ワークフロー
+
+Express:
+  実行時間: 最大5分
+  実行履歴: CloudWatch Logs
+  実行モデル: At-Least-Once
+  用途: 高スループット
+
+頻出:
+  Q: 長時間ワークフロー、監査
+  A: Standard
+
+  Q: 高スループット、短時間
+  A: Express
+```
+
+#### 2. Step Functions vs SQS
+
+```yaml
+Step Functions:
+  - ワークフローオーケストレーション
+  - 視覚的定義
+  - 複雑なロジック
+  - エラーハンドリング
+
+SQS:
+  - シンプルなキュー
+  - 非同期処理
+  - 疎結合
+
+頻出:
+  Q: 複数ステップ、条件分岐
+  A: Step Functions
+
+  Q: シンプルな非同期処理
+  A: SQS
+```
+
+#### 3. エラーハンドリング
+
+```yaml
+Retry:
+  - 自動リトライ
+  - 指数バックオフ
+
+Catch:
+  - エラーキャッチ
+  - フォールバック
+```
+
+### 頻出シナリオ
+
+#### シナリオ1: 複数Lambda調整
+
+```
+要件: 複数Lambda順次実行、エラー処理
+解答: Step Functions Standard
+
+ポイント:
+✓ ワークフロー定義
+✓ エラーハンドリング
+✓ 視覚的管理
+```
+
+#### シナリオ2: 長時間処理
+
+```
+要件: 数時間かかる処理、Lambda 15分制限
+解答: Step Functions + 複数Lambda分割
+
+ポイント:
+✓ Lambda制限回避
+✓ ステート間でデータ受け渡し
+```
+
+### よくある間違い
+
+```yaml
+× 誤り: Lambdaのみで複雑ワークフロー
+○ 正解: Step Functions使用
+
+× 誤り: Expressで長時間処理
+○ 正解: Standard使用（最大1年）
+```
+
+### SAA試験重要ポイント
+
+```yaml
+基本:
+  ☐ Step Functions用途
+  ☐ Standard vs Express
+  ☐ Lambda統合
+
+ワークフロー:
+  ☐ エラーハンドリング
+  ☐ 並列処理
+  ☐ 条件分岐
+```
+
+### SAP試験重要ポイント
+
+```yaml
+高度:
+  ☐ 人間承認フロー
+  ☐ ネステッドワークフロー
+  ☐ Wait for Callback
+  ☐ 最適化戦略
+```

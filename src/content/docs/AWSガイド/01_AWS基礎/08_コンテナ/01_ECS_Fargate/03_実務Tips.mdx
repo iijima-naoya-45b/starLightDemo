@@ -1,0 +1,117 @@
+---
+title: "ECS/Fargate 実務Tips"
+label: "実務Tips"
+---
+
+## ECS/Fargate 実務Tips
+
+### AWS CLI
+
+```bash
+# クラスター作成
+aws ecs create-cluster --cluster-name my-cluster
+
+# タスク定義登録
+aws ecs register-task-definition \
+  --cli-input-json file://task-definition.json
+
+# サービス作成
+aws ecs create-service \
+  --cluster my-cluster \
+  --service-name my-service \
+  --task-definition my-task:1 \
+  --desired-count 2 \
+  --launch-type FARGATE \
+  --network-configuration \
+    "awsvpcConfiguration={subnets=[subnet-12345],securityGroups=[sg-12345],assignPublicIp=ENABLED}" \
+  --load-balancers \
+    "targetGroupArn=arn:aws:elasticloadbalancing:...,containerName=web,containerPort=80"
+
+# タスク実行（1回限り）
+aws ecs run-task \
+  --cluster my-cluster \
+  --task-definition my-task:1 \
+  --launch-type FARGATE \
+  --network-configuration \
+    "awsvpcConfiguration={subnets=[subnet-12345],securityGroups=[sg-12345]}"
+```
+
+### タスク定義例（Fargate）
+
+```json
+{
+  "family": "my-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "taskRoleArn": "arn:aws:iam::123456789012:role/ecsTaskRole",
+  "executionRoleArn": "arn:aws:iam::123456789012:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "web",
+      "image": "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/my-app:latest",
+      "portMappings": [
+        {
+          "containerPort": 80,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {"name": "ENV", "value": "production"}
+      ],
+      "secrets": [
+        {
+          "name": "DB_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:db-password"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/my-task",
+          "awslogs-region": "ap-northeast-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
+```
+
+### ベストプラクティス
+
+```yaml
+セキュリティ:
+  - タスクロール最小権限
+  - Secrets Manager使用
+  - プライベートサブネット配置
+  - セキュリティグループ最適化
+
+パフォーマンス:
+  - 適切なCPU/メモリ設定
+  - ヘルスチェック最適化
+  - ECRイメージキャッシュ
+
+コスト最適化:
+  - Fargate Spot使用
+  - リソース適正化
+  - 不要タスク削除
+```
+
+### トラブルシューティング
+
+```bash
+# タスクログ確認
+aws logs tail /ecs/my-task --follow
+
+# タスク停止理由確認
+aws ecs describe-tasks \
+  --cluster my-cluster \
+  --tasks task-id
+
+# サービスイベント確認
+aws ecs describe-services \
+  --cluster my-cluster \
+  --services my-service
+```

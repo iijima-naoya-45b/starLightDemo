@@ -1,0 +1,85 @@
+---
+title: "Aurora 実務Tips"
+label: "実務Tips"
+---
+
+## Aurora 実務Tips
+
+### AWS CLI
+
+```bash
+# Auroraクラスター作成
+aws rds create-db-cluster \
+  --db-cluster-identifier myaurora-cluster \
+  --engine aurora-mysql \
+  --engine-version 8.0 \
+  --master-username admin \
+  --master-user-password MyPassword123 \
+  --vpc-security-group-ids sg-xxxxx \
+  --db-subnet-group-name mysubnet-group
+
+# インスタンス追加
+aws rds create-db-instance \
+  --db-instance-identifier myaurora-instance-1 \
+  --db-instance-class db.r6g.large \
+  --engine aurora-mysql \
+  --db-cluster-identifier myaurora-cluster
+
+# Read Replica追加
+aws rds create-db-instance \
+  --db-instance-identifier myaurora-instance-2 \
+  --db-instance-class db.r6g.large \
+  --engine aurora-mysql \
+  --db-cluster-identifier myaurora-cluster
+
+# Serverless v2作成
+aws rds create-db-cluster \
+  --db-cluster-identifier myaurora-serverless \
+  --engine aurora-mysql \
+  --engine-version 8.0 \
+  --serverless-v2-scaling-configuration \
+    MinCapacity=0.5,MaxCapacity=16
+
+# Global Database作成
+aws rds create-global-cluster \
+  --global-cluster-identifier myglobal-cluster \
+  --engine aurora-mysql
+```
+
+### ベストプラクティス
+
+```yaml
+高可用性:
+  - Multi-AZ配置
+  - Read Replica複数配置
+  - 自動バックアップ有効化
+
+パフォーマンス:
+  - Read Replica活用
+  - クエリキャッシュ
+  - インデックス最適化
+  - Performance Insights
+
+コスト最適化:
+  - Serverless v2（変動負荷）
+  - Reserved Instances（安定負荷）
+  - 不要なRead Replica削除
+```
+
+### トラブルシューティング
+
+```bash
+# クラスター状態確認
+aws rds describe-db-clusters \
+  --db-cluster-identifier myaurora-cluster
+
+# Performance Insights
+aws pi get-resource-metrics \
+  --service-type RDS \
+  --identifier db-XXXXX
+
+# クエリ実行統計
+SELECT * FROM mysql.slow_log
+ORDER BY query_time DESC
+LIMIT 10;
+```
