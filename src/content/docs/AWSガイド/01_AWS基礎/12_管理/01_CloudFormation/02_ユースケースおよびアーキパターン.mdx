@@ -1,0 +1,63 @@
+---
+title: "CloudFormation ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## CloudFormation ユースケースおよびアーキテクチャパターン
+
+### 1. 3層Webアプリ
+
+```yaml
+スタック構成:
+  ネットワーク: VPC、サブネット
+  アプリ: EC2、ALB、Auto Scaling
+  データ: RDS
+
+テンプレート:
+  - network.yaml
+  - application.yaml
+  - database.yaml
+
+クロススタック参照:
+  application → network（VPC ID）
+  database → network（サブネット）
+```
+
+### 2. 環境複製
+
+```yaml
+パラメータ:
+  Environment: dev/staging/prod
+  InstanceType: t3.micro/t3.medium/m5.large
+
+条件分岐:
+  dev: Single-AZ
+  prod: Multi-AZ、Auto Scaling
+```
+
+### 3. マルチリージョンデプロイ
+
+```yaml
+StackSets:
+  - ap-northeast-1
+  - us-east-1
+  - eu-west-1
+
+用途:
+  - グローバル展開
+  - DR環境
+```
+
+### 4. CI/CDパイプライン
+
+```yaml
+構成:
+  CodeCommit → CodePipeline → CloudFormation Deploy
+
+ステージ:
+  1. Source: CodeCommit
+  2. Build: CodeBuild
+  3. Deploy: CloudFormation ChangeSet
+  4. Approval: 手動承認
+  5. Execute: ChangeSet実行
+```
