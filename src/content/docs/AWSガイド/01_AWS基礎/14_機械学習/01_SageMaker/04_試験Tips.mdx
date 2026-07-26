@@ -1,0 +1,754 @@
+---
+title: "試験Tips"
+label: "試験Tips"
+---
+
+## SAA（ソリューションアーキテクト アソシエイト）
+
+### 頻出ポイント
+
+#### 1. SageMaker基本概念
+
+```yaml
+出題パターン:
+  「機械学習モデルを構築・デプロイしたい」
+
+正解アプローチ:
+  - Amazon SageMaker使用
+  - Studio で開発
+  - Training Job でトレーニング
+  - Endpoint でデプロイ
+  - Model Monitor で監視
+
+キーワード:
+  ✅ 完全マネージドML → SageMaker
+  ✅ AutoML → SageMaker Autopilot
+  ✅ リアルタイム推論 → SageMaker Endpoint
+  ✅ バッチ推論 → Batch Transform
+```
+
+#### 2. 推論オプション選択
+
+```yaml
+シナリオ別選択:
+
+リアルタイム推論:
+  要件:
+    - 低レイテンシ（< 100ms）
+    - 同期レスポンス
+    - 常時可用性
+  
+  ソリューション:
+    - SageMaker Real-time Endpoint
+    - Auto Scaling
+    - Multi-AZ配置
+
+サーバーレス推論:
+  要件:
+    - 断続的なトラフィック
+    - コスト最適化
+    - 自動スケーリング
+  
+  ソリューション:
+    - SageMaker Serverless Inference
+    - オンデマンド
+    - 従量課金
+
+バッチ推論:
+  要件:
+    - 大量データ処理
+    - レイテンシ許容
+    - コスト重視
+  
+  ソリューション:
+    - SageMaker Batch Transform
+    - S3入出力
+    - 実行時間のみ課金
+```
+
+#### 3. トレーニング最適化
+
+```yaml
+問題:
+  「トレーニングコストを削減したい」
+
+回答:
+  スポットインスタンス:
+    - 最大90%コスト削減
+    - マネージドスポットトレーニング
+    - チェックポイント自動保存
+    - 中断時自動再開
+
+設定:
+  use_spot_instances: true
+  max_wait_time: 86400
+  checkpoint_s3_uri: s3://bucket/checkpoints/
+```
+
+#### 4. Feature Store
+
+```yaml
+シナリオ:
+  「トレーニングと推論で特徴量の一貫性を保ちたい」
+
+正解:
+  SageMaker Feature Store:
+    オンラインストア:
+      - リアルタイム推論用
+      - 低レイテンシ
+      - ミリ秒レスポンス
+    
+    オフラインストア:
+      - トレーニング用
+      - S3ベース
+      - バッチアクセス
+
+メリット:
+  - 特徴量再利用
+  - トレーニング/推論の一貫性
+  - バージョン管理
+  - チーム間共有
+```
+
+## SAP（ソリューションアーキテクト プロフェッショナル）
+
+### 高度なシナリオ
+
+#### 1. エンタープライズMLOpsパイプライン
+
+```yaml
+要件:
+  「エンタープライズグレードのMLパイプライン構築」
+
+完全なMLOpsアーキテクチャ:
+  
+  ソース管理:
+    CodeCommit / GitHub
+      - モデルコード
+      - トレーニングスクリプト
+      - インフラコード（CloudFormation）
+      ↓
+  
+  CI/CD:
+    CodePipeline
+      Source → Build → Test → Deploy
+      
+      Build Stage:
+        - Docker イメージビルド
+        - ECRプッシュ
+        - 単体テスト
+      
+      Test Stage:
+        - データ検証
+        - モデルテスト
+        - 統合テスト
+      ↓
+  
+  SageMaker Pipelines:
+    1. Data Quality Check
+       - データ検証
+       - スキーマチェック
+       - 統計テスト
+    
+    2. Feature Engineering
+       - Processing Job
+       - Feature Store書き込み
+       - 特徴量バージョニング
+    
+    3. Model Training
+       - 分散トレーニング
+       - ハイパーパラメータ調整
+       - 実験追跡
+    
+    4. Model Evaluation
+       - 精度評価
+       - バイアス検証
+       - しきい値判定
+    
+    5. Conditional Deployment
+       - 精度 >= 0.85 → 次へ
+       - 精度 < 0.85 → 失敗
+    
+    6. Model Registry
+       - モデル登録
+       - メタデータ記録
+       - 承認ワークフロー
+    
+    7. Endpoint Deployment
+       - Staging環境
+       - Blue/Green デプロイ
+       - Canary デプロイ（10%）
+       - 本番環境（承認後）
+      ↓
+  
+  監視・フィードバック:
+    Model Monitor:
+      - データ品質監視
+      - モデル品質監視
+      - 特徴量ドリフト検出
+      - バイアス監視
+      ↓
+    
+    CloudWatch Alarms:
+      - 精度低下検出
+      - しきい値超過
+      ↓
+    
+    EventBridge:
+      - イベントルーティング
+      - Lambda実行
+      ↓
+    
+    自動再トレーニング:
+      - Pipeline自動実行
+      - 新データで学習
+      - 自動デプロイ
+  
+  ガバナンス:
+    - Model Registry（承認ワークフロー）
+    - CloudTrail（監査ログ）
+    - Lake Formation（データアクセス制御）
+    - SageMaker Studio（チーム共有）
+
+コスト:
+  - スポットインスタンス（90%削減）
+  - Auto Scaling
+  - サーバーレス推論
+  - Multi-Model Endpoint
+
+セキュリティ:
+  - VPC分離
+  - KMS暗号化
+  - IAM最小権限
+  - PrivateLink
+```
+
+#### 2. マルチアカウントML環境
+
+```yaml
+要件:
+  「開発・ステージング・本番を分離したML環境」
+
+アーキテクチャ:
+  
+  中央管理アカウント:
+    - Service Catalog（承認済みML製品）
+    - Organizations（アカウント管理）
+    - CloudFormation StackSets
+    - 集中監視（CloudWatch）
+  
+  開発アカウント:
+    SageMaker Studio:
+      - データサイエンティスト環境
+      - Notebook開発
+      - 実験
+    
+    データ:
+      - S3（開発データ）
+      - Feature Store（開発）
+    
+    制約:
+      - 本番データアクセス不可
+      - コスト上限設定
+      - インスタンスタイプ制限
+  
+  ステージングアカウント:
+    CI/CD パイプライン:
+      - CodePipeline
+      - 自動テスト
+      - モデル検証
+    
+    SageMaker:
+      - Training Jobs
+      - Endpoint（検証用）
+      - Model Monitor（テスト）
+    
+    承認ゲート:
+      - 手動承認
+      - 自動テスト合格
+  
+  本番アカウント:
+    SageMaker:
+      - Endpoints（本番）
+      - Multi-AZ
+      - Auto Scaling
+      - Model Monitor
+    
+    セキュリティ:
+      - VPC分離
+      - PrivateLink
+      - KMS暗号化
+      - WAF保護
+    
+    可用性:
+      - Multi-AZ配置
+      - 自動フェイルオーバー
+      - ヘルスチェック
+      - 99.9% SLA
+
+データ共有:
+  S3クロスアカウント:
+    - バケットポリシー
+    - IAMロール委任
+    - KMS キー共有
+  
+  Feature Store:
+    - クロスアカウントアクセス
+    - Lake Formation統合
+    - 細かいアクセス制御
+
+デプロイフロー:
+  開発 → CI/CD → ステージング → 承認 → 本番
+  
+  自動化:
+    - Pipeline実行（開発）
+    - モデル登録
+    - クロスアカウントデプロイ
+    - 承認ワークフロー
+    - 本番デプロイ
+```
+
+#### 3. 大規模リアルタイム推論システム
+
+```yaml
+要件:
+  「1日10億リクエスト、レイテンシ < 50ms」
+
+アーキテクチャ:
+  
+  フロントエンド:
+    CloudFront:
+      - グローバル配信
+      - キャッシング（静的結果）
+      - DDoS保護
+      ↓
+    
+    API Gateway:
+      - REST API
+      - 認証・認可（Cognito/IAM）
+      - レート制限
+      - リクエスト検証
+      ↓
+    
+    Lambda（前処理）:
+      - 入力検証
+      - Feature Store取得
+      - データ変換
+      - 並列化
+      ↓
+  
+  推論層:
+    Application Load Balancer:
+      - 複数AZ分散
+      - ヘルスチェック
+      - スティッキーセッション
+      ↓
+    
+    SageMaker Multi-Model Endpoints:
+      複数リージョン:
+        - ap-northeast-1（Primary）
+        - us-west-2（DR）
+      
+      各リージョン:
+        - Multi-AZ配置（3 AZ）
+        - Auto Scaling（2-50インスタンス）
+        - インスタンス: ml.c5.4xlarge
+        - Elastic Inference加速
+      
+      Blue/Green デプロイ:
+        - Production（90%）
+        - Canary（10%）
+        - 自動ロールバック
+      ↓
+  
+  キャッシング層:
+    ElastiCache:
+      - 頻繁なリクエストキャッシュ
+      - TTL: 5分
+      - キャッシュヒット率: 70%
+      - レイテンシ削減: 90%
+  
+  非同期処理:
+    SQS + Lambda + Batch Transform:
+      - 低優先度リクエスト
+      - コスト削減
+      - スループット向上
+  
+  データパイプライン:
+    Kinesis Data Firehose:
+      - 推論ログ収集
+      - S3保存
+      - 再学習データ
+      - リアルタイム分析
+  
+  監視:
+    CloudWatch:
+      - メトリクス収集
+      - カスタムメトリクス
+        * p50, p95, p99レイテンシ
+        * スループット
+        * エラー率
+        * モデル精度
+      
+      Alarms:
+        - レイテンシ > 50ms
+        - エラー率 > 1%
+        - CPU > 80%
+        - 自動スケーリング
+    
+    X-Ray:
+      - 分散トレーシング
+      - ボトルネック特定
+      - レイテンシ分析
+
+パフォーマンス:
+  目標:
+    - レイテンシ: p99 < 50ms
+    - スループット: 120,000 TPS
+    - 可用性: 99.99%
+  
+  達成手段:
+    - Multi-AZ/Multi-Region
+    - ElastiCache（キャッシュ）
+    - Elastic Inference（GPU加速）
+    - SageMaker Neo（最適化）
+    - Auto Scaling
+
+コスト:
+  月間コスト（概算）:
+    - SageMaker Endpoints: $15,000
+    - ElastiCache: $3,000
+    - Lambda: $2,000
+    - API Gateway: $1,000
+    - データ転送: $5,000
+    - 合計: $26,000/月
+  
+  最適化:
+    - ElastiCache（70%リクエスト削減）
+    - Auto Scaling（需要追従）
+    - Reserved Instances（40%削減）
+    - Multi-Model Endpoints
+```
+
+#### 4. ハイブリッドML環境（オンプレミス統合）
+
+```yaml
+要件:
+  「オンプレミスデータでSageMaker活用」
+
+アーキテクチャ:
+  
+  オンプレミス:
+    データソース:
+      - オンプレミスDB
+      - ファイルサーバー
+      - 機密データ
+      ↓
+    
+    AWS Storage Gateway:
+      - File Gateway（S3統合）
+      - キャッシング
+      - 低レイテンシアクセス
+      ↓
+  
+  AWS Direct Connect / VPN:
+    - 専用線接続
+    - 低レイテンシ
+    - セキュア通信
+    - 大容量転送
+    ↓
+  
+  AWS（VPC）:
+    S3（VPC Endpoint）:
+      - トレーニングデータ
+      - モデルアーティファクト
+      - 暗号化（KMS）
+    
+    SageMaker（VPC内）:
+      Training Jobs:
+        - VPC内実行
+        - プライベートサブネット
+        - オンプレミスデータアクセス
+      
+      Endpoints:
+        - VPC内デプロイ
+        - PrivateLink経由アクセス
+        - オンプレミスから推論
+    
+    AWS PrivateLink:
+      - プライベート接続
+      - インターネット不経由
+      - セキュア
+  
+  ハイブリッド推論:
+    オンプレミス推論:
+      - SageMaker Edge Manager
+      - エッジデバイス
+      - オフライン推論
+      - モデル同期
+    
+    クラウド推論:
+      - SageMaker Endpoints
+      - 高負荷時
+      - バッチ処理
+
+セキュリティ:
+  - Direct Connect（専用線）
+  - VPC分離
+  - PrivateLink
+  - KMS暗号化
+  - CloudHSM（オンプレミス）
+  - IAM/Active Directory統合
+
+データガバナンス:
+  - 機密データはオンプレミス保持
+  - 匿名化後AWS転送
+  - Lake Formation（アクセス制御）
+  - CloudTrail（監査ログ）
+  - Macie（データ分類）
+```
+
+## よくある間違い
+
+### 間違い 1: サービス選択の誤り
+
+```yaml
+❌ 誤り:
+  「画像分析にEMR使用」
+
+✅ 正解:
+  画像分類・物体検出:
+    - SageMaker（組み込みアルゴリズム）
+    - リアルタイム推論
+    - Auto Scaling
+  
+  EMR適用:
+    - 大規模データ前処理
+    - Spark ETL
+    - データエンジニアリング
+  
+  使い分け:
+    データ前処理: EMR / Glue
+    モデル開発: SageMaker
+    推論: SageMaker
+```
+
+### 間違い 2: 推論オプションの誤解
+
+```yaml
+❌ 誤り:
+  「全ての推論にリアルタイムエンドポイント」
+
+✅ 正解:
+  リアルタイムエンドポイント:
+    - 低レイテンシ必須
+    - 同期レスポンス
+    - 常時稼働
+    - コスト高
+  
+  サーバーレス推論:
+    - 断続的トラフィック
+    - コスト最適化
+    - 自動スケーリング
+  
+  バッチ変換:
+    - 大量データ
+    - レイテンシ許容
+    - コスト削減（70%）
+  
+  選択基準:
+    - レイテンシ要件
+    - トラフィックパターン
+    - コスト制約
+```
+
+### 間違い 3: Feature Store不要論
+
+```yaml
+❌ 誤り:
+  「Feature Storeは常に不要」
+
+✅ 正解:
+  Feature Store必要:
+    - 特徴量再利用
+    - チーム間共有
+    - トレーニング/推論の一貫性
+    - バージョン管理
+    - 系譜追跡
+  
+  Feature Store不要:
+    - シンプルなモデル
+    - 単一プロジェクト
+    - 特徴量少ない
+  
+  エンタープライズ:
+    - ほぼ必須
+    - MLOps基盤
+    - ガバナンス
+```
+
+### 間違い 4: Auto Scalingの誤解
+
+```yaml
+❌ 誤り:
+  「Auto Scalingで最小インスタンス数0」
+
+✅ 正解:
+  最小インスタンス数:
+    高可用性:
+      - 最小: 2（Multi-AZ）
+      - ヘルスチェック
+      - フェイルオーバー
+    
+    開発環境:
+      - 最小: 1（コスト削減）
+      - 低可用性許容
+    
+    コスト重視:
+      - サーバーレス推論使用
+      - 完全従量課金
+      - 最小インスタンス不要
+```
+
+### 間違い 5: SageMaker vs Lambda
+
+```yaml
+❌ 誤り:
+  「全ての推論をLambda実装」
+
+✅ 正解:
+  SageMaker推論:
+    - 複雑なMLモデル
+    - GPU必要
+    - 大規模推論
+    - モデル管理必要
+  
+  Lambda推論:
+    - 軽量モデル
+    - シンプルロジック
+    - イベント駆動
+    - 15分以内処理
+  
+  使い分け:
+    軽量推論:
+      - Scikit-learn（小）
+      - ルールベース
+      → Lambda
+    
+    本格ML:
+      - Deep Learning
+      - 大規模モデル
+      - GPU推論
+      → SageMaker
+```
+
+## サービス比較（重要）
+
+### SageMaker vs EMR vs Glue
+
+```yaml
+データ前処理:
+  Glue:
+    - サーバーレスETL
+    - 小〜中規模
+    - シンプル変換
+    - コスト効率
+  
+  EMR:
+    - 大規模処理
+    - Spark/Hadoop
+    - カスタマイズ可能
+    - 継続的処理
+
+モデル開発:
+  SageMaker:
+    - ML専用
+    - マネージド環境
+    - AutoML
+    - モデルデプロイ
+  
+  EMR:
+    - Spark MLlib
+    - カスタム実装
+    - データエンジニアリング
+
+推論:
+  SageMaker:
+    - リアルタイム
+    - バッチ
+    - サーバーレス
+    - モデル管理
+  
+  Lambda:
+    - 軽量推論
+    - イベント駆動
+    - サーバーレス
+
+典型的なパイプライン:
+  Glue/EMR（データ前処理）
+    ↓
+  SageMaker（トレーニング）
+    ↓
+  SageMaker（推論）
+```
+
+## 試験対策チェックリスト
+
+### 基本概念
+- [ ] SageMaker主要コンポーネント
+- [ ] Studio / Autopilot / Training / Inference
+- [ ] 推論オプション（リアルタイム/バッチ/サーバーレス）
+- [ ] Feature Store
+
+### トレーニング
+- [ ] スポットインスタンス
+- [ ] 分散トレーニング
+- [ ] ハイパーパラメータ調整
+- [ ] チェックポイント
+
+### 推論
+- [ ] エンドポイント種類
+- [ ] Auto Scaling
+- [ ] Multi-Model Endpoint
+- [ ] A/Bテスト
+
+### MLOps（SAP）
+- [ ] SageMaker Pipelines
+- [ ] Model Monitor
+- [ ] Model Registry
+- [ ] CI/CD統合
+
+### 高度な機能（SAP）
+- [ ] Feature Store統合
+- [ ] マルチアカウント構成
+- [ ] 大規模推論アーキテクチャ
+- [ ] コスト最適化戦略
+
+### サービス比較
+- [ ] SageMaker vs EMR
+- [ ] SageMaker vs Glue
+- [ ] SageMaker vs Lambda
+- [ ] 使い分け理解
+
+## まとめ
+
+**試験で押さえるべき重要ポイント:**
+
+SAA:
+- SageMaker = 完全マネージドML
+- Autopilot = AutoML
+- 推論オプション選択（リアルタイム/バッチ/サーバーレス）
+- Feature Store = 特徴量管理
+- スポットインスタンスでコスト削減
+- SageMaker vs EMR vs Glue の使い分け
+
+SAP:
+- エンタープライズMLOpsパイプライン
+- SageMaker Pipelines（CI/CD for ML）
+- マルチアカウントML環境
+- 大規模リアルタイム推論（10億リクエスト/日）
+- Feature Store統合戦略
+- Model Monitor継続監視
+- コスト最適化（最大90%削減）
+- ハイブリッドML環境（オンプレミス統合）
+- Multi-Model Endpointでコスト削減99%

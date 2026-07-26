@@ -1,0 +1,636 @@
+---
+title: "ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## ユースケース
+
+### 1. 画像分類モデルの構築
+
+```yaml
+シナリオ:
+  - S3の画像データから分類モデル構築
+  - リアルタイム推論API提供
+  - モデル精度の継続監視
+
+実装:
+  1. Data Wrangler でデータ前処理
+  2. Training Job で学習（組み込みアルゴリズム）
+  3. リアルタイムエンドポイント デプロイ
+  4. Model Monitor で精度監視
+```
+
+### 2. 需要予測
+
+```yaml
+シナリオ:
+  - 過去の売上データから需要予測
+  - バッチ推論で日次予測
+  - 定期的なモデル再学習
+
+実装:
+  ソース: S3 / Redshift（売上データ）
+  Training:
+    - DeepAR（時系列予測）
+    - Autopilot（AutoML）
+  推論:
+    - バッチ変換（日次実行）
+  Pipeline:
+    - 自動再トレーニング（週次）
+```
+
+### 3. 不正検知システム
+
+```yaml
+シナリオ:
+  - リアルタイム取引の不正検知
+  - 低レイテンシ要求（< 50ms）
+  - 高スループット
+
+実装:
+  データ収集:
+    - Kinesis Data Streams
+    - Lambda で前処理
+  
+  モデル:
+    - XGBoost（二値分類）
+    - Feature Store活用
+  
+  推論:
+    - リアルタイムエンドポイント
+    - Auto Scaling
+    - Multi-AZ配置
+  
+  監視:
+    - Model Monitor（品質監視）
+    - CloudWatch Alarms
+    - 異常検知時の自動対応
+```
+
+## アーキテクチャパターン
+
+### パターン1: 基本的なMLワークフロー
+
+```yaml
+構成:
+  データ準備:
+    S3（生データ）
+      ↓
+    SageMaker Processing Job
+      - データクレンジング
+      - 特徴量エンジニアリング
+      - 訓練/検証/テスト分割
+      ↓
+    S3（前処理済み）
+  
+  モデル開発:
+    SageMaker Studio
+      - Notebook で探索
+      - 実験管理
+      ↓
+    SageMaker Training
+      - 分散トレーニング
+      - ハイパーパラメータ調整
+      ↓
+    Model Registry
+      - モデル登録
+      - バージョン管理
+  
+  デプロイ:
+    SageMaker Endpoint
+      - リアルタイム推論
+      - Auto Scaling
+  
+  監視:
+    Model Monitor
+      - データドリフト検出
+      - モデル精度監視
+
+メリット:
+  - エンドツーエンド管理
+  - 再現性の確保
+  - スケーラブル
+```
+
+### パターン2: MLOps パイプライン
+
+```yaml
+構成:
+  ソースコード:
+    CodeCommit / GitHub
+      ↓
+    CodePipeline
+      - ソース取得
+      - ビルド
+      - テスト
+      ↓
+  
+  SageMaker Pipeline:
+    ステップ1: Processing
+      - データ検証
+      - 前処理
+    
+    ステップ2: Training
+      - モデルトレーニング
+      - 評価
+    
+    ステップ3: Condition
+      - 精度しきい値判定
+      - 合格なら次へ
+    
+    ステップ4: Model Registration
+      - Model Registry登録
+      - 承認ワークフロー
+    
+    ステップ5: Deployment
+      - Staging環境デプロイ
+      - A/Bテスト
+      - 本番環境デプロイ
+  
+  監視・フィードバック:
+    Model Monitor
+      ↓
+    CloudWatch Alarms
+      ↓
+    EventBridge
+      ↓
+    Lambda（再トレーニングトリガー）
+      ↓
+    Pipeline再実行
+
+CI/CDフロー:
+  - コードコミット → 自動テスト
+  - Pipeline自動実行
+  - 自動デプロイ（承認後）
+  - カナリアデプロイメント
+  - ロールバック可能
+```
+
+### パターン3: リアルタイム推論（高可用性）
+
+```yaml
+構成:
+  クライアント:
+    API Gateway
+      - 認証・認可
+      - レート制限
+      - キャッシング
+      ↓
+    Lambda（前処理）
+      - 入力検証
+      - Feature Store取得
+      - データ変換
+      ↓
+  
+  推論:
+    SageMaker Multi-AZ Endpoint:
+      複数AZ配置:
+        - ap-northeast-1a
+        - ap-northeast-1c
+        - ap-northeast-1d
+      
+      Auto Scaling:
+        - ターゲット追跡
+        - 最小インスタンス: 2
+        - 最大インスタンス: 10
+      
+      モデルバージョン:
+        - Production（90%）
+        - Canary（10%）
+      ↓
+  
+  後処理:
+    Lambda（後処理）
+      - 結果変換
+      - ログ記録
+      - メトリクス送信
+      ↓
+    DynamoDB（結果保存）
+    
+    Kinesis Data Firehose
+      - S3（長期保存）
+      - 再学習データ
+
+可用性:
+  - Multi-AZ配置
+  - Auto Scaling
+  - ヘルスチェック
+  - 自動フェイルオーバー
+
+パフォーマンス:
+  - レイテンシ: < 50ms
+  - スループット: 10,000 TPS
+  - SLA: 99.9%
+```
+
+### パターン4: バッチ推論
+
+```yaml
+構成:
+  スケジュール:
+    EventBridge（日次実行）
+      ↓
+    Step Functions（オーケストレーション）
+  
+  ワークフロー:
+    Step 1: データ準備
+      Lambda
+        - S3から最新データ取得
+        - データ検証
+      
+    Step 2: 特徴量生成
+      SageMaker Processing Job
+        - Feature Store取得
+        - 特徴量結合
+        - S3出力
+    
+    Step 3: バッチ変換
+      SageMaker Batch Transform
+        - S3入力データ
+        - 並列処理
+        - S3結果出力
+    
+    Step 4: 後処理
+      Lambda
+        - 結果集約
+        - Redshift COPY
+        - 通知送信
+  
+  出力:
+    S3（予測結果）
+    Redshift（分析用）
+    SNS（完了通知）
+
+メリット:
+  - コスト効率（リアルタイムより70%削減）
+  - 大量データ処理
+  - スケーラブル
+  - エラーハンドリング
+```
+
+### パターン5: AutoML（Autopilot）
+
+```yaml
+構成:
+  入力:
+    S3（CSV/Parquet）
+      - ターゲット列指定
+      - 問題タイプ（分類/回帰）
+      ↓
+  
+  Autopilot実行:
+    自動データ探索:
+      - 統計分析
+      - 相関分析
+      - 特徴量重要度
+    
+    自動特徴量エンジニアリング:
+      - エンコーディング
+      - スケーリング
+      - 特徴量生成
+    
+    自動モデル選択:
+      - 複数アルゴリズム試行
+        * XGBoost
+        * Linear Learner
+        * Deep Learning
+      - ハイパーパラメータ調整
+      - クロスバリデーション
+    
+    モデル評価:
+      - 精度比較
+      - 最適モデル選定
+      - 説明可能性レポート
+      ↓
+  
+  出力:
+    Model Registry
+      - ベストモデル登録
+      - 全候補モデル保存
+    
+    Notebooks
+      - データ探索ノートブック
+      - 候補生成ノートブック
+    
+    レポート:
+      - モデル説明
+      - 特徴量重要度
+      - パフォーマンスメトリクス
+  
+  デプロイ:
+    ワンクリックデプロイ
+      - リアルタイムエンドポイント
+      - バッチ変換
+
+ユースケース:
+  - データサイエンティスト不在
+  - 迅速なPoC
+  - ベースラインモデル作成
+  - モデル比較
+```
+
+### パターン6: マルチモデルエンドポイント
+
+```yaml
+構成:
+  シナリオ:
+    - 数千の類似モデル
+    - 顧客毎のパーソナライズモデル
+    - コスト削減要求
+
+  実装:
+    S3（モデルアーティファクト）:
+      - model-customer-001.tar.gz
+      - model-customer-002.tar.gz
+      - ...
+      - model-customer-999.tar.gz
+      ↓
+    
+    Multi-Model Endpoint:
+      単一インスタンス（ml.m5.xlarge）
+        - 複数モデルホスティング
+        - 動的ロード/アンロード
+        - キャッシング
+      
+      推論リクエスト:
+        - TargetModel: customer-001
+        - 動的ロード
+        - キャッシュヒット率最適化
+  
+  メリット:
+    コスト削減:
+      Before:
+        - 1000モデル × 1エンドポイント
+        - 1000 × $0.281/時間
+        - $281/時間
+      
+      After:
+        - 1エンドポイント（複数モデル）
+        - $0.281/時間
+        - コスト削減: 99.9%
+    
+    運用効率:
+      - エンドポイント管理簡素化
+      - 自動スケーリング
+      - モデル更新容易
+
+制約:
+  - モデルサイズ制限
+  - コールドスタート
+  - 同じコンテナイメージ
+```
+
+### パターン7: Feature Store統合
+
+```yaml
+構成:
+  特徴量作成:
+    バッチ処理:
+      S3（生データ）
+        ↓
+      SageMaker Processing / EMR / Glue
+        - 集計処理
+        - 特徴量計算
+        ↓
+      Feature Store（オフライン）
+        - S3ベース
+        - Parquet形式
+        - Iceberg対応
+    
+    ストリーミング:
+      Kinesis Data Streams
+        ↓
+      Lambda / Kinesis Data Analytics
+        - リアルタイム特徴量計算
+        ↓
+      Feature Store（オンライン）
+        - 低レイテンシ
+        - ミリ秒レスポンス
+  
+  トレーニング:
+    SageMaker Training
+      - Feature Store（オフライン）から読み込み
+      - 時系列データ対応
+      - Point-in-time join
+  
+  推論:
+    リアルタイム:
+      API Gateway
+        ↓
+      Lambda
+        - Feature Store（オンライン）取得
+        ↓
+      SageMaker Endpoint
+    
+    バッチ:
+      - Feature Store（オフライン）から取得
+      - バッチ変換
+
+メリット:
+  - トレーニング/推論の特徴量一貫性
+  - 特徴量再利用
+  - チーム間共有
+  - バージョン管理
+  - 系譜追跡
+```
+
+## 実装例
+
+### リアルタイム推論エンドポイント
+
+```python
+import boto3
+import json
+
+sagemaker = boto3.client('sagemaker')
+runtime = boto3.client('sagemaker-runtime')
+
+# モデル作成
+model_response = sagemaker.create_model(
+    ModelName='my-model',
+    PrimaryContainer={
+        'Image': '763104351884.dkr.ecr.ap-northeast-1.amazonaws.com/pytorch-inference:2.0-cpu',
+        'ModelDataUrl': 's3://my-bucket/model/model.tar.gz',
+        'Environment': {
+            'SAGEMAKER_PROGRAM': 'inference.py',
+            'SAGEMAKER_SUBMIT_DIRECTORY': 's3://my-bucket/code/sourcedir.tar.gz'
+        }
+    },
+    ExecutionRoleArn='arn:aws:iam::123456789012:role/SageMakerRole'
+)
+
+# エンドポイント設定
+endpoint_config = sagemaker.create_endpoint_config(
+    EndpointConfigName='my-endpoint-config',
+    ProductionVariants=[
+        {
+            'VariantName': 'AllTraffic',
+            'ModelName': 'my-model',
+            'InstanceType': 'ml.m5.xlarge',
+            'InitialInstanceCount': 2,
+            'InitialVariantWeight': 1.0
+        }
+    ]
+)
+
+# エンドポイント作成
+endpoint = sagemaker.create_endpoint(
+    EndpointName='my-endpoint',
+    EndpointConfigName='my-endpoint-config'
+)
+
+# 推論実行
+response = runtime.invoke_endpoint(
+    EndpointName='my-endpoint',
+    ContentType='application/json',
+    Body=json.dumps({
+        'instances': [
+            {'features': [1.0, 2.0, 3.0, 4.0]}
+        ]
+    })
+)
+
+result = json.loads(response['Body'].read())
+print(result)
+```
+
+### Auto Scaling設定
+
+```python
+# Auto Scaling設定
+autoscaling = boto3.client('application-autoscaling')
+
+# スケーラブルターゲット登録
+autoscaling.register_scalable_target(
+    ServiceNamespace='sagemaker',
+    ResourceId='endpoint/my-endpoint/variant/AllTraffic',
+    ScalableDimension='sagemaker:variant:DesiredInstanceCount',
+    MinCapacity=2,
+    MaxCapacity=10
+)
+
+# スケーリングポリシー
+autoscaling.put_scaling_policy(
+    PolicyName='my-scaling-policy',
+    ServiceNamespace='sagemaker',
+    ResourceId='endpoint/my-endpoint/variant/AllTraffic',
+    ScalableDimension='sagemaker:variant:DesiredInstanceCount',
+    PolicyType='TargetTrackingScaling',
+    TargetTrackingScalingPolicyConfiguration={
+        'TargetValue': 70.0,  # 70% CPU使用率
+        'PredefinedMetricSpecification': {
+            'PredefinedMetricType': 'SageMakerVariantInvocationsPerInstance'
+        },
+        'ScaleInCooldown': 300,
+        'ScaleOutCooldown': 60
+    }
+)
+```
+
+### SageMaker Pipelinesの構築
+
+```python
+from sagemaker.workflow.pipeline import Pipeline
+from sagemaker.workflow.steps import ProcessingStep, TrainingStep
+from sagemaker.workflow.parameters import ParameterString
+from sagemaker.workflow.conditions import ConditionGreaterThanOrEqualTo
+from sagemaker.workflow.condition_step import ConditionStep
+from sagemaker.workflow.functions import JsonGet
+
+# パラメータ定義
+input_data = ParameterString(name="InputData", default_value="s3://my-bucket/data/")
+accuracy_threshold = ParameterString(name="AccuracyThreshold", default_value="0.80")
+
+# Processing Step
+processing_step = ProcessingStep(
+    name="PreprocessData",
+    processor=sklearn_processor,
+    inputs=[
+        ProcessingInput(source=input_data, destination="/opt/ml/processing/input")
+    ],
+    outputs=[
+        ProcessingOutput(output_name="train", source="/opt/ml/processing/train"),
+        ProcessingOutput(output_name="validation", source="/opt/ml/processing/validation")
+    ],
+    code="preprocessing.py"
+)
+
+# Training Step
+training_step = TrainingStep(
+    name="TrainModel",
+    estimator=xgboost_estimator,
+    inputs={
+        "train": TrainingInput(
+            s3_data=processing_step.properties.ProcessingOutputConfig.Outputs["train"].S3Output.S3Uri
+        ),
+        "validation": TrainingInput(
+            s3_data=processing_step.properties.ProcessingOutputConfig.Outputs["validation"].S3Output.S3Uri
+        )
+    }
+)
+
+# Condition Step（精度チェック）
+cond_gte = ConditionGreaterThanOrEqualTo(
+    left=JsonGet(
+        step_name=training_step.name,
+        property_file=evaluation_report,
+        json_path="metrics.accuracy.value"
+    ),
+    right=accuracy_threshold
+)
+
+condition_step = ConditionStep(
+    name="CheckAccuracy",
+    conditions=[cond_gte],
+    if_steps=[register_step],  # 精度OK → モデル登録
+    else_steps=[fail_step]     # 精度NG → 失敗
+)
+
+# Pipeline作成
+pipeline = Pipeline(
+    name="MyMLPipeline",
+    parameters=[input_data, accuracy_threshold],
+    steps=[processing_step, training_step, condition_step]
+)
+
+pipeline.upsert(role_arn=role)
+execution = pipeline.start()
+```
+
+### バッチ変換
+
+```python
+from sagemaker.transformer import Transformer
+
+transformer = Transformer(
+    model_name='my-model',
+    instance_count=5,
+    instance_type='ml.m5.xlarge',
+    output_path='s3://my-bucket/batch-output/',
+    strategy='MultiRecord',  # 複数レコード一括処理
+    max_concurrent_transforms=10,
+    max_payload=6,  # MB
+    accept='application/json'
+)
+
+# バッチ変換実行
+transformer.transform(
+    data='s3://my-bucket/batch-input/',
+    content_type='application/json',
+    split_type='Line',
+    join_source='Input',
+    wait=True
+)
+```
+
+## まとめ
+
+**アーキテクチャ設計のポイント:**
+- 用途に応じた推論オプション選択（リアルタイム/バッチ/サーバーレス）
+- Pipelines で MLOps 実現
+- Feature Store で特徴量管理
+- Model Monitor で継続監視
+- Auto Scaling で可用性・コスト最適化
+- Multi-Model Endpoint でコスト削減
+- スポットインスタンスでトレーニングコスト削減
+- Step Functions でワークフローオーケストレーション

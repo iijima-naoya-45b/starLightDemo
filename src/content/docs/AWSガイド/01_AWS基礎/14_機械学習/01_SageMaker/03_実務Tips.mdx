@@ -1,0 +1,596 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## AWS CLI コマンド
+
+### モデル管理
+
+```bash
+# モデル作成
+aws sagemaker create-model \
+  --model-name my-model \
+  --primary-container '{
+    "Image": "763104351884.dkr.ecr.ap-northeast-1.amazonaws.com/pytorch-inference:2.0-cpu",
+    "ModelDataUrl": "s3://my-bucket/model.tar.gz"
+  }' \
+  --execution-role-arn arn:aws:iam::123456789012:role/SageMakerRole
+
+# モデル一覧
+aws sagemaker list-models
+
+# モデル詳細
+aws sagemaker describe-model --model-name my-model
+
+# モデル削除
+aws sagemaker delete-model --model-name my-model
+```
+
+### トレーニングジョブ
+
+```bash
+# トレーニングジョブ作成
+aws sagemaker create-training-job \
+  --training-job-name my-training-job \
+  --algorithm-specification '{
+    "TrainingImage": "683313688378.dkr.ecr.ap-northeast-1.amazonaws.com/sagemaker-xgboost:1.5-1",
+    "TrainingInputMode": "File"
+  }' \
+  --role-arn arn:aws:iam::123456789012:role/SageMakerRole \
+  --input-data-config '[
+    {
+      "ChannelName": "train",
+      "DataSource": {
+        "S3DataSource": {
+          "S3DataType": "S3Prefix",
+          "S3Uri": "s3://my-bucket/train/",
+          "S3DataDistributionType": "FullyReplicated"
+        }
+      },
+      "ContentType": "text/csv"
+    }
+  ]' \
+  --output-data-config '{
+    "S3OutputPath": "s3://my-bucket/output/"
+  }' \
+  --resource-config '{
+    "InstanceType": "ml.m5.xlarge",
+    "InstanceCount": 2,
+    "VolumeSizeInGB": 30
+  }' \
+  --stopping-condition '{
+    "MaxRuntimeInSeconds": 86400
+  }' \
+  --hyper-parameters '{
+    "max_depth": "5",
+    "eta": "0.2",
+    "objective": "binary:logistic",
+    "num_round": "100"
+  }'
+
+# トレーニングジョブ状態確認
+aws sagemaker describe-training-job --training-job-name my-training-job
+
+# トレーニングジョブ一覧
+aws sagemaker list-training-jobs --max-results 10
+
+# トレーニングジョブ停止
+aws sagemaker stop-training-job --training-job-name my-training-job
+```
+
+### エンドポイント管理
+
+```bash
+# エンドポイント設定作成
+aws sagemaker create-endpoint-config \
+  --endpoint-config-name my-endpoint-config \
+  --production-variants '[
+    {
+      "VariantName": "AllTraffic",
+      "ModelName": "my-model",
+      "InstanceType": "ml.m5.xlarge",
+      "InitialInstanceCount": 2,
+      "InitialVariantWeight": 1.0
+    }
+  ]'
+
+# エンドポイント作成
+aws sagemaker create-endpoint \
+  --endpoint-name my-endpoint \
+  --endpoint-config-name my-endpoint-config
+
+# エンドポイント状態確認
+aws sagemaker describe-endpoint --endpoint-name my-endpoint
+
+# エンドポイント一覧
+aws sagemaker list-endpoints
+
+# エンドポイント更新
+aws sagemaker update-endpoint \
+  --endpoint-name my-endpoint \
+  --endpoint-config-name my-endpoint-config-v2
+
+# エンドポイント削除
+aws sagemaker delete-endpoint --endpoint-name my-endpoint
+aws sagemaker delete-endpoint-config --endpoint-config-name my-endpoint-config
+
+# 推論実行
+aws sagemaker-runtime invoke-endpoint \
+  --endpoint-name my-endpoint \
+  --content-type application/json \
+  --body '{"instances": [[1.0, 2.0, 3.0, 4.0]]}' \
+  output.json
+
+cat output.json
+```
+
+### バッチ変換
+
+```bash
+# バッチ変換ジョブ作成
+aws sagemaker create-transform-job \
+  --transform-job-name my-batch-transform \
+  --model-name my-model \
+  --transform-input '{
+    "DataSource": {
+      "S3DataSource": {
+        "S3DataType": "S3Prefix",
+        "S3Uri": "s3://my-bucket/batch-input/"
+      }
+    },
+    "ContentType": "text/csv",
+    "SplitType": "Line"
+  }' \
+  --transform-output '{
+    "S3OutputPath": "s3://my-bucket/batch-output/",
+    "AssembleWith": "Line"
+  }' \
+  --transform-resources '{
+    "InstanceType": "ml.m5.xlarge",
+    "InstanceCount": 5
+  }'
+
+# バッチ変換状態確認
+aws sagemaker describe-transform-job --transform-job-name my-batch-transform
+
+# バッチ変換ジョブ一覧
+aws sagemaker list-transform-jobs
+```
+
+## ベストプラクティス
+
+### トレーニング最適化
+
+```yaml
+インスタンス選択:
+  CPU最適化:
+    - ml.c5シリーズ
+    - 軽量モデル
+    - 推論ワークロード
+  
+  GPU最適化:
+    - ml.p3シリーズ（NVIDIA V100）
+    - ml.p4dシリーズ（NVIDIA A100）
+    - 深層学習
+    - 大規模モデル
+  
+  メモリ最適化:
+    - ml.r5シリーズ
+    - 大規模データセット
+    - インメモリ処理
+
+分散トレーニング:
+  データ並列:
+    推奨:
+      - 大規模データセット
+      - 標準的なモデルサイズ
+      - 複数GPU
+    
+    設定:
+      distribution:
+        mpi:
+          enabled: true
+          processes_per_host: 8
+  
+  モデル並列:
+    推奨:
+      - 大規模モデル（GPT、BERT）
+      - 単一GPUに収まらない
+    
+    設定:
+      distribution:
+        smdistributed:
+          modelparallel:
+            enabled: true
+            parameters:
+              partitions: 2
+
+スポットインスタンス:
+  コスト削減:
+    - 最大90%割引
+    - チェックポイント必須
+    - 中断許容可能
+  
+  設定:
+    use_spot_instances: true
+    max_wait_time: 86400
+    checkpoint_s3_uri: s3://my-bucket/checkpoints/
+  
+  ベストプラクティス:
+    - 頻繁なチェックポイント保存
+    - 最大待機時間設定
+    - 中断ハンドリング実装
+```
+
+### エンドポイント最適化
+
+```yaml
+インスタンス選択:
+  リアルタイム:
+    低レイテンシ:
+      - ml.c5シリーズ
+      - ml.inf1シリーズ（Inferentia）
+      - < 50ms
+    
+    高スループット:
+      - ml.g4dnシリーズ（GPU）
+      - バッチ推論
+      - > 1000 TPS
+  
+  サーバーレス:
+    推奨シナリオ:
+      - 断続的なトラフィック
+      - 予測不可能
+      - 開発/テスト環境
+    
+    設定:
+      MemorySizeInMB: 2048
+      MaxConcurrency: 10
+
+Auto Scaling:
+  ターゲット追跡:
+    メトリクス:
+      - SageMakerVariantInvocationsPerInstance
+      - CPUUtilization
+    
+    ターゲット値: 70-80%
+    
+    クールダウン:
+      - ScaleOut: 60秒
+      - ScaleIn: 300秒
+  
+  設定例:
+    MinCapacity: 2  # HA確保
+    MaxCapacity: 10  # コスト上限
+    TargetValue: 70.0
+
+Multi-Model Endpoint:
+  適用条件:
+    - 類似モデル多数（100+）
+    - 低頻度アクセス
+    - コスト削減優先
+  
+  制約:
+    - 同一コンテナイメージ
+    - モデルサイズ制限
+    - コールドスタート許容
+  
+  最適化:
+    - キャッシュサイズ調整
+    - 予測的ロード
+    - モデルサイズ削減
+```
+
+### コスト最適化
+
+```yaml
+トレーニング:
+  スポットインスタンス:
+    削減率: 最大90%
+    推奨:
+      - バッチトレーニング
+      - チェックポイント対応
+      - 中断許容
+  
+  マネージドスポットトレーニング:
+    - 自動再開
+    - チェックポイント統合
+    - 最大待機時間設定
+
+推論:
+  サーバーレス推論:
+    Before（リアルタイムエンドポイント）:
+      - 24/7稼働: $205/月
+      - 使用率: 10%
+    
+    After（サーバーレス）:
+      - 従量課金
+      - 実コスト: $20/月
+      - 削減率: 90%
+  
+  バッチ変換:
+    - リアルタイム不要時
+    - 大量データ処理
+    - コスト削減: 70%
+  
+  Multi-Model Endpoint:
+    - 複数モデル共有
+    - コスト削減: 99%
+    - 管理簡素化
+
+モニタリング:
+  コスト可視化:
+    - CloudWatch Metrics
+    - Cost Explorer
+    - タグベース追跡
+  
+  最適化ポイント:
+    - 未使用エンドポイント削除
+    - インスタンスサイズ最適化
+    - Auto Scaling調整
+    - スポット活用
+```
+
+### Feature Store活用
+
+```yaml
+特徴量設計:
+  Feature Group:
+    - 論理的なグループ化
+    - スキーマ定義
+    - Record Identifier必須
+    - Event Time必須
+  
+  命名規則:
+    - customer-demographics
+    - transaction-features
+    - product-embeddings
+
+データ投入:
+  バッチ:
+    - S3 → Processing Job → Feature Store
+    - Glue ETL → Feature Store
+    - 日次/週次更新
+  
+  ストリーミング:
+    - Kinesis → Lambda → Feature Store
+    - リアルタイム更新
+    - 低レイテンシ
+
+特徴量取得:
+  トレーニング:
+    # オフラインストア使用
+    athena_query = feature_store.athena_query()
+    df = athena_query.run(query_string)
+  
+  推論:
+    # オンラインストア使用
+    record = featurestore_runtime.get_record(
+        FeatureGroupName='customer-features',
+        RecordIdentifierValueAsString='customer-123'
+    )
+
+時系列対応:
+  Point-in-Time Join:
+    - 過去時点の特徴量取得
+    - データリーケージ防止
+    - トレーニング精度向上
+```
+
+### Model Monitor設定
+
+```yaml
+データ品質監視:
+  ベースライン作成:
+    - トレーニングデータ統計
+    - スキーマ定義
+    - 分布記録
+  
+  監視設定:
+    schedule_expression: cron(0 * * * ? *)  # 毎時
+    constraints:
+      - null_percentage < 5%
+      - data_type_match: 100%
+      - categorical_values_in_range
+  
+  アラート:
+    - CloudWatch Alarms
+    - SNS通知
+    - Lambda アクション
+
+モデル品質監視:
+  Ground Truth:
+    - 実績データ収集
+    - S3保存
+    - 形式統一
+  
+  メトリクス:
+    - Accuracy
+    - Precision / Recall
+    - F1 Score
+    - AUC-ROC
+  
+  しきい値:
+    - 基準値から10%以上劣化
+    - アラート発火
+    - 再トレーニング検討
+
+特徴量ドリフト:
+  検出:
+    - 統計的テスト
+    - KLダイバージェンス
+    - コルモゴロフ・スミルノフ検定
+  
+  対応:
+    - 分布変化アラート
+    - 特徴量再計算
+    - モデル再学習
+```
+
+## トラブルシューティング
+
+```yaml
+よくある問題:
+
+1. ResourceLimitExceeded:
+   原因:
+     - インスタンス数上限
+     - サービスクォータ
+   
+   対処:
+     - Service Quotas確認
+     - 上限緩和リクエスト
+     - リージョン変更検討
+
+2. Training Job Failed:
+   原因:
+     - データ形式エラー
+     - ハイパーパラメータ不適切
+     - メモリ不足
+   
+   対処:
+     - CloudWatch Logsチェック
+     - データ検証
+     - インスタンスサイズ増加
+     - エラーハンドリング追加
+
+3. Endpoint Latency高い:
+   原因:
+     - モデルサイズ大きい
+     - 前処理重い
+     - インスタンス不足
+   
+   対処:
+     - モデル最適化（Neo）
+     - Elastic Inference
+     - インスタンスサイズ増加
+     - Auto Scaling調整
+
+4. Out of Memory:
+   原因:
+     - バッチサイズ大きい
+     - モデルサイズ大きい
+     - データ量多い
+   
+   対処:
+     - バッチサイズ削減
+     - メモリ最適化インスタンス
+     - モデル並列
+     - グラディエントチェックポイント
+
+5. コールドスタート遅延:
+   原因:
+     - サーバーレス推論
+     - マルチモデルエンドポイント
+     - 大きなモデル
+   
+   対処:
+     - 最小インスタンス数設定
+     - モデルサイズ削減
+     - ウォームアップリクエスト
+     - リアルタイムエンドポイント検討
+```
+
+## セキュリティ
+
+```yaml
+IAMロール:
+  SageMaker実行ロール:
+    必須権限:
+      - s3:GetObject, s3:PutObject
+      - logs:CreateLogGroup, logs:CreateLogStream
+      - ecr:GetAuthorizationToken, ecr:BatchGetImage
+      - cloudwatch:PutMetricData
+    
+    オプション:
+      - kms:Decrypt, kms:Encrypt（暗号化時）
+      - vpc:*（VPC使用時）
+
+暗号化:
+  保管時:
+    - S3: KMS暗号化
+    - EBS: 自動暗号化
+    - Model Artifacts: KMS
+  
+  転送中:
+    - HTTPS/TLS
+    - VPC内通信
+
+VPC設定:
+  推奨構成:
+    - プライベートサブネット
+    - VPCエンドポイント（S3, ECR, CloudWatch）
+    - セキュリティグループ
+    - NATゲートウェイ（外部アクセス時）
+  
+  制約:
+    - インターネットアクセス不可
+    - VPCエンドポイント必須
+    - コスト増加
+
+ネットワーク分離:
+  - トレーニングジョブVPC
+  - エンドポイントVPC
+  - セキュリティグループ制御
+  - PrivateLink使用
+```
+
+## パフォーマンスチューニング
+
+```yaml
+トレーニング高速化:
+  Pipe Mode:
+    - ストリーミング読み込み
+    - ディスク不要
+    - 大規模データセット
+    - 高速化: 2-3倍
+  
+  FSx for Lustre:
+    - 高速ファイルシステム
+    - S3統合
+    - 分散トレーニング
+    - スループット: GB/s
+
+推論最適化:
+  SageMaker Neo:
+    - モデルコンパイル
+    - ハードウェア最適化
+    - 高速化: 2倍
+    - サイズ削減: 1/10
+  
+  Elastic Inference:
+    - GPU加速
+    - コスト削減: 75%
+    - CPU + EI
+  
+  TensorRT:
+    - NVIDIA最適化
+    - 推論高速化: 5-10倍
+    - GPU推論
+
+バッチサイズ最適化:
+  トレーニング:
+    - GPU利用率最大化
+    - メモリ上限まで
+    - 学習率調整
+  
+  推論:
+    - レイテンシとスループット
+    - バランス調整
+    - A/Bテスト
+```
+
+## まとめ
+
+**実務での重要ポイント:**
+- スポットインスタンスで最大90%コスト削減
+- Auto Scalingで可用性とコスト最適化
+- Feature Storeで特徴量管理統一
+- Model Monitorで継続的品質監視
+- サーバーレス推論で未使用時コスト削減
+- Multi-Model Endpointで複数モデル効率化
+- VPC設定でセキュリティ強化
+- Pipe Mode / FSx for Lustreで高速化
+- SageMaker Neoでモデル最適化
+- Pipelinesで MLOps 実現
