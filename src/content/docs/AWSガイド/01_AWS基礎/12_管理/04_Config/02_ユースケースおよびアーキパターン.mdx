@@ -1,0 +1,61 @@
+---
+title: "ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## ユースケース
+
+### 1. セキュリティ監査
+
+```yaml
+シナリオ:
+  - 暗号化強制
+  - パブリックアクセス禁止
+  - セキュリティグループ監査
+
+実装:
+  - encrypted-volumes ルール
+  - s3-bucket-public-read-prohibited
+  - restricted-ssh ルール
+```
+
+### 2. コンプライアンス
+
+```yaml
+シナリオ:
+  - 業界標準準拠
+  - 継続的監視
+  - レポート作成
+
+実装:
+  - Conformance Pack
+  - Config Aggregator
+  - 定期レポート
+```
+
+## アーキテクチャパターン
+
+```yaml
+構成:
+  AWS Config:
+    - 全リージョン有効化
+    - Config Rules設定
+    - 自動修復
+  
+  EventBridge:
+    - 非準拠検知
+    - SNS通知
+    - Lambda起動
+  
+  Config Aggregator:
+    - 組織全体集約
+    - ダッシュボード
+```
+
+## まとめ
+
+**設計ポイント:**
+- 全リージョン有効化
+- マネージドルール活用
+- 自動修復設定
+- Aggregator で一元管理

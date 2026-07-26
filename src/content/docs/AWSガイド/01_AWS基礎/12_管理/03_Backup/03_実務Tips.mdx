@@ -1,0 +1,60 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## AWS CLI コマンド
+
+### バックアップ管理
+
+```bash
+# バックアッププラン作成
+aws backup create-backup-plan \
+  --backup-plan file://plan.json
+
+# バックアップ実行
+aws backup start-backup-job \
+  --backup-vault-name my-vault \
+  --resource-arn arn:aws:ec2:region:account-id:instance/i-xxxxx \
+  --iam-role-arn arn:aws:iam::account-id:role/BackupRole
+
+# リストア
+aws backup start-restore-job \
+  --recovery-point-arn arn:aws:backup:region:account-id:recovery-point:xxxxx \
+  --metadata file://restore-metadata.json \
+  --iam-role-arn arn:aws:iam::account-id:role/RestoreRole
+```
+
+## ベストプラクティス
+
+### バックアップ戦略
+
+```yaml
+3-2-1ルール:
+  - 3つのコピー
+  - 2種類のメディア
+  - 1つはオフサイト
+
+実装:
+  - 本番リージョン
+  - DRリージョン
+  - コールドストレージ
+```
+
+### タグ戦略
+
+```yaml
+推奨タグ:
+  - Backup: true/false
+  - BackupPlan: daily/weekly
+  - Environment: prod/dev
+  - RetentionDays: 7/30/365
+```
+
+## まとめ
+
+**重要ポイント:**
+- タグで自動化
+- 定期テスト実施
+- クロスリージョン
+- Vault Lock活用

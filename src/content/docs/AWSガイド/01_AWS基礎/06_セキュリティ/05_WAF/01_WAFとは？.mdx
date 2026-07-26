@@ -1,0 +1,274 @@
+---
+title: "WAFとは？"
+label: "WAFとは？"
+---
+
+## AWS WAF (Web Application Firewall) とは？
+
+WAFは、Webアプリケーションを一般的な攻撃から保護するマネージド型ファイアウォールサービスです。
+
+### 主要機能
+
+#### 1. Web ACL（Access Control List）
+
+```yaml
+概要:
+  - ルールの集合
+  - トラフィックのフィルタリング
+  - Allow / Block / Count アクション
+
+適用先:
+  - CloudFront
+  - Application Load Balancer（ALB）
+  - API Gateway
+  - AppSync
+```
+
+#### 2. ルール
+
+```yaml
+ルールタイプ:
+  マネージドルール:
+    - AWS管理
+    - 自動更新
+    - すぐに使える
+    - 例: AWSManagedRulesCommonRuleSet
+  
+  カスタムルール:
+    - ユーザー作成
+    - 独自の条件
+    - 柔軟な制御
+
+ルールグループ:
+  - 複数ルールをまとめる
+  - 再利用可能
+  - Marketplace購入可能
+```
+
+#### 3. 条件マッチ
+
+```yaml
+リクエスト要素:
+  - IPアドレス / IPセット
+  - 地理的位置（国）
+  - HTTPヘッダー
+  - HTTPメソッド
+  - クエリ文字列
+  - URI パス
+  - リクエストボディ
+  - Cookie
+
+マッチング:
+  - 完全一致
+  - 前方一致 / 後方一致
+  - 含む / 含まない
+  - 正規表現
+  - サイズ制約
+```
+
+#### 4. レート制限
+
+```yaml
+概要:
+  - 5分間のリクエスト数制限
+  - DDoS軽減
+  - ボット対策
+
+設定例:
+  - 同一IPから2,000リクエスト/5分まで
+  - 超過時はBlock
+  - カウントリセット
+```
+
+### マネージドルール
+
+```yaml
+AWS Managed Rules:
+  Core rule set:
+    - 一般的な攻撃対策
+    - SQLインジェクション
+    - XSS（クロスサイトスクリプティング）
+    - LFI（ローカルファイルインクルージョン）
+  
+  Known bad inputs:
+    - 既知の脆弱性パターン
+    - CVE対応
+  
+  SQL database:
+    - SQLインジェクション特化
+  
+  Linux operating system:
+    - Linux固有の脆弱性
+  
+  PHP application:
+    - PHP固有の脆弱性
+  
+  WordPress application:
+    - WordPress特化
+
+サードパーティルール:
+  - AWS Marketplace
+  - F5、Imperva、Fortinet等
+  - 商用サポート
+```
+
+### Bot Control
+
+```yaml
+概要:
+  - ボットトラフィック検出
+  - 良性/悪性ボット分類
+  - きめ細かい制御
+
+カテゴリ:
+  Target TGT:
+    - ターゲット型ボット
+    - スクレイピング
+    - 在庫チェック
+  
+  Monitoring MON:
+    - 監視ボット
+    - Googlebot等
+  
+  Unverified UNV:
+    - 未検証
+    - 不明なボット
+
+アクション:
+  - Allow（検索エンジンbot等）
+  - Block（悪性bot）
+  - Count（観察）
+  - CAPTCHA / Challenge
+```
+
+### CAPTCHA統合
+
+```yaml
+概要:
+  - ボット対策
+  - ユーザー認証
+  - リスクベース
+
+トリガー:
+  - レート制限超過
+  - 不審なパターン
+  - 地理的条件
+
+実装:
+  - AWS WAF CAPTCHA
+  - 自動埋め込み
+  - カスタマイズ可能
+```
+
+### ログと監視
+
+```yaml
+ログ出力先:
+  - Amazon S3
+  - CloudWatch Logs
+  - Kinesis Data Firehose
+
+ログ内容:
+  - タイムスタンプ
+  - アクション（Allow/Block）
+  - ルール一致
+  - HTTPリクエスト詳細
+  - クライアントIP
+
+メトリクス:
+  - AllowedRequests
+  - BlockedRequests
+  - CountedRequests
+  - SampledRequests
+```
+
+### セキュリティ自動化
+
+```yaml
+AWS Solutions:
+  Security Automations for AWS WAF:
+    - 自動ルール更新
+    - IPブラックリスト管理
+    - レピュテーションリスト統合
+    - ログ解析・自動対応
+
+Lambda統合:
+  - カスタム自動化
+  - 動的IPブロック
+  - サードパーティ連携
+```
+
+### 統合サービス
+
+```yaml
+保護対象:
+  - CloudFront（グローバル）
+  - ALB（リージョナル）
+  - API Gateway（リージョナル）
+  - AppSync（リージョナル）
+
+Shield統合:
+  - Shield Standard（無料）
+  - Shield Advanced（有料）
+  - DDoS対策強化
+
+Firewall Manager:
+  - 複数アカウント一元管理
+  - ポリシー統一
+  - 自動適用
+```
+
+### 料金
+
+```yaml
+Web ACL:
+  - $5.00 / 月
+
+ルール:
+  - $1.00 / ルール / 月
+
+リクエスト:
+  - $0.60 / 100万リクエスト
+
+Bot Control:
+  - $10.00 / 月
+  - $1.00 / 100万リクエスト
+
+CAPTCHA:
+  - $0.40 / 1,000 CAPTCHAチャレンジ
+
+マネージドルール:
+  - 無料（AWS提供）
+  - 有料（サードパーティ）
+```
+
+### WAF vs Shield vs Network Firewall
+
+```yaml
+WAF:
+  レイヤー: Layer 7（HTTP/HTTPS）
+  用途: Webアプリケーション保護
+  機能: SQLインジェクション、XSS対策
+
+Shield:
+  レイヤー: Layer 3/4（ネットワーク）
+  用途: DDoS攻撃対策
+  機能: トラフィック吸収
+
+Network Firewall:
+  レイヤー: Layer 3〜7
+  用途: VPCネットワーク保護
+  機能: ステートフルファイアウォール
+```
+
+### まとめ
+
+**WAFの重要ポイント:**
+- Layer 7のWebアプリケーション保護
+- マネージドルールですぐに使える
+- CloudFront/ALB/API Gateway統合
+- レート制限でDDoS軽減
+- Bot Control で自動ボット対策
+- リアルタイムログと監視
+- CAPTCHA統合
+- Firewall Managerで一元管理

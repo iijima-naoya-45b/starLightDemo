@@ -1,0 +1,64 @@
+---
+title: "ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## ユースケース
+
+### 1. Webサービス保護
+
+```yaml
+シナリオ:
+  - 公開Webサービス
+  - DDoS攻撃対策
+  - 高可用性維持
+
+実装:
+  - Shield Standard（無料）
+  - CloudFront + ALB
+  - Auto Scaling
+```
+
+### 2. ミッションクリティカル
+
+```yaml
+シナリオ:
+  - 重要システム
+  - 24/7対応必要
+  - コスト保護
+
+実装:
+  - Shield Advanced
+  - WAF統合
+  - DRTサポート
+```
+
+## アーキテクチャパターン
+
+```yaml
+推奨構成:
+  Route 53:
+    - Shield Standard
+    - ヘルスチェック
+  
+  CloudFront:
+    - Shield Standard/Advanced
+    - WAF適用
+  
+  ALB:
+    - Shield Standard/Advanced
+    - WAF適用
+    - Auto Scaling
+  
+  EC2/ECS:
+    - Auto Scaling
+    - マルチAZ
+```
+
+## まとめ
+
+**設計ポイント:**
+- CloudFront活用
+- WAF併用
+- Auto Scaling設定
+- ヘルスチェック必須

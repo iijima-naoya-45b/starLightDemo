@@ -1,0 +1,182 @@
+---
+title: "Shieldとは？"
+label: "Shieldとは？"
+---
+
+## AWS Shield とは？
+
+ShieldはAWSのマネージド型DDoS（分散型サービス拒否）攻撃対策サービスです。
+
+### Shieldのレベル
+
+#### 1. Shield Standard
+
+```yaml
+概要:
+  - 全AWSユーザーに無料提供
+  - 自動有効化
+  - Layer 3/4 DDoS対策
+
+保護内容:
+  - SYN/UDP Floods対策
+  - Reflection attacks対策
+  - 一般的なDDoS攻撃
+
+保護対象:
+  - CloudFront
+  - Route 53
+  - ALB
+  - ELB
+  - Elastic IP
+```
+
+#### 2. Shield Advanced
+
+```yaml
+概要:
+  - 高度なDDoS対策
+  - 24/7サポート
+  - コスト保護
+
+料金:
+  - $3,000 / 月
+  - データ転送料金（通常時）
+
+追加機能:
+  - より高度な攻撃対策
+  - リアルタイム通知
+  - DDoS Response Team（DRT）
+  - コスト保護（スケーリングコスト）
+  - WAF無料（一部）
+
+保護対象:
+  - CloudFront
+  - Route 53
+  - ALB / NLB / CLB
+  - Elastic IP
+  - Global Accelerator
+```
+
+### DDoS攻撃タイプと対策
+
+```yaml
+Layer 3/4攻撃:
+  SYN Flood:
+    - TCP接続要求の大量送信
+    - Shield自動検出・軽減
+  
+  UDP Reflection:
+    - 反射攻撃
+    - Shield自動フィルタリング
+
+Layer 7攻撃:
+  HTTP Flood:
+    - 正規リクエストに偽装
+    - WAF + Shield Advanced
+  
+  Slowloris:
+    - 接続維持攻撃
+    - ALB自動対策
+```
+
+### Shield Advancedの機能
+
+```yaml
+高度な検出:
+  - 異常トラフィック検出
+  - ベースライン学習
+  - 自動軽減
+
+DRT（DDoS Response Team）:
+  - AWS専門家チーム
+  - 24/7対応
+  - 攻撃時の支援
+  - WAFルール作成支援
+
+ヘルスベース検出:
+  - Route 53ヘルスチェック連携
+  - 自動フェイルオーバー
+  - アプリケーション可用性維持
+
+コスト保護:
+  - DDoS攻撃時のスケーリングコスト補償
+  - EC2、ELB、CloudFront対象
+  - 事前申請必要
+```
+
+### WAF統合
+
+```yaml
+Shield Advanced + WAF:
+  - WAF料金無料（一部）
+  - 自動ルール作成
+  - Layer 7保護強化
+
+推奨構成:
+  - Shield Advanced（Layer 3/4）
+  - WAF（Layer 7）
+  - 多層防御
+```
+
+### モニタリング
+
+```yaml
+CloudWatch Metrics:
+  - DDoSDetected
+  - DDoSAttackBitsPerSecond
+  - DDoSAttackPacketsPerSecond
+  - DDoSAttackRequestsPerSecond
+
+通知:
+  - SNS連携
+  - リアルタイムアラート
+  - 攻撃開始・終了通知
+
+レポート:
+  - 攻撃サマリー
+  - 軽減詳細
+  - トラフィック分析
+```
+
+### ベストプラクティス
+
+```yaml
+アーキテクチャ:
+  - CloudFront使用
+  - Route 53使用
+  - ALB/NLB使用
+  - Auto Scaling設定
+
+冗長性:
+  - マルチAZ
+  - マルチリージョン（重要システム）
+  - ヘルスチェック設定
+
+準備:
+  - DRT連絡先登録
+  - エスカレーションプラン
+  - 定期的な訓練
+```
+
+### 料金
+
+```yaml
+Shield Standard:
+  - 無料
+  - 全AWSユーザー
+
+Shield Advanced:
+  - $3,000 / 月
+  - データ転送料金（通常）
+  - コスト保護含む
+  - 年間契約
+```
+
+## まとめ
+
+**Shieldの重要ポイント:**
+- Standard: 無料・自動・Layer 3/4
+- Advanced: 有料・高度・24/7サポート
+- WAF統合で多層防御
+- コスト保護で安心
+- DRTサポート

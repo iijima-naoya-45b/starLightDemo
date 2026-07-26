@@ -1,0 +1,66 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## AWS CLI コマンド
+
+### Config管理
+
+```bash
+# Config有効化
+aws configservice put-configuration-recorder \
+  --configuration-recorder name=default,roleARN=arn:aws:iam::account-id:role/ConfigRole
+
+aws configservice put-delivery-channel \
+  --delivery-channel name=default,s3BucketName=config-bucket
+
+aws configservice start-configuration-recorder \
+  --configuration-recorder-name default
+
+# Config Rule作成
+aws configservice put-config-rule \
+  --config-rule file://rule.json
+
+# コンプライアンス確認
+aws configservice describe-compliance-by-config-rule
+
+# リソース設定履歴
+aws configservice get-resource-config-history \
+  --resource-type AWS::EC2::Instance \
+  --resource-id i-xxxxx
+```
+
+## ベストプラクティス
+
+### ルール設計
+
+```yaml
+優先度:
+  1. セキュリティ（暗号化、アクセス）
+  2. コスト（未使用リソース）
+  3. 運用（タグ付け、命名規則）
+
+段階的導入:
+  1. マネージドルールから
+  2. 評価モードで観察
+  3. 自動修復有効化
+```
+
+### コスト最適化
+
+```yaml
+戦略:
+  - 必要なリソースタイプのみ
+  - 重要リージョンのみ
+  - ルール数最小化
+  - Conformance Pack活用
+```
+
+## まとめ
+
+**重要ポイント:**
+- マネージドルール活用
+- Aggregator で一元管理
+- 自動修復で運用削減
+- コスト考慮した設計
