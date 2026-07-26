@@ -1,0 +1,659 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## AWS CLI コマンド
+
+### データセット管理
+
+```bash
+# データセット一覧
+aws quicksight list-data-sets \
+  --aws-account-id 123456789012
+
+# データセット詳細
+aws quicksight describe-data-set \
+  --aws-account-id 123456789012 \
+  --data-set-id your-dataset-id
+
+# データセット作成（Athena）
+aws quicksight create-data-set \
+  --aws-account-id 123456789012 \
+  --data-set-id sales-analysis \
+  --name "Sales Analysis" \
+  --physical-table-map '{
+    "sales-table": {
+      "RelationalTable": {
+        "DataSourceArn": "arn:aws:quicksight:us-east-1:123456789012:datasource/athena-datasource",
+        "Schema": "default",
+        "Name": "sales_data",
+        "InputColumns": [
+          {"Name": "order_id", "Type": "STRING"},
+          {"Name": "order_date", "Type": "DATETIME"},
+          {"Name": "customer_id", "Type": "STRING"},
+          {"Name": "product_id", "Type": "STRING"},
+          {"Name": "sales_amount", "Type": "DECIMAL"}
+        ]
+      }
+    }
+  }' \
+  --import-mode SPICE
+
+# データセット削除
+aws quicksight delete-data-set \
+  --aws-account-id 123456789012 \
+  --data-set-id your-dataset-id
+```
+
+### SPICE リフレッシュ
+
+```bash
+# SPICE リフレッシュ開始
+INGESTION_ID=$(date +%s)
+aws quicksight create-ingestion \
+  --aws-account-id 123456789012 \
+  --data-set-id your-dataset-id \
+  --ingestion-id "ingestion-${INGESTION_ID}"
+
+# リフレッシュ状態確認
+aws quicksight describe-ingestion \
+  --aws-account-id 123456789012 \
+  --data-set-id your-dataset-id \
+  --ingestion-id "ingestion-${INGESTION_ID}"
+
+# リフレッシュ履歴
+aws quicksight list-ingestions \
+  --aws-account-id 123456789012 \
+  --data-set-id your-dataset-id
+
+# リフレッシュキャンセル
+aws quicksight cancel-ingestion \
+  --aws-account-id 123456789012 \
+  --data-set-id your-dataset-id \
+  --ingestion-id "ingestion-${INGESTION_ID}"
+```
+
+### ダッシュボード管理
+
+```bash
+# ダッシュボード一覧
+aws quicksight list-dashboards \
+  --aws-account-id 123456789012
+
+# ダッシュボード詳細
+aws quicksight describe-dashboard \
+  --aws-account-id 123456789012 \
+  --dashboard-id your-dashboard-id
+
+# ダッシュボード公開
+aws quicksight update-dashboard-published-version \
+  --aws-account-id 123456789012 \
+  --dashboard-id your-dashboard-id \
+  --version-number 1
+
+# ダッシュボード権限付与
+aws quicksight update-dashboard-permissions \
+  --aws-account-id 123456789012 \
+  --dashboard-id your-dashboard-id \
+  --grant-permissions '[
+    {
+      "Principal": "arn:aws:quicksight:us-east-1:123456789012:user/default/user-name",
+      "Actions": [
+        "quicksight:DescribeDashboard",
+        "quicksight:ListDashboardVersions",
+        "quicksight:QueryDashboard"
+      ]
+    }
+  ]'
+
+# ダッシュボード削除
+aws quicksight delete-dashboard \
+  --aws-account-id 123456789012 \
+  --dashboard-id your-dashboard-id
+```
+
+### ユーザー管理
+
+```bash
+# ユーザー一覧
+aws quicksight list-users \
+  --aws-account-id 123456789012 \
+  --namespace default
+
+# ユーザー作成
+aws quicksight register-user \
+  --aws-account-id 123456789012 \
+  --namespace default \
+  --identity-type IAM \
+  --iam-arn "arn:aws:iam::123456789012:user/john-doe" \
+  --user-role AUTHOR \
+  --email "john.doe@example.com" \
+  --user-name "john-doe"
+
+# ユーザー情報取得
+aws quicksight describe-user \
+  --aws-account-id 123456789012 \
+  --namespace default \
+  --user-name "john-doe"
+
+# ユーザー削除
+aws quicksight delete-user \
+  --aws-account-id 123456789012 \
+  --namespace default \
+  --user-name "john-doe"
+```
+
+### 埋め込みURL生成
+
+```bash
+# 登録ユーザー用埋め込みURL
+aws quicksight generate-embed-url-for-registered-user \
+  --aws-account-id 123456789012 \
+  --session-lifetime-in-minutes 600 \
+  --user-arn "arn:aws:quicksight:us-east-1:123456789012:user/default/user-name" \
+  --experience-configuration '{
+    "Dashboard": {
+      "InitialDashboardId": "your-dashboard-id"
+    }
+  }' \
+  --allowed-domains '["https://your-domain.com"]'
+
+# 匿名ユーザー用埋め込みURL（QuickSight Q）
+aws quicksight generate-embed-url-for-anonymous-user \
+  --aws-account-id 123456789012 \
+  --namespace default \
+  --session-lifetime-in-minutes 600 \
+  --authorized-resource-arns '["arn:aws:quicksight:us-east-1:123456789012:dashboard/your-dashboard-id"]' \
+  --experience-configuration '{
+    "Dashboard": {
+      "InitialDashboardId": "your-dashboard-id"
+    }
+  }'
+```
+
+## ベストプラクティス
+
+### データソース接続
+
+```yaml
+Athena接続:
+  推奨:
+    - Parquet形式データ
+    - パーティション活用
+    - ワークグループ指定
+    - クエリ結果バケット設定
+  
+  注意点:
+    - タイムアウト設定（最大30分）
+    - 同時実行数制限考慮
+    - コスト最適化
+
+Redshift接続:
+  推奨:
+    - 専用ユーザー作成
+    - 読み取り権限のみ
+    - ビュー活用
+    - 分散キー・ソートキー最適化
+  
+  注意点:
+    - WLM（Workload Management）設定
+    - クエリキュー分離
+    - 同時接続数制限
+
+RDS接続:
+  推奨:
+    - リードレプリカ使用
+    - インデックス最適化
+    - ビュー作成
+  
+  注意点:
+    - 本番DBへの影響最小化
+    - 接続プール管理
+    - SSL/TLS接続
+
+S3接続:
+  推奨:
+    - マニフェストファイル使用
+    - 列名ヘッダー必須
+    - UTF-8エンコーディング
+  
+  形式:
+    - CSV / TSV
+    - JSON（行区切り）
+    - ログ形式（ELF/CLF）
+```
+
+### SPICE最適化
+
+```yaml
+容量管理:
+  確認:
+    - 使用量モニタリング
+    - データセットサイズ確認
+    - 圧縮効果測定
+  
+  削減:
+    - 不要な列削除
+    - フィルター適用
+    - 集計済みデータ使用
+    - 期間限定（直近1年など）
+
+リフレッシュ戦略:
+  全リフレッシュ:
+    - 小〜中規模データ
+    - 日次・週次更新
+    - シンプルな運用
+  
+  増分リフレッシュ:
+    - 大規模データ
+    - 頻繁な更新
+    - タイムスタンプ列必須
+    - コスト削減
+
+スケジュール:
+  頻度:
+    - 業務要件に応じて
+    - 最小15分間隔（Enterprise）
+    - オフピーク時間推奨
+  
+  監視:
+    - CloudWatch Logs
+    - 失敗時アラート
+    - リトライ設定
+```
+
+### ダッシュボード設計
+
+```yaml
+パフォーマンス:
+  データ量:
+    - SPICE使用推奨
+    - データセット分割
+    - 事前集計活用
+  
+  ビジュアル数:
+    - 1ページあたり10個以内推奨
+    - 複雑な計算最小化
+    - フィルター効率化
+
+ユーザー体験:
+  レイアウト:
+    - 重要指標を上部配置
+    - 論理的なグルーピング
+    - ホワイトスペース活用
+  
+  インタラクティブ:
+    - フィルター配置
+    - パラメータ制御
+    - ドリルダウン設定
+    - ツールチップ情報
+  
+  レスポンシブ:
+    - モバイル対応
+    - レイアウト調整
+    - フォントサイズ
+
+デザイン:
+  色使い:
+    - 一貫性あるカラーパレット
+    - アクセシビリティ考慮
+    - 色盲対応
+  
+  フォント:
+    - 読みやすいサイズ
+    - 階層的な強調
+  
+  命名:
+    - わかりやすいラベル
+    - ビジネス用語使用
+    - 単位明記
+```
+
+### 行レベルセキュリティ（RLS）
+
+```yaml
+設計:
+  マッピング方式:
+    CSV方式:
+      - シンプル
+      - 静的ルール
+      - 小規模向き
+    
+    データベース方式:
+      - 動的ルール
+      - 複雑な条件
+      - 大規模向き
+
+実装:
+  CSV例:
+    # rls_rules.csv
+    UserName,Region,Department
+    alice@example.com,East,Sales
+    bob@example.com,West,Sales
+    charlie@example.com,*,Management
+  
+  SQL例:
+    -- RLS テーブル
+    CREATE TABLE rls_mapping (
+      user_email VARCHAR(255),
+      region VARCHAR(50),
+      department VARCHAR(50)
+    );
+    
+    -- データセットフィルター
+    WHERE region IN (
+      SELECT region 
+      FROM rls_mapping 
+      WHERE user_email = '${currentUserEmail}'
+    )
+
+テスト:
+  - 各ユーザーでログイン確認
+  - データフィルター動作検証
+  - 権限境界テスト
+  - パフォーマンステスト
+
+注意点:
+  - ユーザー名の一致確認
+  - 大文字小文字区別
+  - ワイルドカード（*）活用
+  - パフォーマンス影響考慮
+```
+
+### 計算フィールド
+
+```yaml
+パフォーマンス:
+  効率的:
+    - シンプルな計算
+    - 集計関数活用
+    - テーブル計算
+  
+  非効率:
+    - ネストの深い計算
+    - 複雑な条件分岐
+    - 行レベル計算（大量データ）
+
+よくある計算:
+  期間比較:
+    # 前月比
+    (sum({sales_this_month}) - sum({sales_last_month})) 
+      / sum({sales_last_month}) * 100
+    
+    # 前年同月比（YoY）
+    periodOverPeriodDifference(sum({sales}), {date}, YEAR, 1)
+  
+  累積:
+    # 累積売上
+    sum({sales}) OVER ([date ASC] ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+  
+  移動平均:
+    # 7日移動平均
+    avg({sales}) OVER ([date ASC] ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)
+  
+  ランキング:
+    # 売上ランキング
+    rank([{sales} DESC], [{date}])
+  
+  パーセンテージ:
+    # 構成比
+    sum({sales}) / sumOver(sum({sales}), [], PRE_AGG) * 100
+
+デバッグ:
+  - プレビューで確認
+  - 小さいデータセットでテスト
+  - エラーメッセージ確認
+  - 段階的に構築
+```
+
+### セキュリティ
+
+```yaml
+認証:
+  IAM:
+    - IAMロール活用
+    - 最小権限の原則
+    - ロール委任設定
+  
+  SAML 2.0:
+    - IdP統合（Okta、Azure AD）
+    - シングルサインオン
+    - 属性マッピング
+
+暗号化:
+  保管時:
+    - SPICE自動暗号化
+    - KMS統合（Enterprise）
+    - カスタムキー管理
+  
+  転送中:
+    - TLS 1.2以上
+    - 証明書検証
+
+アクセス制御:
+  リソースレベル:
+    - IAMポリシー
+    - データソース権限
+    - データセット権限
+    - ダッシュボード権限
+  
+  データレベル:
+    - 行レベルセキュリティ（RLS）
+    - 列レベルセキュリティ（CLS）
+
+監査:
+  CloudTrail:
+    - API呼び出しログ
+    - ユーザーアクセス追跡
+    - 変更履歴
+  
+  QuickSightログ:
+    - ダッシュボードアクセス
+    - データセット利用状況
+```
+
+### コスト最適化
+
+```yaml
+ユーザー管理:
+  最適化:
+    - 不要ユーザー削除
+    - Reader活用（上限$5/月）
+    - Session-based pricing検討（埋め込み）
+  
+  計算例:
+    Author (常時使用): $18/月
+    Reader (月10セッション): $3/月（上限$5）
+    Reader (月100セッション): $5/月（上限適用）
+
+SPICE容量:
+  最適化:
+    - 不要データセット削除
+    - データ期間限定
+    - 列削減
+    - 自動圧縮活用
+  
+  無料枠:
+    - Standard: 10GB/Author
+    - Enterprise: 500GB/Author
+  
+  追加容量: $0.25/GB/月
+
+データソース:
+  Athena:
+    - Parquet形式
+    - パーティション活用
+    - スキャン量削減
+  
+  Redshift:
+    - SPICE使用でクエリ削減
+    - 増分リフレッシュ
+  
+  直接クエリ:
+    - 必要最小限に
+    - SPICE推奨
+
+監視:
+  CloudWatch:
+    - SPICE使用量
+    - ユーザー数
+    - リフレッシュ頻度
+  
+  Cost Explorer:
+    - QuickSight料金追跡
+    - タグベース配分
+```
+
+### トラブルシューティング
+
+```yaml
+よくある問題:
+
+1. SPICE リフレッシュ失敗:
+   原因:
+     - データソース接続エラー
+     - タイムアウト
+     - スキーマ変更
+     - 容量不足
+   
+   対処:
+     - データソース接続確認
+     - タイムアウト設定延長
+     - スキーマ同期
+     - SPICE容量追加
+
+2. ダッシュボード表示遅延:
+   原因:
+     - 直接クエリモード
+     - 複雑な計算
+     - 大量ビジュアル
+   
+   対処:
+     - SPICEモード使用
+     - 計算最適化
+     - ビジュアル数削減
+     - データ事前集計
+
+3. RLS動作しない:
+   原因:
+     - ユーザー名不一致
+     - ルール設定ミス
+     - キャッシュ
+   
+   対処:
+     - ユーザー名確認
+     - RLSルール再確認
+     - ダッシュボード再公開
+
+4. 埋め込みエラー:
+   原因:
+     - CORS設定
+     - URL有効期限
+     - ドメイン許可リスト
+     - ユーザー権限
+   
+   対処:
+     - AllowedDomains設定確認
+     - URL再生成
+     - ユーザー権限確認
+
+5. データセット作成失敗:
+   原因:
+     - データソース権限
+     - SQL文法エラー
+     - タイムアウト
+   
+   対処:
+     - IAM権限確認
+     - SQL検証
+     - クエリ簡素化
+```
+
+### モニタリング
+
+```yaml
+CloudWatch Metrics:
+  SPICE:
+    - SPICECapacityUtilization
+    - IngestionRequestCount
+    - IngestionRequestDuration
+  
+  使用状況:
+    - UserCount
+    - DataSetCount
+    - DashboardCount
+
+CloudWatch Logs:
+  - SPICE リフレッシュログ
+  - エラーログ
+  - API呼び出しログ
+
+QuickSight Usage Metrics:
+  - ダッシュボードビュー数
+  - ユーザーアクティビティ
+  - データセット使用状況
+  - SPICE使用量
+
+アラート設定:
+  - SPICE容量80%超過
+  - リフレッシュ失敗
+  - コスト閾値超過
+```
+
+### 埋め込み実装Tips
+
+```yaml
+パフォーマンス:
+  - URL キャッシュ（有効期限内）
+  - 非同期ロード
+  - Loading表示
+  - エラーハンドリング
+
+セキュリティ:
+  - HTTPS必須
+  - CSP（Content Security Policy）設定
+  - セッション管理
+  - トークン更新
+
+ユーザー体験:
+  - レスポンシブデザイン
+  - 高さ自動調整
+  - フルスクリーン対応
+  - パラメータ同期
+
+実装例:
+  # ローディング表示
+  <div id="loading">Loading dashboard...</div>
+  <div id="dashboard" style="display:none;"></div>
+  
+  dashboard.on("load", function() {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("dashboard").style.display = "block";
+  });
+  
+  # エラーハンドリング
+  dashboard.on("error", function(err) {
+    console.error(err);
+    showErrorMessage("ダッシュボードの読み込みに失敗しました");
+  });
+  
+  # パラメータ動的更新
+  function updateDashboardFilter(region) {
+    dashboard.setParameters({
+      region: region
+    });
+  }
+```
+
+## まとめ
+
+**実務での重要ポイント:**
+- データソース選択とSPICE活用
+- 行レベルセキュリティで適切なアクセス制御
+- ダッシュボード設計でUX最適化
+- 計算フィールドで高度な分析
+- 埋め込み分析で柔軟な統合
+- コスト最適化でReader活用
+- モニタリングとアラート設定
+- CloudTrailで監査ログ管理
