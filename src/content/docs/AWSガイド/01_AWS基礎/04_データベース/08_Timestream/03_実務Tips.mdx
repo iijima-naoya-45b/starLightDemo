@@ -1,0 +1,376 @@
+---
+title: "Timestream 実務Tips"
+label: "実務Tips"
+---
+
+## Timestream 実務Tips
+
+### AWS CLI
+
+#### データベース・テーブル作成
+
+```bash
+# データベース作成
+aws timestream-write create-database \
+  --database-name IoTSensorDB
+
+# テーブル作成（保持ポリシー設定）
+aws timestream-write create-table \
+  --database-name IoTSensorDB \
+  --table-name SensorData \
+  --retention-properties '{
+    "MemoryStoreRetentionPeriodInHours": 24,
+    "MagneticStoreRetentionPeriodInDays": 365
+  }'
+
+# テーブル一覧
+aws timestream-write list-tables \
+  --database-name IoTSensorDB
+
+# テーブル詳細
+aws timestream-write describe-table \
+  --database-name IoTSensorDB \
+  --table-name SensorData
+```
+
+#### データ書き込み
+
+```bash
+# 単一レコード書き込み
+aws timestream-write write-records \
+  --database-name IoTSensorDB \
+  --table-name SensorData \
+  --records '[
+    {
+      "Time": "'"$(date +%s)000"'",
+      "TimeUnit": "MILLISECONDS",
+      "Dimensions": [
+        {"Name": "device_id", "Value": "sensor001"},
+        {"Name": "region", "Value": "ap-northeast-1"}
+      ],
+      "MeasureName": "temperature",
+      "MeasureValue": "25.5",
+      "MeasureValueType": "DOUBLE"
+    }
+  ]'
+
+# バッチ書き込み（推奨、最大100レコード）
+aws timestream-write write-records \
+  --database-name IoTSensorDB \
+  --table-name SensorData \
+  --common-attributes '{
+    "Dimensions": [
+      {"Name": "device_id", "Value": "sensor001"}
+    ],
+    "MeasureValueType": "MULTI",
+    "TimeUnit": "MILLISECONDS"
+  }' \
+  --records '[
+    {
+      "Time": "'"$(date +%s)000"'",
+      "MeasureValues": [
+        {"Name": "temperature", "Value": "25.5", "Type": "DOUBLE"},
+        {"Name": "humidity", "Value": "60", "Type": "DOUBLE"}
+      ]
+    }
+  ]'
+```
+
+#### クエリ実行
+
+```bash
+# クエリ実行
+aws timestream-query query \
+  --query-string "SELECT * FROM IoTSensorDB.SensorData WHERE time > ago(1h) LIMIT 10"
+
+# 集約クエリ
+aws timestream-query query \
+  --query-string "
+    SELECT 
+      BIN(time, 5m) as time_bucket,
+      device_id,
+      AVG(temperature) as avg_temp,
+      MAX(temperature) as max_temp,
+      MIN(temperature) as min_temp
+    FROM IoTSensorDB.SensorData
+    WHERE time > ago(24h)
+    GROUP BY BIN(time, 5m), device_id
+    ORDER BY time_bucket DESC
+  "
+
+# クエリ結果をJSON形式で保存
+aws timestream-query query \
+  --query-string "SELECT * FROM IoTSensorDB.SensorData LIMIT 100" \
+  --output json > results.json
+```
+
+### Python SDK
+
+#### データ書き込み例
+
+```python
+import boto3
+import time
+from datetime import datetime
+
+write_client = boto3.client('timestream-write', region_name='ap-northeast-1')
+
+def write_records():
+    current_time = str(int(time.time() * 1000))
+    
+    records = [
+        {
+            'Time': current_time,
+            'TimeUnit': 'MILLISECONDS',
+            'Dimensions': [
+                {'Name': 'device_id', 'Value': 'sensor001'},
+                {'Name': 'location', 'Value': 'tokyo'}
+            ],
+            'MeasureName': 'temperature',
+            'MeasureValue': '25.5',
+            'MeasureValueType': 'DOUBLE'
+        }
+    ]
+    
+    try:
+        result = write_client.write_records(
+            DatabaseName='IoTSensorDB',
+            TableName='SensorData',
+            Records=records
+        )
+        print(f"Successfully wrote records: {result}")
+    except Exception as e:
+        print(f"Error writing records: {e}")
+
+# バッチ書き込み（MULTI measureを使用）
+def write_multi_measure_records():
+    current_time = str(int(time.time() * 1000))
+    
+    records = [
+        {
+            'Time': current_time,
+            'TimeUnit': 'MILLISECONDS',
+            'Dimensions': [
+                {'Name': 'device_id', 'Value': 'sensor001'}
+            ],
+            'MeasureValueType': 'MULTI',
+            'MeasureValues': [
+                {'Name': 'temperature', 'Value': '25.5', 'Type': 'DOUBLE'},
+                {'Name': 'humidity', 'Value': '60', 'Type': 'DOUBLE'},
+                {'Name': 'pressure', 'Value': '1013.25', 'Type': 'DOUBLE'}
+            ]
+        }
+    ]
+    
+    try:
+        result = write_client.write_records(
+            DatabaseName='IoTSensorDB',
+            TableName='SensorData',
+            Records=records
+        )
+        print(f"Successfully wrote multi-measure records")
+    except Exception as e:
+        print(f"Error: {e}")
+```
+
+#### クエリ実行例
+
+```python
+query_client = boto3.client('timestream-query', region_name='ap-northeast-1')
+
+def execute_query():
+    query = """
+    SELECT 
+        time,
+        device_id,
+        measure_name,
+        measure_value::double as value
+    FROM IoTSensorDB.SensorData
+    WHERE time > ago(1h)
+    ORDER BY time DESC
+    LIMIT 100
+    """
+    
+    try:
+        response = query_client.query(QueryString=query)
+        
+        # 結果を解析
+        for row in response['Rows']:
+            data = []
+            for col in row['Data']:
+                if 'ScalarValue' in col:
+                    data.append(col['ScalarValue'])
+            print(data)
+            
+    except Exception as e:
+        print(f"Query error: {e}")
+
+# ページネーション対応
+def execute_query_with_pagination():
+    query = "SELECT * FROM IoTSensorDB.SensorData WHERE time > ago(24h)"
+    
+    paginator = query_client.get_paginator('query')
+    page_iterator = paginator.paginate(QueryString=query)
+    
+    for page in page_iterator:
+        for row in page['Rows']:
+            # 処理
+            pass
+```
+
+### 保持ポリシーの更新
+
+```bash
+# 保持ポリシー変更
+aws timestream-write update-table \
+  --database-name IoTSensorDB \
+  --table-name SensorData \
+  --retention-properties '{
+    "MemoryStoreRetentionPeriodInHours": 6,
+    "MagneticStoreRetentionPeriodInDays": 730
+  }'
+```
+
+### 時系列クエリのベストプラクティス
+
+```sql
+-- 1. 時間範囲を必ず指定
+SELECT * FROM db.table 
+WHERE time BETWEEN ago(1h) AND now()  -- ✓ Good
+
+SELECT * FROM db.table  -- ✗ Bad（全データスキャン）
+
+-- 2. ディメンションでフィルタ
+SELECT * FROM db.table
+WHERE time > ago(1h) AND device_id = 'sensor001'  -- ✓ Good
+
+-- 3. BIN関数で集約
+SELECT 
+  BIN(time, 5m) as time_bucket,
+  AVG(measure_value::double) as avg_value
+FROM db.table
+WHERE time > ago(24h)
+GROUP BY BIN(time, 5m)  -- ✓ Good（データ量削減）
+
+-- 4. 時系列関数の活用
+-- 補間（欠損値を線形補間）
+SELECT 
+  time,
+  INTERPOLATE_LINEAR(
+    CREATE_TIME_SERIES(time, measure_value::double),
+    SEQUENCE(ago(1h), now(), 1m)
+  ) as interpolated_value
+FROM db.table
+
+-- 5. 移動平均
+SELECT 
+  time,
+  measure_value::double as value,
+  AVG(measure_value::double) OVER (
+    ORDER BY time
+    ROWS BETWEEN 9 PRECEDING AND CURRENT ROW
+  ) as moving_avg_10
+FROM db.table
+WHERE time > ago(1h)
+```
+
+### ベストプラクティス
+
+```yaml
+データ書き込み:
+  ✓ バッチ書き込み（最大100レコード）でコスト削減
+  ✓ MULTI measure で複数メジャーを1レコードに
+  ✓ 共通属性（CommonAttributes）でペイロード削減
+  ✓ 非同期・並列書き込み
+  ✗ 単一レコード書き込みの過度な使用
+
+保持ポリシー:
+  ✓ メモリストア: 必要最小限（数時間〜1日）
+  ✓ マグネティックストア: ビジネス要件に応じて
+  ✓ 定期的なポリシー見直し
+
+クエリ最適化:
+  ✓ WHERE句で時間範囲を制限
+  ✓ ディメンションでフィルタ
+  ✓ BIN関数で集約してデータ量削減
+  ✓ 必要なカラムのみSELECT
+  ✗ SELECT * の多用
+
+監視:
+  ✓ CloudWatch Metricsで書き込み・クエリ監視
+  ✓ SystemErrors、UserErrors確認
+  ✓ コスト監視（Cost Explorer）
+
+セキュリティ:
+  ✓ IAM最小権限
+  ✓ VPC Endpoints使用（プライベート接続）
+  ✓ 暗号化有効（デフォルトで有効）
+  ✓ CloudTrail監査ログ
+```
+
+### トラブルシューティング
+
+```yaml
+書き込みエラー:
+  問題: RejectedRecordsException
+  原因: タイムスタンプが古すぎる/未来すぎる
+  対処: メモリストア保持期間内のタイムスタンプを使用
+
+クエリ遅延:
+  問題: クエリが遅い
+  原因: 時間範囲が広い、フィルタなし
+  対処: WHERE句で時間・ディメンション絞り込み
+
+コスト増大:
+  問題: 予想外のコスト
+  原因: メモリストア保持期間が長すぎる
+  対処: 
+    - メモリストア保持期間を短縮
+    - クエリ最適化
+    - 不要データの削除
+```
+
+### Lambda統合例
+
+```python
+import boto3
+import json
+import time
+
+write_client = boto3.client('timestream-write')
+
+def lambda_handler(event, context):
+    """
+    IoT CoreやKinesisからのイベントをTimestreamに書き込み
+    """
+    records = []
+    
+    for record in event['Records']:
+        # Kinesisデータのデコード
+        payload = json.loads(record['kinesis']['data'])
+        
+        records.append({
+            'Time': str(int(time.time() * 1000)),
+            'TimeUnit': 'MILLISECONDS',
+            'Dimensions': [
+                {'Name': 'device_id', 'Value': payload['device_id']},
+                {'Name': 'location', 'Value': payload['location']}
+            ],
+            'MeasureValueType': 'MULTI',
+            'MeasureValues': [
+                {'Name': 'temperature', 'Value': str(payload['temp']), 'Type': 'DOUBLE'},
+                {'Name': 'humidity', 'Value': str(payload['humidity']), 'Type': 'DOUBLE'}
+            ]
+        })
+    
+    try:
+        write_client.write_records(
+            DatabaseName='IoTSensorDB',
+            TableName='SensorData',
+            Records=records
+        )
+        return {'statusCode': 200, 'body': 'Success'}
+    except Exception as e:
+        print(f"Error: {e}")
+        return {'statusCode': 500, 'body': str(e)}
+```
