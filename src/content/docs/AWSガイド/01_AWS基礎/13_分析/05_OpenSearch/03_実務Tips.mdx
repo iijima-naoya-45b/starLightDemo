@@ -1,0 +1,732 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## AWS CLI コマンド
+
+### ドメイン管理
+
+```bash
+# ドメイン作成（シンプル構成）
+aws opensearch create-domain \
+  --domain-name my-logs-domain \
+  --engine-version "OpenSearch_2.11" \
+  --cluster-config '{
+    "InstanceType": "m6g.large.search",
+    "InstanceCount": 3,
+    "DedicatedMasterEnabled": true,
+    "DedicatedMasterType": "m6g.large.search",
+    "DedicatedMasterCount": 3,
+    "ZoneAwarenessEnabled": true,
+    "ZoneAwarenessConfig": {
+      "AvailabilityZoneCount": 3
+    }
+  }' \
+  --ebs-options '{
+    "EBSEnabled": true,
+    "VolumeType": "gp3",
+    "VolumeSize": 100,
+    "Iops": 3000,
+    "Throughput": 125
+  }' \
+  --node-to-node-encryption-options "Enabled=true" \
+  --encryption-at-rest-options "Enabled=true" \
+  --domain-endpoint-options '{
+    "EnforceHTTPS": true,
+    "TLSSecurityPolicy": "Policy-Min-TLS-1-2-2019-07"
+  }' \
+  --advanced-security-options '{
+    "Enabled": true,
+    "InternalUserDatabaseEnabled": true,
+    "MasterUserOptions": {
+      "MasterUserName": "admin",
+      "MasterUserPassword": "YourStrongPassword123!"
+    }
+  }' \
+  --access-policies '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": {"AWS": "*"},
+      "Action": "es:*",
+      "Resource": "arn:aws:es:ap-northeast-1:123456789012:domain/my-logs-domain/*"
+    }]
+  }'
+
+# VPC内ドメイン作成
+aws opensearch create-domain \
+  --domain-name my-vpc-domain \
+  --engine-version "OpenSearch_2.11" \
+  --cluster-config '{
+    "InstanceType": "r6g.large.search",
+    "InstanceCount": 3,
+    "DedicatedMasterEnabled": true,
+    "DedicatedMasterType": "m6g.large.search",
+    "DedicatedMasterCount": 3,
+    "ZoneAwarenessEnabled": true,
+    "ZoneAwarenessConfig": {
+      "AvailabilityZoneCount": 3
+    }
+  }' \
+  --vpc-options '{
+    "SubnetIds": ["subnet-12345678", "subnet-23456789", "subnet-34567890"],
+    "SecurityGroupIds": ["sg-12345678"]
+  }' \
+  --ebs-options '{
+    "EBSEnabled": true,
+    "VolumeType": "gp3",
+    "VolumeSize": 200
+  }' \
+  --node-to-node-encryption-options "Enabled=true" \
+  --encryption-at-rest-options "Enabled=true,KmsKeyId=arn:aws:kms:ap-northeast-1:123456789012:key/xxx"
+
+# ドメイン一覧
+aws opensearch list-domain-names
+
+# ドメイン詳細
+aws opensearch describe-domain \
+  --domain-name my-logs-domain
+
+# ドメイン設定
+aws opensearch describe-domain-config \
+  --domain-name my-logs-domain
+
+# ドメイン削除
+aws opensearch delete-domain \
+  --domain-name my-logs-domain
+```
+
+### ドメイン更新
+
+```bash
+# インスタンス数変更
+aws opensearch update-domain-config \
+  --domain-name my-logs-domain \
+  --cluster-config '{
+    "InstanceType": "m6g.large.search",
+    "InstanceCount": 6
+  }'
+
+# EBSボリューム拡張
+aws opensearch update-domain-config \
+  --domain-name my-logs-domain \
+  --ebs-options '{
+    "EBSEnabled": true,
+    "VolumeType": "gp3",
+    "VolumeSize": 200,
+    "Iops": 5000,
+    "Throughput": 250
+  }'
+
+# Auto-Tune有効化
+aws opensearch update-domain-config \
+  --domain-name my-logs-domain \
+  --auto-tune-options '{
+    "DesiredState": "ENABLED",
+    "MaintenanceSchedules": [{
+      "StartAt": "2024-01-01T00:00:00Z",
+      "Duration": {
+        "Value": 2,
+        "Unit": "HOURS"
+      },
+      "CronExpressionForRecurrence": "cron(0 3 ? * SUN *)"
+    }]
+  }'
+
+# アクセスポリシー更新
+aws opensearch update-domain-config \
+  --domain-name my-logs-domain \
+  --access-policies '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": {"AWS": "arn:aws:iam::123456789012:role/MyAppRole"},
+      "Action": "es:*",
+      "Resource": "arn:aws:es:ap-northeast-1:123456789012:domain/my-logs-domain/*"
+    }]
+  }'
+```
+
+### スナップショット管理
+
+```bash
+# スナップショットリポジトリ登録（手動スナップショット用）
+# 事前にS3バケット作成とIAMロール設定が必要
+
+# リポジトリ登録（curl経由）
+DOMAIN_ENDPOINT="https://search-my-domain-xxx.ap-northeast-1.es.amazonaws.com"
+
+curl -XPUT "${DOMAIN_ENDPOINT}/_snapshot/my-snapshot-repo" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "type": "s3",
+    "settings": {
+      "bucket": "my-opensearch-snapshots",
+      "region": "ap-northeast-1",
+      "role_arn": "arn:aws:iam::123456789012:role/OpenSearchSnapshotRole"
+    }
+  }'
+
+# 手動スナップショット作成
+curl -XPUT "${DOMAIN_ENDPOINT}/_snapshot/my-snapshot-repo/snapshot-$(date +%Y%m%d-%H%M%S)" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "indices": "logs-*",
+    "ignore_unavailable": true,
+    "include_global_state": false
+  }'
+
+# スナップショット一覧
+curl -XGET "${DOMAIN_ENDPOINT}/_snapshot/my-snapshot-repo/_all?pretty"
+
+# スナップショット詳細
+curl -XGET "${DOMAIN_ENDPOINT}/_snapshot/my-snapshot-repo/snapshot-20240115-120000?pretty"
+
+# スナップショットから復元
+curl -XPOST "${DOMAIN_ENDPOINT}/_snapshot/my-snapshot-repo/snapshot-20240115-120000/_restore" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "indices": "logs-2024.01.15",
+    "rename_pattern": "logs-(.+)",
+    "rename_replacement": "restored-logs-$1"
+  }'
+
+# 自動スナップショット設定確認
+aws opensearch describe-domain-config \
+  --domain-name my-logs-domain \
+  --query 'DomainConfig.SnapshotOptions'
+```
+
+### UltraWarm管理
+
+```bash
+# UltraWarm有効化
+aws opensearch update-domain-config \
+  --domain-name my-logs-domain \
+  --cluster-config '{
+    "WarmEnabled": true,
+    "WarmType": "ultrawarm1.medium.search",
+    "WarmCount": 3
+  }'
+
+# Hotからwarmへ移行（curl経由）
+curl -XPOST "${DOMAIN_ENDPOINT}/_ultrawarm/migration/logs-2024.01.01/_warm" \
+  -H 'Content-Type: application/json'
+
+# 移行状態確認
+curl -XGET "${DOMAIN_ENDPOINT}/_ultrawarm/migration/logs-2024.01.01/_status?pretty"
+
+# WarmからHotへ移行
+curl -XPOST "${DOMAIN_ENDPOINT}/_ultrawarm/migration/logs-2024.01.01/_hot" \
+  -H 'Content-Type: application/json'
+```
+
+## OpenSearch API コマンド
+
+### インデックス管理
+
+```bash
+DOMAIN="https://search-my-domain-xxx.ap-northeast-1.es.amazonaws.com"
+
+# インデックス作成
+curl -XPUT "${DOMAIN}/my-index" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "settings": {
+      "number_of_shards": 3,
+      "number_of_replicas": 1,
+      "refresh_interval": "30s",
+      "codec": "best_compression"
+    },
+    "mappings": {
+      "properties": {
+        "timestamp": {"type": "date"},
+        "level": {"type": "keyword"},
+        "message": {"type": "text"},
+        "service": {"type": "keyword"}
+      }
+    }
+  }'
+
+# インデックス一覧
+curl -XGET "${DOMAIN}/_cat/indices?v"
+
+# インデックス詳細
+curl -XGET "${DOMAIN}/my-index?pretty"
+
+# インデックス設定確認
+curl -XGET "${DOMAIN}/my-index/_settings?pretty"
+
+# インデックス設定更新
+curl -XPUT "${DOMAIN}/my-index/_settings" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "index": {
+      "refresh_interval": "60s",
+      "number_of_replicas": 2
+    }
+  }'
+
+# インデックス削除
+curl -XDELETE "${DOMAIN}/my-index"
+
+# 複数インデックス削除
+curl -XDELETE "${DOMAIN}/logs-2024.01.*"
+
+# インデックスクローズ
+curl -XPOST "${DOMAIN}/my-index/_close"
+
+# インデックスオープン
+curl -XPOST "${DOMAIN}/my-index/_open"
+
+# エイリアス作成
+curl -XPOST "${DOMAIN}/_aliases" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "actions": [
+      {"add": {"index": "logs-2024.01.15", "alias": "logs-latest"}}
+    ]
+  }'
+```
+
+### ドキュメント操作
+
+```bash
+# ドキュメント追加
+curl -XPOST "${DOMAIN}/logs-2024.01.15/_doc" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "timestamp": "2024-01-15T10:30:00Z",
+    "level": "ERROR",
+    "message": "Connection timeout",
+    "service": "api-gateway"
+  }'
+
+# ドキュメント取得
+curl -XGET "${DOMAIN}/logs-2024.01.15/_doc/abc123?pretty"
+
+# ドキュメント更新
+curl -XPOST "${DOMAIN}/logs-2024.01.15/_update/abc123" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "doc": {
+      "status": "resolved"
+    }
+  }'
+
+# ドキュメント削除
+curl -XDELETE "${DOMAIN}/logs-2024.01.15/_doc/abc123"
+
+# Bulk操作
+curl -XPOST "${DOMAIN}/_bulk" \
+  -H 'Content-Type: application/x-ndjson' \
+  --data-binary @bulk-data.json
+
+# bulk-data.json の例
+# {"index":{"_index":"logs-2024.01.15"}}
+# {"timestamp":"2024-01-15T10:00:00Z","level":"INFO","message":"Request processed"}
+# {"index":{"_index":"logs-2024.01.15"}}
+# {"timestamp":"2024-01-15T10:01:00Z","level":"ERROR","message":"Database error"}
+```
+
+### 検索クエリ
+
+```bash
+# 全文検索
+curl -XGET "${DOMAIN}/logs-*/_search?pretty" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "query": {
+      "match": {
+        "message": "error"
+      }
+    }
+  }'
+
+# 複合クエリ
+curl -XGET "${DOMAIN}/logs-*/_search?pretty" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "query": {
+      "bool": {
+        "must": [
+          {"match": {"level": "ERROR"}}
+        ],
+        "filter": [
+          {"range": {"timestamp": {"gte": "now-1h"}}}
+        ]
+      }
+    },
+    "sort": [{"timestamp": {"order": "desc"}}],
+    "size": 100
+  }'
+
+# 集計クエリ
+curl -XGET "${DOMAIN}/logs-*/_search?pretty" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "size": 0,
+    "aggs": {
+      "logs_per_hour": {
+        "date_histogram": {
+          "field": "timestamp",
+          "fixed_interval": "1h"
+        },
+        "aggs": {
+          "by_level": {
+            "terms": {"field": "level"}
+          }
+        }
+      }
+    }
+  }'
+
+# SQLクエリ
+curl -XPOST "${DOMAIN}/_plugins/_sql" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "query": "SELECT level, COUNT(*) as count FROM logs-* WHERE timestamp > '\''2024-01-15'\'' GROUP BY level"
+  }'
+```
+
+## ベストプラクティス
+
+### ドメイン設計
+
+```yaml
+本番環境:
+  必須設定:
+    - Multi-AZ有効化（3 AZ）
+    - 専用マスターノード（3台）
+    - データノード最小3台
+    - ノード間暗号化
+    - 保管時暗号化
+    - Fine-grained Access Control
+    - VPC内配置（推奨）
+  
+  推奨設定:
+    - Auto-Tune有効化
+    - 自動スナップショット
+    - CloudWatch監視
+    - アラート設定
+
+開発環境:
+  簡易設定:
+    - Single-AZ可
+    - t3.small/medium
+    - 1データノード
+    - マスターノード不要
+    - パブリックアクセス可
+```
+
+### インスタンスタイプ選択
+
+```yaml
+データノード:
+  汎用（バランス型）:
+    - m6g.large/xlarge
+    - 標準的なワークロード
+  
+  メモリ最適化:
+    - r6g.large/xlarge
+    - 大量データ
+    - 複雑な集計
+    - 高頻度検索
+  
+  検索最適化:
+    - c6g.large/xlarge
+    - 高スループット検索
+    - CPUバウンド
+  
+  ストレージ最適化:
+    - i3.large/xlarge
+    - 高IOPS要求
+    - インスタンスストア
+
+マスターノード:
+  - m6g.large推奨
+  - クラスター管理専用
+  - 必ず3台（奇数）
+```
+
+### シャード設計
+
+```yaml
+基本原則:
+  シャード数:
+    - 1シャード = 10〜50GB推奨
+    - 最大シャード数 = ノード数 × 20
+  
+  例（300GB インデックス）:
+    - 6〜30シャード適切
+    - データノード3台の場合
+    - 推奨: 6シャード（各50GB）
+
+レプリカ:
+  - 最低1レプリカ（本番）
+  - Multi-AZ: レプリカ配置分散
+  - 読み取りスケール: レプリカ増
+
+計算式:
+  総シャード数 = プライマリ × (1 + レプリカ)
+  例: 6プライマリ × 2レプリカ = 12総シャード
+
+避けるべき:
+  ❌ 小さすぎるシャード（< 5GB）
+  ❌ 大きすぎるシャード（> 50GB）
+  ❌ シャード数過多（10,000+）
+```
+
+### インデックス設計
+
+```yaml
+命名規則:
+  時系列データ:
+    - logs-{YYYY.MM.DD}
+    - metrics-{YYYY.MM}
+    - events-{YYYY.ww}（週）
+  
+  メリット:
+    - 古いデータ削除容易
+    - 検索範囲限定
+    - ISMポリシー適用
+
+インデックステンプレート:
+  - パターンマッチで自動適用
+  - 設定・マッピング統一
+  - 運用簡素化
+
+ローテーション:
+  - 日次推奨（ログデータ）
+  - 月次可（低頻度データ）
+  - ISMで自動管理
+```
+
+### パフォーマンス最適化
+
+```yaml
+インデックス設定:
+  refresh_interval:
+    - デフォルト: 1秒
+    - 推奨: 30秒〜60秒
+    - バルク投入時: -1（無効）
+  
+  codec:
+    - "best_compression"
+    - ストレージ削減
+    - CPU増加とトレードオフ
+  
+  translog:
+    - durability: "async"
+    - 高スループット
+    - 若干のデータロスリスク
+
+クエリ最適化:
+  - filter使用（キャッシュ）
+  - _source除外（不要な場合）
+  - 集計時size=0
+  - フィールド絞り込み
+  
+  例:
+    # ❌ 遅い
+    GET /logs-*/_search
+    {"query": {"match_all": {}}}
+    
+    # ✅ 速い
+    GET /logs-2024.01.15/_search
+    {"query": {"term": {"level": "ERROR"}}}
+```
+
+### セキュリティ
+
+```yaml
+ネットワーク:
+  VPC内配置:
+    - パブリックアクセス無効
+    - VPCエンドポイント
+    - セキュリティグループ
+    - NACLs
+  
+  パブリックアクセス:
+    - 開発環境のみ
+    - IPホワイトリスト
+    - Fine-grained Access Control必須
+
+認証・認可:
+  Fine-grained Access Control:
+    - ユーザー/ロール管理
+    - インデックスレベル制御
+    - 必須: 本番環境
+  
+  IAM:
+    - AWSサービス統合
+    - ロールベースアクセス
+  
+  Cognito:
+    - エンドユーザーアクセス
+    - OpenSearch Dashboards
+
+暗号化:
+  - 保管時: KMS必須
+  - 転送中: TLS必須
+  - ノード間: 暗号化有効
+```
+
+### コスト最適化
+
+```yaml
+ストレージ階層:
+  Hot（最新データ）:
+    - EBS gp3
+    - 頻繁アクセス
+  
+  UltraWarm（過去データ）:
+    - S3ベース
+    - 75%コスト削減
+    - 検索可能
+  
+  Cold（アーカイブ）:
+    - S3
+    - 95%コスト削減
+    - 選択的リストア
+
+ISM活用:
+  - 自動移行
+  - 古いデータ削除
+  - ライフサイクル管理
+
+インスタンス:
+  - Graviton（m6g/r6g）推奨
+  - 20%コスト削減
+  - 同等パフォーマンス
+  
+  リザーブドインスタンス:
+    - 1年/3年
+    - 最大70%割引
+```
+
+### モニタリング
+
+```yaml
+CloudWatch Metrics:
+  クラスター:
+    - ClusterStatus.green/yellow/red
+    - Nodes（ノード数）
+    - MasterCPUUtilization
+    - MasterJVMMemoryPressure
+  
+  データノード:
+    - CPUUtilization
+    - JVMMemoryPressure
+    - SearchRate
+    - IndexingRate
+    - DiskQueueDepth
+  
+  ストレージ:
+    - FreeStorageSpace
+    - ClusterUsedSpace
+
+推奨アラーム:
+  Critical:
+    - ClusterStatus.red > 1分
+    - FreeStorageSpace < 10%
+    - JVMMemoryPressure > 90%
+  
+  Warning:
+    - ClusterStatus.yellow > 5分
+    - CPUUtilization > 80%
+    - SearchLatency > 閾値
+
+ログ:
+  有効化推奨:
+    - エラーログ
+    - 検索ログ（スロークエリ）
+    - インデックススローログ
+    - 監査ログ
+```
+
+### トラブルシューティング
+
+```yaml
+よくある問題:
+
+1. ClusterStatus Yellow/Red:
+   原因:
+     - シャード未割り当て
+     - ノード障害
+     - ディスク容量不足
+   
+   対処:
+     # シャード状態確認
+     GET /_cat/shards?v&h=index,shard,prirep,state,unassigned.reason
+     
+     # 未割り当てシャード確認
+     GET /_cluster/allocation/explain
+     
+     # 手動割り当て（一時的）
+     POST /_cluster/reroute
+     {
+       "commands": [{
+         "allocate_replica": {
+           "index": "logs-2024.01.15",
+           "shard": 0,
+           "node": "node-1"
+         }
+       }]
+     }
+
+2. High JVM Memory Pressure:
+   原因:
+     - ヒープメモリ不足
+     - 大量集計クエリ
+     - シャード数過多
+   
+   対処:
+     - インスタンスサイズ拡大
+     - シャード数見直し
+     - クエリ最適化
+     - fielddata使用削減
+
+3. Disk Space不足:
+   原因:
+     - データ増加
+     - ISM未設定
+   
+   対処:
+     - EBSボリューム拡張
+     - 古いインデックス削除
+     - ISMポリシー適用
+     - UltraWarm移行
+
+4. Slow Queries:
+   原因:
+     - 非効率クエリ
+     - インデックス肥大化
+   
+   対処:
+     # スローログ確認
+     GET /logs-*/_settings?include_defaults=false
+     
+     # スローログ設定
+     PUT /logs-*/_settings
+     {
+       "index.search.slowlog.threshold.query.warn": "10s",
+       "index.search.slowlog.threshold.query.info": "5s"
+     }
+     
+     - クエリ最適化
+     - インデックス再作成
+```
+
+## まとめ
+
+**実務での重要ポイント:**
+- Multi-AZ + 専用マスターで高可用性
+- VPC内配置でセキュリティ確保
+- ISMポリシーでライフサイクル自動化
+- UltraWarm/Cold活用でコスト削減
+- 適切なシャード設計（10〜50GB/シャード）
+- refresh_interval延長でパフォーマンス向上
+- CloudWatch監視とアラート設定
+- Fine-grained Access Controlで詳細権限管理
