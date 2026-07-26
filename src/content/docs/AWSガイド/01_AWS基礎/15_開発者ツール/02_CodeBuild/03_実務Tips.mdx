@@ -1,0 +1,331 @@
+---
+title: "CodeBuild 実務Tips"
+label: "実務Tips"
+---
+
+## CodeBuild 実務Tips
+
+### AWS CLI
+
+```bash
+# ビルドプロジェクト作成
+aws codebuild create-project \
+  --name my-project \
+  --source type=GITHUB,location=https://github.com/user/repo.git \
+  --artifacts type=S3,location=my-bucket \
+  --environment type=LINUX_CONTAINER,image=aws/codebuild/standard:7.0,computeType=BUILD_GENERAL1_SMALL \
+  --service-role arn:aws:iam::123456789012:role/CodeBuildRole
+
+# ビルド開始
+aws codebuild start-build \
+  --project-name my-project \
+  --source-version main \
+  --environment-variables-override name=ENV,value=production,type=PLAINTEXT
+
+# ビルドバッチ開始
+aws codebuild start-build-batch \
+  --project-name my-project
+
+# ビルド情報取得
+aws codebuild batch-get-builds \
+  --ids my-project:build-id
+
+# ビルドログ取得
+aws logs get-log-events \
+  --log-group-name /aws/codebuild/my-project \
+  --log-stream-name build-stream-name
+
+# プロジェクト一覧
+aws codebuild list-projects
+
+# ビルド履歴
+aws codebuild list-builds-for-project \
+  --project-name my-project
+```
+
+### buildspec.yml 実践例
+
+#### 1. Node.js アプリケーション
+
+```yaml
+version: 0.2
+
+env:
+  variables:
+    NODE_ENV: production
+  parameter-store:
+    DB_PASSWORD: /app/prod/db/password
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - echo "Installing dependencies..."
+      - npm ci
+
+  pre_build:
+    commands:
+      - echo "Running linter..."
+      - npm run lint
+      - echo "Running unit tests..."
+      - npm run test:unit
+      - echo "Running integration tests..."
+      - npm run test:integration
+
+  build:
+    commands:
+      - echo "Building application..."
+      - npm run build
+
+  post_build:
+    commands:
+      - echo "Build completed successfully"
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: dist
+  name: build-artifact-$(date +%Y%m%d-%H%M%S)
+
+cache:
+  paths:
+    - node_modules/**/*
+
+reports:
+  test-report:
+    files:
+      - 'test-results/junit.xml'
+    file-format: JUNITXML
+  coverage-report:
+    files:
+      - 'coverage/cobertura-coverage.xml'
+    file-format: COBERTURAXML
+```
+
+#### 2. Docker イメージビルド
+
+```yaml
+version: 0.2
+
+env:
+  variables:
+    AWS_REGION: ap-northeast-1
+    ECR_REPOSITORY_URI: 123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/my-app
+
+phases:
+  pre_build:
+    commands:
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=${COMMIT_HASH:=latest}
+
+  build:
+    commands:
+      - echo "Building Docker image..."
+      - docker build -t $ECR_REPOSITORY_URI:latest .
+      - docker tag $ECR_REPOSITORY_URI:latest $ECR_REPOSITORY_URI:$IMAGE_TAG
+
+  post_build:
+    commands:
+      - echo "Pushing Docker image..."
+      - docker push $ECR_REPOSITORY_URI:latest
+      - docker push $ECR_REPOSITORY_URI:$IMAGE_TAG
+      - echo "Writing image definitions file..."
+      - printf '[{"name":"my-container","imageUri":"%s"}]' $ECR_REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
+```
+
+#### 3. マルチステージビルド（Python Lambda）
+
+```yaml
+version: 0.2
+
+env:
+  variables:
+    S3_BUCKET: my-deployment-bucket
+    STACK_NAME: my-lambda-stack
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - pip install --upgrade pip
+      - pip install aws-sam-cli
+
+  pre_build:
+    commands:
+      - echo "Installing dependencies..."
+      - pip install -r requirements.txt -t ./package
+      - echo "Running tests..."
+      - pip install pytest pytest-cov
+      - pytest tests/ --cov=src --cov-report=xml
+
+  build:
+    commands:
+      - echo "Building SAM application..."
+      - sam build
+      - echo "Packaging SAM application..."
+      - sam package --output-template-file packaged.yaml --s3-bucket $S3_BUCKET
+
+  post_build:
+    commands:
+      - echo "Deploying SAM application..."
+      - sam deploy --template-file packaged.yaml --stack-name $STACK_NAME --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset
+
+reports:
+  pytest-report:
+    files:
+      - 'coverage.xml'
+    file-format: COBERTURAXML
+```
+
+### キャッシング戦略
+
+```yaml
+# S3キャッシュ（推奨）
+cache:
+  paths:
+    - node_modules/**/*
+    - .npm/**/*
+    - /root/.gradle/**/*
+    - /root/.m2/**/*
+
+# ローカルキャッシュ
+version: 0.2
+
+cache:
+  paths:
+    - '/root/.gradle/caches/**/*'
+    - '/root/.gradle/wrapper/**/*'
+
+# Dockerレイヤーキャッシュ
+# プロジェクト設定でローカルキャッシュを有効化:
+# - Docker layers
+# - Custom cache
+```
+
+**キャッシュのベストプラクティス:**
+
+```yaml
+効果的なキャッシング:
+  - 依存関係ディレクトリ（node_modules, vendor等）
+  - ビルドツールキャッシュ（.gradle, .m2等）
+  - Dockerレイヤー
+
+注意点:
+  - キャッシュサイズ上限（S3: 無制限、ローカル: 制限あり）
+  - キャッシュ更新タイミング
+  - 環境変数変更時の影響
+```
+
+### VPC 接続
+
+```yaml
+# VPC設定（プライベートサブネット内リソースアクセス）
+VPC構成:
+  - VPC ID
+  - サブネット ID
+  - セキュリティグループ
+
+ユースケース:
+  - RDSアクセス
+  - ElastiCacheアクセス
+  - プライベートAPI
+
+注意点:
+  - NAT Gateway必須（外部アクセス用）
+  - VPC Endpoint推奨（S3, ECR等）
+  - ビルド時間増加の可能性
+```
+
+**VPC設定例（CLI）:**
+
+```bash
+aws codebuild create-project \
+  --name my-vpc-project \
+  --vpc-config vpcId=vpc-12345678,subnets=subnet-12345678,securityGroupIds=sg-12345678 \
+  --source type=GITHUB,location=https://github.com/user/repo.git \
+  --environment type=LINUX_CONTAINER,image=aws/codebuild/standard:7.0,computeType=BUILD_GENERAL1_SMALL \
+  --service-role arn:aws:iam::123456789012:role/CodeBuildRole
+```
+
+### 環境変数管理
+
+```yaml
+version: 0.2
+
+env:
+  # プレーンテキスト
+  variables:
+    NODE_ENV: production
+    AWS_REGION: ap-northeast-1
+
+  # Parameter Store
+  parameter-store:
+    DB_HOST: /app/prod/db/host
+    DB_NAME: /app/prod/db/name
+    DB_USER: /app/prod/db/user
+
+  # Secrets Manager
+  secrets-manager:
+    DB_PASSWORD: prod/db:password
+    API_KEY: prod/api:key
+
+phases:
+  build:
+    commands:
+      - echo "Connecting to $DB_HOST..."
+```
+
+### トラブルシューティング
+
+```yaml
+よくある問題:
+  1. ビルドタイムアウト:
+     - タイムアウト設定延長
+     - キャッシュ有効化
+     - 並列ビルド検討
+
+  2. 権限エラー:
+     - IAMロール確認
+     - ポリシー追加
+
+  3. Dockerビルド失敗:
+     - 特権モード有効化
+     - ECRログイン確認
+
+  4. ネットワークエラー:
+     - VPC設定確認
+     - NAT Gateway確認
+     - VPC Endpoint追加
+```
+
+### ベストプラクティス
+
+```yaml
+パフォーマンス:
+  - キャッシュ活用
+  - 適切なインスタンスサイズ
+  - 並列ビルド
+
+セキュリティ:
+  - Secrets Manager/Parameter Store使用
+  - 最小権限IAMロール
+  - イメージスキャン
+
+コスト:
+  - 不要なビルド削減
+  - キャッシュでビルド時間短縮
+  - 適切なインスタンスサイズ選択
+
+運用:
+  - buildspec.ymlのGit管理
+  - テストレポート活用
+  - CloudWatch Logsモニタリング
+```

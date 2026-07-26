@@ -1,0 +1,403 @@
+---
+title: "CodePipeline 実務Tips"
+label: "実務Tips"
+---
+
+## CodePipeline 実務Tips
+
+### AWS CLI
+
+```bash
+# パイプライン作成
+aws codepipeline create-pipeline \
+  --cli-input-json file://pipeline.json
+
+# パイプライン一覧
+aws codepipeline list-pipelines
+
+# パイプライン詳細取得
+aws codepipeline get-pipeline --name my-pipeline
+
+# パイプライン実行
+aws codepipeline start-pipeline-execution \
+  --name my-pipeline
+
+# 実行状態確認
+aws codepipeline get-pipeline-state --name my-pipeline
+
+# パイプライン更新
+aws codepipeline update-pipeline \
+  --cli-input-json file://pipeline-updated.json
+
+# パイプライン削除
+aws codepipeline delete-pipeline --name my-pipeline
+
+# 承認アクション
+aws codepipeline put-approval-result \
+  --pipeline-name my-pipeline \
+  --stage-name Approval \
+  --action-name ManualApproval \
+  --result status=Approved,summary="Looks good" \
+  --token <token-from-sns>
+```
+
+### パイプライン定義例（基本構成）
+
+```json
+{
+  "pipeline": {
+    "name": "my-pipeline",
+    "roleArn": "arn:aws:iam::123456789012:role/CodePipelineServiceRole",
+    "artifactStore": {
+      "type": "S3",
+      "location": "my-pipeline-artifacts"
+    },
+    "stages": [
+      {
+        "name": "Source",
+        "actions": [
+          {
+            "name": "SourceAction",
+            "actionTypeId": {
+              "category": "Source",
+              "owner": "ThirdParty",
+              "provider": "GitHub",
+              "version": "1"
+            },
+            "configuration": {
+              "Owner": "myorg",
+              "Repo": "myrepo",
+              "Branch": "main",
+              "OAuthToken": "{{resolve:secretsmanager:github-token}}"
+            },
+            "outputArtifacts": [
+              {
+                "name": "SourceOutput"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Build",
+        "actions": [
+          {
+            "name": "BuildAction",
+            "actionTypeId": {
+              "category": "Build",
+              "owner": "AWS",
+              "provider": "CodeBuild",
+              "version": "1"
+            },
+            "configuration": {
+              "ProjectName": "my-build-project"
+            },
+            "inputArtifacts": [
+              {
+                "name": "SourceOutput"
+              }
+            ],
+            "outputArtifacts": [
+              {
+                "name": "BuildOutput"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Deploy",
+        "actions": [
+          {
+            "name": "DeployAction",
+            "actionTypeId": {
+              "category": "Deploy",
+              "owner": "AWS",
+              "provider": "CodeDeploy",
+              "version": "1"
+            },
+            "configuration": {
+              "ApplicationName": "my-application",
+              "DeploymentGroupName": "my-deployment-group"
+            },
+            "inputArtifacts": [
+              {
+                "name": "BuildOutput"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### GitHub連携（GitHub v2接続）
+
+```bash
+# GitHub App接続作成（推奨）
+aws codestar-connections create-connection \
+  --provider-type GitHub \
+  --connection-name my-github-connection
+
+# 接続一覧
+aws codestar-connections list-connections
+
+# パイプラインでGitHub v2使用
+{
+  "name": "Source",
+  "actions": [
+    {
+      "name": "SourceAction",
+      "actionTypeId": {
+        "category": "Source",
+        "owner": "AWS",
+        "provider": "CodeStarSourceConnection",
+        "version": "1"
+      },
+      "configuration": {
+        "ConnectionArn": "arn:aws:codestar-connections:region:account:connection/xxx",
+        "FullRepositoryId": "myorg/myrepo",
+        "BranchName": "main",
+        "OutputArtifactFormat": "CODE_ZIP"
+      },
+      "outputArtifacts": [
+        {
+          "name": "SourceOutput"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 手動承認ステージ
+
+```json
+{
+  "name": "Approval",
+  "actions": [
+    {
+      "name": "ManualApproval",
+      "actionTypeId": {
+        "category": "Approval",
+        "owner": "AWS",
+        "provider": "Manual",
+        "version": "1"
+      },
+      "configuration": {
+        "NotificationArn": "arn:aws:sns:region:account:my-approval-topic",
+        "CustomData": "本番環境へのデプロイを承認してください",
+        "ExternalEntityLink": "https://dashboard.example.com/metrics"
+      }
+    }
+  ]
+}
+```
+
+### CloudFormationデプロイアクション
+
+```json
+{
+  "name": "Deploy",
+  "actions": [
+    {
+      "name": "CreateChangeSet",
+      "actionTypeId": {
+        "category": "Deploy",
+        "owner": "AWS",
+        "provider": "CloudFormation",
+        "version": "1"
+      },
+      "configuration": {
+        "ActionMode": "CHANGE_SET_REPLACE",
+        "StackName": "my-stack",
+        "ChangeSetName": "my-changeset",
+        "TemplatePath": "BuildOutput::template.yaml",
+        "Capabilities": "CAPABILITY_IAM",
+        "RoleArn": "arn:aws:iam::123456789012:role/CloudFormationRole"
+      },
+      "inputArtifacts": [
+        {
+          "name": "BuildOutput"
+        }
+      ]
+    },
+    {
+      "name": "ExecuteChangeSet",
+      "actionTypeId": {
+        "category": "Deploy",
+        "owner": "AWS",
+        "provider": "CloudFormation",
+        "version": "1"
+      },
+      "configuration": {
+        "ActionMode": "CHANGE_SET_EXECUTE",
+        "StackName": "my-stack",
+        "ChangeSetName": "my-changeset"
+      },
+      "runOrder": 2
+    }
+  ]
+}
+```
+
+### ECS Blue/Greenデプロイ
+
+```json
+{
+  "name": "DeployToECS",
+  "actions": [
+    {
+      "name": "ECSDeployAction",
+      "actionTypeId": {
+        "category": "Deploy",
+        "owner": "AWS",
+        "provider": "CodeDeployToECS",
+        "version": "1"
+      },
+      "configuration": {
+        "ApplicationName": "my-ecs-app",
+        "DeploymentGroupName": "my-ecs-deployment-group",
+        "TaskDefinitionTemplateArtifact": "BuildOutput",
+        "TaskDefinitionTemplatePath": "taskdef.json",
+        "AppSpecTemplateArtifact": "BuildOutput",
+        "AppSpecTemplatePath": "appspec.yaml",
+        "Image1ArtifactName": "BuildOutput",
+        "Image1ContainerName": "IMAGE1_NAME"
+      },
+      "inputArtifacts": [
+        {
+          "name": "BuildOutput"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### クロスリージョンデプロイ
+
+```json
+{
+  "pipeline": {
+    "name": "multi-region-pipeline",
+    "artifactStores": {
+      "ap-northeast-1": {
+        "type": "S3",
+        "location": "pipeline-artifacts-tokyo"
+      },
+      "us-east-1": {
+        "type": "S3",
+        "location": "pipeline-artifacts-virginia"
+      }
+    },
+    "stages": [
+      {
+        "name": "Deploy-Tokyo",
+        "actions": [
+          {
+            "name": "DeployToTokyo",
+            "region": "ap-northeast-1",
+            "actionTypeId": {
+              "category": "Deploy",
+              "owner": "AWS",
+              "provider": "CodeDeploy",
+              "version": "1"
+            },
+            "configuration": {
+              "ApplicationName": "my-app-tokyo",
+              "DeploymentGroupName": "production"
+            },
+            "inputArtifacts": [
+              {
+                "name": "BuildOutput"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Deploy-Virginia",
+        "actions": [
+          {
+            "name": "DeployToVirginia",
+            "region": "us-east-1",
+            "actionTypeId": {
+              "category": "Deploy",
+              "owner": "AWS",
+              "provider": "CodeDeploy",
+              "version": "1"
+            },
+            "configuration": {
+              "ApplicationName": "my-app-virginia",
+              "DeploymentGroupName": "production"
+            },
+            "inputArtifacts": [
+              {
+                "name": "BuildOutput"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### ベストプラクティス
+
+```yaml
+設計:
+  - ステージ名は明確に（Source、Build、Test、Deploy）
+  - 環境ごとにパイプライン分離
+  - アーティファクトの暗号化
+
+セキュリティ:
+  - IAMロール最小権限
+  - Secrets Manager/Parameter Storeで認証情報管理
+  - GitHub Personal Tokenは使わずCodeStar接続使用
+  - アーティファクトS3バケットの暗号化
+
+運用:
+  - 承認ゲート設定（本番デプロイ前）
+  - SNS通知統合
+  - CloudWatch Eventsでモニタリング
+  - 失敗時のロールバック計画
+
+モニタリング:
+  - CloudWatch Logsで実行ログ確認
+  - CloudWatch Eventsでパイプライン状態変更検知
+  - ダッシュボード作成
+
+コスト最適化:
+  - 不要なパイプラインは削除
+  - アーティファクトのライフサイクル設定
+  - 開発環境は必要時のみ実行
+```
+
+### トラブルシューティング
+
+```yaml
+よくある問題:
+  アーティファクトが見つからない:
+    - outputArtifacts/inputArtifacts名の一致確認
+    - S3バケット存在確認
+
+  IAM権限エラー:
+    - CodePipelineサービスロール確認
+    - クロスアカウント時の信頼関係
+    - S3バケットポリシー
+
+  GitHub連携失敗:
+    - CodeStar接続の承認状態確認
+    - リポジトリアクセス権限
+    - ブランチ名の正確性
+
+  デプロイ失敗:
+    - ターゲット環境の状態確認
+    - アプリケーション/デプロイグループ存在確認
+    - CloudWatch Logsで詳細確認
+```
