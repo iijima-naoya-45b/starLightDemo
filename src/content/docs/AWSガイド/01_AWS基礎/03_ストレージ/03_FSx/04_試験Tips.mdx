@@ -1,0 +1,471 @@
+---
+title: "FSx 試験Tips"
+label: "試験Tips"
+---
+
+## FSx 試験Tips (SAA/SAP)
+
+## 頻出トピック
+
+### 1. FSxタイプ選択
+
+```yaml
+頻出問題パターン:
+
+Q: Windowsアプリケーション、Active Directory統合必要
+A: FSx for Windows File Server
+
+Q: HPC、機械学習、超高速パフォーマンス必要
+A: FSx for Lustre
+
+Q: マルチプロトコル、データ重複排除、NetApp移行
+A: FSx for NetApp ONTAP
+
+Q: Linux、高性能NFS、データ整合性重視
+A: FSx for OpenZFS
+
+Q: シンプルなLinux共有ファイルシステム
+A: EFS（FSxではない）
+```
+
+### 2. FSx for Windows vs FSx for Lustre
+
+```yaml
+FSx for Windows:
+  プロトコル: SMB/CIFS
+  OS: Windows
+  認証: Active Directory
+  用途: 
+    - Windowsアプリケーション
+    - ファイル共有
+    - ホームディレクトリ
+    - SQL Server
+  パフォーマンス: 中程度
+  スループット: 最大2GB/秒
+  統合: Active Directory
+
+FSx for Lustre:
+  プロトコル: POSIX
+  OS: Linux
+  認証: IAM/POSIX
+  用途:
+    - HPC（ハイパフォーマンスコンピューティング）
+    - 機械学習
+    - ビッグデータ解析
+    - メディアレンダリング
+  パフォーマンス: 超高速
+  スループット: 最大1TB/秒
+  統合: S3（シームレス）
+
+重要な違い:
+  Windows環境 → FSx for Windows
+  Linux + 超高速 → FSx for Lustre
+  S3統合必要 → FSx for Lustre
+  AD統合必要 → FSx for Windows
+```
+
+## FSx vs 他ストレージサービス比較
+
+### FSx vs EFS
+
+```yaml
+EFS:
+  - NFSプロトコル
+  - Linux専用
+  - 自動スケーリング
+  - 使用量課金
+  - シンプル
+  - マルチAZ標準
+  用途: 汎用Linuxファイル共有
+
+FSx for Windows:
+  - SMBプロトコル
+  - Windows環境
+  - 固定容量
+  - 容量課金
+  - Active Directory統合
+  用途: Windows専用環境
+
+FSx for Lustre:
+  - POSIXプロトコル
+  - 超高速
+  - HPC/ML特化
+  - S3統合
+  用途: 高性能コンピューティング
+
+選択基準:
+  Linux + シンプル → EFS
+  Windows → FSx for Windows
+  HPC/ML → FSx for Lustre
+```
+
+### FSx vs EBS
+
+```yaml
+EBS:
+  - ブロックストレージ
+  - 単一EC2インスタンス
+  - 高IOPS
+  - AZ内のみ
+  用途: EC2ルートボリューム、データベース
+
+FSx:
+  - ファイルストレージ
+  - 複数インスタンス同時アクセス
+  - 共有ファイルシステム
+  - Multi-AZ可能
+  用途: ファイル共有、HPC
+
+選択基準:
+  単一EC2専用 → EBS
+  複数EC2共有 → FSx
+  ファイル共有必要 → FSx
+```
+
+### FSx vs S3
+
+```yaml
+S3:
+  - オブジェクトストレージ
+  - HTTPアクセス
+  - 無制限容量
+  - 高耐久性
+  用途: 静的データ、アーカイブ、バックアップ
+
+FSx for Lustre:
+  - ファイルストレージ
+  - POSIXアクセス
+  - 高速I/O
+  - S3統合（自動同期）
+  用途: HPC、S3データの高速処理
+
+選択基準:
+  長期保存 → S3
+  高速処理 → FSx for Lustre + S3統合
+  両方 → FSx for Lustre（S3バックエンド）
+```
+
+## 頻出シナリオ問題
+
+### シナリオ1: Windows環境ファイル共有
+
+```
+要件:
+- 複数のWindowsサーバーでファイル共有
+- Active Directory認証
+- ユーザーごとのアクセス制御
+- 高可用性必要
+
+解答:
+FSx for Windows File Server (Multi-AZ)
+
+構成:
+  - FSx for Windows File Server
+  - Multi-AZ展開
+  - Active Directory統合
+  - セキュリティグループ設定
+
+ポイント:
+✓ Windows ACL対応
+✓ AD統合
+✓ Multi-AZで高可用性
+✓ 複数サーバー同時アクセス
+
+他の選択肢が不適切な理由:
+× EFS: Windowsサポートなし
+× FSx for Lustre: Linux向け
+× S3: ファイルシステムではない
+```
+
+### シナリオ2: 機械学習トレーニング
+
+```
+要件:
+- S3に数TB学習データ
+- 高速読み込み必要（数百GB/秒）
+- 複数GPU インスタンス並列処理
+- 処理後S3に結果保存
+
+解答:
+FSx for Lustre + S3統合
+
+構成:
+  S3 → FSx for Lustre → EC2 (GPU)
+  
+  1. S3データ自動インポート
+  2. FSx経由高速読み込み
+  3. 学習実行
+  4. 結果をS3エクスポート
+
+ポイント:
+✓ 超高速スループット（1TB/秒）
+✓ S3シームレス統合
+✓ 並列アクセス対応
+✓ 一時データはScratchタイプ
+
+他の選択肢が不適切な理由:
+× EFS: 速度不足
+× S3直接: HTTPアクセスは遅い
+× FSx for Windows: Linuxワークロード
+```
+
+### シナリオ3: ハイブリッドクラウド
+
+```
+要件:
+- オンプレミスにNetApp ONTAP
+- AWSへ災害対策
+- 双方向レプリケーション
+- RPO/RTO: 数分
+
+解答:
+FSx for NetApp ONTAP + SnapMirror
+
+構成:
+  オンプレミス NetApp ←SnapMirror→ FSx ONTAP
+  
+  - Direct Connect接続
+  - SnapMirrorレプリケーション
+  - 自動フェイルオーバー
+
+ポイント:
+✓ NetApp互換性
+✓ SnapMirror対応
+✓ 低RPO/RTO
+✓ データ重複排除維持
+
+他の選択肢が不適切な理由:
+× 他FSxタイプ: NetApp互換性なし
+× AWS Backup: リアルタイム同期なし
+```
+
+### シナリオ4: メディアレンダリング
+
+```
+要件:
+- 4K動画レンダリング
+- 数百台レンダーノード
+- 超高速I/O必要
+- プロジェクト単位で削除
+
+解答:
+FSx for Lustre (Scratchタイプ)
+
+構成:
+  S3 → FSx Lustre (Scratch) → レンダーファーム
+  
+  1. 素材S3からインポート
+  2. 並列レンダリング
+  3. 完成品S3エクスポート
+  4. FSx削除
+
+ポイント:
+✓ 超高速（1TB/秒）
+✓ 並列アクセス対応
+✓ Scratchで低コスト
+✓ 一時データ最適
+
+タイプ選択:
+  Scratch: 一時データ、最高速度、低コスト
+  Persistent: 本番、自動バックアップ
+```
+
+### シナリオ5: SQL Serverワークロード
+
+```
+要件:
+- 複数のSQL Serverインスタンス
+- 共有ストレージ
+- Windows環境
+- Multi-AZ必要
+
+解答:
+FSx for Windows File Server (Multi-AZ)
+
+構成:
+  EC2 (SQL Server) → FSx Windows (Multi-AZ)
+  
+  - SQL Server Always On
+  - 共有ストレージ
+  - 自動フェイルオーバー
+
+ポイント:
+✓ SMBプロトコル
+✓ Multi-AZ高可用性
+✓ SQL Server互換
+✓ サブミリ秒レイテンシー
+
+他の選択肢が不適切な理由:
+× EBS: 単一インスタンス専用
+× EFS: Windowsサポートなし
+```
+
+## よくある間違い
+
+```yaml
+× 誤り: Windows環境でEFS使用
+○ 正解: FSx for Windows File Server
+
+× 誤り: HPC環境でFSx for Windows使用
+○ 正解: FSx for Lustre
+
+× 誤り: S3から直接大量データ読み込み（ML）
+○ 正解: FSx for Lustre経由でS3データアクセス
+
+× 誤り: NetApp移行でFSx for Windows使用
+○ 正解: FSx for NetApp ONTAP
+
+× 誤り: Linux共有ファイルシステムでFSx for Lustre
+○ 正解: EFS（シンプルな場合）、FSx for OpenZFS（高性能）
+
+× 誤り: Single-AZ本番環境
+○ 正解: Multi-AZ展開
+
+× 誤り: 長期データでLustre Scratch
+○ 正解: Lustre Persistent または S3
+```
+
+## SAA試験重要ポイント
+
+```yaml
+基本理解:
+  ☐ 4種類のFSxタイプ理解
+  ☐ Windows vs Lustre違い
+  ☐ FSx vs EFS違い
+  ☐ 適切なタイプ選択
+
+Windows File Server:
+  ☐ SMBプロトコル
+  ☐ Active Directory統合
+  ☐ Multi-AZ展開
+  ☐ Windowsアプリケーション
+
+Lustre:
+  ☐ 超高速パフォーマンス
+  ☐ HPC/ML用途
+  ☐ S3統合
+  ☐ Scratch vs Persistent
+
+コスト:
+  ☐ ストレージタイプ選択
+  ☐ Multi-AZ vs Single-AZ
+  ☐ バックアップ戦略
+```
+
+## SAP試験重要ポイント
+
+```yaml
+高度な構成:
+  ☐ Multi-AZアーキテクチャ
+  ☐ クロスリージョンバックアップ
+  ☐ ハイブリッド構成
+  ☐ パフォーマンス最適化
+
+FSx for NetApp ONTAP:
+  ☐ SnapMirrorレプリケーション
+  ☐ データ重複排除・圧縮
+  ☐ FlexClone
+  ☐ マルチプロトコル対応
+
+FSx for OpenZFS:
+  ☐ スナップショット戦略
+  ☐ クローン機能
+  ☐ データ整合性
+  ☐ 圧縮設定
+
+統合パターン:
+  ☐ FSx + S3
+  ☐ FSx + Direct Connect
+  ☐ FSx + AD
+  ☐ FSx + EKS
+
+移行:
+  ☐ オンプレミスからの移行
+  ☐ DataSync活用
+  ☐ レプリケーション戦略
+  ☐ カットオーバー計画
+```
+
+## 試験頻出キーワード
+
+```yaml
+FSx for Windows:
+  - SMB/CIFS
+  - Active Directory
+  - Windows ACL
+  - ホームディレクトリ
+  - DFS Namespaces
+  - シャドウコピー
+  
+FSx for Lustre:
+  - HPC（ハイパフォーマンスコンピューティング）
+  - 機械学習
+  - S3統合
+  - Scratch/Persistent
+  - 数百GB/秒〜TB/秒
+  - 並列ファイルシステム
+
+FSx for NetApp ONTAP:
+  - SnapMirror
+  - FlexClone
+  - データ重複排除
+  - マルチプロトコル
+  - ハイブリッドクラウド
+  - NetApp移行
+
+FSx for OpenZFS:
+  - OpenZFS
+  - スナップショット
+  - データ整合性
+  - 圧縮
+  - Linux高性能
+
+共通:
+  - Multi-AZ
+  - 自動バックアップ
+  - KMS暗号化
+  - VPC
+  - セキュリティグループ
+```
+
+## 覚えるべき数値
+
+```yaml
+FSx for Windows:
+  スループット: 最大2GB/秒
+  IOPS: 最大10万
+  容量: 32GB 〜 64TB
+
+FSx for Lustre:
+  スループット: 最大1TB/秒
+  IOPS: 数百万
+  容量: 1.2TB単位（1.2TB, 2.4TB...）
+
+FSx for NetApp ONTAP:
+  スループット: 最大10GB/秒
+  IOPS: 最大35万
+  容量: 最大192TB
+  重複排除: 50-70%削減
+
+FSx for OpenZFS:
+  スループット: 最大10GB/秒
+  IOPS: 最大100万
+  容量: 64GB 〜 512TB
+  レイテンシー: 数百マイクロ秒
+
+バックアップ保持:
+  - 自動: 7-90日
+  - 手動: 無制限
+```
+
+## まとめ
+
+**試験での重要ポイント:**
+- **Windows環境 = FSx for Windows**
+- **HPC/ML = FSx for Lustre**
+- **エンタープライズ/マルチプロトコル = FSx for NetApp ONTAP**
+- **Linux高性能 = FSx for OpenZFS**
+- **S3統合必要 = FSx for Lustre**
+- **Multi-AZ = 高可用性本番環境**
+- **EFS = シンプルなLinux共有**
+- **適切なサービス選択が最重要**

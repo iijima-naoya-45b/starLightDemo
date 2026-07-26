@@ -1,0 +1,488 @@
+---
+title: "FSx 実務Tips"
+label: "実務Tips"
+---
+
+## FSx 実務Tips
+
+## AWS CLI基本操作
+
+### FSx for Windows File Server
+
+```bash
+# ファイルシステム作成
+aws fsx create-file-system \
+  --file-system-type WINDOWS \
+  --storage-capacity 300 \
+  --subnet-ids subnet-xxx \
+  --security-group-ids sg-xxx \
+  --windows-configuration \
+    ThroughputCapacity=16,\
+    ActiveDirectoryId=d-xxx,\
+    AutomaticBackupRetentionDays=7
+
+# ファイルシステム詳細取得
+aws fsx describe-file-systems \
+  --file-system-ids fs-xxx
+
+# バックアップ作成
+aws fsx create-backup \
+  --file-system-id fs-xxx \
+  --tags Key=Name,Value=manual-backup
+
+# バックアップリスト
+aws fsx describe-backups \
+  --filters Name=file-system-id,Values=fs-xxx
+
+# ファイルシステム削除
+aws fsx delete-file-system \
+  --file-system-id fs-xxx
+```
+
+### FSx for Lustre
+
+```bash
+# Lustreファイルシステム作成（Scratch）
+aws fsx create-file-system \
+  --file-system-type LUSTRE \
+  --storage-capacity 1200 \
+  --subnet-ids subnet-xxx \
+  --lustre-configuration \
+    DeploymentType=SCRATCH_2,\
+    ImportPath=s3://my-bucket/data/,\
+    ExportPath=s3://my-bucket/results/
+
+# Persistentタイプ作成
+aws fsx create-file-system \
+  --file-system-type LUSTRE \
+  --storage-capacity 1200 \
+  --subnet-ids subnet-xxx \
+  --security-group-ids sg-xxx \
+  --lustre-configuration \
+    DeploymentType=PERSISTENT_2,\
+    PerUnitStorageThroughput=125,\
+    AutomaticBackupRetentionDays=7
+
+# データリポジトリタスク（S3同期）
+aws fsx create-data-repository-task \
+  --file-system-id fs-xxx \
+  --type EXPORT_TO_REPOSITORY \
+  --paths /
+
+# タスクステータス確認
+aws fsx describe-data-repository-tasks \
+  --task-ids task-xxx
+```
+
+### FSx for NetApp ONTAP
+
+```bash
+# ONTAPファイルシステム作成
+aws fsx create-file-system \
+  --file-system-type ONTAP \
+  --storage-capacity 1024 \
+  --subnet-ids subnet-xxx subnet-yyy \
+  --ontap-configuration \
+    DeploymentType=MULTI_AZ_1,\
+    ThroughputCapacity=256,\
+    PreferredSubnetId=subnet-xxx
+
+# Storage Virtual Machine (SVM) 作成
+aws fsx create-storage-virtual-machine \
+  --file-system-id fs-xxx \
+  --name svm01 \
+  --svm-admin-password MyPassword123
+
+# ボリューム作成
+aws fsx create-volume \
+  --volume-type ONTAP \
+  --name vol01 \
+  --ontap-configuration \
+    StorageVirtualMachineId=svm-xxx,\
+    SizeInMegabytes=102400,\
+    SecurityStyle=UNIX,\
+    JunctionPath=/vol01
+
+# スナップショット作成
+aws fsx create-snapshot \
+  --volume-id fsvol-xxx \
+  --name snapshot-$(date +%Y%m%d)
+```
+
+### FSx for OpenZFS
+
+```bash
+# OpenZFSファイルシステム作成
+aws fsx create-file-system \
+  --file-system-type OPENZFS \
+  --storage-capacity 64 \
+  --subnet-ids subnet-xxx \
+  --security-group-ids sg-xxx \
+  --open-zfs-configuration \
+    DeploymentType=SINGLE_AZ_1,\
+    ThroughputCapacity=64,\
+    RootVolumeConfiguration={DataCompressionType=ZSTD}
+
+# 子ボリューム作成
+aws fsx create-volume \
+  --volume-type OPENZFS \
+  --name project-a \
+  --open-zfs-configuration \
+    ParentVolumeId=fsvol-xxx,\
+    StorageCapacityQuotaGiB=100,\
+    DataCompressionType=ZSTD
+
+# スナップショット作成
+aws fsx create-snapshot \
+  --volume-id fsvol-xxx \
+  --name snapshot-$(date +%Y%m%d-%H%M%S)
+```
+
+## セットアップ
+
+### FSx for Windows: クライアント接続
+
+```powershell
+# Windows PowerShell
+
+# DNSネームの取得
+$FileSystemDNSName = "fs-xxx.example.com"
+
+# ネットワークドライブマッピング
+New-PSDrive -Name "Z" `
+  -PSProvider FileSystem `
+  -Root "\\$FileSystemDNSName\share" `
+  -Persist
+
+# または
+net use Z: \\fs-xxx.example.com\share /persistent:yes
+
+# 接続テスト
+Test-Path Z:\
+
+# ACL設定例
+$Acl = Get-Acl "Z:\folder"
+$Permission = "DOMAIN\User","FullControl","ContainerInherit,ObjectInherit","None","Allow"
+$AccessRule = New-Object System.Security.AccessControl.FileSystemAccessRule $Permission
+$Acl.SetAccessRule($AccessRule)
+Set-Acl "Z:\folder" $Acl
+```
+
+### FSx for Lustre: Linux マウント
+
+```bash
+# Amazon Linux 2
+
+# Lustreクライアントインストール
+sudo amazon-linux-extras install -y lustre
+
+# マウントポイント作成
+sudo mkdir -p /mnt/fsx
+
+# マウント
+sudo mount -t lustre \
+  fs-xxx.fsx.ap-northeast-1.amazonaws.com@tcp:/fsx \
+  /mnt/fsx
+
+# 永続化 (/etc/fstab)
+echo "fs-xxx.fsx.ap-northeast-1.amazonaws.com@tcp:/fsx /mnt/fsx lustre defaults,noatime,flock,_netdev 0 0" | \
+  sudo tee -a /etc/fstab
+
+# パフォーマンステスト
+time dd if=/dev/zero of=/mnt/fsx/testfile bs=1M count=1024
+
+# S3同期確認
+ls -lh /mnt/fsx/
+```
+
+### FSx for NetApp ONTAP: NFSマウント
+
+```bash
+# Ubuntu/Debian
+
+# NFS クライアントインストール
+sudo apt-get update
+sudo apt-get install -y nfs-common
+
+# マウント（NFS v4.1）
+sudo mkdir -p /mnt/ontap
+
+sudo mount -t nfs \
+  -o nfsvers=4.1,rsize=1048576,wsize=1048576,timeo=600,retrans=2 \
+  svm-xxx.fs-xxx.fsx.ap-northeast-1.amazonaws.com:/vol01 \
+  /mnt/ontap
+
+# 永続化
+echo "svm-xxx.fs-xxx.fsx.ap-northeast-1.amazonaws.com:/vol01 /mnt/ontap nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,timeo=600,retrans=2,_netdev 0 0" | \
+  sudo tee -a /etc/fstab
+```
+
+### FSx for OpenZFS: NFSマウント
+
+```bash
+# RHEL/CentOS
+
+# NFSクライアントインストール
+sudo yum install -y nfs-utils
+
+# マウント
+sudo mkdir -p /mnt/zfs
+
+sudo mount -t nfs \
+  -o nfsvers=4.1,rsize=1048576,wsize=1048576 \
+  fs-xxx.fsx.ap-northeast-1.amazonaws.com:/fsx/ \
+  /mnt/zfs
+
+# 永続化
+echo "fs-xxx.fsx.ap-northeast-1.amazonaws.com:/fsx/ /mnt/zfs nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,_netdev 0 0" | \
+  sudo tee -a /etc/fstab
+```
+
+## パフォーマンスチューニング
+
+### FSx for Windows
+
+```yaml
+最適化:
+  スループット容量:
+    - ワークロード分析
+    - CloudWatch監視
+    - 必要に応じて増強（8, 16, 32, 64, 128, 256, 512, 1024, 2048 MB/s）
+  
+  ストレージタイプ:
+    - 高頻度アクセス: SSD
+    - アーカイブ: HDD
+  
+  キャッシュ:
+    - Windowsクライアントキャッシュ有効化
+    - オフライン設定最適化
+
+CloudWatch メトリクス:
+  - DataReadBytes
+  - DataWriteBytes
+  - DataReadOperations
+  - DataWriteOperations
+  - FreeStorageCapacity
+```
+
+### FSx for Lustre
+
+```yaml
+パフォーマンス最大化:
+  展開タイプ:
+    - Scratch: 最高性能（一時データ）
+    - Persistent: 本番ワークロード
+  
+  スループット/TB:
+    - 50 MB/s/TB: 基本
+    - 125 MB/s/TB: 推奨
+    - 250 MB/s/TB: 高性能
+    - 500 MB/s/TB: 最高性能
+    - 1000 MB/s/TB: 超高性能
+
+ストライピング:
+  # 大ファイル並列書き込み
+  lfs setstripe -c -1 /mnt/fsx/bigdata/
+  
+  # ストライプ情報確認
+  lfs getstripe /mnt/fsx/file
+
+S3統合最適化:
+  - 自動インポート有効化
+  - Lazy Load（遅延読み込み）
+  - 定期エクスポート
+```
+
+### FSx for NetApp ONTAP
+
+```yaml
+ストレージ効率:
+  データ重複排除:
+    - 自動有効化
+    - 50-70%削減可能
+  
+  データ圧縮:
+    - ZSTD圧縮
+    - インライン圧縮
+  
+  コンパクション:
+    - 小ファイル最適化
+
+スナップショット:
+  頻度:
+    - 毎時: 24個保持
+    - 毎日: 7個保持
+    - 毎週: 4個保持
+  
+  容量:
+    - 差分のみ保存
+    - スペース効率的
+
+階層化:
+  - 容量プールティアリング
+  - 冷データ自動移行
+  - コスト最適化
+```
+
+### FSx for OpenZFS
+
+```yaml
+圧縮:
+  アルゴリズム:
+    - ZSTD: 推奨（バランス型）
+    - LZ4: 高速重視
+    - GZIP: 圧縮率重視
+  
+  有効化:
+    - ファイルシステム作成時
+    - ボリューム作成時
+    - 既存ボリュームに適用
+
+スナップショット戦略:
+  頻繁な作成:
+    - オーバーヘッド最小
+    - 差分のみ
+    - 瞬時作成
+  
+  保持ポリシー:
+    - 15分毎: 4個
+    - 毎時: 24個
+    - 毎日: 7個
+
+レコードサイズ最適化:
+  - データベース: 8K-16K
+  - 大ファイル: 128K-1M
+  - デフォルト: 128K
+```
+
+## ベストプラクティス
+
+### セキュリティ
+
+```yaml
+ネットワーク:
+  - VPC内配置
+  - セキュリティグループ適切設定
+  - NACLs活用
+  - PrivateLink経由アクセス
+
+暗号化:
+  - 保管時暗号化: KMS
+  - 転送時暗号化: TLS
+  - キー管理: CMK推奨
+
+アクセス制御:
+  Windows:
+    - Active Directory統合
+    - Windows ACL
+    - NTFS権限
+  
+  Linux:
+    - IAMロール
+    - POSIX権限
+    - NFSv4 ACL
+```
+
+### 可用性
+
+```yaml
+Multi-AZ展開:
+  - 自動フェイルオーバー
+  - RPO: 0
+  - RTO: 数分以内
+  - 本番環境推奨
+
+バックアップ:
+  自動バックアップ:
+    - 毎日実行
+    - 保持期間: 7-90日
+    - ポイントインタイム復元
+  
+  手動バックアップ:
+    - 重要変更前
+    - 長期保管
+    - クロスリージョンコピー
+
+モニタリング:
+  - CloudWatch メトリクス
+  - CloudWatch Alarms
+  - SNS通知
+  - EventBridge統合
+```
+
+### コスト最適化
+
+```yaml
+容量最適化:
+  - 適切なサイズ選択
+  - スケーリング計画
+  - 使用量定期見直し
+
+ストレージタイプ:
+  Windows:
+    - アクティブデータ: SSD
+    - アーカイブ: HDD
+  
+  Lustre:
+    - 一時処理: Scratch
+    - 本番: Persistent
+  
+  ONTAP:
+    - ホットデータ: SSD
+    - コールドデータ: 容量プール
+
+バックアップ:
+  - 保持期間最適化
+  - 不要バックアップ削除
+  - ライフサイクル管理
+
+Reserved Capacity:
+  - 1年/3年予約
+  - 最大60%割引
+  - 本番環境向け
+```
+
+### トラブルシューティング
+
+```bash
+# 接続確認
+# Windows
+Test-NetConnection -ComputerName fs-xxx.example.com -Port 445
+
+# Linux (Lustre)
+ping fs-xxx.fsx.ap-northeast-1.amazonaws.com
+telnet fs-xxx.fsx.ap-northeast-1.amazonaws.com 988
+
+# パフォーマンス診断
+# CloudWatch メトリクス確認
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/FSx \
+  --metric-name DataReadBytes \
+  --dimensions Name=FileSystemId,Value=fs-xxx \
+  --start-time 2026-07-26T00:00:00Z \
+  --end-time 2026-07-26T23:59:59Z \
+  --period 3600 \
+  --statistics Average,Maximum
+
+# ログ確認
+# CloudWatch Logs
+aws logs tail /aws/fsx/windows/fs-xxx --follow
+
+# ディスク使用量確認
+# Windows
+Get-PSDrive Z | Select-Object Used,Free
+
+# Linux
+df -h /mnt/fsx
+```
+
+## まとめ
+
+**実務での重要ポイント:**
+- 適切なFSxタイプ選択
+- Multi-AZ展開で高可用性確保
+- 自動バックアップ必須設定
+- CloudWatchでモニタリング
+- セキュリティグループ適切設定
+- パフォーマンスチューニング
+- コスト定期見直し

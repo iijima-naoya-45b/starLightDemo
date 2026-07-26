@@ -1,0 +1,604 @@
+---
+title: CloudTrail 実務Tips
+description: AWS CloudTrailの実務での活用方法、AWS CLI操作、運用ベストプラクティスを解説します。
+---
+
+## AWS CLI操作
+
+### 基本操作
+
+#### トレイルの作成
+```bash
+# シンプルなトレイル作成
+aws cloudtrail create-trail \
+  --name my-trail \
+  --s3-bucket-name my-cloudtrail-bucket \
+  --region us-east-1
+
+# マルチリージョントレイル作成
+aws cloudtrail create-trail \
+  --name multi-region-trail \
+  --s3-bucket-name my-cloudtrail-bucket \
+  --is-multi-region-trail \
+  --enable-log-file-validation \
+  --kms-key-id arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012
+
+# 組織トレイル作成（Organizations管理アカウントで実行）
+aws cloudtrail create-trail \
+  --name organization-trail \
+  --s3-bucket-name org-cloudtrail-bucket \
+  --is-organization-trail \
+  --is-multi-region-trail \
+  --enable-log-file-validation
+```
+
+#### トレイルの開始/停止
+```bash
+# トレイル開始
+aws cloudtrail start-logging --name my-trail
+
+# トレイル停止
+aws cloudtrail stop-logging --name my-trail
+
+# ロギング状態確認
+aws cloudtrail get-trail-status --name my-trail
+```
+
+#### トレイルの一覧と詳細
+```bash
+# すべてのトレイル一覧
+aws cloudtrail list-trails
+
+# トレイル詳細取得
+aws cloudtrail describe-trails --trail-name-list my-trail
+
+# すべてのトレイル詳細
+aws cloudtrail describe-trails
+```
+
+### イベント検索
+
+#### 最近のイベント検索
+```bash
+# ユーザー名で検索
+aws cloudtrail lookup-events \
+  --lookup-attributes AttributeKey=Username,AttributeValue=alice \
+  --max-results 50
+
+# イベント名で検索
+aws cloudtrail lookup-events \
+  --lookup-attributes AttributeKey=EventName,AttributeValue=RunInstances \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-31T23:59:59Z
+
+# リソースIDで検索
+aws cloudtrail lookup-events \
+  --lookup-attributes AttributeKey=ResourceName,AttributeValue=i-1234567890abcdef0
+
+# 複数条件は不可（1つのAttributeKeyのみ指定可能）
+# 複雑な検索はCloudTrail LakeまたはAthenaを使用
+```
+
+#### イベント履歴のエクスポート
+```bash
+# JSON形式で出力
+aws cloudtrail lookup-events \
+  --lookup-attributes AttributeKey=Username,AttributeValue=admin \
+  --max-results 100 \
+  --output json > events.json
+
+# テーブル形式で見やすく表示
+aws cloudtrail lookup-events \
+  --lookup-attributes AttributeKey=EventName,AttributeValue=DeleteBucket \
+  --max-results 20 \
+  --output table
+```
+
+### イベントセレクタ設定
+
+#### 管理イベント + データイベント
+```bash
+# S3データイベントを記録
+aws cloudtrail put-event-selectors \
+  --trail-name my-trail \
+  --event-selectors '[
+    {
+      "ReadWriteType": "All",
+      "IncludeManagementEvents": true,
+      "DataResources": [
+        {
+          "Type": "AWS::S3::Object",
+          "Values": ["arn:aws:s3:::my-bucket/"]
+        }
+      ]
+    }
+  ]'
+
+# Lambda関数の実行を記録
+aws cloudtrail put-event-selectors \
+  --trail-name my-trail \
+  --event-selectors '[
+    {
+      "ReadWriteType": "All",
+      "IncludeManagementEvents": true,
+      "DataResources": [
+        {
+          "Type": "AWS::Lambda::Function",
+          "Values": ["arn:aws:lambda:us-east-1:123456789012:function/*"]
+        }
+      ]
+    }
+  ]'
+
+# イベントセレクタ確認
+aws cloudtrail get-event-selectors --trail-name my-trail
+```
+
+#### 高度なイベントセレクタ
+```bash
+# 特定のS3バケットのみ記録（コスト最適化）
+aws cloudtrail put-event-selectors \
+  --trail-name my-trail \
+  --advanced-event-selectors '[
+    {
+      "Name": "S3DataEvents",
+      "FieldSelectors": [
+        {"Field": "eventCategory", "Equals": ["Data"]},
+        {"Field": "resources.type", "Equals": ["AWS::S3::Object"]},
+        {"Field": "resources.ARN", "StartsWith": ["arn:aws:s3:::important-bucket/"]}
+      ]
+    }
+  ]'
+```
+
+### CloudTrail Insights
+
+#### Insights有効化
+```bash
+# API呼び出し率の異常検知を有効化
+aws cloudtrail put-insight-selectors \
+  --trail-name my-trail \
+  --insight-selectors '[{"InsightType":"ApiCallRateInsight"}]'
+
+# Insights設定確認
+aws cloudtrail get-insight-selectors --trail-name my-trail
+```
+
+### CloudWatch Logs統合
+
+#### ログ配信設定
+```bash
+# CloudWatch Logsロールの作成
+cat > trust-policy.json << 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "cloudtrail.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+
+aws iam create-role \
+  --role-name CloudTrailToCloudWatchLogsRole \
+  --assume-role-policy-document file://trust-policy.json
+
+cat > role-policy.json << 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:us-east-1:123456789012:log-group:CloudTrail/logs:*"
+    }
+  ]
+}
+EOF
+
+aws iam put-role-policy \
+  --role-name CloudTrailToCloudWatchLogsRole \
+  --policy-name CloudTrailToCloudWatchLogsPolicy \
+  --policy-document file://role-policy.json
+
+# CloudWatch Logsロググループ作成
+aws logs create-log-group \
+  --log-group-name CloudTrail/logs \
+  --region us-east-1
+
+# CloudTrailにCloudWatch Logs設定
+aws cloudtrail update-trail \
+  --name my-trail \
+  --cloud-watch-logs-log-group-arn arn:aws:logs:us-east-1:123456789012:log-group:CloudTrail/logs \
+  --cloud-watch-logs-role-arn arn:aws:iam::123456789012:role/CloudTrailToCloudWatchLogsRole
+```
+
+## 運用ベストプラクティス
+
+### 1. セキュアな設定
+
+#### S3バケットの保護
+```bash
+# バケットの作成とバージョニング有効化
+aws s3 mb s3://secure-cloudtrail-bucket
+aws s3api put-bucket-versioning \
+  --bucket secure-cloudtrail-bucket \
+  --versioning-configuration Status=Enabled
+
+# パブリックアクセスブロック
+aws s3api put-public-access-block \
+  --bucket secure-cloudtrail-bucket \
+  --public-access-block-configuration \
+    BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+
+# バケットポリシー設定
+cat > bucket-policy.json << 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AWSCloudTrailAclCheck",
+      "Effect": "Allow",
+      "Principal": {"Service": "cloudtrail.amazonaws.com"},
+      "Action": "s3:GetBucketAcl",
+      "Resource": "arn:aws:s3:::secure-cloudtrail-bucket"
+    },
+    {
+      "Sid": "AWSCloudTrailWrite",
+      "Effect": "Allow",
+      "Principal": {"Service": "cloudtrail.amazonaws.com"},
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::secure-cloudtrail-bucket/AWSLogs/*",
+      "Condition": {
+        "StringEquals": {"s3:x-amz-acl": "bucket-owner-full-control"}
+      }
+    },
+    {
+      "Sid": "DenyUnencryptedObjectUploads",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::secure-cloudtrail-bucket/*",
+      "Condition": {
+        "StringNotEquals": {"s3:x-amz-server-side-encryption": "aws:kms"}
+      }
+    },
+    {
+      "Sid": "DenyInsecureTransport",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::secure-cloudtrail-bucket",
+        "arn:aws:s3:::secure-cloudtrail-bucket/*"
+      ],
+      "Condition": {
+        "Bool": {"aws:SecureTransport": "false"}
+      }
+    }
+  ]
+}
+EOF
+
+aws s3api put-bucket-policy \
+  --bucket secure-cloudtrail-bucket \
+  --policy file://bucket-policy.json
+```
+
+### 2. コスト最適化
+
+#### S3ライフサイクル設定
+```bash
+cat > lifecycle.json << 'EOF'
+{
+  "Rules": [
+    {
+      "Id": "CloudTrailLogArchiving",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "AWSLogs/"},
+      "Transitions": [
+        {"Days": 30, "StorageClass": "STANDARD_IA"},
+        {"Days": 90, "StorageClass": "GLACIER"},
+        {"Days": 365, "StorageClass": "DEEP_ARCHIVE"}
+      ],
+      "Expiration": {"Days": 2555}
+    }
+  ]
+}
+EOF
+
+aws s3api put-bucket-lifecycle-configuration \
+  --bucket secure-cloudtrail-bucket \
+  --lifecycle-configuration file://lifecycle.json
+```
+
+#### 不要なデータイベントの除外
+```bash
+# 読み取り専用イベントを除外してコスト削減
+aws cloudtrail put-event-selectors \
+  --trail-name my-trail \
+  --event-selectors '[
+    {
+      "ReadWriteType": "WriteOnly",
+      "IncludeManagementEvents": true,
+      "DataResources": [
+        {
+          "Type": "AWS::S3::Object",
+          "Values": ["arn:aws:s3:::important-bucket/"]
+        }
+      ]
+    }
+  ]'
+```
+
+### 3. モニタリングとアラート
+
+#### 重要なイベントのメトリクスフィルター作成
+```bash
+# セキュリティグループ変更の検出
+aws logs put-metric-filter \
+  --log-group-name CloudTrail/logs \
+  --filter-name SecurityGroupChanges \
+  --filter-pattern '{ ($.eventName = AuthorizeSecurityGroupIngress) || ($.eventName = AuthorizeSecurityGroupEgress) || ($.eventName = RevokeSecurityGroupIngress) || ($.eventName = RevokeSecurityGroupEgress) || ($.eventName = CreateSecurityGroup) || ($.eventName = DeleteSecurityGroup) }' \
+  --metric-transformations \
+    metricName=SecurityGroupEventCount,metricNamespace=CloudTrailMetrics,metricValue=1
+
+# IAMポリシー変更の検出
+aws logs put-metric-filter \
+  --log-group-name CloudTrail/logs \
+  --filter-name IAMPolicyChanges \
+  --filter-pattern '{ ($.eventName = DeleteGroupPolicy) || ($.eventName = DeleteRolePolicy) || ($.eventName = DeleteUserPolicy) || ($.eventName = PutGroupPolicy) || ($.eventName = PutRolePolicy) || ($.eventName = PutUserPolicy) || ($.eventName = CreatePolicy) || ($.eventName = DeletePolicy) || ($.eventName = CreatePolicyVersion) || ($.eventName = DeletePolicyVersion) || ($.eventName = AttachRolePolicy) || ($.eventName = DetachRolePolicy) || ($.eventName = AttachUserPolicy) || ($.eventName = DetachUserPolicy) || ($.eventName = AttachGroupPolicy) || ($.eventName = DetachGroupPolicy) }' \
+  --metric-transformations \
+    metricName=IAMPolicyEventCount,metricNamespace=CloudTrailMetrics,metricValue=1
+
+# コンソールログイン失敗の検出
+aws logs put-metric-filter \
+  --log-group-name CloudTrail/logs \
+  --filter-name ConsoleSignInFailures \
+  --filter-pattern '{ ($.eventName = ConsoleLogin) && ($.errorMessage = "Failed authentication") }' \
+  --metric-transformations \
+    metricName=ConsoleSignInFailureCount,metricNamespace=CloudTrailMetrics,metricValue=1
+```
+
+#### アラーム作成
+```bash
+# セキュリティグループ変更アラーム
+aws cloudwatch put-metric-alarm \
+  --alarm-name SecurityGroupChangesAlarm \
+  --alarm-description "Alert on security group changes" \
+  --metric-name SecurityGroupEventCount \
+  --namespace CloudTrailMetrics \
+  --statistic Sum \
+  --period 300 \
+  --threshold 1 \
+  --comparison-operator GreaterThanOrEqualToThreshold \
+  --evaluation-periods 1 \
+  --alarm-actions arn:aws:sns:us-east-1:123456789012:security-alerts
+
+# ルートアカウント使用アラーム
+aws logs put-metric-filter \
+  --log-group-name CloudTrail/logs \
+  --filter-name RootAccountUsage \
+  --filter-pattern '{ $.userIdentity.type = "Root" && $.userIdentity.invokedBy NOT EXISTS && $.eventType != "AwsServiceEvent" }' \
+  --metric-transformations \
+    metricName=RootAccountUsageCount,metricNamespace=CloudTrailMetrics,metricValue=1
+
+aws cloudwatch put-metric-alarm \
+  --alarm-name RootAccountUsageAlarm \
+  --alarm-description "Alert when root account is used" \
+  --metric-name RootAccountUsageCount \
+  --namespace CloudTrailMetrics \
+  --statistic Sum \
+  --period 60 \
+  --threshold 1 \
+  --comparison-operator GreaterThanOrEqualToThreshold \
+  --evaluation-periods 1 \
+  --alarm-actions arn:aws:sns:us-east-1:123456789012:critical-alerts
+```
+
+### 4. Athenaでのログ分析
+
+#### テーブル作成（Partition Projection使用）
+```sql
+CREATE EXTERNAL TABLE cloudtrail_logs_optimized (
+    eventVersion STRING,
+    userIdentity STRUCT<
+        type: STRING,
+        principalId: STRING,
+        arn: STRING,
+        accountId: STRING,
+        userName: STRING
+    >,
+    eventTime STRING,
+    eventSource STRING,
+    eventName STRING,
+    awsRegion STRING,
+    sourceIPAddress STRING,
+    userAgent STRING,
+    requestParameters STRING,
+    responseElements STRING,
+    errorCode STRING,
+    errorMessage STRING
+)
+PARTITIONED BY (
+    account STRING,
+    region STRING,
+    year STRING,
+    month STRING,
+    day STRING
+)
+ROW FORMAT SERDE 'com.amazon.emr.hive.serde.CloudTrailSerde'
+STORED AS INPUTFORMAT 'com.amazon.emr.cloudtrail.CloudTrailInputFormat'
+OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
+LOCATION 's3://secure-cloudtrail-bucket/AWSLogs/'
+TBLPROPERTIES (
+    'projection.enabled' = 'true',
+    'projection.account.type' = 'enum',
+    'projection.account.values' = '123456789012,210987654321',
+    'projection.region.type' = 'enum',
+    'projection.region.values' = 'us-east-1,us-west-2,ap-northeast-1',
+    'projection.year.type' = 'integer',
+    'projection.year.range' = '2020,2030',
+    'projection.year.digits' = '4',
+    'projection.month.type' = 'integer',
+    'projection.month.range' = '1,12',
+    'projection.month.digits' = '2',
+    'projection.day.type' = 'integer',
+    'projection.day.range' = '1,31',
+    'projection.day.digits' = '2',
+    'storage.location.template' = 's3://secure-cloudtrail-bucket/AWSLogs/${account}/CloudTrail/${region}/${year}/${month}/${day}'
+);
+```
+
+#### 有用なクエリ集
+```sql
+-- 1. 過去24時間の削除操作
+SELECT
+    eventTime,
+    userIdentity.userName,
+    eventName,
+    requestParameters,
+    sourceIPAddress
+FROM cloudtrail_logs_optimized
+WHERE
+    eventName LIKE '%Delete%'
+    AND eventTime > date_format(current_timestamp - interval '24' hour, '%Y-%m-%dT%H:%i:%sZ')
+ORDER BY eventTime DESC;
+
+-- 2. 失敗したAPI呼び出し
+SELECT
+    eventTime,
+    userIdentity.userName,
+    eventName,
+    errorCode,
+    errorMessage,
+    COUNT(*) as error_count
+FROM cloudtrail_logs_optimized
+WHERE
+    errorCode IS NOT NULL
+    AND year = '2024'
+    AND month = '01'
+GROUP BY
+    eventTime,
+    userIdentity.userName,
+    eventName,
+    errorCode,
+    errorMessage
+ORDER BY error_count DESC
+LIMIT 50;
+
+-- 3. 特定IPアドレスからのアクティビティ
+SELECT
+    eventTime,
+    userIdentity.userName,
+    eventName,
+    eventSource,
+    sourceIPAddress
+FROM cloudtrail_logs_optimized
+WHERE
+    sourceIPAddress = '203.0.113.100'
+    AND year = '2024'
+    AND month = '01'
+ORDER BY eventTime DESC;
+
+-- 4. IAM権限変更の履歴
+SELECT
+    eventTime,
+    userIdentity.userName,
+    eventName,
+    json_extract_scalar(requestParameters, '$.userName') as affected_user,
+    json_extract_scalar(requestParameters, '$.policyArn') as policy_arn
+FROM cloudtrail_logs_optimized
+WHERE
+    eventSource = 'iam.amazonaws.com'
+    AND eventName IN (
+        'AttachUserPolicy',
+        'DetachUserPolicy',
+        'PutUserPolicy',
+        'DeleteUserPolicy',
+        'AttachRolePolicy',
+        'DetachRolePolicy'
+    )
+    AND year = '2024'
+    AND month = '01'
+ORDER BY eventTime DESC;
+
+-- 5. コンソールログイン履歴
+SELECT
+    eventTime,
+    userIdentity.userName,
+    sourceIPAddress,
+    userAgent,
+    json_extract_scalar(responseElements, '$.ConsoleLogin') as login_result
+FROM cloudtrail_logs_optimized
+WHERE
+    eventName = 'ConsoleLogin'
+    AND year = '2024'
+    AND month = '01'
+ORDER BY eventTime DESC;
+```
+
+### 5. トラブルシューティング
+
+#### ログが配信されない場合
+```bash
+# 1. トレイルのステータス確認
+aws cloudtrail get-trail-status --name my-trail
+
+# 2. S3バケットポリシー確認
+aws s3api get-bucket-policy --bucket my-cloudtrail-bucket
+
+# 3. トレイル設定確認
+aws cloudtrail describe-trails --trail-name-list my-trail
+
+# 4. CloudWatch Logs設定確認（使用している場合）
+aws cloudtrail get-trail --name my-trail | grep -A 5 CloudWatchLogs
+
+# 5. IAMロールの権限確認
+aws iam get-role-policy \
+  --role-name CloudTrailToCloudWatchLogsRole \
+  --policy-name CloudTrailToCloudWatchLogsPolicy
+```
+
+#### ログファイル検証
+```bash
+# ログファイルの整合性を検証
+aws cloudtrail validate-logs \
+  --trail-arn arn:aws:cloudtrail:us-east-1:123456789012:trail/my-trail \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-31T23:59:59Z
+
+# 結果の確認
+# VALID: ログファイルは改ざんされていない
+# INVALID: ログファイルが改ざんされた可能性
+```
+
+## まとめ
+
+**日常的な運用**
+- イベント履歴で直近90日のイベントを確認
+- CloudWatch Logsメトリクスフィルターで重要なイベントを監視
+- 定期的にAthenaで分析レポートを作成
+
+**セキュリティ強化**
+- S3バケットの保護を徹底
+- ログファイル検証を有効化
+- MFA削除とバージョニングを設定
+
+**コスト最適化**
+- S3ライフサイクルで古いログをアーカイブ
+- 不要なデータイベントを除外
+- Partition Projectionで Athenaのスキャンコストを削減
+
+**トラブルシューティング**
+- CloudTrailステータスを確認
+- S3バケットポリシーとIAMロールを検証
+- ログファイル検証で整合性をチェック
