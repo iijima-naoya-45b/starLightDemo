@@ -110,3 +110,60 @@ export default defineConfig({
 });
 ```
 
+---
+
+## 📝 Notion API統合
+
+このプロジェクトにはNotion APIを使用してタスクを作成する機能が含まれています。
+
+### 🔧 セットアップ
+
+1. **Notion Integrationの作成**
+   - [Notion Integrations](https://www.notion.so/my-integrations) にアクセス
+   - 「New integration」をクリック
+   - Integration名を入力して作成
+   - 「Internal Integration Token」をコピー
+
+2. **データベースの準備**
+   - Notionでタスク管理用のデータベースを作成
+   - 以下のプロパティを設定：
+     - `Name` (タイトル)
+     - `Status` (ステータス) - 「未着手」オプションを含む
+     - `Priority` (セレクト) - 「中」オプションを含む
+     - `Description` (テキスト)
+   - データベースページの右上「...」→「接続を追加」から作成したIntegrationを追加
+   - データベースのURLからDatabase IDを取得
+     - 例: `https://www.notion.so/workspace/{database_id}?v=...`
+
+3. **環境変数の設定**
+   ```bash
+   # .env.exampleをコピー
+   cp .env.example .env
+   
+   # .envファイルを編集
+   NOTION_API_TOKEN=your_integration_token_here
+   NOTION_DATABASE_ID=your_database_id_here
+   ```
+
+### 🚀 使用方法
+
+サンプルタスクを作成：
+
+```bash
+npm run notion:create-task
+```
+
+このコマンドを実行すると、設定したNotion Databaseに自動的にサンプルタスクが作成されます。
+
+### 💡 Notion APIについて
+
+- ✅ **完全無料**: API使用に料金はかかりません
+- ✅ **レート制限**: 無料プランでは平均3リクエスト/秒
+- ✅ **公式ドキュメント**: [Notion Developers](https://developers.notion.com/)
+
+### ⚠️ 注意事項
+
+- `.env`ファイルには機密情報が含まれるため、Gitにコミットしないでください（`.gitignore`に追加済み）
+- Integration TokenとDatabase IDは安全に管理してください
+- データベースのプロパティ構成がスクリプトと一致していることを確認してください
+
