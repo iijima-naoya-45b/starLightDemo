@@ -5,75 +5,515 @@ label: "ユースケースおよびアーキパターン"
 
 ## S3 ユースケースおよびアーキテクチャパターン
 
-### 1. 静的Webサイトホスティング
+この資料は、**実務での具体的なシナリオと判断基準**を中心に、S3の活用方法を解説します。
 
-```yaml
-構成:
-  S3 + CloudFront:
-    - S3: 静的コンテンツ（HTML, CSS, JS）
-    - CloudFront: CDN、HTTPS
-    - Route 53: カスタムドメイン
+### 1. 静的Webサイトホスティング（コスト比較）
 
-コスト:
-  - 月数ドル〜
-  - サーバー不要
+#### シナリオ: コーポレートサイトのホスティング
+
+**状況:**
+```
+企業: 中小企業のコーポレートサイト
+課題:
+- 月間10万PV
+- 静的コンテンツのみ（HTML, CSS, JS, 画像）
+- HTTPSが必須
+- グローバルアクセスの高速化
 ```
 
-### 2. Data Lake
+**従来の構成（EC2 + ALB）:**
+```
+コスト内訳:
+  - ALB: $22/月
+  - EC2 t3.small × 2台（Multi-AZ）: $30/月
+  - データ転送: $9/月（100GB）
+  - Route 53: $1/月
+  合計: $62/月（年間 $744）
 
-```yaml
-構成:
-  S3 + Glue + Athena:
-    - S3: データ保存
-    - Glue: ETL、カタログ
-    - Athena: SQLクエリ
-
-データ階層化:
-  - Hot: S3 Standard
-  - Warm: S3 Standard-IA
-  - Cold: S3 Glacier
+問題点:
+  - サーバー管理が必要
+  - スケーリング設定が必要
+  - セキュリティパッチ適用が必要
 ```
 
-### 3. バックアップ・アーカイブ
-
+**S3 + CloudFront 構成:**
 ```yaml
 構成:
-  S3 + Lifecycle:
-    - 即時バックアップ: S3 Standard
-    - 30日後: S3 Standard-IA
-    - 90日後: S3 Glacier
+  S3: 静的コンテンツ保存
+    - バケット: example-corporate-site
+    - 静的Webサイトホスティング有効化
+    - バージョニング有効
+  
+  CloudFront:
+    - オリジン: S3バケット
+    - HTTPS証明書: ACM（無料）
+    - キャッシュTTL: 86400秒（1日）
+    - 圧縮: 有効
+  
+  Route 53:
+    - カスタムドメイン設定
+
+コスト内訳:
+  - S3ストレージ: $0.23/月（10GB）
+  - S3リクエスト: $0.40/月（100K GET）
+  - CloudFront転送: $8.50/月（100GB）
+  - Route 53: $0.50/月
+  合計: $9.63/月（年間 $115.56）
+
+削減率: 84.5%削減
+```
+
+**実装手順:**
+```bash
+# 1. S3バケット作成
+aws s3 mb s3://example-corporate-site
+
+# 2. 静的Webサイトホスティング有効化
+aws s3 website s3://example-corporate-site/ \
+  --index-document index.html \
+  --error-document error.html
+
+# 3. ファイルアップロード
+aws s3 sync ./dist s3://example-corporate-site/ \
+  --delete --cache-control max-age=86400
+
+# 4. CloudFront ディストリビューション作成（Terraformで管理推奨）
+```
+
+**実務での判断ポイント:**
+- **S3優先**: 動的処理がない限りS3を選択
+- **CloudFront必須**: S3単体はグローバルアクセスが遅い
+- **バージョニング**: 誤削除対策で必ず有効化
+- **デプロイ**: CloudFrontキャッシュ無効化を忘れずに
+
+### 2. Data Lake（データ分析基盤）
+
+#### シナリオ: SaaS企業のログ分析基盤構築
+
+**状況:**
+```
+企業: SaaS企業（月間100万ユーザー）
+課題:
+- アプリケーションログ: 1TB/月
+- ユーザー行動分析が必要
+- SQLでアドホック分析したい
+- データサイエンティストが利用
+- コスト最適化が必須
+```
+
+**問題のある構成（RDS MySQL）:**
+```
+問題点:
+  - ストレージコスト: $115/月（1TB gp3）
+  - スケーラビリティ: 数TBで限界
+  - 分析クエリ: アプリに影響
+  - 過去データ: 削除が必要
+
+年間コスト: $1,380
+```
+
+**S3 Data Lake 構成:**
+```yaml
+構成:
+  データ取り込み:
+    - Kinesis Data Firehose
+    - Lambda: データ変換
+    - S3: パーティション保存
+  
+  S3バケット構造:
+    s3://company-datalake/
+      ├─ raw/                    # 生ログ（Standard）
+      │  └─ date=2024-01-01/
+      ├─ processed/              # 加工済み（Standard-IA）
+      │  └─ date=2024-01-01/
+      └─ archive/                # アーカイブ（Glacier）
+         └─ year=2023/
+  
+  分析:
+    - AWS Glue: データカタログ
+    - Athena: SQLクエリ（サーバーレス）
+    - QuickSight: ダッシュボード
+  
+  ライフサイクル:
+    - 30日後: Standard → Standard-IA
+    - 90日後: Standard-IA → Glacier
     - 7年後: 削除
 
-クロスリージョンレプリケーション:
-  - 災害対策
-  - データ主権対応
+コスト内訳（1TB/月、累積12TB/年）:
+  - S3ストレージ:
+    - Hot（3ヶ月）: 3TB × $23 = $69/月
+    - Warm（6ヶ月）: 6TB × $12.50 = $75/月
+    - Cold（3ヶ月）: 3TB × $4 = $12/月
+  - Athena: $5/TB スキャン = $50/月
+  - Glue Crawler: $5/月
+  合計: $216/月（年間 $2,592）
+
+データ量増加に強い:
+  - 10TB でも $500/月程度
+  - RDSなら数万ドル/月
 ```
 
-### 4. ログ集約
+**実装例（Terraform）:**
+```hcl
+resource "aws_s3_bucket" "data_lake" {
+  bucket = "company-datalake"
+}
 
+resource "aws_s3_bucket_lifecycle_configuration" "data_lake_lifecycle" {
+  bucket = aws_s3_bucket.data_lake.id
+
+  rule {
+    id     = "archive-old-data"
+    status = "Enabled"
+
+    transition {
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }
+
+    transition {
+      days          = 90
+      storage_class = "GLACIER"
+    }
+
+    expiration {
+      days = 2555  # 7年
+    }
+  }
+}
+```
+
+**実務での判断ポイント:**
+- **Athena vs Redshift**: アドホック分析ならAthena、定常分析ならRedshift
+- **パーティション**: 必須（date=YYYY-MM-DD で分割）
+- **Parquet形式**: JSON比で70%圧縮、クエリ10倍高速
+- **Glue Crawler**: 週1回実行で自動スキーマ更新
+
+### 3. バックアップ・災害対策（クロスリージョンレプリケーション）
+
+#### シナリオ: 金融システムのデータ保護
+
+**状況:**
+```
+企業: 金融サービス企業
+要件:
+- RPO（目標復旧時点）: 1時間以内
+- RTO（目標復旧時間）: 4時間以内
+- データ保持期間: 7年
+- 異なるリージョンでのバックアップ必須
+- 監査対応が必要
+```
+
+**S3 災害対策構成:**
 ```yaml
-構成:
-  CloudTrail/VPC Flow Logs → S3:
-    - パーティション: 日付/時間
+プライマリリージョン（東京: ap-northeast-1）:
+  S3バケット: company-data-primary
+  機能:
+    - バージョニング: 有効
+    - MFA Delete: 有効（削除防止）
+    - 暗号化: SSE-S3
+    - アクセスログ: 有効
+  
+  ライフサイクル:
+    - 現行バージョン: Standard
+    - 旧バージョン: 30日後にGlacier
+    - 削除マーカー: 90日後に削除
+
+セカンダリリージョン（大阪: ap-northeast-3）:
+  S3バケット: company-data-backup
+  レプリケーション:
+    - 非同期レプリケーション（数分以内）
+    - 削除マーカー複製: 無効（誤削除対策）
+    - ストレージクラス: Standard-IA
+  
+  追加対策:
+    - S3 Object Lock: 改ざん防止
+    - 保持期間: 7年（コンプライアンスモード）
+
+モニタリング:
+  - CloudWatch: レプリケーション遅延
+  - SNS: レプリケーション失敗時通知
+  - AWS Backup: 日次バックアップジョブ
+
+コスト（1TB データ）:
+  - プライマリ: $23/月
+  - セカンダリ: $12.50/月
+  - レプリケーション転送: $20/月（初回のみ）
+  - 合計: $35.50/月
+```
+
+**災害発生時の復旧手順:**
+```bash
+# 1. セカンダリリージョンからデータ取得
+aws s3 sync s3://company-data-backup/ ./restore/ \
+  --region ap-northeast-3
+
+# 2. 新しいプライマリリージョンでS3バケット作成
+aws s3 mb s3://company-data-primary-new \
+  --region us-west-2
+
+# 3. データアップロード
+aws s3 sync ./restore/ s3://company-data-primary-new/
+
+# 4. アプリケーション設定変更
+# S3エンドポイントを新しいバケットに変更
+```
+
+**実務での判断ポイント:**
+- **クロスリージョン必須**: 同一リージョンの複数AZでは災害対策不十分
+- **削除マーカー複製無効**: 誤削除時の最後の砦
+- **S3 Object Lock**: 改ざん防止（金融・医療では必須）
+- **定期復旧訓練**: 年1回は実施（手順の確認）
+
+### 4. メディア配信（動画ストリーミング）
+
+#### シナリオ: 動画配信サービスの構築
+
+**状況:**
+```
+企業: 動画配信スタートアップ
+課題:
+- 動画ファイル: 10,000本（5TB）
+- 月間再生回数: 100万回
+- グローバルユーザー（日本、米国、欧州）
+- 複数解像度対応（480p, 720p, 1080p）
+- コスト最適化
+```
+
+**S3 + CloudFront 動画配信構成:**
+```yaml
+S3ストレージ構成:
+  バケット: company-videos
+  ディレクトリ構造:
+    /original/        # オリジナル動画（Glacier）
+      video001.mp4
+    /480p/            # 低解像度（Standard-IA）
+      video001.mp4
+    /720p/            # 中解像度（Standard）
+      video001.mp4
+    /1080p/           # 高解像度（Standard）
+      video001.mp4
+  
+  ストレージクラス最適化:
+    - 1080p（20%再生）: Standard
+    - 720p（50%再生）: Standard
+    - 480p（30%再生）: Standard-IA
+    - Original: Glacier（バックアップのみ）
+
+CloudFront設定:
+  ディストリビューション:
+    - オリジン: S3バケット
+    - Price Class: All（グローバル配信）
+    - キャッシュTTL: 86400秒
+    - 圧縮: 無効（動画は既に圧縮済み）
+  
+  署名付きURL:
+    - 有料会員のみアクセス
+    - 有効期限: 1時間
+    - IP制限: オプション
+
+Lambda@Edge:
+  - デバイス判定 → 解像度選択
+  - モバイル → 480p/720p
+  - PC → 720p/1080p
+
+コスト試算（月間100万再生、平均200MB/動画）:
+  - S3ストレージ（5TB）: $115/月
+  - CloudFront転送（200TB）: $17,000/月
+  - Lambda@Edge: $50/月
+  合計: $17,165/月
+
+最適化後:
+  - Intelligent-Tiering: $112/月（ストレージ）
+  - CloudFront（キャッシュヒット率90%）: $1,700/月
+  - Lambda@Edge: $50/月
+  合計: $1,862/月（89%削減）
+```
+
+**実装例（署名付きURL生成）:**
+```python
+import boto3
+from botocore.signers import CloudFrontSigner
+from cryptography.hazmat.primitives import serialization
+import datetime
+
+def generate_signed_url(video_key, expire_minutes=60):
+    """
+    CloudFront署名付きURL生成
+    """
+    cloudfront_domain = "d1234567890.cloudfront.net"
+    key_id = "APKAXXXXXXXXXXXXXXXX"
+    
+    # 秘密鍵読み込み
+    with open('cloudfront_private_key.pem', 'rb') as key_file:
+        private_key = serialization.load_pem_private_key(
+            key_file.read(),
+            password=None
+        )
+    
+    def rsa_signer(message):
+        return private_key.sign(message, padding.PKCS1v15(), hashes.SHA1())
+    
+    # 有効期限設定
+    expire_date = datetime.datetime.now() + datetime.timedelta(minutes=expire_minutes)
+    
+    # 署名付きURL生成
+    cloudfront_signer = CloudFrontSigner(key_id, rsa_signer)
+    url = f"https://{cloudfront_domain}/{video_key}"
+    
+    signed_url = cloudfront_signer.generate_presigned_url(
+        url,
+        date_less_than=expire_date
+    )
+    
+    return signed_url
+
+# 使用例
+signed_url = generate_signed_url("720p/video001.mp4", expire_minutes=60)
+print(f"署名付きURL: {signed_url}")
+```
+
+**実務での判断ポイント:**
+- **Intelligent-Tiering**: アクセスパターン不明な場合は必須
+- **CloudFront必須**: S3直接配信は転送コストが10倍
+- **署名付きURL**: 有料コンテンツには必須
+- **キャッシュヒット率**: 90%以上を目標（CloudWatch で監視）
+- **HLS/DASH**: ストリーミングにはメディアパッケージング推奨
+
+### 5. ログ集約（コンプライアンス対応）
+
+#### シナリオ: 全社ログの一元管理
+
+**状況:**
+```
+企業: エンタープライズ企業
+要件:
+- 全AWSアカウント（50個）のログ集約
+- CloudTrail、VPC Flow Logs、ALBログ
+- 監査対応（2年間保持）
+- セキュリティインシデント調査
+- コスト最適化
+```
+
+**S3ログ集約構成:**
+```yaml
+ログ収集:
+  CloudTrail:
+    - 全リージョン有効化
+    - S3バケット: company-logs/cloudtrail/
+    - パーティション: account_id/region/year/month/day/
+  
+  VPC Flow Logs:
+    - 全VPC有効化
+    - S3バケット: company-logs/vpc-flow-logs/
     - 圧縮: gzip
-    - ライフサイクル: 自動削除
+  
+  ALB Access Logs:
+    - 全ALB有効化
+    - S3バケット: company-logs/alb/
 
-分析:
+S3バケット設計:
+  company-logs/
+    ├─ cloudtrail/
+    │  └─ account=123456789012/
+    │     └─ region=ap-northeast-1/
+    │        └─ year=2024/month=01/day=01/
+    ├─ vpc-flow-logs/
+    └─ alb/
+
+ライフサイクル:
+  - 30日後: Standard → Standard-IA（アクセス頻度低下）
+  - 90日後: Standard-IA → Glacier（長期保存）
+  - 730日後: 削除（2年保持）
+
+分析基盤:
   - Athena: SQLクエリ
-  - QuickSight: 可視化
+  - Glue: データカタログ
+  - QuickSight: ダッシュボード
+  - Security Hub: セキュリティ分析
+
+コスト試算（50アカウント、100GB/日）:
+  - S3ストレージ（3TB/月）:
+    - Hot（1ヶ月）: 100GB × $0.023 = $2.30
+    - Warm（2ヶ月）: 200GB × $0.0125 = $2.50
+    - Cold（21ヶ月）: 2.7TB × $0.004 = $10.80
+    合計: $15.60/月
+  
+  - Athena（月10回分析）: $5/月
+  - Glue Crawler: $5/月
+  
+  合計: $25.60/月（年間 $307）
 ```
 
-### 5. メディア配信
+**Athenaクエリ例（セキュリティ調査）:**
+```sql
+-- 特定IPアドレスからのAPIコール検索
+SELECT
+  eventtime,
+  eventname,
+  sourceipaddress,
+  useragent,
+  errorcode
+FROM cloudtrail_logs
+WHERE 
+  year = '2024'
+  AND month = '01'
+  AND sourceipaddress = '203.0.113.1'
+ORDER BY eventtime DESC
+LIMIT 100;
 
-```yaml
-構成:
-  S3 + CloudFront:
-    - S3: 動画、画像保存
-    - CloudFront: グローバル配信
-    - Lambda@Edge: 画像リサイズ
-
-最適化:
-  - 複数解像度保存
-  - Transfer Acceleration
-  - Intelligent-Tiering
+-- 失敗したログイン試行の検索
+SELECT
+  eventtime,
+  sourceipaddress,
+  useragent,
+  COUNT(*) as attempt_count
+FROM cloudtrail_logs
+WHERE 
+  eventname = 'ConsoleLogin'
+  AND errorcode = 'Failed authentication'
+  AND year = '2024'
+GROUP BY eventtime, sourceipaddress, useragent
+HAVING attempt_count > 5
+ORDER BY attempt_count DESC;
 ```
+
+**実務での判断ポイント:**
+- **パーティション必須**: account_id/region/year/month/day で分割
+- **圧縮**: gzip で70%削減（Athenaも対応）
+- **Athena最適化**: Parquet形式でクエリコスト90%削減
+- **Security Hub統合**: 自動脅威検知
+
+### まとめ: S3活用の実務判断フロー
+
+```
+静的コンテンツ:
+  → S3 + CloudFront（EC2比80%削減）
+  → バージョニング必須
+
+データ分析:
+  → S3 Data Lake + Athena
+  → ライフサイクル自動化
+  → Parquet形式推奨
+
+バックアップ:
+  → クロスリージョンレプリケーション
+  → S3 Object Lock（改ざん防止）
+  → 定期復旧訓練
+
+動画配信:
+  → CloudFront必須（キャッシュ90%以上）
+  → Intelligent-Tiering検討
+  → 署名付きURL（有料コンテンツ）
+
+ログ集約:
+  → パーティション設計
+  → Athena + Glue
+  → Glacier自動移行
+```
+
+**実務での失敗パターン:**
+1. **S3単体配信**: CloudFrontなしで高額転送コスト
+2. **ライフサイクル未設定**: 古いデータが残りコスト増
+3. **パーティション未設定**: Athenaクエリが全スキャン
+4. **バージョニング未設定**: 誤削除時の復旧不可
