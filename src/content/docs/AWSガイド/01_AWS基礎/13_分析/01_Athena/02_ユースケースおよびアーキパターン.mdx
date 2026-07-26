@@ -1,0 +1,334 @@
+---
+title: "ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## ユースケース
+
+### 1. ログ分析
+
+```yaml
+シナリオ:
+  - CloudFront / ALB / VPC Flow Logs分析
+  - S3に保存されたログ
+  - アドホッククエリ
+
+実装:
+  1. ログをS3に保存
+  2. Glue Crawlerでテーブル作成
+  3. Athenaでクエリ
+  4. QuickSightで可視化
+```
+
+### 2. データレイク分析
+
+```yaml
+シナリオ:
+  - 大量データをS3に集約
+  - 部門横断的な分析
+  - コスト効率重視
+
+実装:
+  データ収集:
+    - Kinesis Firehose
+    - AWS Glue ETL
+    - Database Migration Service
+  
+  カタログ:
+    - Glue Crawler
+    - 自動スキーマ管理
+  
+  分析:
+    - Athena（アドホック）
+    - QuickSight（ダッシュボード）
+```
+
+### 3. コスト分析
+
+```yaml
+シナリオ:
+  - Cost and Usage Report分析
+  - リソース使用状況分析
+  - タグベースコスト配分
+
+実装:
+  1. CURをS3に出力（Parquet）
+  2. Glue Crawlerでカタログ作成
+  3. Athenaでクエリ
+     - サービス別コスト
+     - タグ別集計
+     - トレンド分析
+```
+
+## アーキテクチャパターン
+
+### パターン1: 基本的なログ分析
+
+```yaml
+構成:
+  ALB:
+    - アクセスログ → S3
+  
+  S3:
+    - ログファイル保存
+    - パーティション: year/month/day
+  
+  Glue Crawler:
+    - 自動テーブル作成
+    - パーティション検出
+  
+  Athena:
+    - SQLクエリ
+  
+  QuickSight:
+    - ダッシュボード
+
+SQL例:
+  SELECT 
+    request_url,
+    COUNT(*) as access_count,
+    AVG(target_processing_time) as avg_response_time
+  FROM alb_logs
+  WHERE year='2024' AND month='01'
+  GROUP BY request_url
+  ORDER BY access_count DESC
+  LIMIT 10
+```
+
+### パターン2: データ変換パイプライン
+
+```yaml
+構成:
+  ソースデータ（S3）:
+    - CSV / JSON
+    - 非最適化
+  
+  Athena CTAS:
+    - Parquet変換
+    - パーティション作成
+    - 圧縮
+  
+  変換後データ（S3）:
+    - Parquet
+    - 最適化済み
+  
+  Athena:
+    - 高速クエリ
+    - コスト削減
+
+CTAS例:
+  CREATE TABLE optimized_logs
+  WITH (
+    format='PARQUET',
+    parquet_compression='SNAPPY',
+    partitioned_by=ARRAY['year','month','day'],
+    external_location='s3://bucket/optimized/'
+  ) AS
+  SELECT 
+    *,
+    year(timestamp) as year,
+    month(timestamp) as month,
+    day(timestamp) as day
+  FROM raw_logs
+```
+
+### パターン3: フェデレーテッドクエリ
+
+```yaml
+構成:
+  データソース:
+    - S3（履歴データ）
+    - RDS（最新データ）
+    - DynamoDB（メタデータ）
+  
+  Lambda Data Source Connector:
+    - RDS接続
+    - DynamoDB接続
+  
+  Athena:
+    - 横断クエリ
+    - JOIN可能
+
+SQL例:
+  SELECT 
+    s3_logs.user_id,
+    COUNT(*) as access_count,
+    rds_users.user_name,
+    rds_users.subscription_tier
+  FROM 
+    s3_logs
+  JOIN 
+    rds_users ON s3_logs.user_id = rds_users.id
+  WHERE 
+    s3_logs.year='2024'
+  GROUP BY 
+    s3_logs.user_id, rds_users.user_name, rds_users.subscription_tier
+```
+
+### パターン4: 準リアルタイム分析
+
+```yaml
+構成:
+  Kinesis Firehose:
+    - データ収集
+    - S3配信（バッファ60秒）
+    - Parquet変換
+  
+  Glue Crawler:
+    - 定期実行（5分毎）
+    - パーティション更新
+  
+  Athena:
+    - 最新データクエリ
+  
+  QuickSight:
+    - SPICEリフレッシュ
+    - ダッシュボード更新
+
+特徴:
+  - 準リアルタイム（数分遅延）
+  - サーバーレス
+  - コスト効率
+```
+
+## 実装例
+
+### テーブル作成（DDL）
+
+```sql
+-- 外部テーブル作成
+CREATE EXTERNAL TABLE IF NOT EXISTS alb_logs (
+  type string,
+  time string,
+  elb string,
+  client_ip string,
+  client_port int,
+  target_ip string,
+  target_port int,
+  request_processing_time double,
+  target_processing_time double,
+  response_processing_time double,
+  elb_status_code string,
+  target_status_code string,
+  received_bytes bigint,
+  sent_bytes bigint,
+  request_verb string,
+  request_url string,
+  request_proto string,
+  user_agent string,
+  ssl_cipher string,
+  ssl_protocol string
+)
+PARTITIONED BY (
+  year string,
+  month string,
+  day string
+)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.RegexSerDe'
+WITH SERDEPROPERTIES (
+  'serialization.format' = '1',
+  'input.regex' = '([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*):([0-9]*) ([^ ]*)[:-]([0-9]*) ([-.0-9]*) ([-.0-9]*) ([-.0-9]*) (|[-0-9]*) (-|[-0-9]*) ([-0-9]*) ([-0-9]*) \"([^ ]*) ([^ ]*) (- |[^ ]*)\" \"([^\"]*)\" ([A-Z0-9-]+) ([A-Za-z0-9.-]*)$'
+)
+LOCATION 's3://my-bucket/alb-logs/';
+
+-- パーティション追加
+ALTER TABLE alb_logs ADD
+PARTITION (year='2024', month='01', day='01')
+LOCATION 's3://my-bucket/alb-logs/year=2024/month=01/day=01/';
+
+-- パーティション自動検出
+MSCK REPAIR TABLE alb_logs;
+```
+
+### CTAS（データ変換）
+
+```sql
+-- CSV → Parquet変換
+CREATE TABLE analytics_events_parquet
+WITH (
+  format = 'PARQUET',
+  parquet_compression = 'SNAPPY',
+  partitioned_by = ARRAY['event_date'],
+  external_location = 's3://my-bucket/optimized/events/'
+) AS
+SELECT 
+  user_id,
+  event_type,
+  event_timestamp,
+  properties,
+  CAST(date_format(from_iso8601_timestamp(event_timestamp), '%Y-%m-%d') AS VARCHAR) as event_date
+FROM analytics_events_csv
+WHERE year = '2024'
+  AND month = '01';
+
+-- 集計結果保存
+CREATE TABLE daily_summary
+WITH (
+  format = 'PARQUET',
+  external_location = 's3://my-bucket/summary/'
+) AS
+SELECT 
+  event_date,
+  event_type,
+  COUNT(DISTINCT user_id) as unique_users,
+  COUNT(*) as total_events,
+  AVG(CAST(json_extract_scalar(properties, '$.duration') AS DOUBLE)) as avg_duration
+FROM analytics_events_parquet
+GROUP BY event_date, event_type;
+```
+
+### クエリ最適化例
+
+```sql
+-- ❌ 非効率
+SELECT * FROM logs
+WHERE timestamp > '2024-01-01';
+
+-- ✅ 効率的（パーティション利用）
+SELECT 
+  user_id, 
+  event_type, 
+  timestamp
+FROM logs
+WHERE year='2024' 
+  AND month='01'
+  AND event_type = 'purchase';
+
+-- ✅ サブクエリ最適化
+WITH filtered_logs AS (
+  SELECT user_id, event_type, properties
+  FROM logs
+  WHERE year='2024' AND month='01'
+    AND event_type IN ('purchase', 'signup')
+)
+SELECT 
+  event_type,
+  COUNT(DISTINCT user_id) as unique_users
+FROM filtered_logs
+GROUP BY event_type;
+```
+
+### Prepared Statements
+
+```sql
+-- クエリパラメータ化
+PREPARE query_by_date FROM
+SELECT user_id, event_type, COUNT(*) as count
+FROM logs
+WHERE year = ? AND month = ?
+GROUP BY user_id, event_type;
+
+-- 実行
+EXECUTE query_by_date USING '2024', '01';
+```
+
+## まとめ
+
+**アーキテクチャ設計のポイント:**
+- Parquet/ORC でコスト削減
+- パーティション設計でスキャン量削減
+- Glue Crawler で自動カタログ管理
+- CTAS でデータ最適化
+- QuickSight で可視化
+- フェデレーテッドクエリで柔軟な分析
+- ワークグループでアクセス制御
