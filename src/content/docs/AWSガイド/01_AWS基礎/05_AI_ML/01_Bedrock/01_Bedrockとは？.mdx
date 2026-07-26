@@ -1,0 +1,535 @@
+---
+title: "Amazon Bedrockとは？"
+label: "Bedrockとは？"
+---
+
+## Amazon Bedrock とは？
+
+Amazon Bedrockは、複数の基盤モデル（Foundation Models）をAPIで利用できるフルマネージド生成AIサービスです。
+
+### 基本概念
+
+#### Bedrockの特徴
+
+```yaml
+主要機能:
+  - 複数のAIモデルへの統一アクセス
+  - サーバーレスアーキテクチャ
+  - エンタープライズレベルのセキュリティ
+  - カスタマイズ可能なモデル
+  - RAG（Retrieval-Augmented Generation）サポート
+
+メリット:
+  - インフラ管理不要
+  - 従量課金制
+  - プライバシー保護
+  - マルチモデル対応
+  - AWS統合
+```
+
+### 利用可能な基盤モデル
+
+#### 1. Anthropic Claude
+
+| モデル | 特徴 | 最適な用途 | 入力トークン価格 | 出力トークン価格 |
+|---|---|---|---|---|
+| Claude 3.5 Sonnet | 最新版、高性能 | 複雑な推論、コード生成 | $3.00/1M | $15.00/1M |
+| Claude 3 Opus | 最高性能 | 高度な分析、創作活動 | $15.00/1M | $75.00/1M |
+| Claude 3 Haiku | 高速・低コスト | 簡単なタスク、大量処理 | $0.25/1M | $1.25/1M |
+
+**特徴:**
+- 長いコンテキストウィンドウ（200K トークン）
+- 高度な推論能力
+- 日本語対応が優れている
+- 安全性が高い
+
+#### 2. Meta Llama
+
+| モデル | 特徴 | 最適な用途 | 入力トークン価格 | 出力トークン価格 |
+|---|---|---|---|---|
+| Llama 3.1 405B | 最大規模 | 複雑なタスク、マルチモーダル | $5.32/1M | $16.00/1M |
+| Llama 3.1 70B | バランス型 | 汎用的なタスク | $0.99/1M | $2.99/1M |
+| Llama 3.1 8B | 軽量版 | 高速処理、コスト削減 | $0.22/1M | $0.22/1M |
+
+**特徴:**
+- オープンソースモデル
+- コストパフォーマンスが良い
+- カスタマイズ可能
+- マルチリンガル対応
+
+#### 3. Amazon Titan
+
+| モデル | 特徴 | 最適な用途 | 価格 |
+|---|---|---|---|
+| Titan Text Premier | 高性能テキスト生成 | ビジネス文書、要約 | $0.50/1M 〜 $1.50/1M |
+| Titan Embeddings | テキスト埋め込み | 検索、分類、RAG | $0.0001/1K トークン |
+| Titan Image Generator | 画像生成 | マーケティング素材 | $0.01/画像 |
+
+**特徴:**
+- AWS独自開発
+- ビジネス用途に最適化
+- 埋め込みモデルが強力
+- 画像生成対応
+
+#### 4. Stability AI Stable Diffusion
+
+| モデル | 特徴 | 最適な用途 | 価格 |
+|---|---|---|---|
+| SDXL 1.0 | 高品質画像生成 | アート、デザイン | $0.04/画像 (1024x1024) |
+
+**特徴:**
+- 高品質な画像生成
+- テキストから画像
+- 画像から画像
+- カスタマイズ可能
+
+### Bedrockの主要機能
+
+#### 1. 基盤モデルAPIアクセス
+
+```python
+import boto3
+import json
+
+bedrock_runtime = boto3.client(
+    service_name='bedrock-runtime',
+    region_name='us-east-1'
+)
+
+def invoke_claude_model(prompt_text, max_tokens=1000):
+    """
+    Claude 3.5 Sonnetモデルを呼び出す関数
+    
+    Args:
+        prompt_text (str): プロンプトテキスト
+        max_tokens (int): 最大生成トークン数
+    
+    Returns:
+        str: 生成されたテキスト
+    
+    Raises:
+        ClientError: API呼び出しエラー時
+    """
+    try:
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": max_tokens,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt_text
+                }
+            ]
+        })
+        
+        response = bedrock_runtime.invoke_model(
+            modelId='anthropic.claude-3-5-sonnet-20241022-v2:0',
+            body=body,
+            contentType='application/json',
+            accept='application/json'
+        )
+        
+        response_body = json.loads(response['body'].read())
+        generated_text = response_body['content'][0]['text']
+        
+        return generated_text
+        
+    except Exception as error:
+        error_message = f"Error invoking Claude model. Prompt: '{prompt_text}', Max Tokens: {max_tokens}, Error: {str(error)}"
+        raise Exception(error_message) from error
+
+# 使用例
+result = invoke_claude_model("日本の首都は？")
+print(result)
+```
+
+#### 2. ストリーミング応答
+
+```python
+def invoke_claude_streaming(prompt_text, max_tokens=1000):
+    """
+    Claude 3.5 Sonnetモデルをストリーミングで呼び出す関数
+    
+    Args:
+        prompt_text (str): プロンプトテキスト
+        max_tokens (int): 最大生成トークン数
+    
+    Yields:
+        str: 生成されたテキストチャンク
+    
+    Raises:
+        ClientError: API呼び出しエラー時
+    """
+    try:
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": max_tokens,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt_text
+                }
+            ]
+        })
+        
+        response = bedrock_runtime.invoke_model_with_response_stream(
+            modelId='anthropic.claude-3-5-sonnet-20241022-v2:0',
+            body=body,
+            contentType='application/json',
+            accept='application/json'
+        )
+        
+        stream = response.get('body')
+        if stream:
+            for event in stream:
+                chunk = event.get('chunk')
+                if chunk:
+                    chunk_data = json.loads(chunk.get('bytes').decode())
+                    
+                    if chunk_data['type'] == 'content_block_delta':
+                        if 'delta' in chunk_data and 'text' in chunk_data['delta']:
+                            yield chunk_data['delta']['text']
+                            
+    except Exception as error:
+        error_message = f"Error streaming from Claude model. Prompt: '{prompt_text}', Max Tokens: {max_tokens}, Error: {str(error)}"
+        raise Exception(error_message) from error
+
+# 使用例
+for text_chunk in invoke_claude_streaming("日本の観光地を3つ教えてください"):
+    print(text_chunk, end='', flush=True)
+```
+
+#### 3. Knowledge Bases（RAG）
+
+```python
+def query_knowledge_base(query_text, knowledge_base_id, max_results=5):
+    """
+    Bedrock Knowledge Baseにクエリを送信する関数
+    
+    Args:
+        query_text (str): クエリテキスト
+        knowledge_base_id (str): Knowledge Base ID
+        max_results (int): 最大取得結果数
+    
+    Returns:
+        dict: クエリ結果と参照元情報
+    
+    Raises:
+        ClientError: API呼び出しエラー時
+    """
+    bedrock_agent = boto3.client(
+        service_name='bedrock-agent-runtime',
+        region_name='us-east-1'
+    )
+    
+    try:
+        response = bedrock_agent.retrieve_and_generate(
+            input={
+                'text': query_text
+            },
+            retrieveAndGenerateConfiguration={
+                'type': 'KNOWLEDGE_BASE',
+                'knowledgeBaseConfiguration': {
+                    'knowledgeBaseId': knowledge_base_id,
+                    'modelArn': 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0',
+                    'retrievalConfiguration': {
+                        'vectorSearchConfiguration': {
+                            'numberOfResults': max_results
+                        }
+                    }
+                }
+            }
+        )
+        
+        generated_text = response['output']['text']
+        citations = response.get('citations', [])
+        
+        return {
+            'answer': generated_text,
+            'citations': citations
+        }
+        
+    except Exception as error:
+        error_message = f"Error querying knowledge base. Query: '{query_text}', KB ID: '{knowledge_base_id}', Error: {str(error)}"
+        raise Exception(error_message) from error
+
+# 使用例
+result = query_knowledge_base(
+    "データベース設計のベストプラクティスは？",
+    "YOUR_KNOWLEDGE_BASE_ID"
+)
+print(f"回答: {result['answer']}")
+```
+
+#### 4. カスタムモデル（Fine-tuning）
+
+```python
+def create_model_customization_job(
+    job_name,
+    custom_model_name,
+    base_model_arn,
+    training_data_s3_uri,
+    validation_data_s3_uri,
+    role_arn
+):
+    """
+    モデルカスタマイゼーションジョブを作成する関数
+    
+    Args:
+        job_name (str): ジョブ名
+        custom_model_name (str): カスタムモデル名
+        base_model_arn (str): ベースモデルARN
+        training_data_s3_uri (str): トレーニングデータのS3 URI
+        validation_data_s3_uri (str): 検証データのS3 URI
+        role_arn (str): IAMロールARN
+    
+    Returns:
+        dict: ジョブ作成結果
+    
+    Raises:
+        ClientError: API呼び出しエラー時
+    """
+    bedrock_client = boto3.client(
+        service_name='bedrock',
+        region_name='us-east-1'
+    )
+    
+    try:
+        response = bedrock_client.create_model_customization_job(
+            jobName=job_name,
+            customModelName=custom_model_name,
+            roleArn=role_arn,
+            baseModelIdentifier=base_model_arn,
+            trainingDataConfig={
+                's3Uri': training_data_s3_uri
+            },
+            validationDataConfig={
+                's3Uri': validation_data_s3_uri
+            },
+            outputDataConfig={
+                's3Uri': f's3://my-bucket/output/{job_name}/'
+            },
+            hyperParameters={
+                'epochCount': '3',
+                'batchSize': '1',
+                'learningRate': '0.00001'
+            }
+        )
+        
+        return response
+        
+    except Exception as error:
+        error_message = (
+            f"Error creating model customization job. "
+            f"Job Name: '{job_name}', "
+            f"Model Name: '{custom_model_name}', "
+            f"Base Model: '{base_model_arn}', "
+            f"Error: {str(error)}"
+        )
+        raise Exception(error_message) from error
+```
+
+### セキュリティとガバナンス
+
+#### 1. データプライバシー
+
+```yaml
+プライバシー保護:
+  - 入力データはモデルトレーニングに使用されない
+  - データは保存されない（処理後に削除）
+  - VPC経由のプライベート接続サポート
+  - 暗号化（転送中・保管中）
+```
+
+#### 2. IAMポリシー例
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:Retrieve",
+        "bedrock:RetrieveAndGenerate"
+      ],
+      "Resource": "arn:aws:bedrock:*:*:knowledge-base/*"
+    }
+  ]
+}
+```
+
+### 料金体系
+
+#### 従量課金モデル
+
+```yaml
+課金体系:
+  テキスト生成:
+    - 入力トークン単位
+    - 出力トークン単位
+    - モデルにより価格が異なる
+  
+  画像生成:
+    - 1画像あたりの課金
+    - 解像度により価格が異なる
+  
+  Knowledge Bases:
+    - 保存データサイズ
+    - クエリ実行回数
+  
+  カスタムモデル:
+    - トレーニング時間
+    - ストレージ
+    - 推論コスト
+```
+
+### ベストプラクティス
+
+#### 1. コスト最適化
+
+```python
+def optimize_bedrock_costs(prompt_text, complexity="simple"):
+    """
+    タスクの複雑さに応じてモデルを選択する関数
+    
+    Args:
+        prompt_text (str): プロンプトテキスト
+        complexity (str): タスクの複雑さ（simple/medium/complex）
+    
+    Returns:
+        str: 生成されたテキスト
+    
+    Raises:
+        ValueError: 無効な複雑さレベルが指定された場合
+    """
+    model_map = {
+        "simple": "anthropic.claude-3-haiku-20240307-v1:0",  # 低コスト
+        "medium": "anthropic.claude-3-5-sonnet-20241022-v2:0",  # バランス
+        "complex": "anthropic.claude-3-opus-20240229-v1:0"  # 高性能
+    }
+    
+    if complexity not in model_map:
+        raise ValueError(f"Invalid complexity level: '{complexity}'. Must be one of: simple, medium, complex")
+    
+    model_id = model_map[complexity]
+    
+    try:
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 1000,
+            "messages": [{"role": "user", "content": prompt_text}]
+        })
+        
+        response = bedrock_runtime.invoke_model(
+            modelId=model_id,
+            body=body,
+            contentType='application/json',
+            accept='application/json'
+        )
+        
+        response_body = json.loads(response['body'].read())
+        return response_body['content'][0]['text']
+        
+    except Exception as error:
+        error_message = (
+            f"Error optimizing Bedrock costs. "
+            f"Prompt: '{prompt_text}', "
+            f"Complexity: '{complexity}', "
+            f"Model: '{model_id}', "
+            f"Error: {str(error)}"
+        )
+        raise Exception(error_message) from error
+```
+
+#### 2. エラーハンドリング
+
+```python
+import time
+from botocore.exceptions import ClientError
+
+def invoke_with_retry(prompt_text, max_retries=3, backoff_factor=2):
+    """
+    リトライ機能付きのモデル呼び出し関数
+    
+    Args:
+        prompt_text (str): プロンプトテキスト
+        max_retries (int): 最大リトライ回数
+        backoff_factor (int): バックオフ係数
+    
+    Returns:
+        str: 生成されたテキスト
+    
+    Raises:
+        ClientError: 最大リトライ回数に達してもエラーが解決しない場合
+    """
+    for attempt in range(max_retries):
+        try:
+            body = json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 1000,
+                "messages": [{"role": "user", "content": prompt_text}]
+            })
+            
+            response = bedrock_runtime.invoke_model(
+                modelId='anthropic.claude-3-5-sonnet-20241022-v2:0',
+                body=body,
+                contentType='application/json',
+                accept='application/json'
+            )
+            
+            response_body = json.loads(response['body'].read())
+            return response_body['content'][0]['text']
+            
+        except ClientError as error:
+            error_code = error.response['Error']['Code']
+            
+            if error_code == 'ThrottlingException':
+                if attempt < max_retries - 1:
+                    wait_time = backoff_factor ** attempt
+                    print(f"ThrottlingException: Retrying in {wait_time} seconds... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                    continue
+            
+            error_message = (
+                f"Error invoking model with retry. "
+                f"Prompt: '{prompt_text}', "
+                f"Attempt: {attempt + 1}/{max_retries}, "
+                f"Error Code: '{error_code}', "
+                f"Error: {str(error)}"
+            )
+            raise ClientError(
+                {'Error': {'Code': error_code, 'Message': error_message}},
+                'invoke_model'
+            ) from error
+    
+    error_message = f"Max retries ({max_retries}) exceeded for prompt: '{prompt_text}'"
+    raise ClientError(
+        {'Error': {'Code': 'MaxRetriesExceeded', 'Message': error_message}},
+        'invoke_model'
+    )
+```
+
+### まとめ
+
+Amazon Bedrockは、エンタープライズレベルの生成AIアプリケーションを構築するための強力なプラットフォームです。
+
+**主要ポイント:**
+- 複数の基盤モデルへの統一アクセス
+- フルマネージドでインフラ管理不要
+- エンタープライズグレードのセキュリティ
+- 柔軟な料金体系
+- AWS生態系との統合
+
+次のセクションでは、具体的なユースケースとアーキテクチャパターンを見ていきます。

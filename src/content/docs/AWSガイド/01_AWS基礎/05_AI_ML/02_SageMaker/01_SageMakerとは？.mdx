@@ -1,0 +1,398 @@
+---
+title: "Amazon SageMakerとは？"
+label: "SageMakerとは？"
+---
+
+## Amazon SageMaker とは？
+
+Amazon SageMakerは、機械学習モデルの構築、トレーニング、デプロイを統合的に行えるフルマネージドサービスです。
+
+### 基本概念
+
+#### SageMakerの特徴
+
+```yaml
+主要機能:
+  - Jupyter Notebookベースの開発環境
+  - 組み込みアルゴリズムとフレームワーク
+  - 分散トレーニング
+  - 自動モデルチューニング
+  - マネージド推論エンドポイント
+  - MLOps機能
+
+メリット:
+  - エンドツーエンドのML開発
+  - スケーラブルなトレーニング
+  - 本番環境へのデプロイが容易
+  - コスト最適化機能
+  - AWSサービスとの統合
+```
+
+### SageMakerの主要コンポーネント
+
+#### 1. SageMaker Studio
+
+```yaml
+概要:
+  - 統合開発環境（IDE）
+  - Jupyter Notebookベース
+  - 視覚的なワークフロー管理
+
+主要機能:
+  - コード開発
+  - データ探索
+  - モデルトレーニング
+  - デバッグ・プロファイリング
+  - デプロイメント管理
+```
+
+#### 2. SageMaker Notebooks
+
+```python
+import sagemaker
+from sagemaker import get_execution_role
+from sagemaker.sklearn import SKLearn
+
+role = get_execution_role()
+session = sagemaker.Session()
+
+sklearn_estimator = SKLearn(
+    entry_point='train.py',
+    role=role,
+    instance_type='ml.m5.xlarge',
+    framework_version='1.2-1',
+    py_version='py3',
+    hyperparameters={
+        'n_estimators': 100,
+        'max_depth': 5
+    }
+)
+
+sklearn_estimator.fit({'train': 's3://my-bucket/train'})
+```
+
+#### 3. SageMaker Training
+
+```yaml
+トレーニングオプション:
+  組み込みアルゴリズム:
+    - XGBoost
+    - Linear Learner
+    - K-Means
+    - Object Detection
+    - Semantic Segmentation
+  
+  フレームワーク:
+    - TensorFlow
+    - PyTorch
+    - MXNet
+    - Scikit-learn
+    - Hugging Face
+  
+  カスタムアルゴリズム:
+    - Dockerコンテナ
+    - 独自のトレーニングスクリプト
+```
+
+**トレーニング例:**
+
+```python
+import boto3
+import sagemaker
+from sagemaker.pytorch import PyTorch
+
+sagemaker_session = sagemaker.Session()
+role = sagemaker.get_execution_role()
+
+pytorch_estimator = PyTorch(
+    entry_point='training_script.py',
+    role=role,
+    framework_version='2.0.0',
+    py_version='py310',
+    instance_type='ml.p3.2xlarge',
+    instance_count=2,
+    volume_size=50,
+    max_run=86400,
+    hyperparameters={
+        'epochs': 50,
+        'batch_size': 32,
+        'learning_rate': 0.001
+    },
+    use_spot_instances=True,
+    max_wait=90000
+)
+
+pytorch_estimator.fit({
+    'train': 's3://my-bucket/train',
+    'validation': 's3://my-bucket/validation'
+})
+```
+
+#### 4. SageMaker Inference
+
+```yaml
+推論オプション:
+  リアルタイム推論:
+    - エンドポイント
+    - 低レイテンシー
+    - 自動スケーリング
+  
+  バッチ推論:
+    - Transform Jobs
+    - 大量データ処理
+    - コスト効率的
+  
+  サーバーレス推論:
+    - 自動スケーリング
+    - 従量課金
+    - 間欠的なトラフィック向け
+  
+  非同期推論:
+    - 長時間実行
+    - キューベース
+    - 大きなペイロード対応
+```
+
+**推論エンドポイントのデプロイ:**
+
+```python
+from sagemaker.pytorch import PyTorchModel
+
+pytorch_model = PyTorchModel(
+    model_data=pytorch_estimator.model_data,
+    role=role,
+    framework_version='2.0.0',
+    py_version='py310',
+    entry_point='inference.py'
+)
+
+predictor = pytorch_model.deploy(
+    instance_type='ml.m5.xlarge',
+    initial_instance_count=2,
+    endpoint_name='my-pytorch-endpoint'
+)
+
+result = predictor.predict(input_data)
+```
+
+#### 5. SageMaker Autopilot
+
+```yaml
+自動機械学習（AutoML）:
+  機能:
+    - 自動データ前処理
+    - 自動アルゴリズム選択
+    - 自動ハイパーパラメータチューニング
+    - モデル説明可能性
+  
+  対応タスク:
+    - 回帰
+    - 二値分類
+    - 多クラス分類
+    - 時系列予測
+```
+
+**Autopilot使用例:**
+
+```python
+from sagemaker.automl.automl import AutoML
+
+automl = AutoML(
+    role=role,
+    target_attribute_name='target',
+    output_path='s3://my-bucket/autopilot-output/',
+    problem_type='Regression',
+    max_candidates=10
+)
+
+automl.fit(
+    inputs='s3://my-bucket/train.csv',
+    wait=False,
+    logs=False
+)
+```
+
+### SageMaker vs Bedrock
+
+```yaml
+比較ポイント:
+
+SageMaker:
+  適用場面:
+    - カスタムMLモデルの開発
+    - 独自データでのトレーニング
+    - 高度なカスタマイズが必要
+    - MLOpsパイプラインの構築
+  
+  メリット:
+    - 完全な制御
+    - あらゆるMLタスクに対応
+    - 独自アルゴリズムの実装可能
+  
+  デメリット:
+    - 学習曲線が急
+    - インフラ管理が必要
+    - 開発に時間がかかる
+
+Bedrock:
+  適用場面:
+    - 生成AIタスク
+    - 事前学習済みモデルの利用
+    - 即座に利用開始したい
+    - インフラ管理を避けたい
+  
+  メリット:
+    - 即座に利用可能
+    - インフラ管理不要
+    - 複数の基盤モデルから選択
+  
+  デメリット:
+    - 生成AIタスクに限定
+    - カスタマイズ性が限定的
+    - 特定モデルへの依存
+
+使い分け:
+  - 生成AI（テキスト、画像）: Bedrock
+  - カスタムML（予測、分類）: SageMaker
+  - エンタープライズMLOps: SageMaker
+  - 迅速なプロトタイピング: Bedrock
+```
+
+### SageMaker MLOps
+
+#### 1. SageMaker Pipelines
+
+```python
+from sagemaker.workflow.pipeline import Pipeline
+from sagemaker.workflow.steps import ProcessingStep, TrainingStep
+from sagemaker.workflow.parameters import ParameterInteger, ParameterString
+
+instance_count_param = ParameterInteger(
+    name="InstanceCount",
+    default_value=1
+)
+
+input_data_param = ParameterString(
+    name="InputData",
+    default_value="s3://my-bucket/input"
+)
+
+processing_step = ProcessingStep(
+    name="DataProcessing",
+    processor=sklearn_processor,
+    inputs=[...],
+    outputs=[...]
+)
+
+training_step = TrainingStep(
+    name="ModelTraining",
+    estimator=pytorch_estimator,
+    inputs={...}
+)
+
+pipeline = Pipeline(
+    name="MyMLPipeline",
+    parameters=[
+        instance_count_param,
+        input_data_param
+    ],
+    steps=[
+        processing_step,
+        training_step
+    ]
+)
+
+pipeline.upsert(role_arn=role)
+```
+
+#### 2. SageMaker Model Registry
+
+```yaml
+モデル管理機能:
+  - バージョン管理
+  - 承認ワークフロー
+  - メタデータ管理
+  - デプロイ追跡
+  - A/Bテスト
+```
+
+#### 3. SageMaker Feature Store
+
+```yaml
+特徴量ストア:
+  機能:
+    - 特徴量の一元管理
+    - オンライン・オフライン両対応
+    - 低レイテンシーアクセス
+    - タイムトラベル機能
+  
+  ユースケース:
+    - 特徴量の再利用
+    - 一貫性の確保
+    - リアルタイム推論
+    - トレーニング・推論の統合
+```
+
+### ベストプラクティス
+
+#### 1. コスト最適化
+
+```yaml
+推奨戦略:
+  スポットインスタンス:
+    - トレーニング時に使用
+    - 最大90%のコスト削減
+    - チェックポイント機能の実装
+  
+  適切なインスタンスタイプ:
+    - 開発: ml.t3.medium
+    - トレーニング: ml.p3/ml.p4（GPU）
+    - 推論: ml.c5/ml.m5（CPU）
+  
+  自動スケーリング:
+    - 推論エンドポイント
+    - トラフィックに応じた調整
+    - コストとパフォーマンスのバランス
+  
+  サーバーレス推論:
+    - 間欠的なトラフィック
+    - 従量課金
+    - 自動スケーリング
+```
+
+#### 2. セキュリティ
+
+```yaml
+セキュリティ対策:
+  ネットワーク:
+    - VPC内でのトレーニング
+    - プライベートエンドポイント
+    - セキュリティグループ設定
+  
+  暗号化:
+    - S3データの暗号化
+    - モデルアーティファクトの暗号化
+    - KMS統合
+  
+  アクセス制御:
+    - IAMロールの最小権限
+    - リソースタグ
+    - CloudTrail監査
+```
+
+### まとめ
+
+Amazon SageMakerは、機械学習のエンドツーエンド開発を支援する強力なプラットフォームです。
+
+**主要ポイント:**
+- 開発からデプロイまでの統合環境
+- スケーラブルなトレーニングと推論
+- MLOps機能の充実
+- Bedrockとの使い分けが重要
+
+**適用場面:**
+- カスタムMLモデル開発
+- エンタープライズMLOps
+- 高度なカスタマイズが必要な場合
+
+Bedrockが生成AIに特化しているのに対し、SageMakerはあらゆる機械学習タスクに対応できる汎用的なプラットフォームです。

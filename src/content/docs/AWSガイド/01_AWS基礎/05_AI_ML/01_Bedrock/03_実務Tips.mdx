@@ -1,0 +1,737 @@
+---
+title: "Bedrock実務Tips"
+label: "実務Tips"
+---
+
+## Bedrock 実務Tips
+
+実務でBedrockを活用する際の実践的なTipsとベストプラクティスを紹介します。
+
+### コスト最適化
+
+#### 1. モデル選択の最適化
+
+```python
+def select_optimal_model(task_complexity, response_time_requirement, budget_level):
+    """
+    タスクに最適なモデルを選択する関数
+    
+    Args:
+        task_complexity (str): タスクの複雑さ（low/medium/high）
+        response_time_requirement (str): 応答時間要件（fast/normal/flexible）
+        budget_level (str): 予算レベル（tight/normal/flexible）
+    
+    Returns:
+        dict: 推奨モデルとその理由
+    
+    Raises:
+        ValueError: 無効なパラメータが指定された場合
+    """
+    valid_complexities = ["low", "medium", "high"]
+    valid_response_times = ["fast", "normal", "flexible"]
+    valid_budget_levels = ["tight", "normal", "flexible"]
+    
+    if task_complexity not in valid_complexities:
+        raise ValueError(f"Invalid task_complexity: '{task_complexity}'. Must be one of {valid_complexities}")
+    
+    if response_time_requirement not in valid_response_times:
+        raise ValueError(f"Invalid response_time_requirement: '{response_time_requirement}'. Must be one of {valid_response_times}")
+    
+    if budget_level not in valid_budget_levels:
+        raise ValueError(f"Invalid budget_level: '{budget_level}'. Must be one of {valid_budget_levels}")
+    
+    model_matrix = {
+        ("low", "fast", "tight"): {
+            "model": "Claude 3 Haiku",
+            "model_id": "anthropic.claude-3-haiku-20240307-v1:0",
+            "reason": "高速で低コスト、シンプルなタスクに最適"
+        },
+        ("medium", "normal", "normal"): {
+            "model": "Claude 3.5 Sonnet",
+            "model_id": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "reason": "バランスが取れた性能とコスト"
+        },
+        ("high", "flexible", "flexible"): {
+            "model": "Claude 3 Opus",
+            "model_id": "anthropic.claude-3-opus-20240229-v1:0",
+            "reason": "最高性能、複雑なタスクに対応"
+        }
+    }
+    
+    key = (task_complexity, response_time_requirement, budget_level)
+    
+    if key in model_matrix:
+        return model_matrix[key]
+    
+    if budget_level == "tight":
+        return model_matrix[("low", "fast", "tight")]
+    elif task_complexity == "high":
+        return model_matrix[("high", "flexible", "flexible")]
+    else:
+        return model_matrix[("medium", "normal", "normal")]
+
+# 使用例
+recommendation = select_optimal_model(
+    task_complexity="medium",
+    response_time_requirement="normal",
+    budget_level="normal"
+)
+print(f"推奨モデル: {recommendation['model']}")
+print(f"理由: {recommendation['reason']}")
+```
+
+#### 2. トークン使用量の監視とアラート
+
+```python
+import boto3
+from datetime import datetime, timedelta
+
+cloudwatch = boto3.client('cloudwatch')
+
+def monitor_token_usage(metric_namespace="BedrockApp", threshold_percentage=80):
+    """
+    トークン使用量を監視し、閾値を超えたらアラートを送信する関数
+    
+    Args:
+        metric_namespace (str): CloudWatchメトリクス名前空間
+        threshold_percentage (int): アラート閾値（パーセンテージ）
+    
+    Returns:
+        dict: 使用量統計とアラート状態
+    
+    Raises:
+        Exception: CloudWatch APIエラー時
+    """
+    try:
+        response = cloudwatch.get_metric_statistics(
+            Namespace=metric_namespace,
+            MetricName='TokensUsed',
+            Dimensions=[
+                {
+                    'Name': 'Service',
+                    'Value': 'Bedrock'
+                }
+            ],
+            StartTime=datetime.now() - timedelta(hours=24),
+            EndTime=datetime.now(),
+            Period=3600,
+            Statistics=['Sum', 'Average']
+        )
+        
+        total_tokens = sum([point['Sum'] for point in response['Datapoints']])
+        avg_tokens_per_hour = sum([point['Average'] for point in response['Datapoints']]) / len(response['Datapoints']) if response['Datapoints'] else 0
+        
+        monthly_budget_tokens = 10000000
+        current_usage_percentage = (total_tokens / monthly_budget_tokens) * 100
+        
+        alert_triggered = current_usage_percentage > threshold_percentage
+        
+        if alert_triggered:
+            send_cost_alert(current_usage_percentage, total_tokens)
+        
+        return {
+            'total_tokens_24h': total_tokens,
+            'avg_tokens_per_hour': avg_tokens_per_hour,
+            'usage_percentage': current_usage_percentage,
+            'alert_triggered': alert_triggered
+        }
+        
+    except Exception as error:
+        error_message = (
+            f"Error monitoring token usage. "
+            f"Namespace: '{metric_namespace}', "
+            f"Threshold: {threshold_percentage}%, "
+            f"Error: {str(error)}"
+        )
+        raise Exception(error_message) from error
+
+def send_cost_alert(usage_percentage, total_tokens):
+    """
+    コストアラートを送信する関数
+    
+    Args:
+        usage_percentage (float): 使用率（パーセンテージ）
+        total_tokens (int): 総トークン数
+    
+    Raises:
+        Exception: SNS送信エラー時
+    """
+    sns = boto3.client('sns')
+    
+    try:
+        message = f"""
+Bedrockトークン使用量アラート
+
+現在の使用率: {usage_percentage:.2f}%
+24時間のトークン数: {total_tokens:,}
+
+アクション推奨:
+- コスト最適化の検討
+- より軽量なモデルへの切り替え
+- キャッシング戦略の見直し
+"""
+        
+        sns.publish(
+            TopicArn='arn:aws:sns:us-east-1:123456789012:bedrock-cost-alerts',
+            Subject='Bedrockコストアラート',
+            Message=message
+        )
+        
+    except Exception as error:
+        error_message = f"Error sending cost alert. Usage: {usage_percentage:.2f}%, Tokens: {total_tokens}, Error: {str(error)}"
+        raise Exception(error_message) from error
+```
+
+#### 3. プロンプトキャッシング
+
+```python
+from functools import lru_cache
+import hashlib
+
+@lru_cache(maxsize=1000)
+def cached_bedrock_invoke(prompt_hash, model_id, max_tokens):
+    """
+    プロンプトをキャッシュしてBedrock呼び出しを最適化する関数
+    
+    Args:
+        prompt_hash (str): プロンプトのハッシュ値
+        model_id (str): モデルID
+        max_tokens (int): 最大トークン数
+    
+    Returns:
+        str: 生成されたテキスト（キャッシュまたは新規生成）
+    
+    Raises:
+        Exception: Bedrock APIエラー時
+    
+    Note:
+        同じプロンプトに対しては、キャッシュされた結果を返すため、
+        API呼び出しコストを削減できます。
+    """
+    return prompt_hash
+
+def invoke_with_cache(prompt_text, model_id='anthropic.claude-3-haiku-20240307-v1:0', max_tokens=1000):
+    """
+    キャッシュ機能付きBedrock呼び出し関数
+    
+    Args:
+        prompt_text (str): プロンプトテキスト
+        model_id (str): モデルID
+        max_tokens (int): 最大トークン数
+    
+    Returns:
+        dict: 生成結果とキャッシュヒット情報
+    
+    Raises:
+        Exception: Bedrock APIエラー時
+    """
+    prompt_hash = hashlib.sha256(
+        f"{prompt_text}:{model_id}:{max_tokens}".encode()
+    ).hexdigest()
+    
+    try:
+        cached_result = cached_bedrock_invoke(prompt_hash, model_id, max_tokens)
+        
+        if cached_result != prompt_hash:
+            return {
+                'result': cached_result,
+                'cache_hit': True,
+                'cost_saved': True
+            }
+        
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": max_tokens,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt_text
+                }
+            ]
+        })
+        
+        response = bedrock_runtime.invoke_model(
+            modelId=model_id,
+            body=body,
+            contentType='application/json',
+            accept='application/json'
+        )
+        
+        response_body = json.loads(response['body'].read())
+        result = response_body['content'][0]['text']
+        
+        cached_bedrock_invoke.cache_clear()
+        cached_bedrock_invoke(prompt_hash, model_id, max_tokens)
+        
+        return {
+            'result': result,
+            'cache_hit': False,
+            'cost_saved': False
+        }
+        
+    except Exception as error:
+        error_message = (
+            f"Error invoking with cache. "
+            f"Prompt Hash: '{prompt_hash[:16]}...', "
+            f"Model: '{model_id}', "
+            f"Error: {str(error)}"
+        )
+        raise Exception(error_message) from error
+```
+
+### パフォーマンス最適化
+
+#### 1. バッチ処理の実装
+
+```python
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def batch_process_with_bedrock(prompts_list, model_id='anthropic.claude-3-haiku-20240307-v1:0', max_workers=10):
+    """
+    複数のプロンプトを並列でバッチ処理する関数
+    
+    Args:
+        prompts_list (list): プロンプトのリスト
+        model_id (str): モデルID
+        max_workers (int): 最大並列ワーカー数
+    
+    Returns:
+        list: 各プロンプトの処理結果
+    
+    Raises:
+        Exception: バッチ処理エラー時
+    """
+    results = []
+    
+    def process_single_prompt(prompt_data):
+        """
+        単一プロンプトを処理する内部関数
+        
+        Args:
+            prompt_data (dict): プロンプトデータ（id、text）
+        
+        Returns:
+            dict: 処理結果
+        """
+        try:
+            body = json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 1000,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt_data['text']
+                    }
+                ]
+            })
+            
+            response = bedrock_runtime.invoke_model(
+                modelId=model_id,
+                body=body,
+                contentType='application/json',
+                accept='application/json'
+            )
+            
+            response_body = json.loads(response['body'].read())
+            result_text = response_body['content'][0]['text']
+            
+            return {
+                'id': prompt_data['id'],
+                'prompt': prompt_data['text'],
+                'result': result_text,
+                'success': True,
+                'error': None
+            }
+            
+        except Exception as error:
+            return {
+                'id': prompt_data['id'],
+                'prompt': prompt_data['text'],
+                'result': None,
+                'success': False,
+                'error': str(error)
+            }
+    
+    try:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_prompt = {
+                executor.submit(process_single_prompt, prompt_data): prompt_data
+                for prompt_data in prompts_list
+            }
+            
+            for future in as_completed(future_to_prompt):
+                result = future.result()
+                results.append(result)
+        
+        success_count = sum(1 for r in results if r['success'])
+        failure_count = len(results) - success_count
+        
+        return {
+            'results': results,
+            'total': len(results),
+            'success': success_count,
+            'failed': failure_count
+        }
+        
+    except Exception as error:
+        error_message = f"Error in batch processing. Total prompts: {len(prompts_list)}, Model: '{model_id}', Error: {str(error)}"
+        raise Exception(error_message) from error
+
+# 使用例
+prompts = [
+    {'id': 1, 'text': '日本の首都は？'},
+    {'id': 2, 'text': 'Pythonとは？'},
+    {'id': 3, 'text': 'AWSの主要サービスは？'}
+]
+
+batch_results = batch_process_with_bedrock(prompts)
+print(f"成功: {batch_results['success']}, 失敗: {batch_results['failed']}")
+```
+
+#### 2. ストリーミング最適化
+
+```python
+async def optimized_streaming_invoke(prompt_text, callback_function=None):
+    """
+    最適化されたストリーミング呼び出し関数
+    
+    Args:
+        prompt_text (str): プロンプトテキスト
+        callback_function (callable): チャンク受信時のコールバック関数
+    
+    Yields:
+        str: テキストチャンク
+    
+    Raises:
+        Exception: ストリーミングエラー時
+    """
+    try:
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 2000,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt_text
+                }
+            ],
+            "stream": True
+        })
+        
+        response = bedrock_runtime.invoke_model_with_response_stream(
+            modelId='anthropic.claude-3-5-sonnet-20241022-v2:0',
+            body=body,
+            contentType='application/json',
+            accept='application/json'
+        )
+        
+        stream = response.get('body')
+        accumulated_text = ""
+        
+        if stream:
+            for event in stream:
+                chunk = event.get('chunk')
+                if chunk:
+                    chunk_data = json.loads(chunk.get('bytes').decode())
+                    
+                    if chunk_data['type'] == 'content_block_delta':
+                        if 'delta' in chunk_data and 'text' in chunk_data['delta']:
+                            text_chunk = chunk_data['delta']['text']
+                            accumulated_text += text_chunk
+                            
+                            if callback_function:
+                                callback_function(text_chunk)
+                            
+                            yield text_chunk
+        
+        cloudwatch.put_metric_data(
+            Namespace='BedrockApp',
+            MetricData=[
+                {
+                    'MetricName': 'StreamingResponseLength',
+                    'Value': len(accumulated_text),
+                    'Unit': 'Count'
+                }
+            ]
+        )
+        
+    except Exception as error:
+        error_message = f"Error in optimized streaming. Prompt: '{prompt_text[:50]}...', Error: {str(error)}"
+        raise Exception(error_message) from error
+```
+
+### セキュリティベストプラクティス
+
+#### 1. 入力サニタイゼーション
+
+```python
+import re
+
+def sanitize_user_input(user_input, max_length=10000):
+    """
+    ユーザー入力をサニタイズする関数
+    
+    Args:
+        user_input (str): ユーザーからの入力
+        max_length (int): 最大文字数
+    
+    Returns:
+        str: サニタイズされた入力
+    
+    Raises:
+        ValueError: 入力が無効な場合
+    """
+    if not user_input or not isinstance(user_input, str):
+        raise ValueError(f"Invalid input: input must be a non-empty string. Received: {type(user_input)}")
+    
+    if len(user_input) > max_length:
+        raise ValueError(f"Input too long: {len(user_input)} characters (max: {max_length})")
+    
+    sanitized = user_input.strip()
+    
+    dangerous_patterns = [
+        r'<script[^>]*>.*?</script>',
+        r'javascript:',
+        r'on\w+\s*=',
+    ]
+    
+    for pattern in dangerous_patterns:
+        if re.search(pattern, sanitized, re.IGNORECASE):
+            raise ValueError(f"Input contains potentially dangerous pattern: '{pattern}'")
+    
+    sanitized = re.sub(r'[^\w\s\.\,\?\!\-\(\)\[\]\{\}:;\'\"\/\\\@\#\$\%\&\*\+\=\~\`]', '', sanitized)
+    
+    return sanitized
+
+def safe_bedrock_invoke(user_prompt, system_instructions):
+    """
+    安全なBedrock呼び出し関数（入力サニタイゼーション付き）
+    
+    Args:
+        user_prompt (str): ユーザープロンプト
+        system_instructions (str): システム指示
+    
+    Returns:
+        str: 生成されたテキスト
+    
+    Raises:
+        ValueError: 入力が無効な場合
+        Exception: Bedrock APIエラー時
+    """
+    try:
+        sanitized_prompt = sanitize_user_input(user_prompt)
+        
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 2000,
+            "system": system_instructions,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": sanitized_prompt
+                }
+            ]
+        })
+        
+        response = bedrock_runtime.invoke_model(
+            modelId='anthropic.claude-3-5-sonnet-20241022-v2:0',
+            body=body,
+            contentType='application/json',
+            accept='application/json'
+        )
+        
+        response_body = json.loads(response['body'].read())
+        return response_body['content'][0]['text']
+        
+    except ValueError as validation_error:
+        error_message = f"Input validation failed. Prompt length: {len(user_prompt) if user_prompt else 0}, Error: {str(validation_error)}"
+        raise ValueError(error_message) from validation_error
+        
+    except Exception as error:
+        error_message = f"Error in safe Bedrock invoke. Error: {str(error)}"
+        raise Exception(error_message) from error
+```
+
+#### 2. 出力フィルタリング
+
+```python
+def filter_sensitive_output(generated_text):
+    """
+    生成されたテキストから機密情報をフィルタリングする関数
+    
+    Args:
+        generated_text (str): 生成されたテキスト
+    
+    Returns:
+        dict: フィルタリング結果と警告
+    
+    Raises:
+        Exception: フィルタリングエラー時
+    """
+    sensitive_patterns = {
+        'email': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+        'phone': r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b',
+        'credit_card': r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b',
+        'ssn': r'\b\d{3}-\d{2}-\d{4}\b',
+    }
+    
+    try:
+        filtered_text = generated_text
+        warnings = []
+        
+        for pattern_name, pattern in sensitive_patterns.items():
+            matches = re.findall(pattern, filtered_text)
+            if matches:
+                warnings.append({
+                    'type': pattern_name,
+                    'count': len(matches),
+                    'matches': matches
+                })
+                
+                filtered_text = re.sub(pattern, f'[{pattern_name.upper()}_REDACTED]', filtered_text)
+        
+        return {
+            'original_text': generated_text,
+            'filtered_text': filtered_text,
+            'warnings': warnings,
+            'has_sensitive_data': len(warnings) > 0
+        }
+        
+    except Exception as error:
+        error_message = f"Error filtering sensitive output. Text length: {len(generated_text) if generated_text else 0}, Error: {str(error)}"
+        raise Exception(error_message) from error
+```
+
+### エラーハンドリングとロギング
+
+#### 1. 包括的なエラーハンドリング
+
+```python
+import logging
+from enum import Enum
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class BedrockErrorType(Enum):
+    THROTTLING = "ThrottlingException"
+    VALIDATION = "ValidationException"
+    MODEL_TIMEOUT = "ModelTimeoutException"
+    SERVICE_UNAVAILABLE = "ServiceUnavailableException"
+    UNKNOWN = "UnknownError"
+
+def comprehensive_bedrock_invoke(prompt_text, max_retries=3):
+    """
+    包括的なエラーハンドリング付きBedrock呼び出し関数
+    
+    Args:
+        prompt_text (str): プロンプトテキスト
+        max_retries (int): 最大リトライ回数
+    
+    Returns:
+        dict: 生成結果とメタデータ
+    
+    Raises:
+        Exception: リトライ後もエラーが解決しない場合
+    """
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Bedrock invoke attempt {attempt + 1}/{max_retries}. Prompt length: {len(prompt_text)}")
+            
+            body = json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 2000,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt_text
+                    }
+                ]
+            })
+            
+            response = bedrock_runtime.invoke_model(
+                modelId='anthropic.claude-3-5-sonnet-20241022-v2:0',
+                body=body,
+                contentType='application/json',
+                accept='application/json'
+            )
+            
+            response_body = json.loads(response['body'].read())
+            result = response_body['content'][0]['text']
+            
+            logger.info(f"Bedrock invoke successful. Response length: {len(result)}")
+            
+            return {
+                'success': True,
+                'result': result,
+                'attempts': attempt + 1,
+                'error': None
+            }
+            
+        except ClientError as error:
+            error_code = error.response['Error']['Code']
+            error_type = BedrockErrorType(error_code) if error_code in [e.value for e in BedrockErrorType] else BedrockErrorType.UNKNOWN
+            
+            logger.error(f"Bedrock ClientError: {error_type.value}, Attempt: {attempt + 1}/{max_retries}, Message: {error.response['Error']['Message']}")
+            
+            if error_type == BedrockErrorType.THROTTLING:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.info(f"Throttling detected. Waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
+                    continue
+            
+            elif error_type == BedrockErrorType.SERVICE_UNAVAILABLE:
+                if attempt < max_retries - 1:
+                    logger.info("Service unavailable. Retrying...")
+                    time.sleep(1)
+                    continue
+            
+            if attempt == max_retries - 1:
+                error_message = (
+                    f"Bedrock invoke failed after {max_retries} attempts. "
+                    f"Error Type: {error_type.value}, "
+                    f"Error Code: {error_code}, "
+                    f"Prompt: '{prompt_text[:100]}...', "
+                    f"Error: {str(error)}"
+                )
+                raise Exception(error_message) from error
+        
+        except Exception as error:
+            logger.error(f"Unexpected error in Bedrock invoke. Attempt: {attempt + 1}/{max_retries}, Error: {str(error)}")
+            
+            if attempt == max_retries - 1:
+                error_message = f"Bedrock invoke failed with unexpected error. Prompt: '{prompt_text[:100]}...', Error: {str(error)}"
+                raise Exception(error_message) from error
+            
+            time.sleep(1)
+    
+    error_message = f"Max retries ({max_retries}) exceeded for prompt: '{prompt_text[:100]}...'"
+    raise Exception(error_message)
+```
+
+### まとめ
+
+実務でBedrockを活用する際は、以下の点に注意してください：
+
+**コスト管理:**
+- 適切なモデル選択
+- トークン使用量の監視
+- キャッシング戦略
+
+**パフォーマンス:**
+- バッチ処理の活用
+- ストリーミングの最適化
+- 並列処理の実装
+
+**セキュリティ:**
+- 入力サニタイゼーション
+- 出力フィルタリング
+- アクセス制御
+
+**信頼性:**
+- 包括的なエラーハンドリング
+- 適切なロギング
+- リトライ戦略
+
+次のセクションでは、AWS認定試験対策のTipsを紹介します。
