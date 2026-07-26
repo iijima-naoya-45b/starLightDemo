@@ -1,0 +1,45 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## AWS CLI コマンド
+
+```bash
+# GuardDuty有効化
+aws guardduty create-detector --enable
+
+# Finding一覧
+aws guardduty list-findings \
+  --detector-id <detector-id>
+
+# Finding詳細
+aws guardduty get-findings \
+  --detector-id <detector-id> \
+  --finding-ids <finding-id>
+```
+
+## ベストプラクティス
+
+```yaml
+設定:
+  - 全リージョン有効化
+  - S3/EKS保護有効化
+  - 組織全体で管理
+
+対応:
+  - High Severity即座対応
+  - EventBridge自動化
+  - SNS通知設定
+
+確認:
+  - 定期的なFinding確認
+  - 誤検知の調整
+```
+
+## まとめ
+
+**重要ポイント:**
+- 全リージョン有効化必須
+- EventBridge自動対応
+- 30日間無料トライアル活用

@@ -1,0 +1,186 @@
+---
+title: "GuardDutyとは？"
+label: "GuardDutyとは？"
+---
+
+## AWS GuardDuty とは？
+
+GuardDutyは、AWSアカウントとワークロードを保護するインテリジェント脅威検知サービスです。
+
+### 主要機能
+
+#### 1. 脅威検知
+
+```yaml
+検知対象:
+  - 不正なAPI呼び出し
+  - 異常なネットワークトラフィック
+  - 侵害されたインスタンス
+  - 不審なログインパターン
+  - 暗号通貨マイニング
+  - データ窃取の兆候
+```
+
+#### 2. データソース
+
+```yaml
+自動分析:
+  - CloudTrail イベントログ
+  - VPC Flow Logs
+  - DNS クエリログ
+  - Kubernetes 監査ログ
+  - S3 データイベント（オプション）
+  - EKS 監査ログ（オプション）
+  - Lambda ネットワーク（オプション）
+  - RDS ログインアクティビティ（オプション）
+```
+
+#### 3. 検出タイプ
+
+```yaml
+カテゴリ:
+  Recon（偵察）:
+    - ポートスキャン
+    - ネットワーク偵察
+  
+  InstanceCompromise（侵害）:
+    - マルウェア
+    - 暗号通貨マイニング
+    - データ窃取
+  
+  UnauthorizedAccess（不正アクセス）:
+    - 異常なAPI呼び出し
+    - 不審なログイン
+  
+  Impact（影響）:
+    - DDoS攻撃
+    - リソース乗っ取り
+```
+
+### アーキテクチャ
+
+```mermaid
+graph TB
+    subgraph "Data Sources"
+        CT["CloudTrail<br/>Management Events"]
+        VPC["VPC Flow Logs"]
+        DNS["DNS Logs"]
+        K8s["Kubernetes<br/>Audit Logs"]
+    end
+    
+    subgraph "GuardDuty"
+        ML["機械学習<br/>異常検知"]
+        TI["脅威インテリジェンス<br/>既知の脅威"]
+    end
+    
+    subgraph "Findings"
+        High["High Severity"]
+        Medium["Medium Severity"]
+        Low["Low Severity"]
+    end
+    
+    subgraph "Response"
+        EventBridge["EventBridge"]
+        Lambda["Lambda<br/>自動対応"]
+        SNS["SNS通知"]
+        SecurityHub["Security Hub"]
+    end
+    
+    CT --> ML
+    VPC --> ML
+    DNS --> ML
+    K8s --> ML
+    
+    ML --> TI
+    TI --> High
+    TI --> Medium
+    TI --> Low
+    
+    High --> EventBridge
+    Medium --> EventBridge
+    Low --> EventBridge
+    
+    EventBridge --> Lambda
+    EventBridge --> SNS
+    EventBridge --> SecurityHub
+```
+
+### Finding（検出結果）
+
+```yaml
+重要度:
+  - High（8.0-10.0）: 即座の対応必要
+  - Medium（4.0-7.9）: 調査推奨
+  - Low（0.1-3.9）: 情報提供
+
+情報:
+  - 検出タイプ
+  - リソース情報
+  - アクション詳細
+  - 重要度
+  - タイムスタンプ
+  - 推奨アクション
+```
+
+### 自動対応
+
+```yaml
+EventBridge統合:
+  - Finding検出時トリガー
+  - Lambda関数起動
+  - 自動修復
+
+対応例:
+  - セキュリティグループ変更
+  - インスタンス隔離
+  - IAMロール無効化
+  - SNS通知
+  - Slack通知
+```
+
+### 料金
+
+```yaml
+CloudTrail分析:
+  - $4.00 / 100万イベント
+
+VPC Flow Logs分析:
+  - $1.00 / GB
+
+DNS Logs分析:
+  - $0.40 / 100万クエリ
+
+Kubernetes監査ログ:
+  - $4.00 / 100万イベント
+
+30日間無料トライアル
+```
+
+### ベストプラクティス
+
+```yaml
+有効化:
+  - 全リージョンで有効化
+  - 組織全体で自動有効化
+  - オプション機能検討
+
+対応:
+  - EventBridge自動対応
+  - SNS通知設定
+  - 定期的な確認
+
+統合:
+  - Security Hub連携
+  - Detective連携
+  - 他セキュリティツール
+```
+
+## まとめ
+
+**GuardDutyの重要ポイント:**
+- 自動脅威検知
+- 機械学習ベース
+- 複数データソース分析
+- 即座の通知
+- 自動対応可能
+- 30日間無料トライアル

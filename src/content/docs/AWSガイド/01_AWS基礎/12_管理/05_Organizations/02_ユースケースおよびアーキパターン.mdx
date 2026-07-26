@@ -1,0 +1,42 @@
+---
+title: "ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## ユースケース
+
+```yaml
+エンタープライズ:
+  - 部門別アカウント
+  - 環境別分離
+  - セキュリティ統制
+
+スタートアップ:
+  - 本番/開発分離
+  - コスト管理
+  - 段階的拡大
+```
+
+## アーキテクチャパターン
+
+```yaml
+推奨構成:
+  Root
+    ├── OU: Security
+    │   ├── Audit Account
+    │   └── Log Archive Account
+    ├── OU: Infrastructure
+    │   └── Shared Services Account
+    ├── OU: Production
+    │   ├── Prod-App Account
+    │   └── Prod-DB Account
+    └── OU: Development
+        └── Dev Account
+```
+
+## まとめ
+
+**設計ポイント:**
+- OU階層設計
+- SCP適用戦略
+- 一括請求活用
