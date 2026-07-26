@@ -1,0 +1,112 @@
+---
+title: "EventBridgeとは？"
+label: "EventBridgeとは？"
+---
+
+## Amazon EventBridge とは？
+
+EventBridgeは、サーバーレスイベントバスサービスです。アプリケーション間のイベント駆動統合を実現します。
+
+### 基本概念
+
+```yaml
+イベント:
+  - JSON形式
+  - ソース、詳細、時刻等
+
+イベントバス:
+  - default: AWS サービスイベント
+  - custom: カスタムイベント
+  - partner: SaaS統合
+
+ルール:
+  - イベントパターン
+  - ターゲット指定
+  - 最大5ターゲット/ルール
+```
+
+### イベントソース
+
+```yaml
+AWS サービス:
+  - EC2: ステート変更
+  - S3: オブジェクト作成
+  - Auto Scaling: スケールイベント
+  - CloudTrail: API呼び出し
+
+カスタムアプリ:
+  - PutEvents API
+  - 独自イベント
+
+SaaS統合:
+  - Zendesk
+  - Datadog
+  - PagerDuty
+```
+
+### ターゲット
+
+```yaml
+コンピュート:
+  - Lambda
+  - ECS Task
+  - Batch Job
+  - Step Functions
+
+統合:
+  - SNS
+  - SQS
+  - Kinesis
+  - API Gateway
+
+その他:
+  - EventBridge（クロスアカウント）
+  - CloudWatch Logs
+```
+
+### EventPatternフィルタリング
+
+```json
+{
+  "source": ["aws.ec2"],
+  "detail-type": ["EC2 Instance State-change Notification"],
+  "detail": {
+    "state": ["running"]
+  }
+}
+```
+
+### スケジュール
+
+```yaml
+Cron式:
+  - cron(0 12 * * ? *)
+  - 毎日12:00 UTC
+
+Rate式:
+  - rate(5 minutes)
+  - 5分ごと
+```
+
+### 料金
+
+```yaml
+カスタムイベント:
+  $1.00 / 100万イベント
+  月100万イベント無料
+
+スキーマレジストリ:
+  無料
+
+SaaS統合:
+  $1.00 / 100万イベント
+```
+
+### まとめ
+
+**EventBridgeの重要ポイント:**
+- サーバーレスイベントバス
+- AWS サービス統合
+- イベントパターンフィルタリング
+- スケジュール実行（cron）
+- 疎結合アーキテクチャ

@@ -1,0 +1,94 @@
+---
+title: "ElastiCache 実務Tips"
+label: "実務Tips"
+---
+
+## ElastiCache 実務Tips
+
+### AWS CLI
+
+```bash
+# Redisクラスター作成
+aws elasticache create-replication-group \
+  --replication-group-id my-redis \
+  --replication-group-description "My Redis Cluster" \
+  --engine redis \
+  --cache-node-type cache.r6g.large \
+  --num-cache-clusters 3 \
+  --automatic-failover-enabled \
+  --multi-az-enabled \
+  --cache-subnet-group-name my-subnet-group \
+  --security-group-ids sg-12345
+
+# Memcachedクラスター作成
+aws elasticache create-cache-cluster \
+  --cache-cluster-id my-memcached \
+  --engine memcached \
+  --cache-node-type cache.r6g.large \
+  --num-cache-nodes 3 \
+  --cache-subnet-group-name my-subnet-group \
+  --security-group-ids sg-12345
+
+# エンドポイント確認
+aws elasticache describe-replication-groups \
+  --replication-group-id my-redis
+```
+
+### Redis接続例（Python）
+
+```python
+import redis
+
+# 接続
+r = redis.Redis(
+    host='my-redis.xxxxx.cache.amazonaws.com',
+    port=6379,
+    decode_responses=True
+)
+
+# キャッシュ設定（TTL 300秒）
+r.setex('user:123', 300, '{"name": "John"}')
+
+# キャッシュ取得
+user = r.get('user:123')
+
+# キャッシュ削除
+r.delete('user:123')
+```
+
+### ベストプラクティス
+
+```yaml
+パフォーマンス:
+  - 適切なTTL設定
+  - キャッシュウォーミング
+  - パイプライン使用
+
+可用性:
+  - Multi-AZ有効化
+  - Read Replica活用
+  - 自動バックアップ
+
+セキュリティ:
+  - VPC内配置
+  - セキュリティグループ
+  - Redis AUTH
+  - 転送中暗号化
+```
+
+### トラブルシューティング
+
+```bash
+# メトリクス確認
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/ElastiCache \
+  --metric-name CPUUtilization \
+  --dimensions Name=CacheClusterId,Value=my-redis-001 \
+  --start-time 2026-07-26T00:00:00Z \
+  --end-time 2026-07-26T23:59:59Z \
+  --period 300 \
+  --statistics Average
+
+# Redis INFO
+redis-cli -h my-redis.xxxxx.cache.amazonaws.com INFO
+```

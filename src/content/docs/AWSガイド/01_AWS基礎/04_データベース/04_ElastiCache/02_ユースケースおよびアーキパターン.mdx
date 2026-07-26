@@ -1,0 +1,63 @@
+---
+title: "ElastiCache ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## ElastiCache ユースケースおよびアーキテクチャパターン
+
+### 1. DBキャッシュ
+
+```yaml
+構成:
+  ALB → Lambda
+    → ElastiCache（キャッシュヒット）→ レスポンス
+    → RDS（キャッシュミス）→ ElastiCache更新 → レスポンス
+
+効果:
+  - DB負荷削減
+  - レスポンス高速化（ミリ秒 → マイクロ秒）
+  - コスト削減
+
+TTL: 5-15分
+```
+
+### 2. セッション管理
+
+```yaml
+構成:
+  ALB → EC2 × 複数 → ElastiCache（セッション共有）
+
+メリット:
+  - ステートレスアプリ
+  - Auto Scaling対応
+  - サーバー間セッション共有
+
+Redis: 永続化、Multi-AZ
+```
+
+### 3. リアルタイムランキング
+
+```yaml
+構成:
+  ゲームサーバー → Redis Sorted Set
+
+操作:
+  ZADD leaderboard 1000 user1
+  ZREVRANGE leaderboard 0 9 WITHSCORES
+
+メリット:
+  - リアルタイム更新
+  - 高速ソート
+```
+
+### 4. Pub/Sub（リアルタイム通知）
+
+```yaml
+構成:
+  Publisher → Redis → Subscriber（複数）
+
+用途:
+  - チャット
+  - 通知配信
+  - ライブ更新
+```
