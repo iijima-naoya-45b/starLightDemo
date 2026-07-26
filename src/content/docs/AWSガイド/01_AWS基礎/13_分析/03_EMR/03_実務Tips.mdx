@@ -1,0 +1,882 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## AWS CLI コマンド
+
+### クラスター作成
+
+```bash
+# 基本的なクラスター作成
+aws emr create-cluster \
+  --name "My-EMR-Cluster" \
+  --release-label emr-6.15.0 \
+  --applications Name=Spark Name=Hive Name=Presto \
+  --ec2-attributes KeyName=my-key,SubnetId=subnet-xxxxx \
+  --instance-type m5.xlarge \
+  --instance-count 3 \
+  --use-default-roles \
+  --log-uri s3://my-bucket/emr-logs/
+
+# 詳細設定でクラスター作成
+aws emr create-cluster \
+  --name "Production-Cluster" \
+  --release-label emr-6.15.0 \
+  --applications Name=Spark Name=Hive Name=Presto Name=Hue \
+  --ec2-attributes '{
+    "KeyName": "my-key",
+    "SubnetId": "subnet-xxxxx",
+    "InstanceProfile": "EMR_EC2_DefaultRole",
+    "EmrManagedMasterSecurityGroup": "sg-master",
+    "EmrManagedSlaveSecurityGroup": "sg-slave",
+    "ServiceAccessSecurityGroup": "sg-service"
+  }' \
+  --instance-groups '[
+    {
+      "Name": "Master",
+      "InstanceRole": "MASTER",
+      "InstanceType": "m5.xlarge",
+      "InstanceCount": 1
+    },
+    {
+      "Name": "Core",
+      "InstanceRole": "CORE",
+      "InstanceType": "m5.2xlarge",
+      "InstanceCount": 3,
+      "EbsConfiguration": {
+        "EbsBlockDeviceConfigs": [
+          {
+            "VolumeSpecification": {
+              "VolumeType": "gp3",
+              "SizeInGB": 100
+            },
+            "VolumesPerInstance": 1
+          }
+        ]
+      }
+    },
+    {
+      "Name": "Task",
+      "InstanceRole": "TASK",
+      "InstanceType": "m5.2xlarge",
+      "InstanceCount": 5,
+      "Market": "SPOT",
+      "BidPrice": "OnDemandPrice"
+    }
+  ]' \
+  --service-role EMR_DefaultRole \
+  --log-uri s3://my-bucket/emr-logs/ \
+  --tags 'Environment=Production' 'Project=DataAnalytics' \
+  --configurations file://configurations.json \
+  --auto-terminate
+
+# Spot Instanceでコスト削減
+aws emr create-cluster \
+  --name "Spot-Cluster" \
+  --release-label emr-6.15.0 \
+  --applications Name=Spark \
+  --instance-groups '[
+    {
+      "Name": "Master",
+      "InstanceRole": "MASTER",
+      "InstanceType": "m5.xlarge",
+      "InstanceCount": 1
+    },
+    {
+      "Name": "Core",
+      "InstanceRole": "CORE",
+      "InstanceType": "m5.2xlarge",
+      "InstanceCount": 2
+    },
+    {
+      "Name": "Task-Spot",
+      "InstanceRole": "TASK",
+      "InstanceType": "m5.2xlarge",
+      "InstanceCount": 10,
+      "Market": "SPOT",
+      "BidPrice": "OnDemandPrice"
+    }
+  ]' \
+  --ec2-attributes KeyName=my-key,SubnetId=subnet-xxxxx \
+  --use-default-roles \
+  --log-uri s3://my-bucket/emr-logs/
+```
+
+### クラスター管理
+
+```bash
+# クラスター一覧
+aws emr list-clusters \
+  --active
+
+# クラスター詳細
+aws emr describe-cluster \
+  --cluster-id j-XXXXXXXXXXXXX
+
+# クラスター状態確認
+aws emr describe-cluster \
+  --cluster-id j-XXXXXXXXXXXXX \
+  --query 'Cluster.Status.State' \
+  --output text
+
+# クラスター終了
+aws emr terminate-clusters \
+  --cluster-ids j-XXXXXXXXXXXXX
+
+# クラスター一覧（フィルタリング）
+aws emr list-clusters \
+  --created-after 2024-01-01T00:00:00 \
+  --cluster-states RUNNING WAITING
+```
+
+### ステップ実行
+
+```bash
+# Sparkステップ追加
+aws emr add-steps \
+  --cluster-id j-XXXXXXXXXXXXX \
+  --steps '[
+    {
+      "Name": "Spark ETL Job",
+      "ActionOnFailure": "CONTINUE",
+      "HadoopJarStep": {
+        "Jar": "command-runner.jar",
+        "Args": [
+          "spark-submit",
+          "--deploy-mode", "cluster",
+          "--master", "yarn",
+          "--conf", "spark.executor.memory=4g",
+          "--conf", "spark.executor.cores=2",
+          "s3://my-bucket/scripts/etl-job.py",
+          "--input", "s3://my-bucket/input/",
+          "--output", "s3://my-bucket/output/"
+        ]
+      }
+    }
+  ]'
+
+# Hiveステップ追加
+aws emr add-steps \
+  --cluster-id j-XXXXXXXXXXXXX \
+  --steps '[
+    {
+      "Name": "Hive Query",
+      "ActionOnFailure": "TERMINATE_CLUSTER",
+      "HadoopJarStep": {
+        "Jar": "command-runner.jar",
+        "Args": [
+          "hive-script",
+          "--run-hive-script",
+          "--args",
+          "-f", "s3://my-bucket/scripts/query.hql"
+        ]
+      }
+    }
+  ]'
+
+# PySpark ステップ（複数引数）
+aws emr add-steps \
+  --cluster-id j-XXXXXXXXXXXXX \
+  --steps '[
+    {
+      "Name": "Data Processing",
+      "ActionOnFailure": "CONTINUE",
+      "HadoopJarStep": {
+        "Jar": "command-runner.jar",
+        "Args": [
+          "spark-submit",
+          "--deploy-mode", "cluster",
+          "--master", "yarn",
+          "--num-executors", "10",
+          "--executor-cores", "4",
+          "--executor-memory", "8g",
+          "--driver-memory", "4g",
+          "--conf", "spark.dynamicAllocation.enabled=true",
+          "--conf", "spark.shuffle.service.enabled=true",
+          "--py-files", "s3://my-bucket/libs/utils.zip",
+          "s3://my-bucket/scripts/process_data.py",
+          "--date", "2024-01-15",
+          "--mode", "production"
+        ]
+      }
+    }
+  ]'
+
+# ステップ状態確認
+aws emr describe-step \
+  --cluster-id j-XXXXXXXXXXXXX \
+  --step-id s-XXXXXXXXXXXXX
+
+# ステップ一覧
+aws emr list-steps \
+  --cluster-id j-XXXXXXXXXXXXX
+
+# ステップキャンセル
+aws emr cancel-steps \
+  --cluster-id j-XXXXXXXXXXXXX \
+  --step-ids s-XXXXXXXXXXXXX
+```
+
+### インスタンスグループ管理
+
+```bash
+# インスタンスグループ一覧
+aws emr list-instance-groups \
+  --cluster-id j-XXXXXXXXXXXXX
+
+# Task Nodeスケールアウト
+aws emr modify-instance-groups \
+  --instance-groups InstanceGroupId=ig-XXXXXXXXXXXXX,InstanceCount=15
+
+# Task Nodeスケールイン
+aws emr modify-instance-groups \
+  --instance-groups InstanceGroupId=ig-XXXXXXXXXXXXX,InstanceCount=5
+
+# インスタンスフリート作成（より柔軟な構成）
+aws emr create-cluster \
+  --name "Fleet-Cluster" \
+  --release-label emr-6.15.0 \
+  --applications Name=Spark \
+  --instance-fleets '[
+    {
+      "Name": "MasterFleet",
+      "InstanceFleetType": "MASTER",
+      "TargetOnDemandCapacity": 1,
+      "InstanceTypeConfigs": [
+        {
+          "InstanceType": "m5.xlarge"
+        }
+      ]
+    },
+    {
+      "Name": "CoreFleet",
+      "InstanceFleetType": "CORE",
+      "TargetOnDemandCapacity": 2,
+      "InstanceTypeConfigs": [
+        {
+          "InstanceType": "m5.2xlarge",
+          "WeightedCapacity": 2
+        },
+        {
+          "InstanceType": "m5.xlarge",
+          "WeightedCapacity": 1
+        }
+      ]
+    },
+    {
+      "Name": "TaskFleet",
+      "InstanceFleetType": "TASK",
+      "TargetSpotCapacity": 10,
+      "InstanceTypeConfigs": [
+        {
+          "InstanceType": "m5.2xlarge",
+          "WeightedCapacity": 2,
+          "BidPriceAsPercentageOfOnDemandPrice": 100
+        },
+        {
+          "InstanceType": "r5.2xlarge",
+          "WeightedCapacity": 2,
+          "BidPriceAsPercentageOfOnDemandPrice": 100
+        }
+      ]
+    }
+  ]' \
+  --ec2-attributes KeyName=my-key,SubnetIds=subnet-xxxxx,subnet-yyyyy \
+  --service-role EMR_DefaultRole
+```
+
+## ベストプラクティス
+
+### クラスター設計
+
+```yaml
+ノード構成:
+  開発環境:
+    Master: 1 × m5.xlarge
+    Core: 2 × m5.xlarge
+    
+  本番環境（小規模）:
+    Master: 1 × m5.xlarge
+    Core: 3 × m5.2xlarge
+    Task: 5-10 × m5.2xlarge（Spot）
+  
+  本番環境（大規模）:
+    Master: 3 × m5.xlarge（HA）
+    Core: 10 × m5.4xlarge
+    Task: 20-50 × m5.4xlarge（Spot）
+
+インスタンスタイプ選択:
+  汎用（Spark、Hive）:
+    - m5シリーズ
+    - バランス型
+  
+  コンピューティング集約:
+    - c5シリーズ
+    - CPU最適化
+  
+  メモリ集約（Presto、Spark SQL）:
+    - r5シリーズ
+    - メモリ最適化
+  
+  機械学習:
+    - p3シリーズ（GPU）
+    - g4シリーズ（GPU、コスト効率）
+
+ストレージ:
+  HDFS（Core Node）:
+    - EBS: gp3
+    - サイズ: 100-500GB
+    - 中間データのみ
+  
+  S3（EMRFS）:
+    - 入力データ
+    - 最終結果
+    - 永続データ
+```
+
+### Spark設定最適化
+
+```json
+// configurations.json
+[
+  {
+    "Classification": "spark-defaults",
+    "Properties": {
+      "spark.executor.memory": "8g",
+      "spark.executor.cores": "4",
+      "spark.driver.memory": "4g",
+      "spark.driver.cores": "2",
+      "spark.executor.instances": "10",
+      "spark.dynamicAllocation.enabled": "true",
+      "spark.dynamicAllocation.minExecutors": "5",
+      "spark.dynamicAllocation.maxExecutors": "50",
+      "spark.shuffle.service.enabled": "true",
+      "spark.sql.adaptive.enabled": "true",
+      "spark.sql.adaptive.coalescePartitions.enabled": "true",
+      "spark.serializer": "org.apache.spark.serializer.KryoSerializer",
+      "spark.speculation": "true"
+    }
+  },
+  {
+    "Classification": "spark-env",
+    "Properties": {},
+    "Configurations": [
+      {
+        "Classification": "export",
+        "Properties": {
+          "PYSPARK_PYTHON": "/usr/bin/python3"
+        }
+      }
+    ]
+  },
+  {
+    "Classification": "yarn-site",
+    "Properties": {
+      "yarn.nodemanager.vmem-check-enabled": "false",
+      "yarn.nodemanager.pmem-check-enabled": "false"
+    }
+  }
+]
+```
+
+### PySpark コード例
+
+```python
+# 基本的なSparkジョブ
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, to_date, sum, count
+
+# SparkSession作成
+spark = SparkSession.builder \
+    .appName("ETL Job") \
+    .getOrCreate()
+
+# S3からデータ読み込み
+df = spark.read \
+    .format("parquet") \
+    .load("s3://my-bucket/input/")
+
+# データ処理
+result = df \
+    .filter(col("status") == "active") \
+    .withColumn("date", to_date(col("timestamp"))) \
+    .groupBy("date", "category") \
+    .agg(
+        sum("amount").alias("total_amount"),
+        count("*").alias("count")
+    ) \
+    .orderBy("date", "category")
+
+# 結果をS3に保存（Parquet形式、パーティション）
+result.write \
+    .mode("overwrite") \
+    .partitionBy("date") \
+    .format("parquet") \
+    .option("compression", "snappy") \
+    .save("s3://my-bucket/output/")
+
+spark.stop()
+
+# 複数ソース結合
+# S3からデータ読み込み
+transactions = spark.read.parquet("s3://bucket/transactions/")
+customers = spark.read.parquet("s3://bucket/customers/")
+
+# DynamoDBから読み込み
+products = spark.read \
+    .format("dynamodb") \
+    .option("tableName", "products") \
+    .load()
+
+# 結合処理
+result = transactions \
+    .join(customers, "customer_id") \
+    .join(products, "product_id") \
+    .select(
+        "transaction_id",
+        "customer_name",
+        "product_name",
+        "amount",
+        "timestamp"
+    )
+
+# パフォーマンス最適化
+# キャッシング
+df.cache()
+
+# パーティション調整
+df = df.repartition(100)
+
+# ブロードキャスト結合（小さいテーブル）
+from pyspark.sql.functions import broadcast
+result = large_df.join(broadcast(small_df), "key")
+
+# ウィンドウ関数
+from pyspark.sql.window import Window
+from pyspark.sql.functions import row_number
+
+window_spec = Window.partitionBy("category").orderBy(col("amount").desc())
+top_items = df.withColumn("rank", row_number().over(window_spec)) \
+    .filter(col("rank") <= 10)
+```
+
+### Spot Instance活用
+
+```yaml
+戦略:
+  Task Nodeのみ:
+    - データ保存なし
+    - 中断影響最小
+    - 最も安全
+  
+  Core Nodeも含める（上級）:
+    - HDFSレプリケーション設定
+    - 定期的なS3バックアップ
+    - リスク管理
+
+入札設定:
+  推奨:
+    - オンデマンド価格の100%
+    - Capacity Optimized配分戦略
+    - 複数インスタンスタイプ
+  
+  Instance Fleet:
+    - 柔軟な構成
+    - 自動フォールバック
+    - 複数AZ対応
+
+中断対策:
+  Graceful Decommission:
+    - 有効化推奨
+    - タスク完了待機
+    - データ損失防止
+  
+  自動リカバリ:
+    - Auto Scaling
+    - 自動ノード追加
+  
+  モニタリング:
+    - Spot中断通知
+    - CloudWatch Alarms
+    - SNS通知
+
+設定例:
+  "InstanceGroups": [
+    {
+      "Name": "Task-Spot",
+      "InstanceRole": "TASK",
+      "InstanceType": "m5.2xlarge",
+      "InstanceCount": 10,
+      "Market": "SPOT",
+      "BidPrice": "OnDemandPrice",
+      "Configurations": [
+        {
+          "Classification": "yarn-site",
+          "Properties": {
+            "yarn.resourcemanager.decommissioning.timeout": "3600"
+          }
+        }
+      ]
+    }
+  ]
+```
+
+### Auto Scaling設定
+
+```bash
+# Auto Scaling ポリシー作成
+aws emr put-auto-scaling-policy \
+  --cluster-id j-XXXXXXXXXXXXX \
+  --instance-group-id ig-XXXXXXXXXXXXX \
+  --auto-scaling-policy '{
+    "Constraints": {
+      "MinCapacity": 5,
+      "MaxCapacity": 50
+    },
+    "Rules": [
+      {
+        "Name": "ScaleOut-Memory",
+        "Description": "Scale out when memory low",
+        "Action": {
+          "SimpleScalingPolicyConfiguration": {
+            "AdjustmentType": "CHANGE_IN_CAPACITY",
+            "ScalingAdjustment": 5,
+            "CoolDown": 300
+          }
+        },
+        "Trigger": {
+          "CloudWatchAlarmDefinition": {
+            "ComparisonOperator": "LESS_THAN",
+            "EvaluationPeriods": 2,
+            "MetricName": "YARNMemoryAvailablePercentage",
+            "Namespace": "AWS/ElasticMapReduce",
+            "Period": 300,
+            "Statistic": "AVERAGE",
+            "Threshold": 15,
+            "Unit": "PERCENT",
+            "Dimensions": [
+              {
+                "Key": "JobFlowId",
+                "Value": "${emr.clusterId}"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "Name": "ScaleIn-Memory",
+        "Description": "Scale in when memory high",
+        "Action": {
+          "SimpleScalingPolicyConfiguration": {
+            "AdjustmentType": "CHANGE_IN_CAPACITY",
+            "ScalingAdjustment": -2,
+            "CoolDown": 300
+          }
+        },
+        "Trigger": {
+          "CloudWatchAlarmDefinition": {
+            "ComparisonOperator": "GREATER_THAN",
+            "EvaluationPeriods": 2,
+            "MetricName": "YARNMemoryAvailablePercentage",
+            "Namespace": "AWS/ElasticMapReduce",
+            "Period": 300,
+            "Statistic": "AVERAGE",
+            "Threshold": 75,
+            "Unit": "PERCENT",
+            "Dimensions": [
+              {
+                "Key": "JobFlowId",
+                "Value": "${emr.clusterId}"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "Name": "ScaleOut-Containers",
+        "Description": "Scale out when containers pending",
+        "Action": {
+          "SimpleScalingPolicyConfiguration": {
+            "AdjustmentType": "CHANGE_IN_CAPACITY",
+            "ScalingAdjustment": 10,
+            "CoolDown": 300
+          }
+        },
+        "Trigger": {
+          "CloudWatchAlarmDefinition": {
+            "ComparisonOperator": "GREATER_THAN",
+            "EvaluationPeriods": 1,
+            "MetricName": "ContainerPendingRatio",
+            "Namespace": "AWS/ElasticMapReduce",
+            "Period": 300,
+            "Statistic": "AVERAGE",
+            "Threshold": 0.75,
+            "Dimensions": [
+              {
+                "Key": "JobFlowId",
+                "Value": "${emr.clusterId}"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }'
+
+# Auto Scaling ポリシー確認
+aws emr get-auto-scaling-policy \
+  --cluster-id j-XXXXXXXXXXXXX \
+  --instance-group-id ig-XXXXXXXXXXXXX
+
+# Auto Scaling ポリシー削除
+aws emr remove-auto-scaling-policy \
+  --cluster-id j-XXXXXXXXXXXXX \
+  --instance-group-id ig-XXXXXXXXXXXXX
+```
+
+### セキュリティ設定
+
+```bash
+# Kerberos有効化クラスター
+aws emr create-cluster \
+  --name "Secure-Cluster" \
+  --release-label emr-6.15.0 \
+  --applications Name=Spark Name=Hive \
+  --kerberos-attributes '{
+    "Realm": "EC2.INTERNAL",
+    "KdcAdminPassword": "MyPassword123!",
+    "CrossRealmTrustPrincipalPassword": "MyPassword123!",
+    "ADDomainJoinUser": "admin",
+    "ADDomainJoinPassword": "MyPassword123!"
+  }' \
+  --security-configuration MySecurityConfiguration \
+  --ec2-attributes KeyName=my-key,SubnetId=subnet-xxxxx \
+  --instance-type m5.xlarge \
+  --instance-count 3 \
+  --use-default-roles
+
+# セキュリティ設定作成
+aws emr create-security-configuration \
+  --name MySecurityConfiguration \
+  --security-configuration '{
+    "EncryptionConfiguration": {
+      "EnableInTransitEncryption": true,
+      "EnableAtRestEncryption": true,
+      "InTransitEncryptionConfiguration": {
+        "TLSCertificateConfiguration": {
+          "CertificateProviderType": "PEM",
+          "S3Object": "s3://my-bucket/certificates/cert.pem"
+        }
+      },
+      "AtRestEncryptionConfiguration": {
+        "S3EncryptionConfiguration": {
+          "EncryptionMode": "SSE-KMS",
+          "AwsKmsKey": "arn:aws:kms:region:account:key/xxx"
+        },
+        "LocalDiskEncryptionConfiguration": {
+          "EncryptionKeyProviderType": "AwsKms",
+          "AwsKmsKey": "arn:aws:kms:region:account:key/xxx"
+        }
+      }
+    }
+  }'
+
+# VPC内プライベートクラスター
+aws emr create-cluster \
+  --name "Private-Cluster" \
+  --release-label emr-6.15.0 \
+  --applications Name=Spark \
+  --ec2-attributes '{
+    "KeyName": "my-key",
+    "SubnetId": "subnet-private",
+    "EmrManagedMasterSecurityGroup": "sg-master",
+    "EmrManagedSlaveSecurityGroup": "sg-slave",
+    "ServiceAccessSecurityGroup": "sg-service"
+  }' \
+  --instance-type m5.xlarge \
+  --instance-count 3 \
+  --service-role EMR_DefaultRole \
+  --log-uri s3://my-bucket/emr-logs/
+```
+
+### モニタリングとログ
+
+```yaml
+CloudWatch Metrics:
+  クラスターレベル:
+    - IsIdle
+    - AppsRunning
+    - AppsPending
+    - ContainerPending
+    - MemoryAvailableMB
+    - HDFSUtilization
+  
+  ノードレベル:
+    - CPU使用率
+    - ディスクI/O
+    - ネットワーク帯域
+
+アラーム設定:
+  メモリ不足:
+    - YARNMemoryAvailablePercentage < 15%
+  
+  アイドル状態:
+    - IsIdle = 1（1時間以上）
+    - コスト削減のため終了検討
+  
+  失敗ステップ:
+    - ステップ失敗通知
+    - SNS通知
+
+ログ保存:
+  S3設定:
+    - --log-uri s3://bucket/emr-logs/
+    - クラスター終了後もアクセス可能
+  
+  ログ種類:
+    - Step logs
+    - Hadoop logs
+    - Spark logs
+    - Application logs
+  
+  分析:
+    - Athena でログクエリ
+    - CloudWatch Logs Insights
+```
+
+### コスト最適化
+
+```yaml
+戦略:
+
+1. Spot Instance:
+   Task Node:
+     - 最大90%削減
+     - リスク最小
+   
+   実装:
+     - 入札価格: OnDemandPrice
+     - 複数インスタンスタイプ
+     - Capacity Optimized
+
+2. 一時的クラスター:
+   Before:
+     - 24時間稼働
+     - $5,260/月
+   
+   After:
+     - 8時間/日稼働
+     - $1,460/月
+   
+   削減: 72%
+
+3. 適切なサイジング:
+   過剰プロビジョニング避ける:
+     - モニタリング
+     - CPU/メモリ使用率
+     - 段階的調整
+
+4. S3活用:
+   HDFS削減:
+     - EBSコスト削減
+     - Core Node最小化
+     - S3でデータ永続化
+
+5. EMR Serverless:
+   断続的ジョブ:
+     - ジョブ実行時のみ課金
+     - 管理コスト削減
+
+6. Reserved Instances:
+   長時間実行:
+     - 1年/3年契約
+     - 最大75%削減
+     - 継続的クラスター向き
+
+計算例:
+  Before（常時起動、オンデマンド）:
+    - 10ノード × $0.48/時間 × 730時間
+    - $3,504/月
+  
+  After（8時間/日、Spot活用）:
+    - 10ノード × $0.14/時間 × 240時間
+    - $336/月
+  
+  削減: $3,168/月（90%削減）
+```
+
+### トラブルシューティング
+
+```yaml
+よくある問題:
+
+1. クラスター起動失敗:
+   原因:
+     - IAMロール権限不足
+     - VPCサブネット設定
+     - セキュリティグループ
+   
+   対処:
+     - CloudTrailログ確認
+     - IAMポリシー確認
+     - VPC設定確認
+
+2. ステップ失敗:
+   原因:
+     - コードエラー
+     - メモリ不足
+     - S3アクセス権限
+   
+   対処:
+     - S3ログ確認
+     - Spark UI分析
+     - エラーメッセージ確認
+
+3. パフォーマンス問題:
+   原因:
+     - データスキュー
+     - シャッフル過多
+     - 不適切なパーティション
+   
+   対処:
+     - Spark UI分析
+     - パーティション調整
+     - キャッシング活用
+     - ブロードキャスト結合
+
+4. Spot中断:
+   原因:
+     - 容量不足
+     - 価格超過
+   
+   対処:
+     - 複数インスタンスタイプ
+     - 複数AZ
+     - Capacity Optimized
+     - Graceful Decommission
+
+5. S3スロットリング:
+   原因:
+     - 過剰なリクエスト
+     - S3 prefix集中
+   
+   対処:
+     - prefix分散
+     - S3 Transfer Acceleration
+     - リトライ設定
+```
+
+## まとめ
+
+**実務での重要ポイント:**
+- CLI でクラスター自動化
+- Spot Instance でコスト最大90%削減
+- Auto Scaling で柔軟なスケーリング
+- S3（EMRFS）でデータ永続化
+- 一時的クラスターでコスト最適化
+- Spark設定チューニング必須
+- セキュリティ設定（Kerberos、暗号化）
+- CloudWatch で継続監視
+- ログはS3に保存
+- Instance Fleet で柔軟な構成
