@@ -1,0 +1,460 @@
+---
+title: "App Runner ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## App Runner ユースケースおよびアーキパターン
+
+### 主要ユースケース
+
+#### 1. REST API
+
+```yaml
+構成:
+App Runner (API)
+  ↓ (VPC Connector)
+RDS/DynamoDB
+
+特徴:
+  - 自動スケーリング
+  - HTTPS標準
+  - 高可用性
+  - CI/CD統合
+
+適用例:
+  - モバイルアプリバックエンド
+  - SaaSプラットフォームAPI
+  - 内部API
+```
+
+**アーキテクチャ例:**
+
+```yaml
+ユーザー
+  ↓ HTTPS
+CloudFront（オプション）
+  ↓
+App Runner Service
+  ↓ VPC Connector
+Private Subnet
+  ├─ RDS (PostgreSQL)
+  └─ ElastiCache (Redis)
+  
+S3 (静的アセット)
+
+メリット:
+  - インフラ管理不要
+  - 自動スケーリング
+  - 低レイテンシー
+  - コスト効率的
+```
+
+#### 2. マイクロサービス
+
+```yaml
+構成:
+API Gateway / ALB
+  ↓
+複数のApp Runnerサービス
+  ├─ User Service
+  ├─ Order Service
+  ├─ Payment Service
+  └─ Notification Service
+  ↓
+共有データストア
+
+特徴:
+  - サービス独立デプロイ
+  - 個別スケーリング
+  - 疎結合アーキテクチャ
+```
+
+**マイクロサービスパターン:**
+
+```yaml
+パターン1: API Gateway統合
+API Gateway
+  ├─ /users → App Runner (User Service)
+  ├─ /orders → App Runner (Order Service)
+  └─ /payments → App Runner (Payment Service)
+
+各サービス:
+  - 独立したApp Runnerインスタンス
+  - 個別のデータベース
+  - 非同期通信（SQS/SNS）
+
+パターン2: 内部通信（VPC）
+App Runner (Frontend)
+  ↓ VPC Connector
+Private ALB
+  ↓
+複数のApp Runner (Backend Services)
+  ├─ Service A
+  ├─ Service B
+  └─ Service C
+
+メリット:
+  - セキュア（VPC内）
+  - サービスディスカバリー
+  - ロードバランシング
+```
+
+#### 3. CI/CD統合Webアプリ
+
+```yaml
+CI/CDパイプライン:
+GitHub
+  ↓ Webhook
+App Runner
+  ├─ 自動ビルド
+  ├─ 自動デプロイ
+  └─ 自動スケーリング
+
+特徴:
+  - GitOps
+  - ブルーグリーンデプロイ
+  - ロールバック簡単
+```
+
+**CI/CDアーキテクチャ:**
+
+```yaml
+パターン1: GitHub直接連携
+開発者
+  ↓ git push
+GitHub Repository
+  ↓ 自動トリガー
+App Runner
+  - ビルド自動実行
+  - デプロイ自動実行
+  - ヘルスチェック
+  - トラフィック切り替え
+
+パターン2: ECR経由デプロイ
+開発者
+  ↓ git push
+GitHub Actions / CodePipeline
+  ↓
+Docker Build
+  ↓
+ECR (Container Image)
+  ↓ 自動デプロイ
+App Runner
+
+メリット:
+  - 柔軟なビルドプロセス
+  - カスタムCI/CD
+  - イメージ再利用
+```
+
+### 実践アーキテクチャパターン
+
+#### パターン1: フルスタックWebアプリケーション
+
+```yaml
+アーキテクチャ:
+
+Route 53
+  ↓
+CloudFront
+  ├─ /api/* → App Runner (Backend API)
+  └─ /* → S3 (React/Vue Frontend)
+
+App Runner (Backend)
+  ↓ VPC Connector
+  ├─ RDS (PostgreSQL)
+  ├─ ElastiCache (Session Store)
+  └─ S3 (File Storage)
+
+コンポーネント:
+  Frontend:
+    - React/Vue.js
+    - S3 + CloudFront
+    - 静的サイト
+  
+  Backend:
+    - Node.js/Python API
+    - App Runner
+    - 自動スケーリング
+  
+  Database:
+    - RDS Multi-AZ
+    - ElastiCache
+    - S3
+
+メリット:
+  - 高性能
+  - グローバル配信
+  - セキュア
+  - コスト効率的
+```
+
+#### パターン2: サーバーレスハイブリッド
+
+```yaml
+アーキテクチャ:
+
+API Gateway
+  ├─ /auth → Lambda (認証)
+  ├─ /api → App Runner (ステートフルAPI)
+  └─ /webhook → Lambda (イベント処理)
+
+App Runner
+  ↓
+  ├─ DynamoDB (データストア)
+  ├─ S3 (ファイル)
+  └─ SQS (非同期処理)
+
+Lambda (Background Jobs)
+  ↓
+SQS → バッチ処理
+
+使い分け:
+  Lambda:
+    - 認証・認可
+    - 短時間処理
+    - イベント駆動
+  
+  App Runner:
+    - 長時間実行
+    - ステートフル処理
+    - WebSocket
+    - ファイルアップロード
+
+メリット:
+  - 適材適所
+  - コスト最適化
+  - スケーラビリティ
+```
+
+#### パターン3: 多層マイクロサービス
+
+```yaml
+アーキテクチャ:
+
+External Users
+  ↓ HTTPS
+CloudFront + WAF
+  ↓
+App Runner (API Gateway Service)
+  ↓ VPC Connector
+Internal ALB
+  ├─ App Runner (User Service)
+  ├─ App Runner (Order Service)
+  ├─ App Runner (Inventory Service)
+  └─ App Runner (Notification Service)
+  
+データ層:
+  ├─ RDS (MySQL)
+  ├─ DynamoDB
+  └─ ElastiCache
+
+非同期処理:
+  SQS → Lambda / ECS
+
+設計原則:
+  - APIゲートウェイパターン
+  - サービス独立性
+  - データベース分離
+  - 非同期通信
+
+スケーリング戦略:
+  各サービス独立:
+    - User Service: 最小2、最大10
+    - Order Service: 最小2、最大15
+    - Inventory Service: 最小1、最大5
+    - Notification Service: 最小1、最大3
+
+メリット:
+  - 障害分離
+  - 個別スケーリング
+  - 独立デプロイ
+  - チーム自律性
+```
+
+#### パターン4: グローバルAPI配信
+
+```yaml
+アーキテクチャ:
+
+Route 53 (Latency-based Routing)
+  ├─ US East → App Runner (us-east-1)
+  ├─ EU West → App Runner (eu-west-1)
+  └─ AP Tokyo → App Runner (ap-northeast-1)
+
+各リージョン:
+  App Runner
+    ↓
+  Aurora Global Database (Read Replica)
+  
+  S3 Cross-Region Replication
+
+設定:
+  - 複数リージョンデプロイ
+  - レイテンシーベースルーティング
+  - リージョン別スケーリング
+  - グローバルデータベース
+
+メリット:
+  - 低レイテンシー
+  - 高可用性
+  - 災害対策
+  - グローバル展開
+```
+
+### CI/CD統合パターン
+
+#### パターン1: GitHub自動デプロイ
+
+```yaml
+ワークフロー:
+
+1. 開発者がgit push
+2. App Runner自動検知
+3. ソースコードビルド
+4. 新バージョンデプロイ
+5. ヘルスチェック
+6. トラフィック切り替え
+
+設定:
+  Source:
+    Connection: GitHub
+    Repository: myorg/myapp
+    Branch: main
+    Auto-deploy: true
+  
+  Build:
+    Runtime: Python 3
+    Build command: pip install -r requirements.txt
+    Start command: python app.py
+
+メリット:
+  - 設定シンプル
+  - 自動化
+  - 高速デプロイ
+```
+
+#### パターン2: ECRイメージデプロイ
+
+```yaml
+ワークフロー:
+
+GitHub
+  ↓
+GitHub Actions
+  ├─ Docker Build
+  ├─ Security Scan
+  └─ ECR Push
+    ↓
+App Runner Auto Deploy
+
+GitHub Actions例:
+  - Lint & Test
+  - Docker Build
+  - Trivy Security Scan
+  - ECR Push
+  - App Runner Deploy
+
+メリット:
+  - カスタムビルド
+  - セキュリティスキャン
+  - 複雑なワークフロー
+  - イメージ再利用
+```
+
+#### パターン3: マルチ環境デプロイ
+
+```yaml
+環境構成:
+
+GitHub Branches
+  ├─ feature/* → App Runner (Dev)
+  ├─ develop → App Runner (Staging)
+  └─ main → App Runner (Production)
+
+環境別設定:
+  Development:
+    - 最小: 1
+    - 最大: 3
+    - vCPU: 0.5
+    - 自動デプロイ: true
+  
+  Staging:
+    - 最小: 1
+    - 最大: 5
+    - vCPU: 1
+    - 自動デプロイ: true
+  
+  Production:
+    - 最小: 2
+    - 最大: 15
+    - vCPU: 2
+    - 自動デプロイ: false（手動承認）
+
+デプロイフロー:
+  1. Feature開発 → Dev環境
+  2. Develop統合 → Staging環境
+  3. 手動承認 → Production環境
+```
+
+### ユースケース別推奨構成
+
+```yaml
+小規模スタートアップ:
+  構成:
+    - App Runner (API)
+    - RDS (小規模)
+    - S3
+  
+  設定:
+    - 0.5 vCPU, 1 GB
+    - 最小1、最大5
+    - GitHub自動デプロイ
+  
+  コスト: $20-50/月
+
+中規模SaaS:
+  構成:
+    - App Runner (複数サービス)
+    - RDS Multi-AZ
+    - ElastiCache
+    - CloudFront
+  
+  設定:
+    - 1 vCPU, 2 GB
+    - 最小2、最大10
+    - VPC Connector
+  
+  コスト: $200-500/月
+
+エンタープライズ:
+  構成:
+    - App Runner (マイクロサービス)
+    - Aurora Global
+    - 複数リージョン
+    - WAF + Shield
+  
+  設定:
+    - 2-4 vCPU, 4-8 GB
+    - 最小2、最大25
+    - カスタムドメイン
+  
+  コスト: $1,000+/月
+```
+
+### まとめ
+
+**App Runner最適ユースケース:**
+
+- **REST API**: 自動スケーリング、HTTPS標準
+- **マイクロサービス**: 独立デプロイ、個別スケーリング
+- **CI/CD統合**: GitOps、自動デプロイ
+- **Webアプリ**: フルスタック、サーバーレスハイブリッド
+
+**選択基準:**
+
+- WebアプリケーションまたはAPI
+- 迅速なデプロイ重視
+- インフラ管理最小化
+- 自動スケーリング必要
+- CI/CD統合重視

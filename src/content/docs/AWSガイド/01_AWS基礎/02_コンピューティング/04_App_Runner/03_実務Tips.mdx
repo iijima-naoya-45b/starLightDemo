@@ -1,0 +1,503 @@
+---
+title: "App Runner 実務Tips"
+label: "実務Tips"
+---
+
+## App Runner 実務Tips
+
+### AWS Console でのApp Runner作成
+
+```
+手順:
+1. App Runnerコンソール → 「サービスの作成」
+2. ソース選択:
+   - リポジトリ（GitHub）
+   - コンテナレジストリ（ECR）
+3. デプロイ設定:
+   - リポジトリURL/ECRイメージURI
+   - ブランチ/タグ
+   - 自動デプロイ有効化
+4. ビルド設定（ソースコードの場合）:
+   - ランタイム: Python 3, Node.js 16, Java 11等
+   - ビルドコマンド
+   - 開始コマンド
+5. サービス設定:
+   - サービス名
+   - vCPU, メモリ
+   - ポート
+   - 環境変数
+6. Auto Scaling設定:
+   - 最小/最大インスタンス数
+   - 同時実行数
+7. ネットワーク:
+   - VPC Connector（オプション）
+8. セキュリティ:
+   - IAMロール
+9. 「作成してデプロイ」
+```
+
+### AWS CLI での操作
+
+#### サービス作成（ソースコード）
+
+```bash
+# GitHub接続作成（初回のみ）
+aws apprunner create-connection \
+  --connection-name github-connection \
+  --provider-type GITHUB
+
+# サービス作成（ソースコード）
+aws apprunner create-service \
+  --service-name my-app-runner-service \
+  --source-configuration '{
+    "AuthenticationConfiguration": {
+      "ConnectionArn": "arn:aws:apprunner:us-east-1:123456789012:connection/github-connection"
+    },
+    "AutoDeploymentsEnabled": true,
+    "CodeRepository": {
+      "RepositoryUrl": "https://github.com/myorg/myapp",
+      "SourceCodeVersion": {
+        "Type": "BRANCH",
+        "Value": "main"
+      },
+      "CodeConfiguration": {
+        "ConfigurationSource": "API",
+        "CodeConfigurationValues": {
+          "Runtime": "PYTHON_3",
+          "BuildCommand": "pip install -r requirements.txt",
+          "StartCommand": "python app.py",
+          "Port": "8080",
+          "RuntimeEnvironmentVariables": {
+            "ENV": "production",
+            "DB_HOST": "mydb.xxxxx.rds.amazonaws.com"
+          }
+        }
+      }
+    }
+  }' \
+  --instance-configuration '{
+    "Cpu": "1 vCPU",
+    "Memory": "2 GB",
+    "InstanceRoleArn": "arn:aws:iam::123456789012:role/AppRunnerInstanceRole"
+  }' \
+  --auto-scaling-configuration-arn arn:aws:apprunner:us-east-1:123456789012:autoscalingconfiguration/my-config
+```
+
+#### サービス作成（ECRイメージ）
+
+```bash
+# サービス作成（ECRイメージ）
+aws apprunner create-service \
+  --service-name my-container-service \
+  --source-configuration '{
+    "AuthenticationConfiguration": {
+      "AccessRoleArn": "arn:aws:iam::123456789012:role/AppRunnerECRAccessRole"
+    },
+    "AutoDeploymentsEnabled": true,
+    "ImageRepository": {
+      "ImageIdentifier": "123456789012.dkr.ecr.us-east-1.amazonaws.com/my-app:latest",
+      "ImageRepositoryType": "ECR",
+      "ImageConfiguration": {
+        "Port": "8080",
+        "RuntimeEnvironmentVariables": {
+          "ENV": "production"
+        }
+      }
+    }
+  }' \
+  --instance-configuration '{
+    "Cpu": "1 vCPU",
+    "Memory": "2 GB"
+  }'
+
+# サービス一覧
+aws apprunner list-services
+
+# サービス詳細取得
+aws apprunner describe-service \
+  --service-arn arn:aws:apprunner:us-east-1:123456789012:service/my-service/xxxxx
+
+# サービス削除
+aws apprunner delete-service \
+  --service-arn arn:aws:apprunner:us-east-1:123456789012:service/my-service/xxxxx
+```
+
+#### Auto Scaling設定
+
+```bash
+# Auto Scaling設定作成
+aws apprunner create-auto-scaling-configuration \
+  --auto-scaling-configuration-name high-traffic-config \
+  --max-concurrency 100 \
+  --max-size 25 \
+  --min-size 2
+
+# Auto Scaling設定適用
+aws apprunner update-service \
+  --service-arn arn:aws:apprunner:us-east-1:123456789012:service/my-service/xxxxx \
+  --auto-scaling-configuration-arn arn:aws:apprunner:us-east-1:123456789012:autoscalingconfiguration/high-traffic-config
+
+# Auto Scaling設定一覧
+aws apprunner list-auto-scaling-configurations
+```
+
+#### VPC Connector設定
+
+```bash
+# VPC Connector作成
+aws apprunner create-vpc-connector \
+  --vpc-connector-name my-vpc-connector \
+  --subnets subnet-xxxxx subnet-yyyyy \
+  --security-groups sg-xxxxx
+
+# サービスにVPC Connector適用
+aws apprunner update-service \
+  --service-arn arn:aws:apprunner:us-east-1:123456789012:service/my-service/xxxxx \
+  --network-configuration '{
+    "EgressConfiguration": {
+      "EgressType": "VPC",
+      "VpcConnectorArn": "arn:aws:apprunner:us-east-1:123456789012:vpcconnector/my-vpc-connector/xxxxx"
+    }
+  }'
+
+# VPC Connector一覧
+aws apprunner list-vpc-connectors
+```
+
+### デプロイ戦略
+
+#### 1. 手動デプロイ
+
+```bash
+# 手動デプロイトリガー
+aws apprunner start-deployment \
+  --service-arn arn:aws:apprunner:us-east-1:123456789012:service/my-service/xxxxx
+
+# デプロイ状態確認
+aws apprunner list-operations \
+  --service-arn arn:aws:apprunner:us-east-1:123456789012:service/my-service/xxxxx
+```
+
+#### 2. 自動デプロイ（GitHub）
+
+```yaml
+設定:
+  AutoDeploymentsEnabled: true
+  Branch: main
+
+動作:
+  1. mainブランチにpush
+  2. App Runner自動検知（約1分）
+  3. ビルド開始
+  4. デプロイ実行
+  5. ヘルスチェック
+  6. トラフィック切り替え
+
+所要時間: 3-5分
+```
+
+#### 3. 自動デプロイ（ECR）
+
+```yaml
+設定:
+  AutoDeploymentsEnabled: true
+  ImageIdentifier: latest
+
+動作:
+  1. ECRに新しいイメージpush
+  2. App Runner自動検知
+  3. 新イメージpull
+  4. デプロイ実行
+  5. トラフィック切り替え
+
+所要時間: 1-3分
+```
+
+#### 4. ロールバック
+
+```bash
+# 以前のバージョンに戻す
+# 1. 以前のGitコミット/ECRイメージタグを指定
+# 2. 手動デプロイトリガー
+
+# またはGit revert
+git revert HEAD
+git push origin main
+# App Runnerが自動的に以前のバージョンをデプロイ
+```
+
+### カスタムドメイン設定
+
+```bash
+# カスタムドメイン追加
+aws apprunner associate-custom-domain \
+  --service-arn arn:aws:apprunner:us-east-1:123456789012:service/my-service/xxxxx \
+  --domain-name api.example.com
+
+# 検証レコード取得（出力から）
+# 出力例:
+# {
+#   "DNSTarget": "xxxxx.awsapprunner.com",
+#   "CertificateValidationRecords": [
+#     {
+#       "Name": "_xxxxx.api.example.com",
+#       "Type": "CNAME",
+#       "Value": "_yyyyy.acm-validations.aws."
+#     }
+#   ]
+# }
+
+# Route 53設定
+aws route53 change-resource-record-sets \
+  --hosted-zone-id Z1234567890ABC \
+  --change-batch '{
+    "Changes": [
+      {
+        "Action": "CREATE",
+        "ResourceRecordSet": {
+          "Name": "_xxxxx.api.example.com",
+          "Type": "CNAME",
+          "TTL": 300,
+          "ResourceRecords": [{"Value": "_yyyyy.acm-validations.aws."}]
+        }
+      },
+      {
+        "Action": "CREATE",
+        "ResourceRecordSet": {
+          "Name": "api.example.com",
+          "Type": "CNAME",
+          "TTL": 300,
+          "ResourceRecords": [{"Value": "xxxxx.awsapprunner.com"}]
+        }
+      }
+    ]
+  }'
+
+# カスタムドメイン一覧
+aws apprunner list-custom-domains \
+  --service-arn arn:aws:apprunner:us-east-1:123456789012:service/my-service/xxxxx
+```
+
+### シークレット管理
+
+#### Secrets Manager統合
+
+```bash
+# Secrets Manager作成
+aws secretsmanager create-secret \
+  --name apprunner/myapp/db-credentials \
+  --secret-string '{
+    "username": "admin",
+    "password": "MySecurePassword123!",
+    "host": "mydb.xxxxx.rds.amazonaws.com",
+    "database": "myapp"
+  }'
+
+# IAMロールに権限追加
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:apprunner/myapp/*"
+    }
+  ]
+}
+
+# アプリケーションコードでシークレット取得
+```
+
+**Python例:**
+
+```python
+import boto3
+import json
+
+def get_secret():
+    client = boto3.client('secretsmanager', region_name='us-east-1')
+    response = client.get_secret_value(SecretId='apprunner/myapp/db-credentials')
+    return json.loads(response['SecretString'])
+
+# 使用例
+secrets = get_secret()
+db_host = secrets['host']
+db_user = secrets['username']
+db_pass = secrets['password']
+```
+
+#### 環境変数管理
+
+```bash
+# サービス更新（環境変数追加）
+aws apprunner update-service \
+  --service-arn arn:aws:apprunner:us-east-1:123456789012:service/my-service/xxxxx \
+  --source-configuration '{
+    "ImageRepository": {
+      "ImageConfiguration": {
+        "RuntimeEnvironmentVariables": {
+          "DATABASE_URL": "postgresql://user:pass@host:5432/db",
+          "REDIS_URL": "redis://cache.xxxxx.cache.amazonaws.com:6379",
+          "S3_BUCKET": "my-app-bucket",
+          "LOG_LEVEL": "info"
+        }
+      }
+    }
+  }'
+```
+
+### ベストプラクティス
+
+```yaml
+セキュリティ:
+  - IAMロール最小権限
+  - Secrets Manager使用
+  - VPC Connector（プライベートリソース）
+  - カスタムドメインHTTPS
+  - WAF統合（CloudFront経由）
+
+パフォーマンス:
+  - 適切なvCPU/メモリ選択
+  - ヘルスチェックエンドポイント実装
+  - 接続プール最適化
+  - キャッシング戦略
+  - CloudFront活用
+
+コスト最適化:
+  - 最小インスタンス数調整
+  - アイドル時1インスタンス
+  - リクエスト単位課金理解
+  - VPC Connector必要性検討
+  - モニタリングでリソース最適化
+
+運用:
+  - CloudWatch Logs統合
+  - メトリクス監視
+  - アラーム設定
+  - タグ付け徹底
+  - CI/CD自動化
+```
+
+### モニタリング
+
+```bash
+# CloudWatch Logsグループ
+/aws/apprunner/my-service/xxxxx/application
+/aws/apprunner/my-service/xxxxx/service
+
+# メトリクス確認
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/AppRunner \
+  --metric-name RequestCount \
+  --dimensions Name=ServiceName,Value=my-service \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-01T23:59:59Z \
+  --period 3600 \
+  --statistics Sum
+
+# 主要メトリクス:
+# - RequestCount（リクエスト数）
+# - 2xxStatusResponse（成功レスポンス）
+# - 4xxStatusResponse（クライアントエラー）
+# - 5xxStatusResponse（サーバーエラー）
+# - RequestLatency（レイテンシー）
+# - ActiveInstances（アクティブインスタンス数）
+# - CPUUtilization（CPU使用率）
+# - MemoryUtilization（メモリ使用率）
+```
+
+### トラブルシューティング
+
+```yaml
+デプロイ失敗:
+  確認項目:
+    - ビルドログ確認
+    - IAMロール権限
+    - ECRイメージ存在確認
+    - ヘルスチェックパス確認
+  
+  解決方法:
+    - CloudWatch Logsでエラー確認
+    - ローカルでDockerビルド検証
+    - 環境変数確認
+
+接続エラー:
+  VPCリソースアクセス:
+    - VPC Connector設定確認
+    - セキュリティグループ設定
+    - サブネット設定
+    - NATゲートウェイ（インターネットアクセス必要時）
+  
+  RDS接続:
+    - セキュリティグループインバウンド許可
+    - RDSエンドポイント確認
+    - 認証情報確認
+
+高レイテンシー:
+  確認項目:
+    - CloudWatchメトリクス
+    - データベースクエリ
+    - 外部API呼び出し
+  
+  改善策:
+    - vCPU/メモリ増加
+    - データベース最適化
+    - キャッシング導入
+    - 非同期処理
+```
+
+### 設定ファイル例
+
+#### apprunner.yaml（ソースコード）
+
+```yaml
+version: 1.0
+runtime: python3
+build:
+  commands:
+    pre-build:
+      - pip install --upgrade pip
+    build:
+      - pip install -r requirements.txt
+    post-build:
+      - echo "Build completed"
+run:
+  command: gunicorn app:app --bind 0.0.0.0:8080
+  network:
+    port: 8080
+  env:
+    - name: ENV
+      value: production
+    - name: WORKERS
+      value: "4"
+```
+
+#### Dockerfile（コンテナ）
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+EXPOSE 8080
+
+CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:8080", "--workers", "4"]
+```
+
+### まとめ
+
+**実務で重要なポイント:**
+
+- **AWS CLI**: サービス作成、更新、削除の自動化
+- **デプロイ**: 自動デプロイ、ロールバック戦略
+- **カスタムドメイン**: HTTPS、DNS設定
+- **シークレット管理**: Secrets Manager統合
+- **モニタリング**: CloudWatch、アラーム設定
+- **トラブルシューティング**: ログ確認、権限設定
