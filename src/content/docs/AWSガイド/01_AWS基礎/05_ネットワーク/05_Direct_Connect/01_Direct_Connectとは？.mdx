@@ -1,0 +1,413 @@
+---
+title: "Direct Connectとは？"
+label: "Direct Connectとは？"
+---
+
+## AWS Direct Connect とは？
+
+AWS Direct Connect は、オンプレミスからAWSへの専用プライベートネットワーク接続を確立できるサービスです。インターネットを経由せず、安定した低レイテンシー、高帯域幅の接続を提供します。
+
+### 基本概念
+
+#### Direct Connectの役割
+
+```yaml
+主要機能:
+  - 専用線接続: インターネット経由せず直接AWS接続
+  - 低レイテンシー: 安定したネットワークパフォーマンス
+  - 高帯域幅: 50Mbps 〜 100Gbps
+  - コスト削減: 大容量データ転送時のコスト削減
+  - セキュリティ: プライベート接続による安全性向上
+
+メリット:
+  - 帯域幅の一貫性
+  - ネットワークコストの削減
+  - すべてのAWSサービスへのアクセス
+  - ハイブリッドクラウド環境の構築
+```
+
+### 接続タイプ
+
+#### 1. Dedicated Connection (専用接続)
+
+```yaml
+概要:
+  - AWS Direct Connect Location で物理的な専用ポート提供
+  - エンタープライズ向け
+  - 直接AWSと接続
+
+帯域幅:
+  - 1 Gbps
+  - 10 Gbps
+  - 100 Gbps (一部ロケーション)
+
+特徴:
+  - 専用物理ポート
+  - 長期契約向け
+  - 安定した高帯域
+  - 提供まで数週間〜数ヶ月
+
+用途:
+  - 大規模エンタープライズ
+  - 継続的な大容量データ転送
+  - ミッションクリティカルなワークロード
+```
+
+#### 2. Hosted Connection (ホスト接続)
+
+```yaml
+概要:
+  - AWS Direct Connect パートナー経由で提供
+  - 柔軟な帯域幅選択
+  - 短期導入可能
+
+帯域幅:
+  - 50 Mbps
+  - 100 Mbps
+  - 200 Mbps
+  - 300 Mbps
+  - 400 Mbps
+  - 500 Mbps
+  - 1 Gbps
+  - 2 Gbps
+  - 5 Gbps
+  - 10 Gbps
+
+特徴:
+  - パートナーのポート共有
+  - 柔軟な帯域幅
+  - 短期導入 (数日〜数週間)
+  - スケール容易
+
+用途:
+  - 中小規模企業
+  - 段階的な導入
+  - 可変ワークロード
+```
+
+### Virtual Interface (VIF)
+
+#### VIFの種類
+
+```yaml
+Private VIF:
+  用途: VPC への接続
+  プロトコル: BGP
+  接続先:
+    - VPC の Virtual Private Gateway
+    - Transit Gateway
+  VLAN: 必須
+  BGP ASN: 必須
+  IPアドレス:
+    - /30 または /31 CIDR
+    - Amazon提供 または カスタム
+
+Public VIF:
+  用途: AWS公開サービスへの接続
+  対象サービス:
+    - S3
+    - DynamoDB
+    - EC2 API
+    - その他パブリックエンドポイント
+  特徴:
+    - パブリックIPアドレス使用
+    - インターネット経由不要
+    - AWS Backbone経由
+
+Transit VIF:
+  用途: Transit Gateway への接続
+  メリット:
+    - 複数VPC一元管理
+    - 最大3つのTransit Gateway接続
+    - スケーラブル
+  特徴:
+    - 最新の推奨構成
+    - 大規模環境向け
+```
+
+#### VIF作成の流れ
+
+```yaml
+ステップ:
+  1. Direct Connect接続確立
+  2. VLAN ID割り当て
+  3. BGP設定:
+     - BGP ASN指定
+     - BGP認証キー設定
+  4. IPアドレス設定:
+     - AWS側 IP
+     - カスタマー側 IP
+  5. ルーティング設定:
+     - BGPルート交換
+     - Prefix Advertisement
+  6. 接続テスト
+
+設定例:
+  VLAN ID: 100
+  BGP ASN (AWS): 64512
+  BGP ASN (Customer): 65000
+  AWS側 IP: 169.254.0.1/30
+  Customer側 IP: 169.254.0.2/30
+  Prefixes: 10.0.0.0/16
+```
+
+### Direct Connect Gateway
+
+```yaml
+概要:
+  - 複数リージョンのVPCへ接続可能
+  - グローバルリソース
+  - Private VIF / Transit VIF対応
+
+制限:
+  - 最大10個のVirtual Private Gateway接続
+  - 最大3個のTransit Gateway接続
+  - リージョン間のVPC通信は不可 (VPC Peering必要)
+
+用途:
+  - マルチリージョン展開
+  - 単一Direct Connect から複数VPC接続
+  - グローバルネットワーク構築
+
+構成例:
+  オンプレミス
+    ↓
+  Direct Connect (ap-northeast-1)
+    ↓
+  Direct Connect Gateway
+    ↓
+  ├─ VPC (ap-northeast-1)
+  ├─ VPC (us-east-1)
+  └─ VPC (eu-west-1)
+```
+
+### Link Aggregation Group (LAG)
+
+```yaml
+概要:
+  - 複数の物理接続を論理的に束ねる
+  - LACP (IEEE 802.1AX-2008) 使用
+  - 帯域幅の集約
+
+特徴:
+  - 最大4つの接続を束ねる
+  - 全て同じ帯域幅必要
+  - 同じDirect Connect Location必要
+  - Active/Active構成
+
+メリット:
+  - 帯域幅拡張
+  - 冗長性向上
+  - 運用の簡素化
+
+構成例:
+  4 x 10Gbps → LAG → 40Gbps論理接続
+  
+注意点:
+  - 最小リンク数設定可能
+  - リンク障害時の動作定義
+```
+
+### 冗長化構成
+
+#### 高可用性のベストプラクティス
+
+```yaml
+レベル1: 冗長化なし
+  構成:
+    - 単一Direct Connect接続
+  リスク:
+    - 単一障害点
+    - メンテナンス時の停止
+  用途: 開発環境のみ
+
+レベル2: 単一ロケーション冗長化
+  構成:
+    - 同一ロケーションに2つの接続
+  メリット:
+    - デバイス障害対策
+  リスク:
+    - ロケーション障害
+  用途: 中規模本番環境
+
+レベル3: マルチロケーション冗長化 (推奨)
+  構成:
+    - 異なる2つのロケーションに接続
+    - 各ロケーションに冗長接続
+  メリット:
+    - 最高レベルの可用性
+    - ロケーション障害対策
+  用途: 大規模本番環境
+
+レベル4: ハイブリッド構成
+  構成:
+    - Primary: Direct Connect
+    - Backup: Site-to-Site VPN
+  メリット:
+    - コスト効率的
+    - VPNで自動フェイルオーバー
+  用途: 中小規模本番環境
+```
+
+### Direct Connect vs VPN
+
+**比較表:**
+
+```yaml
+Direct Connect:
+  接続タイプ: 専用プライベート接続
+  帯域幅: 50Mbps 〜 100Gbps
+  レイテンシー: 低 (一貫性あり)
+  セキュリティ: プライベート接続 (暗号化はオプション)
+  導入期間: 数週間〜数ヶ月
+  コスト: 高 (固定費 + 従量課金)
+  用途:
+    - 大容量データ転送
+    - 低レイテンシー要求
+    - ハイブリッドクラウド
+
+Site-to-Site VPN:
+  接続タイプ: インターネット経由暗号化接続
+  帯域幅: 最大1.25Gbps (per tunnel)
+  レイテンシー: 変動あり (インターネット依存)
+  セキュリティ: IPsec暗号化
+  導入期間: 数分〜数時間
+  コスト: 低 ($0.05/時間)
+  用途:
+    - 小規模接続
+    - 短期プロジェクト
+    - Direct Connectバックアップ
+```
+
+### MACsec 暗号化
+
+```yaml
+概要:
+  - Layer 2の暗号化
+  - 10Gbps および 100Gbps接続で利用可能
+  - Direct Connect接続の暗号化
+
+メリット:
+  - ネットワークレイヤーでの暗号化
+  - パフォーマンス影響最小
+  - コンプライアンス対応
+
+制限:
+  - 一部のDirect Connect Locationのみ対応
+  - 10Gbps / 100Gbps接続のみ
+  - 対応デバイス必要
+
+設定:
+  - 事前共有キー (CKN/CAK)
+  - MACsec対応デバイス
+  - AWS側でMACsec有効化
+```
+
+### 料金
+
+#### ポート時間料金
+
+**Dedicated Connection:**
+
+| 接続速度 | 料金 (東京リージョン) | 備考 |
+|---|---|---|
+| **1 Gbps** | $0.285 / 時間 | 約 $205/月 |
+| **10 Gbps** | $2.25 / 時間 | 約 $1,620/月 |
+| **100 Gbps** | $22.50 / 時間 | 約 $16,200/月 |
+
+**Hosted Connection:**
+
+| 接続速度 | 料金 (東京リージョン) | 備考 |
+|---|---|---|
+| **50 Mbps** | $0.03 / 時間 | 約 $22/月 |
+| **100 Mbps** | $0.06 / 時間 | 約 $43/月 |
+| **200 Mbps** | $0.12 / 時間 | 約 $86/月 |
+| **300 Mbps** | $0.18 / 時間 | 約 $130/月 |
+| **500 Mbps** | $0.30 / 時間 | 約 $216/月 |
+| **1 Gbps** | $0.285 / 時間 | 約 $205/月 |
+
+#### データ転送料金 (アウト)
+
+**Direct Connect から オンプレミスへ:**
+
+| データ転送量 | 料金 (東京リージョン) |
+|---|---|
+| 最初の 10 TB / 月 | $0.0514 / GB |
+| 次の 40 TB / 月 | $0.0474 / GB |
+| 次の 100 TB / 月 | $0.0435 / GB |
+| 150 TB 以上 / 月 | $0.0396 / GB |
+
+**データ転送料金 (イン):**
+- オンプレミス から Direct Connect: **無料**
+
+#### Direct Connect Gateway
+
+| 項目 | 料金 |
+|---|---|
+| **Direct Connect Gateway** | 無料 |
+| **データ転送 (リージョン間)** | 標準料金適用 |
+
+**料金計算例1 (1Gbps専用接続、月間10TB転送):**
+
+| 項目 | 計算 | 料金 |
+|---|---|---|
+| ポート時間 | $0.285 × 24時間 × 30日 | $205.20 |
+| データ転送 (アウト) | 10TB × $0.0514 | $512.00 |
+| データ転送 (イン) | 無料 | $0.00 |
+| **合計** | - | **$717.20/月** |
+
+**料金計算例2 (500Mbps Hosted接続、月間5TB転送):**
+
+| 項目 | 計算 | 料金 |
+|---|---|---|
+| ポート時間 | $0.30 × 24時間 × 30日 | $216.00 |
+| データ転送 (アウト) | 5TB × $0.0514 | $257.00 |
+| **合計** | - | **$473.00/月** |
+
+**コスト比較 (月間10TB転送):**
+
+| 方法 | 月間コスト | 備考 |
+|---|---|---|
+| **Direct Connect (1Gbps)** | $717 | 専用接続、低レイテンシー |
+| **VPN** | $36 + 通信料 | 簡易、バックアップ向け |
+| **インターネット (Direct Connect Gateway)** | $512 (転送料のみ) | 参考値 |
+
+**コスト最適化のポイント:**
+- 月間1TB以上の転送でDirect Connectが効果的
+- Hosted Connectionで段階的に導入
+- VPNをバックアップとして併用
+- Direct Connect Gateway で複数VPCを統合
+
+### Direct Connect の制限
+
+```yaml
+デフォルト制限:
+  - Private VIF per Direct Connect: 50
+  - Public VIF per Direct Connect: 1
+  - Transit VIF per Direct Connect: 1
+  - Direct Connect Gateway per アカウント: 200
+  - VGW per Direct Connect Gateway: 10
+  - Transit Gateway per Direct Connect Gateway: 3
+  - Virtual Interface (VIF) per Direct Connect Gateway: 30
+
+接続制限:
+  - LAG あたりの最大接続数: 4
+  - 同じ帯域幅の接続のみLAG化可能
+  - 同じDirect Connect Locationのみ
+
+BGP:
+  - Advertise可能なPrefix: 最大100 (Private VIF)
+  - BGP セッション: IPv4 および/または IPv6
+```
+
+### まとめ
+
+**Direct Connect の重要ポイント:**
+
+- **専用接続**: インターネット経由せず安定した通信
+- **接続タイプ**: Dedicated (1/10/100Gbps) と Hosted (50Mbps〜10Gbps)
+- **VIF**: Private (VPC)、Public (AWSサービス)、Transit (Transit Gateway)
+- **高可用性**: マルチロケーション冗長化 + VPNバックアップ
+- **コスト**: 大容量転送で効果的、固定費 + 従量課金
+
+Direct Connect は、オンプレミスとAWS間の安定した高速プライベート接続を実現し、ハイブリッドクラウド環境の基盤となります。
