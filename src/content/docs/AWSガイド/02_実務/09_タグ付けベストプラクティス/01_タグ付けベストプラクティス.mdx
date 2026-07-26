@@ -1,0 +1,465 @@
+---
+title: "AWS タグ付けベストプラクティス"
+label: "タグ付けベストプラクティス"
+---
+
+## AWS タグ付けベストプラクティス
+
+AWSリソースのタグ付けは、コスト管理、運用効率化、セキュリティガバナンスの基盤となります。効果的なタグ戦略を実装しましょう。
+
+### タグの重要性
+
+```yaml
+コスト管理:
+  - 部門別コスト配分
+  - プロジェクト別コスト追跡
+  - 予算管理とアラート
+
+運用管理:
+  - リソースの自動管理
+  - バックアップポリシー適用
+  - ライフサイクル管理
+
+セキュリティ:
+  - アクセス制御
+  - コンプライアンス管理
+  - 監査証跡
+```
+
+### 必須タグセット
+
+#### 1. 基本タグ
+
+```yaml
+# 必須タグ（全リソースに適用）
+Environment:
+  値: [Production, Staging, Development, Testing]
+  用途: 環境識別、ポリシー適用
+
+Owner:
+  値: team-name@example.com
+  用途: 責任者特定、連絡先
+
+CostCenter:
+  値: CC-XXXX
+  用途: コスト配分、チャージバック
+
+Project:
+  値: project-name
+  用途: プロジェクト別コスト追跡
+
+Application:
+  値: application-name
+  用途: アプリケーション単位の管理
+```
+
+#### 2. 運用タグ
+
+```yaml
+AutoShutdown:
+  値: [true, false]
+  用途: 自動停止スクリプト
+
+BackupPolicy:
+  値: [daily, weekly, none]
+  用途: AWS Backupポリシー適用
+
+Patch Group:
+  値: [critical, standard, manual]
+  用途: Systems Managerパッチ適用
+
+MaintenanceWindow:
+  値: [weekday-night, weekend, manual]
+  用途: メンテナンス時間帯
+```
+
+#### 3. セキュリティタグ
+
+```yaml
+DataClassification:
+  値: [Public, Internal, Confidential, Restricted]
+  用途: データ保護レベル
+
+Compliance:
+  値: [PCI-DSS, HIPAA, SOC2, GDPR]
+  用途: コンプライアンス要件
+
+EncryptionRequired:
+  値: [true, false]
+  用途: 暗号化強制
+
+PublicAccessAllowed:
+  値: [true, false]
+  用途: パブリックアクセス制御
+```
+
+### タグポリシー
+
+#### 1. Organizations Tag Policies
+
+```json
+{
+  "tags": {
+    "Environment": {
+      "tag_key": {
+        "@@assign": "Environment"
+      },
+      "tag_value": {
+        "@@assign": [
+          "Production",
+          "Staging",
+          "Development",
+          "Testing"
+        ]
+      },
+      "enforced_for": {
+        "@@assign": [
+          "ec2:instance",
+          "rds:db",
+          "s3:bucket",
+          "lambda:function"
+        ]
+      }
+    },
+    "Owner": {
+      "tag_key": {
+        "@@assign": "Owner"
+      },
+      "tag_value": {
+        "@@assign": ".*@example\\.com$"
+      },
+      "enforced_for": {
+        "@@assign": [
+          "ec2:*",
+          "rds:*",
+          "s3:*"
+        ]
+      }
+    },
+    "CostCenter": {
+      "tag_key": {
+        "@@assign": "CostCenter"
+      },
+      "tag_value": {
+        "@@assign": "CC-[0-9]{4}"
+      },
+      "enforced_for": {
+        "@@assign": [
+          "ec2:*",
+          "rds:*"
+        ]
+      }
+    }
+  }
+}
+```
+
+#### 2. IAMポリシーでタグを強制
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "RequireTagsOnCreate",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:RunInstances",
+        "rds:CreateDBInstance",
+        "s3:CreateBucket"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotLike": {
+          "aws:RequestTag/Environment": [
+            "Production",
+            "Staging",
+            "Development"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "RequireOwnerTag",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:RunInstances",
+        "rds:CreateDBInstance"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "Null": {
+          "aws:RequestTag/Owner": "true"
+        }
+      }
+    },
+    {
+      "Sid": "AllowOnlyOwnedResourcesModification",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:*",
+        "rds:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "ec2:ResourceTag/Owner": "${aws:username}@example.com"
+        }
+      }
+    }
+  ]
+}
+```
+
+### 自動タグ付け
+
+#### 1. Lambda関数による自動タグ付け
+
+```python
+import boto3
+import json
+from datetime import datetime
+
+def lambda_handler(event, context):
+    ec2 = boto3.client('ec2')
+    
+    # CloudTrailイベントから情報取得
+    detail = event['detail']
+    resource_type = detail['eventName']
+    user_identity = detail['userIdentity']
+    
+    # リソースID取得
+    if resource_type == 'RunInstances':
+        instances = detail['responseElements']['instancesSet']['items']
+        instance_ids = [i['instanceId'] for i in instances]
+        
+        # 自動タグ付け
+        tags = [
+            {'Key': 'CreatedBy', 'Value': user_identity['principalId']},
+            {'Key': 'CreatedAt', 'Value': datetime.now().isoformat()},
+            {'Key': 'LaunchedBy', 'Value': user_identity.get('userName', 'unknown')},
+            {'Key': 'AutoTagged', 'Value': 'true'}
+        ]
+        
+        ec2.create_tags(Resources=instance_ids, Tags=tags)
+        
+        print(f"Auto-tagged instances: {instance_ids}")
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Tags applied successfully')
+    }
+```
+
+#### 2. EventBridgeルール
+
+```json
+{
+  "source": ["aws.ec2"],
+  "detail-type": ["AWS API Call via CloudTrail"],
+  "detail": {
+    "eventName": ["RunInstances", "CreateVolume", "CreateSnapshot"]
+  }
+}
+```
+
+### タグによる自動化
+
+#### 1. 自動停止スクリプト
+
+```python
+import boto3
+from datetime import datetime
+
+def lambda_handler(event, context):
+    ec2 = boto3.client('ec2')
+    
+    # AutoShutdown=trueタグを持つインスタンスを検索
+    filters = [
+        {'Name': 'tag:AutoShutdown', 'Values': ['true']},
+        {'Name': 'instance-state-name', 'Values': ['running']}
+    ]
+    
+    instances = ec2.describe_instances(Filters=filters)
+    
+    instance_ids = []
+    for reservation in instances['Reservations']:
+        for instance in reservation['Instances']:
+            instance_ids.append(instance['InstanceId'])
+    
+    if instance_ids:
+        ec2.stop_instances(InstanceIds=instance_ids)
+        print(f"Stopped instances: {instance_ids}")
+    
+    return {
+        'statusCode': 200,
+        'stoppedInstances': instance_ids
+    }
+```
+
+#### 2. AWS Backup自動化
+
+```json
+{
+  "BackupPlan": {
+    "BackupPlanName": "TagBasedBackup",
+    "Rules": [
+      {
+        "RuleName": "DailyBackup",
+        "TargetBackupVault": "Default",
+        "ScheduleExpression": "cron(0 2 * * ? *)",
+        "StartWindowMinutes": 60,
+        "CompletionWindowMinutes": 120,
+        "Lifecycle": {
+          "DeleteAfterDays": 30
+        }
+      }
+    ],
+    "AdvancedBackupSettings": []
+  },
+  "BackupSelection": {
+    "SelectionName": "TagBasedSelection",
+    "IamRoleArn": "arn:aws:iam::123456789012:role/AWSBackupDefaultServiceRole",
+    "Resources": ["*"],
+    "ListOfTags": [
+      {
+        "ConditionType": "STRINGEQUALS",
+        "ConditionKey": "BackupPolicy",
+        "ConditionValue": "daily"
+      }
+    ]
+  }
+}
+```
+
+### コスト配分タグ
+
+#### 1. Cost Allocation Tagsの有効化
+
+```bash
+# タグの有効化
+aws ce update-cost-allocation-tags-status \
+  --cost-allocation-tags-status \
+    Key=Environment,Status=Active \
+    Key=BusinessUnit,Status=Active \
+    Key=CostCenter,Status=Active \
+    Key=Project,Status=Active \
+    Key=Application,Status=Active
+
+# コストレポート生成
+aws ce get-cost-and-usage \
+  --time-period Start=2026-01-01,End=2026-01-31 \
+  --granularity MONTHLY \
+  --metrics BlendedCost \
+  --group-by Type=TAG,Key=Environment \
+  --group-by Type=TAG,Key=CostCenter
+```
+
+#### 2. Cost Explorerでの分析
+
+```yaml
+分析例:
+  環境別コスト:
+    - Production: $50,000
+    - Staging: $5,000
+    - Development: $3,000
+  
+  部門別コスト:
+    - Engineering: $40,000
+    - Marketing: $10,000
+    - Sales: $8,000
+  
+  プロジェクト別コスト:
+    - Project A: $25,000
+    - Project B: $15,000
+    - Project C: $18,000
+```
+
+### タグのガバナンス
+
+#### 1. Tag Compliance監視
+
+```python
+import boto3
+
+def check_tag_compliance():
+    ec2 = boto3.client('ec2')
+    required_tags = ['Environment', 'Owner', 'CostCenter']
+    
+    instances = ec2.describe_instances()
+    non_compliant = []
+    
+    for reservation in instances['Reservations']:
+        for instance in reservation['Instances']:
+            instance_id = instance['InstanceId']
+            tags = {tag['Key']: tag['Value'] for tag in instance.get('Tags', [])}
+            
+            missing_tags = [tag for tag in required_tags if tag not in tags]
+            
+            if missing_tags:
+                non_compliant.append({
+                    'InstanceId': instance_id,
+                    'MissingTags': missing_tags
+                })
+    
+    return non_compliant
+
+# AWS Configルール
+def evaluate_compliance(config_item):
+    required_tags = ['Environment', 'Owner', 'CostCenter']
+    
+    if config_item['resourceType'] != 'AWS::EC2::Instance':
+        return 'NOT_APPLICABLE'
+    
+    tags = config_item.get('tags', {})
+    
+    for required_tag in required_tags:
+        if required_tag not in tags:
+            return 'NON_COMPLIANT'
+    
+    return 'COMPLIANT'
+```
+
+### ベストプラクティス
+
+```yaml
+命名規則:
+  - PascalCase使用: Environment, CostCenter
+  - 略語避ける: Owner (O, Ow ではなく)
+  - 一貫性維持
+
+タグの数:
+  - 必須タグ: 5〜8個
+  - オプションタグ: 用途に応じて
+  - AWS制限: リソースあたり50タグ
+
+値の標準化:
+  - 列挙型を定義: [Production, Staging, Development]
+  - 正規表現検証: CC-[0-9]{4}
+  - 大文字小文字統一
+
+定期レビュー:
+  - 四半期ごとにタグポリシーレビュー
+  - 未使用タグの削除
+  - 新規タグの追加検討
+```
+
+### まとめ
+
+**タグ付けの重要ポイント:**
+
+1. **必須タグの定義**: Environment, Owner, CostCenter等
+2. **タグポリシー適用**: Organizations Tag Policies
+3. **自動化**: Lambda、EventBridgeで自動タグ付け
+4. **コスト管理**: Cost Allocation Tagsでコスト可視化
+5. **ガバナンス**: AWS Configで継続的監視
+
+**SAA/SAP試験での重要ポイント:**
+
+- Cost Allocation Tags
+- Tag Policies (Organizations)
+- IAMポリシーでのタグ活用
+- リソース自動化（AutoShutdown等）
+- AWS Backupのタグベース選択
+
+適切なタグ戦略により、AWSリソースの可視化、コスト最適化、ガバナンス強化が実現できます。

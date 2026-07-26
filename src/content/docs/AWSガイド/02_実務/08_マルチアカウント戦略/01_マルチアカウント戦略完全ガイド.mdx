@@ -1,0 +1,622 @@
+---
+title: "AWS マルチアカウント戦略 完全ガイド"
+label: "マルチアカウント戦略"
+---
+
+## AWS マルチアカウント戦略 完全ガイド
+
+大規模なAWS環境では、複数のAWSアカウントを適切に管理することが重要です。このガイドでは、エンタープライズレベルのマルチアカウント戦略とベストプラクティスを解説します。
+
+### マルチアカウント戦略の必要性
+
+#### 1. 単一アカウントの課題
+
+```yaml
+セキュリティリスク:
+  - 権限の分離が困難
+  - 一つの侵害で全リソースが危険
+  - 監査証跡の複雑化
+
+コスト管理の困難:
+  - 部門別コスト配分が困難
+  - 予算管理が複雑
+  - 最適化の粒度が粗い
+
+運用上の課題:
+  - リソース制限に到達
+  - 環境分離が不十分
+  - 変更影響範囲の制御困難
+```
+
+#### 2. マルチアカウントのメリット
+
+```yaml
+セキュリティ強化:
+  - ブラストラディウスの最小化
+  - 責任範囲の明確化
+  - 監査とコンプライアンスの簡素化
+
+コスト管理:
+  - 部門別コスト可視化
+  - チャージバック実現
+  - リソース使用量の追跡
+
+運用効率化:
+  - 環境分離（開発/本番）
+  - 独立したライフサイクル管理
+  - サービス制限の分散
+```
+
+### AWS Organizationsによる組織設計
+
+#### 1. 基本構造
+
+```yaml
+組織階層:
+  Root OU:
+    - Security OU:
+        - Security Tooling Account (GuardDuty, Security Hub等)
+        - Log Archive Account (CloudTrail, Config等)
+        - Audit Account (監査専用)
+    
+    - Infrastructure OU:
+        - Network Account (Transit Gateway, Direct Connect等)
+        - Shared Services Account (Active Directory, DNS等)
+    
+    - Production OU:
+        - Business Unit A:
+            - Production Account A
+            - DR Account A
+        - Business Unit B:
+            - Production Account B
+            - DR Account B
+    
+    - Non-Production OU:
+        - Development:
+            - Dev Account A
+            - Dev Account B
+        - Staging:
+            - Staging Account A
+            - Staging Account B
+    
+    - Sandbox OU:
+        - Individual Sandbox Accounts
+```
+
+#### 2. Organizations設定
+
+```bash
+# AWS Organizations作成
+aws organizations create-organization --feature-set ALL
+
+# OU作成
+aws organizations create-organizational-unit \
+  --parent-id r-xxxx \
+  --name "Security"
+
+aws organizations create-organizational-unit \
+  --parent-id r-xxxx \
+  --name "Production"
+
+# アカウント作成
+aws organizations create-account \
+  --email security-tooling@example.com \
+  --account-name "Security Tooling Account" \
+  --role-name OrganizationAccountAccessRole
+
+# アカウント移動
+aws organizations move-account \
+  --account-id 123456789012 \
+  --source-parent-id ou-xxxx-xxxxxxxx \
+  --destination-parent-id ou-yyyy-yyyyyyyy
+```
+
+#### 3. Service Control Policies (SCPs)
+
+**ルートOUポリシー（全アカウント適用）:**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyLeavingOrganization",
+      "Effect": "Deny",
+      "Action": [
+        "organizations:LeaveOrganization"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyRegionRestriction",
+      "Effect": "Deny",
+      "NotAction": [
+        "a4b:*",
+        "acm:*",
+        "aws-marketplace-management:*",
+        "aws-marketplace:*",
+        "aws-portal:*",
+        "budgets:*",
+        "ce:*",
+        "chime:*",
+        "cloudfront:*",
+        "config:*",
+        "cur:*",
+        "directconnect:*",
+        "ec2:DescribeRegions",
+        "ec2:DescribeTransitGateways",
+        "ec2:DescribeVpnGateways",
+        "fms:*",
+        "globalaccelerator:*",
+        "health:*",
+        "iam:*",
+        "importexport:*",
+        "kms:*",
+        "mobileanalytics:*",
+        "networkmanager:*",
+        "organizations:*",
+        "pricing:*",
+        "route53:*",
+        "route53domains:*",
+        "s3:GetAccountPublic*",
+        "s3:ListAllMyBuckets",
+        "s3:PutAccountPublic*",
+        "shield:*",
+        "sts:*",
+        "support:*",
+        "trustedadvisor:*",
+        "waf-regional:*",
+        "waf:*",
+        "wafv2:*",
+        "wellarchitected:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": [
+            "ap-northeast-1",
+            "ap-northeast-3",
+            "us-east-1"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "DenyRootAccountUsage",
+      "Effect": "Deny",
+      "NotAction": [
+        "iam:*",
+        "organizations:*",
+        "account:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringLike": {
+          "aws:PrincipalArn": "arn:aws:iam::*:root"
+        }
+      }
+    }
+  ]
+}
+```
+
+**開発環境ポリシー（コスト削減）:**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyExpensiveInstances",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:RunInstances"
+      ],
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringNotLike": {
+          "ec2:InstanceType": [
+            "t2.*",
+            "t3.*",
+            "t3a.*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "DenyLargeRDS",
+      "Effect": "Deny",
+      "Action": [
+        "rds:CreateDBInstance"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotLike": {
+          "rds:DatabaseClass": [
+            "db.t2.*",
+            "db.t3.*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "RequireAutoShutdown",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:RunInstances"
+      ],
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestTag/AutoShutdown": "true"
+        }
+      }
+    }
+  ]
+}
+```
+
+**本番環境ポリシー（保護強化）:**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "RequireEncryption",
+      "Effect": "Deny",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "s3:x-amz-server-side-encryption": "aws:kms"
+        }
+      }
+    },
+    {
+      "Sid": "RequireBackup",
+      "Effect": "Deny",
+      "Action": [
+        "rds:CreateDBInstance",
+        "rds:ModifyDBInstance"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "NumericLessThan": {
+          "rds:BackupRetentionPeriod": "7"
+        }
+      }
+    },
+    {
+      "Sid": "RequireMultiAZ",
+      "Effect": "Deny",
+      "Action": [
+        "rds:CreateDBInstance"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "Bool": {
+          "rds:MultiAz": "false"
+        }
+      }
+    }
+  ]
+}
+```
+
+### AWS Control Tower
+
+#### 1. Control Towerセットアップ
+
+```yaml
+初期設定:
+  ホームリージョン: ap-northeast-1
+  追加リージョン:
+    - us-east-1
+  
+  自動作成アカウント:
+    - Log Archive Account
+    - Audit Account
+  
+  セキュリティベースライン:
+    - CloudTrail有効化
+    - Config有効化
+    - GuardDuty有効化
+```
+
+```bash
+# Control Towerの有効化（コンソールから実施）
+# または AWS Control Tower APIを使用
+
+# Account Factoryでアカウント作成
+aws servicecatalog provision-product \
+  --product-name "AWS Control Tower Account Factory" \
+  --provisioning-artifact-name "AWS Control Tower Account Factory" \
+  --provisioned-product-name "NewProductionAccount" \
+  --provisioning-parameters \
+    ParameterKey=AccountEmail,ParameterValue=new-account@example.com \
+    ParameterKey=AccountName,ParameterValue="New Production Account" \
+    ParameterKey=ManagedOrganizationalUnit,ParameterValue="Production (ou-xxxx-xxxxxxxx)" \
+    ParameterKey=SSOUserEmail,ParameterValue=admin@example.com \
+    ParameterKey=SSOUserFirstName,ParameterValue=Admin \
+    ParameterKey=SSOUserLastName,ParameterValue=User
+```
+
+#### 2. Guardrails（ガードレール）
+
+**必須ガードレール（自動適用）:**
+
+```yaml
+検知型:
+  - CloudTrailが有効化されているか
+  - AWS Configが有効化されているか
+  - MFA削除が有効化されているか
+
+予防型:
+  - ルートユーザーへのMFA強制
+  - CloudTrailの削除防止
+  - Configルールの変更防止
+```
+
+**推奨ガードレール（選択可能）:**
+
+```yaml
+検知型:
+  - パブリックS3バケットの検出
+  - パブリックアクセス可能なRDSの検出
+  - セキュリティグループの過度な許可検出
+
+予防型:
+  - S3バケット暗号化の強制
+  - EBSボリューム暗号化の強制
+  - RDSスナップショットの公開禁止
+```
+
+### クロスアカウントアクセス
+
+#### 1. IAMロール引き受け
+
+```json
+// 信頼ポリシー（Production Account）
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::111111111111:root"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "StringEquals": {
+          "sts:ExternalId": "unique-external-id"
+        },
+        "IpAddress": {
+          "aws:SourceIp": [
+            "203.0.113.0/24"
+          ]
+        }
+      }
+    }
+  ]
+}
+```
+
+```bash
+# ロール引き受け
+aws sts assume-role \
+  --role-arn arn:aws:iam::222222222222:role/CrossAccountRole \
+  --role-session-name MySession \
+  --external-id unique-external-id
+
+# 一時認証情報を環境変数に設定
+export AWS_ACCESS_KEY_ID=<AccessKeyId>
+export AWS_SECRET_ACCESS_KEY=<SecretAccessKey>
+export AWS_SESSION_TOKEN=<SessionToken>
+
+# クロスアカウント操作
+aws s3 ls --profile cross-account
+```
+
+#### 2. Resource Access Manager (RAM)
+
+```bash
+# VPCサブネットの共有
+aws ram create-resource-share \
+  --name "Shared-VPC-Subnets" \
+  --resource-arns \
+    arn:aws:ec2:ap-northeast-1:111111111111:subnet/subnet-xxxxx \
+    arn:aws:ec2:ap-northeast-1:111111111111:subnet/subnet-yyyyy \
+  --principals \
+    arn:aws:organizations::111111111111:organization/o-xxxxxxxxxx
+
+# Transit Gatewayの共有
+aws ram create-resource-share \
+  --name "Shared-Transit-Gateway" \
+  --resource-arns \
+    arn:aws:ec2:ap-northeast-1:111111111111:transit-gateway/tgw-xxxxx \
+  --principals \
+    222222222222 \
+    333333333333
+
+# Route 53 Resolverルールの共有
+aws ram create-resource-share \
+  --name "Shared-DNS-Rules" \
+  --resource-arns \
+    arn:aws:route53resolver:ap-northeast-1:111111111111:resolver-rule/rslvr-rr-xxxxx \
+  --principals \
+    arn:aws:organizations::111111111111:ou/o-xxxxxxxxxx/ou-xxxx-xxxxxxxx
+```
+
+### コスト管理
+
+#### 1. Cost Allocation Tags
+
+```yaml
+必須タグ:
+  Environment: [Production, Staging, Development]
+  BusinessUnit: [Engineering, Marketing, Sales]
+  CostCenter: [CC-1001, CC-2002]
+  Project: [ProjectA, ProjectB]
+  Owner: [team-a@example.com]
+
+オプションタグ:
+  Application: [web-app, api, database]
+  DataClassification: [Public, Internal, Confidential]
+  Compliance: [PCI-DSS, HIPAA, SOC2]
+```
+
+```bash
+# タグの有効化
+aws ce update-cost-allocation-tags-status \
+  --cost-allocation-tags-status \
+    Key=Environment,Status=Active \
+    Key=BusinessUnit,Status=Active \
+    Key=CostCenter,Status=Active
+
+# タグポリシーの適用（Organizations）
+aws organizations attach-policy \
+  --policy-id p-xxxxxxxxxx \
+  --target-id ou-xxxx-xxxxxxxx
+```
+
+#### 2. Budgetsとアラート
+
+```bash
+# 部門別予算設定
+aws budgets create-budget \
+  --account-id 123456789012 \
+  --budget file://budget.json \
+  --notifications-with-subscribers file://notifications.json
+```
+
+```json
+// budget.json
+{
+  "BudgetName": "Engineering-Monthly-Budget",
+  "BudgetLimit": {
+    "Amount": "10000",
+    "Unit": "USD"
+  },
+  "TimeUnit": "MONTHLY",
+  "BudgetType": "COST",
+  "CostFilters": {
+    "TagKeyValue": [
+      "BusinessUnit$Engineering"
+    ]
+  },
+  "CostTypes": {
+    "IncludeTax": true,
+    "IncludeSubscription": true,
+    "UseBlended": false
+  }
+}
+```
+
+### AWS SSOによる統合認証
+
+#### 1. SSO設定
+
+```yaml
+SSO設定:
+  IDプロバイダー: Azure AD / Okta / Google Workspace
+  
+  権限セット:
+    - ViewOnlyAccess:
+        - 全アカウント読み取り専用
+        - ManagedPolicy: ViewOnlyAccess
+    
+    - PowerUserAccess:
+        - 開発環境フルアクセス
+        - ManagedPolicy: PowerUserAccess
+    
+    - AdministratorAccess:
+        - 本番環境管理者
+        - ManagedPolicy: AdministratorAccess
+        - MFA必須
+
+  アクセス割り当て:
+    - 開発者グループ → 開発アカウント (PowerUserAccess)
+    - SREグループ → 全アカウント (AdministratorAccess)
+    - 監査グループ → 全アカウント (ViewOnlyAccess)
+```
+
+### ベストプラクティス
+
+#### 1. アカウント設計原則
+
+```yaml
+環境分離:
+  - 本番と非本番は必ず分離
+  - Sandboxアカウントで自由な実験
+  - 災害対策用に別リージョンアカウント
+
+セキュリティアカウント:
+  - セキュリティツール専用アカウント
+  - ログ保管専用アカウント
+  - クロスアカウント監査
+
+ネットワークハブ:
+  - Transit Gateway専用アカウント
+  - Direct Connect専用アカウント
+  - DNS管理専用アカウント
+```
+
+#### 2. 命名規則
+
+```yaml
+アカウント名:
+  <Environment>-<BusinessUnit>-<Purpose>
+  例:
+    - prod-engineering-webapp
+    - dev-marketing-analytics
+    - shared-infrastructure-network
+
+OU名:
+  <Purpose> OU
+  例:
+    - Production OU
+    - Security OU
+    - Infrastructure OU
+```
+
+#### 3. 監査とコンプライアンス
+
+```yaml
+CloudTrail:
+  - Organization Trailで一元管理
+  - Log Archiveアカウントに集約
+  - 90日以上の保持
+
+AWS Config:
+  - Aggregatorで全アカウント監視
+  - コンプライアンスルール適用
+  - 自動修復設定
+
+Security Hub:
+  - 全アカウントで有効化
+  - 管理者アカウントで一元管理
+  - 自動検出と修復
+```
+
+### まとめ
+
+**マルチアカウント戦略の重要ポイント:**
+
+1. **セキュリティ**: ブラストラディウスの最小化、責任範囲の明確化
+2. **コスト管理**: 部門別コスト配分、チャージバック実現
+3. **ガバナンス**: SCPsによる一元管理、Control Towerで自動化
+4. **運用効率**: クロスアカウントアクセス、AWS SSO統合
+5. **コンプライアンス**: 監査証跡、自動コンプライアンスチェック
+
+**SAA/SAP試験での重要ポイント:**
+
+- AWS Organizations、OU構造
+- Service Control Policies (SCPs)
+- AWS Control Tower、Guardrails
+- クロスアカウントアクセス（IAMロール、RAM）
+- Cost Allocation Tags、Budgets
+
+マルチアカウント戦略は、大規模なAWS環境を効率的に管理するための基盤です。適切な設計により、セキュリティ、コスト、ガバナンスを最適化できます。

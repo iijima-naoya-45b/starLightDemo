@@ -1,0 +1,619 @@
+---
+title: "Amazon DynamoDB 完全ガイド"
+label: "DynamoDB 完全ガイド"
+---
+
+## Amazon DynamoDB 完全ガイド
+
+Amazon DynamoDBは、フルマネージド型のNoSQLデータベースサービスです。低レイテンシーと高スケーラビリティを提供し、サーバーレスアーキテクチャに最適なデータベースです。
+
+### DynamoDBの特徴
+
+#### 1. 主要な特徴
+
+**パフォーマンス:**
+
+- **低レイテンシー**: 一桁ミリ秒のレスポンス
+- **無制限のスループット**: 自動スケーリング
+- **グローバルテーブル**: マルチリージョンレプリケーション
+- **DAX (DynamoDB Accelerator)**: マイクロ秒レベルのキャッシュ
+
+**可用性:**
+
+- **99.99%の可用性**: 標準テーブル
+- **99.999%の可用性**: グローバルテーブル
+- **自動レプリケーション**: 3つのAZに自動複製
+- **ポイントインタイムリカバリ**: 35日間の継続的バックアップ
+
+**スケーラビリティ:**
+
+- **オートスケーリング**: 需要に応じて自動調整
+- **オンデマンドモード**: 容量計画不要
+- **無制限のストレージ**: 自動的に拡張
+
+#### 2. データモデル
+
+**基本構造:**
+
+```javascript
+// テーブル構造
+{
+  tableName: "Users",
+  primaryKey: {
+    partitionKey: "userId",    // 必須（HASH）
+    sortKey: "timestamp"       // オプション（RANGE）
+  },
+  attributes: {
+    userId: "user123",
+    timestamp: "2026-01-15T10:00:00Z",
+    name: "Taro Yamada",
+    email: "taro@example.com",
+    age: 30,
+    tags: ["engineer", "tokyo"]
+  }
+}
+```
+
+**パーティションキーとソートキー:**
+
+```yaml
+# パーティションキーのみ（Simple Primary Key）
+PrimaryKey:
+  PartitionKey: userId
+  
+例:
+  - userId: "user001"
+  - userId: "user002"
+
+# パーティションキー + ソートキー（Composite Primary Key）
+PrimaryKey:
+  PartitionKey: userId
+  SortKey: timestamp
+  
+例:
+  - userId: "user001", timestamp: "2026-01-15T10:00:00Z"
+  - userId: "user001", timestamp: "2026-01-15T11:00:00Z"
+  - userId: "user002", timestamp: "2026-01-15T10:00:00Z"
+```
+
+#### 3. キャパシティモード
+
+**オンデマンドモード:**
+
+```yaml
+特徴:
+  - 容量計画不要
+  - 自動スケーリング
+  - 従量課金（リクエスト単位）
+
+適用シナリオ:
+  - トラフィックが予測不可能
+  - 急激なスパイク
+  - 開発・テスト環境
+
+コスト:
+  - 読み取り: $0.25/百万リクエスト
+  - 書き込み: $1.25/百万リクエスト
+```
+
+**プロビジョンドモード:**
+
+```yaml
+特徴:
+  - 容量を事前設定
+  - オートスケーリング設定可能
+  - 予約購入でコスト削減
+
+適用シナリオ:
+  - トラフィックが予測可能
+  - 安定したワークロード
+  - コスト最適化が重要
+
+コスト:
+  - 読み取り: $0.00013/RCU/時間
+  - 書き込み: $0.00065/WCU/時間
+
+# オートスケーリング設定例
+AutoScaling:
+  ReadCapacity:
+    MinCapacity: 5
+    MaxCapacity: 100
+    TargetUtilization: 70%
+  
+  WriteCapacity:
+    MinCapacity: 5
+    MaxCapacity: 50
+    TargetUtilization: 70%
+```
+
+### 実装例
+
+#### 1. テーブル作成
+
+```typescript
+// AWS SDK v3
+import { DynamoDBClient, CreateTableCommand } from "@aws-sdk/client-dynamodb";
+
+const dynamoDbClient = new DynamoDBClient({ region: "ap-northeast-1" });
+
+const createTableParams = {
+  TableName: "Users",
+  KeySchema: [
+    { AttributeName: "userId", KeyType: "HASH" },      // パーティションキー
+    { AttributeName: "timestamp", KeyType: "RANGE" }   // ソートキー
+  ],
+  AttributeDefinitions: [
+    { AttributeName: "userId", AttributeType: "S" },
+    { AttributeName: "timestamp", AttributeType: "S" },
+    { AttributeName: "email", AttributeType: "S" }
+  ],
+  BillingMode: "PAY_PER_REQUEST",  // オンデマンドモード
+  
+  // グローバルセカンダリインデックス
+  GlobalSecondaryIndexes: [
+    {
+      IndexName: "EmailIndex",
+      KeySchema: [
+        { AttributeName: "email", KeyType: "HASH" }
+      ],
+      Projection: {
+        ProjectionType: "ALL"
+      }
+    }
+  ],
+  
+  // ストリーム設定
+  StreamSpecification: {
+    StreamEnabled: true,
+    StreamViewType: "NEW_AND_OLD_IMAGES"
+  },
+  
+  // タグ
+  Tags: [
+    { Key: "Environment", Value: "Production" },
+    { Key: "Application", Value: "UserService" }
+  ]
+};
+
+const createTableResult = await dynamoDbClient.send(new CreateTableCommand(createTableParams));
+console.log("テーブル作成成功:", createTableResult.TableDescription.TableName);
+```
+
+#### 2. CRUD操作
+
+**アイテムの作成（Put）:**
+
+```typescript
+import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
+
+const documentClient = DynamoDBDocumentClient.from(dynamoDbClient);
+
+const putItemParams = {
+  TableName: "Users",
+  Item: {
+    userId: "user123",
+    timestamp: new Date().toISOString(),
+    name: "Taro Yamada",
+    email: "taro@example.com",
+    age: 30,
+    tags: ["engineer", "tokyo"],
+    profile: {
+      company: "Example Inc",
+      role: "Software Engineer"
+    }
+  },
+  // 条件式: 既存アイテムが存在しない場合のみ作成
+  ConditionExpression: "attribute_not_exists(userId)"
+};
+
+try {
+  await documentClient.send(new PutCommand(putItemParams));
+  console.log("アイテム作成成功");
+} catch (error) {
+  if (error.name === "ConditionalCheckFailedException") {
+    console.error("アイテムは既に存在します");
+  } else {
+    console.error("エラー:", error);
+  }
+}
+```
+
+**アイテムの取得（Get）:**
+
+```typescript
+import { GetCommand } from "@aws-sdk/lib-dynamodb";
+
+const getItemParams = {
+  TableName: "Users",
+  Key: {
+    userId: "user123",
+    timestamp: "2026-01-15T10:00:00Z"
+  },
+  // 取得する属性を指定（オプション）
+  ProjectionExpression: "userId, #n, email, age",
+  ExpressionAttributeNames: {
+    "#n": "name"  // nameは予約語なのでエイリアスを使用
+  }
+};
+
+const getItemResult = await documentClient.send(new GetCommand(getItemParams));
+console.log("取得したアイテム:", getItemResult.Item);
+```
+
+**アイテムの更新（Update）:**
+
+```typescript
+import { UpdateCommand } from "@aws-sdk/lib-dynamodb";
+
+const updateItemParams = {
+  TableName: "Users",
+  Key: {
+    userId: "user123",
+    timestamp: "2026-01-15T10:00:00Z"
+  },
+  UpdateExpression: "SET age = :newAge, #n = :newName, tags = list_append(if_not_exists(tags, :emptyList), :newTag)",
+  ExpressionAttributeNames: {
+    "#n": "name"
+  },
+  ExpressionAttributeValues: {
+    ":newAge": 31,
+    ":newName": "Taro Yamada Updated",
+    ":newTag": ["senior"],
+    ":emptyList": []
+  },
+  // 更新後の値を返す
+  ReturnValues: "ALL_NEW"
+};
+
+const updateItemResult = await documentClient.send(new UpdateCommand(updateItemParams));
+console.log("更新後のアイテム:", updateItemResult.Attributes);
+```
+
+**アイテムの削除（Delete）:**
+
+```typescript
+import { DeleteCommand } from "@aws-sdk/lib-dynamodb";
+
+const deleteItemParams = {
+  TableName: "Users",
+  Key: {
+    userId: "user123",
+    timestamp: "2026-01-15T10:00:00Z"
+  },
+  // 削除前の値を返す
+  ReturnValues: "ALL_OLD"
+};
+
+const deleteItemResult = await documentClient.send(new DeleteCommand(deleteItemParams));
+console.log("削除したアイテム:", deleteItemResult.Attributes);
+```
+
+#### 3. クエリとスキャン
+
+**Query（効率的）:**
+
+```typescript
+import { QueryCommand } from "@aws-sdk/lib-dynamodb";
+
+// パーティションキーで検索
+const queryParams = {
+  TableName: "Users",
+  KeyConditionExpression: "userId = :userId AND #ts BETWEEN :startTime AND :endTime",
+  ExpressionAttributeNames: {
+    "#ts": "timestamp"
+  },
+  ExpressionAttributeValues: {
+    ":userId": "user123",
+    ":startTime": "2026-01-01T00:00:00Z",
+    ":endTime": "2026-12-31T23:59:59Z"
+  },
+  // フィルタ条件（クエリ後にフィルタ）
+  FilterExpression: "age >= :minAge",
+  ExpressionAttributeValues: {
+    ":userId": "user123",
+    ":startTime": "2026-01-01T00:00:00Z",
+    ":endTime": "2026-12-31T23:59:59Z",
+    ":minAge": 20
+  },
+  // ソート順序
+  ScanIndexForward: false,  // 降順（falseの場合）
+  // ページネーション
+  Limit: 10
+};
+
+const queryResult = await documentClient.send(new QueryCommand(queryParams));
+console.log("検索結果:", queryResult.Items);
+console.log("次のページキー:", queryResult.LastEvaluatedKey);
+
+// 次のページを取得
+if (queryResult.LastEvaluatedKey) {
+  const nextPageParams = {
+    ...queryParams,
+    ExclusiveStartKey: queryResult.LastEvaluatedKey
+  };
+  const nextPageResult = await documentClient.send(new QueryCommand(nextPageParams));
+}
+```
+
+**Scan（全件スキャン - 非推奨）:**
+
+```typescript
+import { ScanCommand } from "@aws-sdk/lib-dynamodb";
+
+// Scanは全テーブルスキャンなので、大量データでは避けるべき
+const scanParams = {
+  TableName: "Users",
+  FilterExpression: "age >= :minAge AND contains(tags, :tag)",
+  ExpressionAttributeValues: {
+    ":minAge": 25,
+    ":tag": "engineer"
+  },
+  Limit: 100
+};
+
+const scanResult = await documentClient.send(new ScanCommand(scanParams));
+console.log("スキャン結果:", scanResult.Items);
+```
+
+#### 4. バッチ操作
+
+**BatchGet（複数アイテム取得）:**
+
+```typescript
+import { BatchGetCommand } from "@aws-sdk/lib-dynamodb";
+
+const batchGetParams = {
+  RequestItems: {
+    "Users": {
+      Keys: [
+        { userId: "user001", timestamp: "2026-01-15T10:00:00Z" },
+        { userId: "user002", timestamp: "2026-01-15T11:00:00Z" },
+        { userId: "user003", timestamp: "2026-01-15T12:00:00Z" }
+      ],
+      ProjectionExpression: "userId, #n, email",
+      ExpressionAttributeNames: {
+        "#n": "name"
+      }
+    }
+  }
+};
+
+const batchGetResult = await documentClient.send(new BatchGetCommand(batchGetParams));
+console.log("取得したアイテム:", batchGetResult.Responses.Users);
+
+// 未処理のキーがある場合
+if (batchGetResult.UnprocessedKeys && Object.keys(batchGetResult.UnprocessedKeys).length > 0) {
+  console.log("未処理のキー:", batchGetResult.UnprocessedKeys);
+  // リトライ処理を実装
+}
+```
+
+**BatchWrite（複数アイテム書き込み）:**
+
+```typescript
+import { BatchWriteCommand } from "@aws-sdk/lib-dynamodb";
+
+const batchWriteParams = {
+  RequestItems: {
+    "Users": [
+      // Put操作
+      {
+        PutRequest: {
+          Item: {
+            userId: "user004",
+            timestamp: new Date().toISOString(),
+            name: "User 4",
+            email: "user4@example.com"
+          }
+        }
+      },
+      // Delete操作
+      {
+        DeleteRequest: {
+          Key: {
+            userId: "user001",
+            timestamp: "2026-01-15T10:00:00Z"
+          }
+        }
+      }
+    ]
+  }
+};
+
+const batchWriteResult = await documentClient.send(new BatchWriteCommand(batchWriteParams));
+
+// 未処理のアイテムがある場合
+if (batchWriteResult.UnprocessedItems && Object.keys(batchWriteResult.UnprocessedItems).length > 0) {
+  console.log("未処理のアイテム:", batchWriteResult.UnprocessedItems);
+  // リトライ処理を実装
+}
+```
+
+### セカンダリインデックス
+
+#### 1. グローバルセカンダリインデックス (GSI)
+
+```typescript
+// GSIの作成
+const createGsiParams = {
+  TableName: "Users",
+  AttributeDefinitions: [
+    { AttributeName: "email", AttributeType: "S" },
+    { AttributeName: "createdAt", AttributeType: "S" }
+  ],
+  GlobalSecondaryIndexUpdates: [
+    {
+      Create: {
+        IndexName: "EmailCreatedAtIndex",
+        KeySchema: [
+          { AttributeName: "email", KeyType: "HASH" },
+          { AttributeName: "createdAt", KeyType: "RANGE" }
+        ],
+        Projection: {
+          ProjectionType: "INCLUDE",
+          NonKeyAttributes: ["name", "age"]
+        },
+        ProvisionedThroughput: {
+          ReadCapacityUnits: 5,
+          WriteCapacityUnits: 5
+        }
+      }
+    }
+  ]
+};
+
+// GSIを使ったクエリ
+const queryGsiParams = {
+  TableName: "Users",
+  IndexName: "EmailCreatedAtIndex",
+  KeyConditionExpression: "email = :email",
+  ExpressionAttributeValues: {
+    ":email": "taro@example.com"
+  }
+};
+
+const gsiQueryResult = await documentClient.send(new QueryCommand(queryGsiParams));
+```
+
+#### 2. ローカルセカンダリインデックス (LSI)
+
+```yaml
+# LSIはテーブル作成時のみ定義可能
+特徴:
+  - パーティションキーは同じ
+  - ソートキーのみ変更
+  - テーブルのスループットを共有
+  - 最大5つまで作成可能
+
+例:
+  BaseTable:
+    PK: userId
+    SK: timestamp
+  
+  LSI:
+    PK: userId (同じ)
+    SK: email (異なる)
+```
+
+### DynamoDB Streams
+
+```typescript
+// Lambda関数でStreamsを処理
+export const streamHandler = async (event: DynamoDBStreamEvent) => {
+  for (const record of event.Records) {
+    console.log("イベントタイプ:", record.eventName);
+    
+    if (record.eventName === "INSERT") {
+      console.log("新しいアイテム:", record.dynamodb?.NewImage);
+    } else if (record.eventName === "MODIFY") {
+      console.log("変更前:", record.dynamodb?.OldImage);
+      console.log("変更後:", record.dynamodb?.NewImage);
+    } else if (record.eventName === "REMOVE") {
+      console.log("削除されたアイテム:", record.dynamodb?.OldImage);
+    }
+  }
+};
+
+// CloudFormationでStreamsとLambdaを連携
+Resources:
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+  
+  StreamProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.streamHandler
+  
+  StreamEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt UsersTable.StreamArn
+      FunctionName: !Ref StreamProcessorFunction
+      StartingPosition: LATEST
+```
+
+### ベストプラクティス
+
+#### 1. パーティションキー設計
+
+```yaml
+# 良い設計（均等に分散）
+PartitionKey: userId
+  - 各ユーザーに均等にアクセス
+  - ホットパーティションを回避
+
+# 悪い設計（偏りがある）
+PartitionKey: status
+  - "active"に90%のアクセスが集中
+  - パフォーマンス低下
+
+# 改善策: 複合キー
+PartitionKey: status#userId
+  - statusとuserIdを組み合わせ
+  - アクセスを分散
+```
+
+#### 2. グローバルテーブル
+
+```yaml
+# マルチリージョンレプリケーション
+GlobalTable:
+  Regions:
+    - ap-northeast-1  # 東京
+    - us-east-1       # バージニア
+    - eu-west-1       # アイルランド
+  
+  特徴:
+    - 双方向レプリケーション
+    - 最終的な整合性
+    - 競合解決（Last Writer Wins）
+    - 99.999%の可用性
+
+  ユースケース:
+    - グローバルアプリケーション
+    - 災害対策
+    - 低レイテンシーアクセス
+```
+
+#### 3. DAX（DynamoDB Accelerator）
+
+```yaml
+# マイクロ秒レベルのキャッシュ
+DAX:
+  NodeType: dax.r5.large
+  ReplicationFactor: 3  # マルチAZ
+  
+  利点:
+    - レイテンシー: ミリ秒 → マイクロ秒
+    - スループット: 10倍以上向上
+    - コード変更最小限
+  
+  適用シナリオ:
+    - 読み取り頻度が高い
+    - 同じデータへの繰り返しアクセス
+    - レイテンシー要件が厳しい
+```
+
+### まとめ
+
+**DynamoDBの主要な利点:**
+
+- **パフォーマンス**: 低レイテンシー、高スループット
+- **スケーラビリティ**: 無制限のストレージとスループット
+- **可用性**: 99.99%以上の可用性
+- **運用不要**: フルマネージド、自動バックアップ
+- **コスト効率**: オンデマンドモードで無駄なコスト削減
+
+**SAA/SAP試験での重要ポイント:**
+
+1. **キャパシティモード**: オンデマンド vs プロビジョンド
+2. **インデックス**: GSI vs LSI
+3. **Streams**: Lambda統合、リアルタイム処理
+4. **グローバルテーブル**: マルチリージョンレプリケーション
+5. **DAX**: キャッシュによる高速化
+6. **コスト最適化**: 適切なモード選択、オンデマンドバックアップ
+
+DynamoDBは、サーバーレスアーキテクチャやマイクロサービスに最適なデータベースです。適切な設計により、高いパフォーマンスとスケーラビリティを実現できます。

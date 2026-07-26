@@ -1,0 +1,630 @@
+---
+title: "Amazon EventBridge 完全ガイド"
+label: "EventBridge 完全ガイド"
+---
+
+## Amazon EventBridge 完全ガイド
+
+Amazon EventBridgeは、AWSサービス、SaaSアプリケーション、カスタムアプリケーション間でイベント駆動アーキテクチャを構築できるサーバーレスイベントバスサービスです。
+
+### EventBridgeの特徴
+
+#### 1. 主要な特徴
+
+**イベントバス:**
+
+- **デフォルトイベントバス**: AWSサービスのイベント
+- **カスタムイベントバス**: アプリケーション間通信
+- **パートナーイベントバス**: SaaS統合（Datadog, Zendesk等）
+
+**イベントルーティング:**
+
+- **パターンマッチング**: JSONベースのフィルタリング
+- **複数ターゲット**: 1つのルールで最大5つのターゲット
+- **変換**: InputTransformerで柔軟なデータ変換
+
+**統合:**
+
+- **AWSサービス**: Lambda, Step Functions, SQS, SNS, Kinesis等
+- **APIデスティネーション**: HTTPエンドポイントへの送信
+- **クロスアカウント**: 他のAWSアカウントへのイベント送信
+
+#### 2. 主要コンポーネント
+
+```yaml
+イベント:
+  - JSONフォーマット
+  - 最大256KB
+  - メタデータ含む
+
+イベントバス:
+  - イベントの受信先
+  - ルールでフィルタリング
+  - クロスアカウント共有可能
+
+ルール:
+  - イベントパターンマッチング
+  - スケジュール実行（cron/rate）
+  - ターゲット指定
+
+ターゲット:
+  - イベントの送信先
+  - Lambda, Step Functions, SQS等
+  - 最大5つまで
+```
+
+### 実装例
+
+#### 1. 基本的なイベント送信
+
+```typescript
+import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
+
+const eventBridgeClient = new EventBridgeClient({ region: "ap-northeast-1" });
+
+// カスタムイベントの送信
+const putEventsParams = {
+  Entries: [
+    {
+      Time: new Date(),
+      Source: "com.example.myapp",
+      DetailType: "UserRegistered",
+      Detail: JSON.stringify({
+        userId: "user123",
+        email: "user@example.com",
+        registeredAt: new Date().toISOString(),
+        plan: "premium"
+      }),
+      EventBusName: "custom-event-bus",
+      Resources: ["arn:aws:dynamodb:ap-northeast-1:123456789012:table/Users"]
+    }
+  ]
+};
+
+try {
+  const putEventsResult = await eventBridgeClient.send(new PutEventsCommand(putEventsParams));
+  console.log("イベント送信成功:", putEventsResult.Entries);
+  
+  // 失敗したエントリのチェック
+  if (putEventsResult.FailedEntryCount && putEventsResult.FailedEntryCount > 0) {
+    console.error("失敗したエントリ:", putEventsResult.Entries.filter(entry => entry.ErrorCode));
+  }
+} catch (error) {
+  console.error("イベント送信エラー:", error);
+}
+```
+
+#### 2. バッチイベント送信
+
+```typescript
+// 複数イベントのバッチ送信（最大10イベント）
+const batchPutEventsParams = {
+  Entries: [
+    {
+      Source: "com.example.myapp",
+      DetailType: "OrderPlaced",
+      Detail: JSON.stringify({
+        orderId: "order001",
+        amount: 10000,
+        items: 3
+      }),
+      EventBusName: "custom-event-bus"
+    },
+    {
+      Source: "com.example.myapp",
+      DetailType: "OrderPlaced",
+      Detail: JSON.stringify({
+        orderId: "order002",
+        amount: 5000,
+        items: 1
+      }),
+      EventBusName: "custom-event-bus"
+    },
+    {
+      Source: "com.example.myapp",
+      DetailType: "PaymentProcessed",
+      Detail: JSON.stringify({
+        paymentId: "payment001",
+        orderId: "order001",
+        status: "completed"
+      }),
+      EventBusName: "custom-event-bus"
+    }
+  ]
+};
+
+const batchResult = await eventBridgeClient.send(new PutEventsCommand(batchPutEventsParams));
+console.log(`送信成功: ${batchResult.Entries.length - (batchResult.FailedEntryCount || 0)}件`);
+```
+
+#### 3. イベントルール作成
+
+```typescript
+import { PutRuleCommand, PutTargetsCommand } from "@aws-sdk/client-eventbridge";
+
+// ルール作成
+const putRuleParams = {
+  Name: "UserRegisteredRule",
+  Description: "新規ユーザー登録時の処理",
+  State: "ENABLED",
+  EventBusName: "custom-event-bus",
+  EventPattern: JSON.stringify({
+    source: ["com.example.myapp"],
+    "detail-type": ["UserRegistered"],
+    detail: {
+      plan: ["premium"]  // Premiumプランのみ
+    }
+  })
+};
+
+const putRuleResult = await eventBridgeClient.send(new PutRuleCommand(putRuleParams));
+console.log("ルール作成成功:", putRuleResult.RuleArn);
+
+// ターゲット追加
+const putTargetsParams = {
+  Rule: "UserRegisteredRule",
+  EventBusName: "custom-event-bus",
+  Targets: [
+    {
+      Id: "1",
+      Arn: "arn:aws:lambda:ap-northeast-1:123456789012:function:SendWelcomeEmail",
+      // Lambda関数への入力変換
+      InputTransformer: {
+        InputPathsMap: {
+          userId: "$.detail.userId",
+          email: "$.detail.email",
+          plan: "$.detail.plan"
+        },
+        InputTemplate: JSON.stringify({
+          userId: "<userId>",
+          email: "<email>",
+          plan: "<plan>",
+          message: "Welcome to our premium service!"
+        })
+      }
+    },
+    {
+      Id: "2",
+      Arn: "arn:aws:sqs:ap-northeast-1:123456789012:premium-user-queue"
+    },
+    {
+      Id: "3",
+      Arn: "arn:aws:states:ap-northeast-1:123456789012:stateMachine:OnboardingWorkflow",
+      RoleArn: "arn:aws:iam::123456789012:role/EventBridgeStepFunctionsRole"
+    }
+  ]
+};
+
+await eventBridgeClient.send(new PutTargetsCommand(putTargetsParams));
+console.log("ターゲット追加成功");
+```
+
+#### 4. スケジュールルール（cron）
+
+```typescript
+// 毎日午前9時に実行
+const scheduleRuleParams = {
+  Name: "DailyReportSchedule",
+  Description: "毎日午前9時にレポート生成",
+  State: "ENABLED",
+  ScheduleExpression: "cron(0 0 * * ? *)",  // UTC 0:00 = JST 9:00
+  EventBusName: "default"
+};
+
+await eventBridgeClient.send(new PutRuleCommand(scheduleRuleParams));
+
+// Lambda関数をターゲットに設定
+const scheduleTargetsParams = {
+  Rule: "DailyReportSchedule",
+  Targets: [
+    {
+      Id: "1",
+      Arn: "arn:aws:lambda:ap-northeast-1:123456789012:function:GenerateDailyReport",
+      Input: JSON.stringify({
+        reportType: "daily",
+        format: "pdf"
+      })
+    }
+  ]
+};
+
+await eventBridgeClient.send(new PutTargetsCommand(scheduleTargetsParams));
+
+// rateベースのスケジュール（5分ごと）
+const rateScheduleParams = {
+  Name: "HealthCheckSchedule",
+  ScheduleExpression: "rate(5 minutes)",
+  State: "ENABLED"
+};
+
+await eventBridgeClient.send(new PutRuleCommand(rateScheduleParams));
+```
+
+### イベントパターン
+
+#### 1. 基本的なパターン
+
+```json
+// 完全一致
+{
+  "source": ["com.example.myapp"],
+  "detail-type": ["UserRegistered"]
+}
+
+// OR条件
+{
+  "source": ["com.example.myapp"],
+  "detail-type": ["UserRegistered", "UserUpdated", "UserDeleted"]
+}
+
+// ネストされたフィールド
+{
+  "source": ["com.example.myapp"],
+  "detail-type": ["OrderPlaced"],
+  "detail": {
+    "order": {
+      "status": ["pending", "processing"]
+    }
+  }
+}
+```
+
+#### 2. 高度なパターン
+
+```json
+// 数値範囲
+{
+  "source": ["com.example.myapp"],
+  "detail-type": ["OrderPlaced"],
+  "detail": {
+    "amount": [{ "numeric": [">=", 10000] }]
+  }
+}
+
+// プレフィックスマッチ
+{
+  "source": ["com.example.myapp"],
+  "detail-type": ["OrderPlaced"],
+  "detail": {
+    "productId": [{ "prefix": "PROD-" }]
+  }
+}
+
+// 存在チェック
+{
+  "source": ["com.example.myapp"],
+  "detail-type": ["OrderPlaced"],
+  "detail": {
+    "couponCode": [{ "exists": true }]
+  }
+}
+
+// 複合条件
+{
+  "source": ["com.example.myapp"],
+  "detail-type": ["OrderPlaced"],
+  "detail": {
+    "amount": [{ "numeric": [">=", 5000, "<=", 50000] }],
+    "status": ["pending"],
+    "shippingCountry": ["JP", "US"]
+  }
+}
+```
+
+### Lambda関数でのイベント受信
+
+```typescript
+import { EventBridgeEvent, Context } from 'aws-lambda';
+
+interface UserRegisteredDetail {
+  userId: string;
+  email: string;
+  registeredAt: string;
+  plan: string;
+}
+
+export const userRegisteredHandler = async (
+  event: EventBridgeEvent<"UserRegistered", UserRegisteredDetail>,
+  context: Context
+) => {
+  console.log("イベント受信:", JSON.stringify(event, null, 2));
+  
+  const { userId, email, plan } = event.detail;
+  
+  try {
+    // ウェルカムメール送信
+    await sendWelcomeEmail(email, plan);
+    
+    // プレミアムプランの場合は追加処理
+    if (plan === "premium") {
+      await createPremiumAccount(userId);
+      await assignDedicatedSupport(userId);
+    }
+    
+    console.log(`ユーザー登録処理完了: ${userId}`);
+    
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ message: "処理成功" })
+    };
+  } catch (error) {
+    console.error("処理エラー:", error);
+    throw error;
+  }
+};
+
+async function sendWelcomeEmail(email: string, plan: string): Promise<void> {
+  console.log(`ウェルカムメール送信: ${email} (${plan})`);
+  // メール送信ロジック
+}
+
+async function createPremiumAccount(userId: string): Promise<void> {
+  console.log(`プレミアムアカウント作成: ${userId}`);
+  // プレミアムアカウント作成ロジック
+}
+
+async function assignDedicatedSupport(userId: string): Promise<void> {
+  console.log(`専任サポート割り当て: ${userId}`);
+  // サポート割り当てロジック
+}
+```
+
+### APIデスティネーション
+
+```typescript
+// HTTPエンドポイントへのイベント送信
+import { CreateConnectionCommand, CreateApiDestinationCommand } from "@aws-sdk/client-eventbridge";
+
+// Connection作成（認証情報）
+const createConnectionParams = {
+  Name: "MyAPIConnection",
+  Description: "外部APIへの接続",
+  AuthorizationType: "OAUTH_CLIENT_CREDENTIALS",
+  AuthParameters: {
+    OAuthParameters: {
+      ClientParameters: {
+        ClientID: "your-client-id"
+      },
+      AuthorizationEndpoint: "https://auth.example.com/oauth/token",
+      HttpMethod: "POST"
+    }
+  }
+};
+
+const connectionResult = await eventBridgeClient.send(new CreateConnectionCommand(createConnectionParams));
+
+// APIデスティネーション作成
+const createApiDestinationParams = {
+  Name: "ExternalWebhook",
+  Description: "外部Webhookエンドポイント",
+  ConnectionArn: connectionResult.ConnectionArn,
+  InvocationEndpoint: "https://api.example.com/webhook",
+  HttpMethod: "POST",
+  InvocationRateLimitPerSecond: 10
+};
+
+await eventBridgeClient.send(new CreateApiDestinationCommand(createApiDestinationParams));
+
+// ルールのターゲットとして設定
+const apiDestinationTargetParams = {
+  Rule: "MyEventRule",
+  Targets: [
+    {
+      Id: "1",
+      Arn: "arn:aws:events:ap-northeast-1:123456789012:api-destination/ExternalWebhook/*",
+      RoleArn: "arn:aws:iam::123456789012:role/EventBridgeApiDestinationRole",
+      HttpParameters: {
+        HeaderParameters: {
+          "X-Custom-Header": "CustomValue"
+        },
+        QueryStringParameters: {
+          "type": "event"
+        }
+      },
+      InputTransformer: {
+        InputPathsMap: {
+          eventId: "$.id",
+          eventType: "$.detail-type",
+          eventData: "$.detail"
+        },
+        InputTemplate: JSON.stringify({
+          id: "<eventId>",
+          type: "<eventType>",
+          data: "<eventData>",
+          timestamp: new Date().toISOString()
+        })
+      }
+    }
+  ]
+};
+
+await eventBridgeClient.send(new PutTargetsCommand(apiDestinationTargetParams));
+```
+
+### CloudFormationテンプレート
+
+```yaml
+AWSTemplateFormatVersion: '2010-09-09'
+Description: EventBridge設定
+
+Resources:
+  # カスタムイベントバス
+  CustomEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: custom-event-bus
+  
+  # イベントルール
+  UserRegisteredRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: UserRegisteredRule
+      Description: 新規ユーザー登録イベント処理
+      EventBusName: !Ref CustomEventBus
+      State: ENABLED
+      EventPattern:
+        source:
+          - com.example.myapp
+        detail-type:
+          - UserRegistered
+        detail:
+          plan:
+            - premium
+      Targets:
+        - Id: Lambda1
+          Arn: !GetAtt ProcessUserFunction.Arn
+        - Id: SQS1
+          Arn: !GetAtt UserQueue.Arn
+        - Id: StepFunctions1
+          Arn: !GetAtt OnboardingStateMachine.Arn
+          RoleArn: !GetAtt EventBridgeRole.Arn
+  
+  # Lambda関数
+  ProcessUserFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: ProcessUserFunction
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+            console.log('Event:', JSON.stringify(event, null, 2));
+            return { statusCode: 200 };
+          };
+      Role: !GetAtt LambdaExecutionRole.Arn
+  
+  # Lambda権限
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ProcessUserFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt UserRegisteredRule.Arn
+  
+  # SQSキュー
+  UserQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: user-queue
+  
+  # SQSキューポリシー
+  UserQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref UserQueue
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt UserQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt UserRegisteredRule.Arn
+  
+  # IAMロール
+  EventBridgeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaRole
+      Policies:
+        - PolicyName: StepFunctionsExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource: !GetAtt OnboardingStateMachine.Arn
+```
+
+### ベストプラクティス
+
+#### 1. イベント設計
+
+```yaml
+イベントソース命名:
+  - 逆DNS形式: com.example.myapp
+  - 一貫性のある命名規則
+  - バージョン管理
+
+DetailType:
+  - PascalCase: UserRegistered, OrderPlaced
+  - 明確で説明的
+  - 過去形の動詞
+
+Detail構造:
+  - フラット構造を推奨
+  - 必要最小限の情報
+  - 一貫したスキーマ
+```
+
+#### 2. エラーハンドリング
+
+```yaml
+Dead Letter Queue (DLQ):
+  - 失敗したイベントを保存
+  - SQS DLQで管理
+  - アラート設定
+
+リトライ:
+  - Lambda: 自動リトライ3回
+  - SQS: Redrive Policy設定
+  - Step Functions: Retry設定
+
+監視:
+  - CloudWatch Metrics
+  - FailedInvocations
+  - ThrottledRules
+```
+
+#### 3. セキュリティ
+
+```yaml
+イベントバスポリシー:
+  - クロスアカウントアクセス制御
+  - 最小権限の原則
+  - 条件付きアクセス
+
+暗号化:
+  - KMSによるイベント暗号化
+  - 転送中の暗号化（TLS）
+  - 保管中の暗号化
+
+監査:
+  - CloudTrail統合
+  - イベント履歴記録
+  - コンプライアンス対応
+```
+
+### まとめ
+
+**EventBridgeの主要な利点:**
+
+- **疎結合**: サービス間の疎結合を実現
+- **スケーラビリティ**: 自動スケーリング
+- **柔軟性**: 豊富なパターンマッチング
+- **統合**: AWSサービス、SaaS、カスタムアプリ
+- **運用不要**: フルマネージド
+
+**SAA/SAP試験での重要ポイント:**
+
+1. **イベント駆動アーキテクチャ**: マイクロサービス、疎結合
+2. **イベントパターン**: フィルタリング、変換
+3. **スケジュール**: cron/rateによる定期実行
+4. **統合**: Lambda, Step Functions, SQS, SNS
+5. **クロスアカウント**: マルチアカウント戦略
+
+EventBridgeは、イベント駆動アーキテクチャの中核となるサービスです。サービス間の疎結合を実現し、スケーラブルで保守性の高いシステムを構築できます。
