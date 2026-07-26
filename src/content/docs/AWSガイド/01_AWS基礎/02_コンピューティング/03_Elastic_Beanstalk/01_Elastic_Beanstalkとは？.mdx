@@ -1,0 +1,291 @@
+---
+title: "Elastic Beanstalkとは？"
+label: "Elastic Beanstalkとは？"
+---
+
+## AWS Elastic Beanstalk とは？
+
+Elastic Beanstalkは、Webアプリケーションやサービスを簡単にデプロイ・管理できるPaaS（Platform as a Service）です。
+
+### 基本概念
+
+#### Elastic Beanstalkの特徴
+
+```yaml
+主要機能:
+  - アプリケーションコードをアップロードするだけ
+  - インフラ自動プロビジョニング
+  - Auto Scaling自動設定
+  - ロードバランサー自動構成
+  - モニタリング・ヘルスチェック
+
+メリット:
+  - 開発者はコードに集中
+  - インフラ管理不要
+  - 基盤リソースへのフルアクセス
+  - 追加料金なし（リソース料金のみ）
+```
+
+### プラットフォーム
+
+#### サポートされるプラットフォーム
+
+| プラットフォーム | ランタイム | 用途 |
+|---|---|---|
+| **Go** | Go 1.21+ | Webアプリ、API |
+| **Java** | Corretto 8/11/17/21, Tomcat | エンタープライズアプリ |
+| **.NET** | .NET Core 6/8 on Linux | Windows/Linuxアプリ |
+| **Node.js** | Node.js 18/20 | SPA、API |
+| **PHP** | PHP 8.1/8.2/8.3 | WordPress、Laravel |
+| **Python** | Python 3.9/3.11/3.12 | Django、Flask |
+| **Ruby** | Ruby 3.2/3.3 | Rails |
+| **Docker** | Single/Multi-container | カスタムランタイム |
+
+**プラットフォーム更新:**
+- マネージドプラットフォーム更新（自動パッチ適用）
+- セキュリティパッチ、バグフィックス
+- メンテナンスウィンドウ設定可能
+
+### アーキテクチャ
+
+#### コンポーネント階層
+
+```yaml
+Application（アプリケーション）:
+  - 論理コンテナ
+  - 複数環境を含む
+  - 例: my-web-app
+
+  Environment（環境）:
+    - Development
+    - Staging
+    - Production
+    
+    バージョン（Application Version）:
+      - v1.0.0
+      - v1.1.0
+      - S3に保存
+```
+
+### 環境タイプ
+
+#### 1. Web Server環境
+
+```yaml
+構成:
+  - ELB（Application/Classic/Network Load Balancer）
+  - Auto Scaling Group
+  - EC2インスタンス
+  - セキュリティグループ
+  - CloudWatch監視
+
+用途:
+  - Webアプリケーション
+  - REST API
+  - HTTP/HTTPSトラフィック処理
+```
+
+#### 2. Worker環境
+
+```yaml
+構成:
+  - SQSキュー
+  - Auto Scaling Group
+  - EC2インスタンス
+  - デーモンプロセス（sqsd）
+
+用途:
+  - バックグラウンド処理
+  - 長時間実行タスク
+  - 定期ジョブ（cron.yaml）
+  - メッセージ処理
+```
+
+### 環境構成
+
+#### Web Server環境タイプ
+
+| 環境タイプ | 構成 | 用途 | コスト |
+|---|---|---|---|
+| **Single Instance** | 1台のEC2、Elastic IP | 開発・テスト | 低 |
+| **Load Balanced** | ELB + Auto Scaling | 本番、高可用性 | 中〜高 |
+
+**構成パターン:**
+
+```yaml
+Single Instance:
+  - EC2: 1台
+  - Elastic IP: 固定IP
+  - RDS: オプション
+  
+  メリット:
+    - 低コスト
+    - シンプル
+  
+  デメリット:
+    - 単一障害点
+    - スケールしない
+
+Load Balanced:
+  - ELB: ALB/NLB
+  - EC2: 2〜100台（Auto Scaling）
+  - マルチAZ
+  - RDS Multi-AZ: 推奨
+  
+  メリット:
+    - 高可用性
+    - 自動スケーリング
+  
+  デメリット:
+    - コスト高
+```
+
+### デプロイポリシー
+
+| ポリシー | ダウンタイム | デプロイ速度 | ロールバック | 追加コスト |
+|---|---|---|---|---|
+| **All at once** | あり（短時間） | 最速 | 手動再デプロイ | なし |
+| **Rolling** | なし | 中 | 手動再デプロイ | なし |
+| **Rolling with additional batch** | なし | 中 | 手動再デプロイ | あり（一時的） |
+| **Immutable** | なし | 遅 | 即座に終了 | あり（一時的） |
+| **Blue/Green** | なし | 遅 | DNS切り戻し | あり（2環境維持） |
+| **Traffic splitting** | なし | 遅 | 自動ロールバック | あり（一時的） |
+
+#### デプロイポリシー詳細
+
+```yaml
+All at once:
+  - 全インスタンス同時更新
+  - ダウンタイム: 数分
+  - 開発環境向け
+
+Rolling:
+  - バッチ単位で順次更新
+  - 一部古いバージョンが稼働
+  - ダウンタイムなし
+
+Rolling with additional batch:
+  - 新バッチ追加→順次更新
+  - キャパシティ維持
+  - 本番環境推奨
+
+Immutable:
+  - 新Auto Scaling Group作成
+  - 完全な新環境でテスト
+  - 問題なければ切り替え
+  - 最も安全
+
+Blue/Green:
+  - 新環境完全作成
+  - DNS切り替え（Route 53）
+  - 旧環境保持（ロールバック用）
+
+Traffic splitting（Canary）:
+  - トラフィック段階的移行（例: 10% → 100%）
+  - 自動ヘルスチェック
+  - 問題検出で自動ロールバック
+```
+
+### 設定オプション
+
+#### 主要設定
+
+```yaml
+インスタンス:
+  - インスタンスタイプ: t3.medium
+  - AMI: カスタムAMI可
+  - キーペア: SSH接続
+  - IAMロール: 権限管理
+
+ネットワーク:
+  - VPC: 既存VPC使用
+  - サブネット: パブリック/プライベート
+  - セキュリティグループ: カスタマイズ可
+
+Auto Scaling:
+  - 最小: 2
+  - 最大: 10
+  - メトリクス: CPU、ネットワーク、リクエスト数
+  - スケールトリガー: 閾値設定
+
+ロードバランサー:
+  - タイプ: ALB/NLB/Classic
+  - ヘルスチェック: パス、間隔
+  - SSL証明書: ACM統合
+```
+
+### データベース統合
+
+```yaml
+RDS統合（非推奨）:
+  - Beanstalk環境内にRDS作成
+  - 環境削除でDB削除
+  - 本番環境では使用しない
+
+推奨パターン:
+  - RDS別途作成
+  - 環境変数で接続情報
+  - 環境削除でもDB保持
+  - セキュリティグループで接続
+
+例:
+  RDS_HOSTNAME: mydb.xxxxx.rds.amazonaws.com
+  RDS_PORT: 5432
+  RDS_DB_NAME: myapp
+  RDS_USERNAME: admin
+  RDS_PASSWORD: (Secrets Managerから取得)
+```
+
+### モニタリング
+
+```yaml
+Enhanced Health Reporting:
+  - リクエストレート
+  - レイテンシー
+  - エラー率
+  - CPU使用率
+  
+CloudWatch:
+  - カスタムメトリクス
+  - ログストリーミング
+  - アラーム設定
+  
+ヘルスステータス:
+  - OK: 緑
+  - Warning: 黄
+  - Degraded: 赤
+  - Severe: 赤（複数問題）
+```
+
+### 料金
+
+```yaml
+Elastic Beanstalk:
+  - サービス自体: 無料
+  
+実際のコスト:
+  - EC2インスタンス: 稼働時間課金
+  - ELB: 時間+データ転送
+  - EBS: ストレージ容量
+  - S3: アプリケーションバージョン保存
+  - データ転送: アウトバウンド
+
+コスト例（Load Balanced環境）:
+  - t3.medium × 2: $60/月
+  - ALB: $16/月 + データ処理
+  - EBS gp3 30GB × 2: $5/月
+  - 合計: $81/月〜
+```
+
+### まとめ
+
+**Elastic Beanstalkの重要ポイント:**
+
+- **PaaS**: インフラ管理自動化、開発者はコードに集中
+- **プラットフォーム**: 主要言語・フレームワークサポート
+- **環境タイプ**: Web Server（HTTP）、Worker（SQS）
+- **デプロイポリシー**: All at once、Rolling、Immutable、Blue/Green
+- **料金**: サービス無料、リソース課金のみ
+- **フルコントロール**: EC2、RDS等の基盤リソースにアクセス可能
+
+Elastic Beanstalkは、迅速なアプリケーションデプロイと運用自動化を実現するPaaSです。

@@ -1,0 +1,288 @@
+---
+title: "Elastic Beanstalk ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## Elastic Beanstalk ユースケースおよびアーキテクチャパターン
+
+### 1. Webアプリケーション（Load Balanced）
+
+```yaml
+構成:
+  Application Load Balancer + Auto Scaling:
+    - ALB: パブリックサブネット（マルチAZ）
+    - EC2: プライベートサブネット（マルチAZ）
+    - Auto Scaling: 2〜10インスタンス
+    - RDS: 別途作成（Multi-AZ）
+    - ElastiCache: セッション管理
+
+環境設定:
+  プラットフォーム: Python 3.11
+  インスタンスタイプ: t3.medium
+  デプロイポリシー: Rolling with additional batch
+  ヘルスチェック: /health
+
+環境変数:
+  DATABASE_URL: RDS接続情報
+  REDIS_URL: ElastiCache接続情報
+  SECRET_KEY: Secrets Manager
+```
+
+**適用例:**
+- Django/Flask Webアプリ
+- Node.js Express API
+- Ruby on Rails
+- PHP Laravel
+
+### 2. マイクロサービスアーキテクチャ
+
+```yaml
+構成:
+  複数Beanstalk環境:
+    - api-service: REST API（ALB）
+    - auth-service: 認証サービス（ALB）
+    - worker-service: バックグラウンド処理（Worker）
+  
+  API Gateway:
+    - 各サービスへルーティング
+    - 認証・認可統合
+  
+  共有リソース:
+    - RDS: PostgreSQL（共有DB）
+    - ElastiCache: Redis（セッション）
+    - S3: ファイルストレージ
+
+サービス間通信:
+  - REST API（プライベートALB）
+  - SQS（非同期メッセージング）
+```
+
+### 3. Worker環境（バックグラウンド処理）
+
+```yaml
+構成:
+  Web Server + Worker環境:
+    Web Server環境:
+      - ALB + EC2 Auto Scaling
+      - リクエスト受信
+      - SQSにメッセージ送信
+    
+    Worker環境:
+      - SQSキューポーリング
+      - EC2でメッセージ処理
+      - Auto Scaling（キュー長さ連動）
+
+用途:
+  - 画像処理（リサイズ、変換）
+  - 動画エンコーディング
+  - メール送信
+  - レポート生成
+  - データ集計
+
+設定例（cron.yaml）:
+  - 定期実行: 毎日深夜バッチ
+  - メールレポート: 毎週月曜
+```
+
+**Worker処理フロー:**
+
+```yaml
+1. Webリクエスト → SQS送信
+2. Worker環境:
+   - sqsdデーモン → SQSポーリング
+   - POST http://localhost/ → アプリ
+   - 処理完了 → SQSメッセージ削除
+3. Auto Scaling:
+   - キュー長さ > 10: スケールアウト
+   - キュー長さ < 3: スケールイン
+```
+
+### 4. Blue/Greenデプロイメント
+
+```yaml
+構成:
+  Blue環境（本番）:
+    - URL: myapp.elasticbeanstalk.com
+    - Route 53: myapp.example.com → Blue
+    - バージョン: v1.0
+  
+  Green環境（新バージョン）:
+    - URL: myapp-green.elasticbeanstalk.com
+    - バージョン: v2.0
+    - テスト完了
+
+切り替え手順:
+  1. Green環境作成・デプロイ
+  2. Green環境で動作確認
+  3. Route 53 DNS切り替え
+  4. トラフィック監視
+  5. 問題なければBlue環境削除
+
+メリット:
+  - ゼロダウンタイム
+  - 即座にロールバック
+  - 本番データでテスト可能
+```
+
+### 5. Traffic Splitting（Canaryデプロイ）
+
+```yaml
+構成:
+  Canaryデプロイ:
+    - 既存バージョン: v1.0（90%トラフィック）
+    - 新バージョン: v2.0（10%トラフィック）
+    - 評価期間: 30分
+    - 自動ヘルスチェック
+
+手順:
+  1. v2.0デプロイ（10%トラフィック）
+  2. メトリクス監視:
+     - エラー率
+     - レイテンシー
+     - CPU使用率
+  3. 問題なし → 100%移行
+     問題あり → 自動ロールバック
+
+適用:
+  - リスク最小化
+  - 段階的ロールアウト
+  - A/Bテスト
+```
+
+### 6. マルチ環境パターン
+
+```yaml
+構成:
+  Development環境:
+    - Single Instance
+    - t3.small
+    - デプロイ: All at once
+    - コスト: $15/月
+  
+  Staging環境:
+    - Load Balanced
+    - t3.medium × 2
+    - デプロイ: Rolling
+    - コスト: $60/月
+  
+  Production環境:
+    - Load Balanced
+    - t3.large × 4（最小2）
+    - デプロイ: Immutable
+    - Multi-AZ
+    - コスト: $200/月
+
+環境変数管理:
+  - 各環境で個別設定
+  - DATABASE_URL: 環境別RDS
+  - DEBUG: Dev=true, Prod=false
+```
+
+### 7. Docker コンテナ
+
+```yaml
+Single Container:
+  - Dockerrun.aws.json
+  - カスタムランタイム
+  - イメージ: ECRまたはDocker Hub
+  
+  構成例:
+    {
+      "AWSEBDockerrunVersion": "1",
+      "Image": {
+        "Name": "123456.dkr.ecr.region.amazonaws.com/myapp:latest"
+      },
+      "Ports": [{"ContainerPort": 8000}],
+      "Environment": [
+        {"Name": "DATABASE_URL", "Value": "..."}
+      ]
+    }
+
+Multi Container（ECS on Elastic Beanstalk）:
+  - Dockerrun.aws.json v2
+  - 複数コンテナ連携
+  - ECS Task Definition形式
+  
+  構成例:
+    - Webコンテナ: Nginx
+    - Appコンテナ: Django
+    - Sidecarコンテナ: ログ転送
+```
+
+### 8. HTTPS/SSL証明書統合
+
+```yaml
+構成:
+  ACM証明書:
+    - 証明書リクエスト: *.example.com
+    - DNS検証
+    - ALBにアタッチ
+  
+  Beanstalk設定:
+    - リスナー: 443ポート
+    - 証明書ARN: ACM証明書
+    - セキュリティポリシー: TLS 1.2以上
+    - HTTPリダイレクト: 80 → 443
+
+カスタムドメイン:
+  - Route 53 A/ALIAS → ALB
+  - myapp.example.com → ALB DNS
+```
+
+### 9. 高可用性パターン
+
+```yaml
+構成:
+  マルチAZ:
+    - ALB: 3 AZ
+    - EC2: 各AZ最小1台
+    - RDS: Multi-AZ
+  
+  Auto Scaling:
+    最小: 3（各AZ 1台）
+    最大: 15
+    ターゲット: CPU 60%
+  
+  ヘルスチェック:
+    - ELBヘルスチェック: /health
+    - 間隔: 30秒
+    - タイムアウト: 5秒
+    - 正常閾値: 2回
+    - 異常閾値: 5回
+  
+  自動復旧:
+    - インスタンス異常 → 自動置き換え
+    - AZ障害 → 他AZでスケール
+```
+
+### 10. コスト最適化パターン
+
+```yaml
+開発環境:
+  - Single Instance
+  - t3.micro/small
+  - スケジュール停止（夜間・週末）
+  - Spot Instances活用
+
+本番環境:
+  - Reserved Instances（ベースライン）
+  - Auto Scaling（スパイク対応）
+  - 適切なインスタンスサイズ
+  - CloudWatch監視によるチューニング
+
+コスト削減施策:
+  - 不要な環境削除
+  - アプリケーションバージョン定期削除
+  - ログローテーション
+  - S3ライフサイクル管理
+```
+
+### まとめ
+
+**Elastic Beanstalkアーキテクチャ設計のポイント:**
+- **環境タイプ**: Web Server、Worker、または組み合わせ
+- **デプロイ戦略**: Immutable（本番）、Rolling（開発・ステージング）
+- **高可用性**: マルチAZ、Auto Scaling、ヘルスチェック
+- **マイクロサービス**: 複数Beanstalk環境の組み合わせ
+- **Blue/Green**: ゼロダウンタイムデプロイ
+- **コスト最適化**: 環境サイズ、RI活用、不要リソース削除

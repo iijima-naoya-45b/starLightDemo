@@ -1,0 +1,343 @@
+---
+title: "Elastic Beanstalk 試験Tips"
+label: "試験Tips"
+---
+
+## Elastic Beanstalk 試験Tips (SAA/SAP)
+
+### 頻出トピック
+
+#### 1. Elastic Beanstalk vs 他のコンピューティングサービス
+
+```yaml
+Elastic Beanstalk vs EC2:
+  Elastic Beanstalk:
+    - PaaS（インフラ自動管理）
+    - デプロイ自動化
+    - Auto Scaling自動設定
+    - 開発者はコードに集中
+    - 追加料金なし
+  
+  EC2:
+    - IaaS（手動管理）
+    - 柔軟性高い
+    - 完全コントロール
+    - インフラ管理必要
+
+Elastic Beanstalk vs ECS:
+  Elastic Beanstalk:
+    - アプリケーション中心
+    - 言語・フレームワーク特化
+    - シンプル、迅速デプロイ
+    - 中小規模
+  
+  ECS:
+    - コンテナ中心
+    - マイクロサービス向け
+    - 柔軟性高い
+    - 大規模・複雑なアプリ
+
+Elastic Beanstalk vs Lambda:
+  Elastic Beanstalk:
+    - 長時間実行
+    - 従来型Webアプリ
+    - ステートフル可能
+    - EC2ベース
+  
+  Lambda:
+    - 短時間実行（最大15分）
+    - イベントドリブン
+    - サーバーレス
+    - 自動スケール
+```
+
+#### 2. デプロイポリシー
+
+```yaml
+試験頻出パターン:
+
+Q: ダウンタイムなし、本番環境、最速デプロイ
+A: Rolling（ただしキャパシティ一時減少許容）
+
+Q: ダウンタイムなし、キャパシティ維持必須
+A: Rolling with additional batch
+
+Q: ダウンタイムなし、最も安全、即座ロールバック
+A: Immutable
+
+Q: 新環境完全テスト、ゼロダウンタイム、DNS切り替え
+A: Blue/Green Deployment
+
+Q: トラフィック段階的移行、自動ロールバック
+A: Traffic Splitting（Canary）
+
+Q: 開発環境、最速デプロイ、ダウンタイム許容
+A: All at once
+```
+
+#### デプロイポリシー比較表（試験重要）
+
+| ポリシー | ダウンタイム | 新コード失敗時の影響 | デプロイ速度 | 追加コスト | DNS変更 |
+|---|---|---|---|---|---|
+| **All at once** | あり | 全インスタンス影響 | ⭐⭐⭐ | なし | 不要 |
+| **Rolling** | なし | 一部インスタンス影響 | ⭐⭐ | なし | 不要 |
+| **Rolling + batch** | なし | 一部インスタンス影響 | ⭐⭐ | 一時的 | 不要 |
+| **Immutable** | なし | 影響なし（新ASG削除） | ⭐ | 一時的（2倍） | 不要 |
+| **Blue/Green** | なし | 即座に切り戻し | ⭐ | あり（2環境） | 必要 |
+| **Traffic splitting** | なし | 自動ロールバック | ⭐ | 一時的 | 不要 |
+
+#### 3. 環境タイプ
+
+```yaml
+Web Server環境:
+  用途:
+    - Webアプリケーション
+    - REST API
+    - HTTP/HTTPSトラフィック
+  
+  構成:
+    - ELB（ALB/NLB/CLB）
+    - Auto Scaling
+    - EC2インスタンス
+
+Worker環境:
+  用途:
+    - バックグラウンド処理
+    - 長時間実行タスク
+    - 定期ジョブ
+    - SQSメッセージ処理
+  
+  構成:
+    - SQSキュー
+    - sqsdデーモン（ポーリング）
+    - EC2インスタンス
+    - cron.yaml（定期実行）
+```
+
+#### 4. 設定管理
+
+```yaml
+.ebextensions:
+  - YAML/JSON設定ファイル
+  - パッケージインストール
+  - 環境変数設定
+  - コマンド実行（デプロイ時）
+  - ファイル作成
+  
+  試験ポイント:
+    - .ebextensions/ ディレクトリ
+    - .config 拡張子
+    - アルファベット順に実行
+    - leader_only: true（マイグレーション）
+
+環境変数:
+  - 機密情報分離
+  - 環境別設定
+  - Secrets Manager統合
+  - RDS接続情報
+```
+
+### 頻出シナリオ問題
+
+#### シナリオ1: Webアプリの高可用性デプロイ
+
+```
+要件:
+- Node.js Webアプリ
+- ダウンタイムなし
+- 問題発生時即座ロールバック
+- 本番環境
+
+解答:
+- Elastic Beanstalk Load Balanced環境
+- プラットフォーム: Node.js
+- デプロイポリシー: Immutable
+- マルチAZ配置
+- Auto Scaling: 最小2、最大10
+- RDS Multi-AZ（別途作成）
+- CloudWatch監視・アラーム
+
+ポイント:
+✓ Immutable: 最も安全、即座ロールバック
+✓ マルチAZ: 高可用性
+✓ RDS別途作成: 環境削除でもDB保持
+```
+
+#### シナリオ2: バックグラウンド画像処理
+
+```
+要件:
+- ユーザーアップロード画像をリサイズ
+- Webレスポンス遅延させない
+- スケーラブル
+
+解答:
+- Web Server環境: 画像アップロード → S3 → SQSメッセージ送信
+- Worker環境: SQSポーリング → 画像処理 → S3保存
+- Auto Scaling: キュー長さ連動
+- EC2インスタンス: c6i（コンピューティング最適化）
+
+アーキテクチャ:
+1. Web: ユーザー → 画像アップロード → S3
+2. Web: SQSにメッセージ送信（S3キー）
+3. Worker: SQS → sqsd → アプリ → 画像処理 → S3
+4. Worker: キュー長さでAuto Scaling
+```
+
+#### シナリオ3: Blue/Greenデプロイ
+
+```
+要件:
+- 新バージョンを本番データで完全テスト
+- ゼロダウンタイム
+- 問題発生時即座切り戻し
+
+解答:
+1. Green環境作成:
+   - 新バージョンデプロイ
+   - 本番RDS接続（同じDB）
+   - 完全テスト
+
+2. DNS切り替え:
+   - Route 53: myapp.example.com
+   - Blue → Green（Weighted Routing）
+   - 段階的移行: 10% → 50% → 100%
+
+3. 監視:
+   - CloudWatch メトリクス
+   - エラー率、レイテンシー
+
+4. ロールバック:
+   - 問題発生 → Route 53をBlueに戻す
+
+5. Blue環境削除:
+   - 問題なし → Green本番化、Blue削除
+```
+
+#### シナリオ4: Elastic Beanstalk vs ECS 選択
+
+```
+要件比較:
+
+Case A: Node.js Webアプリ、迅速デプロイ、シンプル
+→ Elastic Beanstalk
+  理由: PaaS、言語特化、デプロイ自動化
+
+Case B: マイクロサービス10個、各独立スケール
+→ ECS/EKS
+  理由: コンテナオーケストレーション、柔軟性
+
+Case C: Python Flask API、中小規模、運用自動化
+→ Elastic Beanstalk
+  理由: インフラ管理不要、Auto Scaling自動
+
+Case D: 複雑なコンテナ依存関係、カスタムネットワーク
+→ ECS/EKS
+  理由: 詳細コントロール、Service Mesh
+```
+
+### よくある間違い
+
+```yaml
+× 誤り: Beanstalk環境内にRDS作成（本番）
+○ 正解: RDS別途作成、環境変数で接続
+
+× 誤り: All at once（本番環境）
+○ 正解: Immutable、Rolling with additional batch、またはBlue/Green
+
+× 誤り: Single Instance（高可用性要求）
+○ 正解: Load Balanced、マルチAZ
+
+× 誤り: EC2に直接SSH接続して設定変更
+○ 正解: .ebextensions で設定管理、再デプロイ
+
+× 誤り: Worker環境でHTTPトラフィック処理
+○ 正解: Web Server環境（HTTPトラフィック）、Worker環境（SQS処理）
+```
+
+### SAA試験重要ポイント
+
+```yaml
+基本:
+  ☐ Elastic Beanstalk概念（PaaS）
+  ☐ プラットフォーム種類
+  ☐ 環境タイプ（Web Server、Worker）
+  ☐ デプロイポリシー比較
+
+設計:
+  ☐ 高可用性パターン（マルチAZ、Auto Scaling）
+  ☐ Web + Worker連携
+  ☐ RDS統合（別途作成推奨）
+  ☐ .ebextensions基本
+
+デプロイ:
+  ☐ Immutable vs Rolling
+  ☐ Blue/Green概念
+  ☐ ゼロダウンタイム実現
+
+比較:
+  ☐ Beanstalk vs EC2
+  ☐ Beanstalk vs ECS
+  ☐ Beanstalk vs Lambda
+```
+
+### SAP試験重要ポイント
+
+```yaml
+高度設計:
+  ☐ マルチ環境戦略（Dev、Staging、Prod）
+  ☐ Traffic Splitting（Canary）
+  ☐ カスタムプラットフォーム
+  ☐ Docker Multi-container
+
+運用:
+  ☐ .ebextensions高度活用
+  ☐ CI/CDパイプライン統合
+  ☐ CloudWatch監視・アラーム
+  ☐ マネージドプラットフォーム更新
+
+最適化:
+  ☐ コスト最適化（RI、インスタンスサイズ）
+  ☐ パフォーマンスチューニング
+  ☐ セキュリティ強化（Secrets Manager、IAM）
+
+移行:
+  ☐ オンプレ → Beanstalk移行
+  ☐ EC2 → Beanstalk移行
+  ☐ ハイブリッド構成
+```
+
+### 試験によく出る用語
+
+```yaml
+必須用語:
+  - Application（アプリケーション）
+  - Environment（環境）
+  - Platform（プラットフォーム）
+  - Application Version（バージョン）
+  - .ebextensions（設定ファイル）
+  - Immutable Deployment
+  - Blue/Green Deployment
+  - Worker Environment
+  - sqsd（SQSデーモン）
+  - Enhanced Health Reporting
+
+デプロイポリシー:
+  - All at once
+  - Rolling
+  - Rolling with additional batch
+  - Immutable
+  - Blue/Green
+  - Traffic Splitting
+```
+
+### まとめ
+
+**試験で重要なポイント:**
+- **Beanstalk選択理由**: PaaS、迅速デプロイ、インフラ自動化
+- **デプロイポリシー**: 要件（ダウンタイム、安全性、速度）から選択
+- **環境タイプ**: Web Server（HTTP）、Worker（SQS）
+- **高可用性**: マルチAZ、Auto Scaling、Load Balanced
+- **他サービスとの比較**: EC2（IaaS）、ECS（コンテナ）、Lambda（サーバーレス）
+- **RDS統合**: 本番環境では別途作成必須
+- **.ebextensions**: インフラをコード管理、leader_only理解
