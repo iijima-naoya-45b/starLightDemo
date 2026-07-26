@@ -64,6 +64,42 @@ label: "ユースケースおよびアーキパターン"
 
 ### パターン1: 基本的なログ分析
 
+```mermaid
+graph TB
+    subgraph "Data Source"
+        ALB["Application Load Balancer"]
+        CloudFront["CloudFront"]
+        VPC["VPC Flow Logs"]
+    end
+    
+    subgraph "Storage"
+        S3["Amazon S3<br/>ログファイル"]
+    end
+    
+    subgraph "Catalog"
+        Crawler["Glue Crawler<br/>スキーマ検出"]
+        Catalog["Glue Data Catalog<br/>メタデータ"]
+    end
+    
+    subgraph "Query"
+        Athena["Amazon Athena<br/>SQL クエリ"]
+    end
+    
+    subgraph "Visualization"
+        QuickSight["Amazon QuickSight<br/>ダッシュボード"]
+    end
+    
+    ALB -->|ログ出力| S3
+    CloudFront -->|ログ出力| S3
+    VPC -->|ログ出力| S3
+    
+    S3 --> Crawler
+    Crawler --> Catalog
+    
+    Catalog --> Athena
+    Athena --> QuickSight
+```
+
 ```yaml
 構成:
   ALB:

@@ -75,6 +75,39 @@ label: "ユースケースおよびアーキパターン"
 
 ### パターン1: Lambda + Data Streams
 
+```mermaid
+graph LR
+    subgraph "Data Producers"
+        App1["App Server 1"]
+        App2["App Server 2"]
+        App3["App Server 3"]
+    end
+    
+    subgraph "Kinesis Data Streams"
+        Stream["Data Stream<br/>複数シャード"]
+    end
+    
+    subgraph "Consumers"
+        Lambda1["Lambda Function 1"]
+        Lambda2["Lambda Function 2"]
+    end
+    
+    subgraph "Storage"
+        DynamoDB["DynamoDB"]
+        S3["Amazon S3"]
+    end
+    
+    App1 -->|PutRecords| Stream
+    App2 -->|PutRecords| Stream
+    App3 -->|PutRecords| Stream
+    
+    Stream -->|Event Source<br/>Mapping| Lambda1
+    Stream -->|Event Source<br/>Mapping| Lambda2
+    
+    Lambda1 --> DynamoDB
+    Lambda2 --> S3
+```
+
 ```yaml
 構成:
   Producer:

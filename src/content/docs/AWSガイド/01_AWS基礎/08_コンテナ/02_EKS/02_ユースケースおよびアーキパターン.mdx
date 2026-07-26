@@ -69,6 +69,56 @@ label: "ユースケースおよびアーキパターン"
 
 ### パターン1: ALB + EKS
 
+```mermaid
+graph TB
+    subgraph "AWS Cloud"
+        subgraph "VPC"
+            subgraph "Public Subnet"
+                ALB["Application Load Balancer<br/>TLS終端"]
+            end
+            
+            subgraph "Private Subnet"
+                subgraph "EKS Cluster"
+                    CP["Control Plane<br/>(AWS Managed)"]
+                    
+                    subgraph "Worker Nodes"
+                        Node1["EC2 Node 1"]
+                        Node2["EC2 Node 2"]
+                    end
+                    
+                    subgraph "Pods"
+                        Pod1["App Pod 1"]
+                        Pod2["App Pod 2"]
+                        Pod3["App Pod 3"]
+                    end
+                end
+                
+                LBC["AWS Load Balancer<br/>Controller"]
+            end
+        end
+        
+        Route53["Route 53"]
+        ECR["Amazon ECR"]
+    end
+    
+    Internet["Internet"] --> Route53
+    Route53 --> ALB
+    ALB --> LBC
+    LBC --> Pod1
+    LBC --> Pod2
+    LBC --> Pod3
+    
+    Node1 --> Pod1
+    Node1 --> Pod2
+    Node2 --> Pod3
+    
+    CP -.管理.-> Node1
+    CP -.管理.-> Node2
+    
+    Node1 -.イメージ取得.-> ECR
+    Node2 -.イメージ取得.-> ECR
+```
+
 ```yaml
 構成:
   ALB:

@@ -9,6 +9,52 @@ label: "ユースケースおよびアーキパターン"
 
 ### 1. 基本的な3層Webアプリケーション
 
+```mermaid
+graph TB
+    subgraph "VPC 10.0.0.0/16"
+        subgraph "AZ-1a"
+            PubSub1["パブリックサブネット<br/>10.0.1.0/24"]
+            PrivSub1["プライベートサブネット App<br/>10.0.11.0/24"]
+            DBSub1["プライベートサブネット DB<br/>10.0.21.0/24"]
+        end
+        
+        subgraph "AZ-1c"
+            PubSub2["パブリックサブネット<br/>10.0.2.0/24"]
+            PrivSub2["プライベートサブネット App<br/>10.0.12.0/24"]
+            DBSub2["プライベートサブネット DB<br/>10.0.22.0/24"]
+        end
+        
+        IGW["Internet Gateway"]
+        ALB["Application Load Balancer"]
+        NAT1["NAT Gateway"]
+        NAT2["NAT Gateway"]
+        
+        EC2-1["EC2 Instance"]
+        EC2-2["EC2 Instance"]
+        RDS["RDS Multi-AZ"]
+        
+        IGW --> ALB
+        ALB --> PubSub1
+        ALB --> PubSub2
+        
+        PubSub1 --> NAT1
+        PubSub2 --> NAT2
+        
+        NAT1 --> PrivSub1
+        NAT2 --> PrivSub2
+        
+        PrivSub1 --> EC2-1
+        PrivSub2 --> EC2-2
+        
+        EC2-1 --> DBSub1
+        EC2-2 --> DBSub2
+        DBSub1 --> RDS
+        DBSub2 --> RDS
+    end
+    
+    Internet["Internet"] --> IGW
+```
+
 ```yaml
 構成:
   VPC: 10.0.0.0/16
