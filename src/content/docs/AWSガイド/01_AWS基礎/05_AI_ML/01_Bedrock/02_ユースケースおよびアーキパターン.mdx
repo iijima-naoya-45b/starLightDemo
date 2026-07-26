@@ -1,0 +1,823 @@
+---
+title: "Bedrockのユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## Bedrock ユースケースおよびアーキテクチャパターン
+
+Amazon Bedrockを活用した実践的なユースケースとアーキテクチャパターンを解説します。
+
+### 主要ユースケース
+
+#### 1. チャットボット・カスタマーサポート
+
+```yaml
+ユースケース:
+  概要: 顧客からの問い合わせに自動応答するチャットボット
+  
+  利用モデル:
+    - Claude 3 Haiku (高速・低コスト)
+    - Claude 3.5 Sonnet (複雑な問い合わせ)
+  
+  主要機能:
+    - 自然言語理解
+    - コンテキスト保持
+    - 多言語対応
+    - エスカレーション判定
+  
+  期待効果:
+    - サポートコスト削減: 60-70%
+    - 応答時間短縮: 数時間→数秒
+    - 顧客満足度向上: 24時間対応
+```
+
+**アーキテクチャ図:**
+
+```
+┌─────────────┐
+│   ユーザー    │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────────────────────┐
+│  Amazon API Gateway              │
+│  (REST API / WebSocket API)      │
+└──────────┬──────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────┐
+│  AWS Lambda                      │
+│  - 会話管理                       │
+│  - セッション管理                  │
+│  - プロンプトエンジニアリング        │
+└──────────┬──────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────┐
+│  Amazon Bedrock                  │
+│  (Claude 3 Haiku/Sonnet)         │
+└──────────┬──────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────┐
+│  Amazon DynamoDB                 │
+│  - 会話履歴                       │
+│  - ユーザーセッション              │
+└─────────────────────────────────┘
+```
+
+**実装例:**
+
+```python
+import boto3
+import json
+from datetime import datetime
+
+dynamodb = boto3.resource('dynamodb')
+bedrock_runtime = boto3.client('bedrock-runtime', region_name='us-east-1')
+
+conversations_table = dynamodb.Table('ChatConversations')
+
+def handle_chat_message(user_id, message, session_id):
+    """
+    チャットメッセージを処理する関数
+    
+    Args:
+        user_id (str): ユーザーID
+        message (str): ユーザーからのメッセージ
+        session_id (str): セッションID
+    
+    Returns:
+        dict: AI応答と更新された会話履歴
+    
+    Raises:
+        Exception: API呼び出しエラーまたはデータベースエラー時
+    """
+    try:
+        conversation_history = get_conversation_history(session_id)
+        
+        conversation_history.append({
+            "role": "user",
+            "content": message
+        })
+        
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 2000,
+            "messages": conversation_history,
+            "system": """あなたは親切なカスタマーサポート担当者です。
+            以下のルールに従ってください：
+            1. 丁寧な言葉遣いを心がける
+            2. 不明な点は正直に伝える
+            3. 個人情報は絶対に聞き出さない
+            4. 複雑な問題は人間のオペレーターに引き継ぐ"""
+        })
+        
+        response = bedrock_runtime.invoke_model(
+            modelId='anthropic.claude-3-haiku-20240307-v1:0',
+            body=body,
+            contentType='application/json',
+            accept='application/json'
+        )
+        
+        response_body = json.loads(response['body'].read())
+        ai_message = response_body['content'][0]['text']
+        
+        conversation_history.append({
+            "role": "assistant",
+            "content": ai_message
+        })
+        
+        save_conversation_history(session_id, user_id, conversation_history)
+        
+        return {
+            'response': ai_message,
+            'conversation_history': conversation_history
+        }
+        
+    except Exception as error:
+        error_message = (
+            f"Error handling chat message. "
+            f"User ID: '{user_id}', "
+            f"Session ID: '{session_id}', "
+            f"Message: '{message}', "
+            f"Error: {str(error)}"
+        )
+        raise Exception(error_message) from error
+
+def get_conversation_history(session_id):
+    """
+    会話履歴を取得する関数
+    
+    Args:
+        session_id (str): セッションID
+    
+    Returns:
+        list: 会話履歴のリスト
+    
+    Raises:
+        Exception: データベースエラー時
+    """
+    try:
+        response = conversations_table.get_item(Key={'session_id': session_id})
+        
+        if 'Item' in response:
+            return response['Item'].get('messages', [])
+        
+        return []
+        
+    except Exception as error:
+        error_message = f"Error getting conversation history. Session ID: '{session_id}', Error: {str(error)}"
+        raise Exception(error_message) from error
+
+def save_conversation_history(session_id, user_id, messages):
+    """
+    会話履歴を保存する関数
+    
+    Args:
+        session_id (str): セッションID
+        user_id (str): ユーザーID
+        messages (list): 会話メッセージのリスト
+    
+    Raises:
+        Exception: データベースエラー時
+    """
+    try:
+        conversations_table.put_item(
+            Item={
+                'session_id': session_id,
+                'user_id': user_id,
+                'messages': messages,
+                'updated_at': datetime.now().isoformat()
+            }
+        )
+        
+    except Exception as error:
+        error_message = (
+            f"Error saving conversation history. "
+            f"Session ID: '{session_id}', "
+            f"User ID: '{user_id}', "
+            f"Error: {str(error)}"
+        )
+        raise Exception(error_message) from error
+```
+
+#### 2. ドキュメント要約・分析
+
+```yaml
+ユースケース:
+  概要: 大量の文書を自動要約・分析
+  
+  利用モデル:
+    - Claude 3.5 Sonnet (長文理解)
+    - Titan Embeddings (検索)
+  
+  主要機能:
+    - 長文要約
+    - キーポイント抽出
+    - センチメント分析
+    - トピック分類
+  
+  期待効果:
+    - 作業時間削減: 90%
+    - 情報整理の効率化
+    - 見落とし防止
+```
+
+**アーキテクチャ図:**
+
+```
+┌──────────────┐
+│  ユーザー     │
+└──────┬───────┘
+       │
+       ▼
+┌─────────────────────────────────┐
+│  Amazon S3                       │
+│  (文書アップロード)                │
+└──────────┬──────────────────────┘
+           │ S3 Event
+           ▼
+┌─────────────────────────────────┐
+│  AWS Lambda                      │
+│  - 文書解析                       │
+│  - テキスト抽出                   │
+└──────────┬──────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────┐
+│  Amazon Bedrock                  │
+│  (Claude 3.5 Sonnet)             │
+└──────────┬──────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────┐
+│  Amazon S3                       │
+│  (要約結果保存)                   │
+└─────────────────────────────────┘
+```
+
+**実装例:**
+
+```python
+import boto3
+import json
+
+s3_client = boto3.client('s3')
+bedrock_runtime = boto3.client('bedrock-runtime', region_name='us-east-1')
+
+def summarize_document(bucket_name, object_key):
+    """
+    S3上の文書を要約する関数
+    
+    Args:
+        bucket_name (str): S3バケット名
+        object_key (str): S3オブジェクトキー
+    
+    Returns:
+        dict: 要約結果とメタデータ
+    
+    Raises:
+        Exception: S3またはBedrock APIエラー時
+    """
+    try:
+        response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
+        document_text = response['Body'].read().decode('utf-8')
+        
+        prompt = f"""以下の文書を詳細に分析し、以下の形式でまとめてください：
+
+1. 要約（3-5文）
+2. キーポイント（5つ）
+3. 主なトピック
+4. センチメント（ポジティブ/ネガティブ/中立）
+5. 推奨アクション
+
+文書:
+{document_text}"""
+        
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 4000,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        })
+        
+        response = bedrock_runtime.invoke_model(
+            modelId='anthropic.claude-3-5-sonnet-20241022-v2:0',
+            body=body,
+            contentType='application/json',
+            accept='application/json'
+        )
+        
+        response_body = json.loads(response['body'].read())
+        summary_result = response_body['content'][0]['text']
+        
+        summary_key = f"summaries/{object_key}.summary.txt"
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=summary_key,
+            Body=summary_result.encode('utf-8')
+        )
+        
+        return {
+            'original_document': object_key,
+            'summary_location': summary_key,
+            'summary': summary_result
+        }
+        
+    except Exception as error:
+        error_message = (
+            f"Error summarizing document. "
+            f"Bucket: '{bucket_name}', "
+            f"Key: '{object_key}', "
+            f"Error: {str(error)}"
+        )
+        raise Exception(error_message) from error
+```
+
+#### 3. コード生成・レビュー
+
+```yaml
+ユースケース:
+  概要: AIによるコード生成とレビュー
+  
+  利用モデル:
+    - Claude 3.5 Sonnet (コード生成・レビュー)
+  
+  主要機能:
+    - コード生成
+    - バグ検出
+    - リファクタリング提案
+    - テストコード生成
+  
+  期待効果:
+    - 開発速度向上: 30-50%
+    - コード品質向上
+    - レビュー時間削減
+```
+
+**実装例:**
+
+```python
+def generate_code_with_bedrock(requirements, programming_language="Python"):
+    """
+    要件からコードを生成する関数
+    
+    Args:
+        requirements (str): コードの要件
+        programming_language (str): プログラミング言語
+    
+    Returns:
+        dict: 生成されたコードとテストコード
+    
+    Raises:
+        Exception: Bedrock APIエラー時
+    """
+    try:
+        prompt = f"""以下の要件に基づいて、{programming_language}のコードを生成してください：
+
+要件:
+{requirements}
+
+以下の形式で出力してください：
+
+1. メイン関数（完全な実装）
+2. 単体テストコード
+3. 使用例
+4. 必要なライブラリ
+
+コーディング規約:
+- 関数名はlowerCamelCase
+- エラーハンドリングを含める
+- 詳細なエラーメッセージを出力
+- 型ヒントを使用
+- docstringを記述"""
+        
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 4000,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        })
+        
+        response = bedrock_runtime.invoke_model(
+            modelId='anthropic.claude-3-5-sonnet-20241022-v2:0',
+            body=body,
+            contentType='application/json',
+            accept='application/json'
+        )
+        
+        response_body = json.loads(response['body'].read())
+        generated_code = response_body['content'][0]['text']
+        
+        return {
+            'language': programming_language,
+            'requirements': requirements,
+            'generated_code': generated_code
+        }
+        
+    except Exception as error:
+        error_message = (
+            f"Error generating code. "
+            f"Requirements: '{requirements}', "
+            f"Language: '{programming_language}', "
+            f"Error: {str(error)}"
+        )
+        raise Exception(error_message) from error
+
+def review_code_with_bedrock(code_snippet, focus_areas=None):
+    """
+    コードをレビューする関数
+    
+    Args:
+        code_snippet (str): レビュー対象のコード
+        focus_areas (list): レビューの重点項目
+    
+    Returns:
+        dict: レビュー結果と改善提案
+    
+    Raises:
+        Exception: Bedrock APIエラー時
+    """
+    if focus_areas is None:
+        focus_areas = ["セキュリティ", "パフォーマンス", "可読性", "バグ"]
+    
+    focus_areas_text = "\n".join([f"- {area}" for area in focus_areas])
+    
+    try:
+        prompt = f"""以下のコードをレビューし、改善提案を行ってください：
+
+レビュー観点:
+"""
+        prompt += focus_areas_text
+        prompt += """
+
+コード:
+"""
+        prompt += code_snippet
+        prompt += """
+
+以下の形式で出力してください：
+
+1. 総合評価（A-F）
+2. 重大な問題点
+3. 改善提案（具体的なコード例付き）
+4. ベストプラクティスの適用提案
+5. セキュリティ上の懸念点"""
+        
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 3000,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        })
+        
+        response = bedrock_runtime.invoke_model(
+            modelId='anthropic.claude-3-5-sonnet-20241022-v2:0',
+            body=body,
+            contentType='application/json',
+            accept='application/json'
+        )
+        
+        response_body = json.loads(response['body'].read())
+        review_result = response_body['content'][0]['text']
+        
+        return {
+            'code_snippet': code_snippet,
+            'focus_areas': focus_areas,
+            'review': review_result
+        }
+        
+    except Exception as error:
+        error_message = (
+            f"Error reviewing code. "
+            f"Focus Areas: {focus_areas}, "
+            f"Error: {str(error)}"
+        )
+        raise Exception(error_message) from error
+```
+
+#### 4. RAG（Retrieval-Augmented Generation）ベースの社内ナレッジ検索
+
+```yaml
+ユースケース:
+  概要: 社内文書を検索し、AIが回答を生成
+  
+  利用サービス:
+    - Bedrock Knowledge Bases
+    - Amazon OpenSearch Serverless
+    - Titan Embeddings
+    - Claude 3.5 Sonnet
+  
+  主要機能:
+    - セマンティック検索
+    - コンテキスト理解
+    - 引用元表示
+    - 多言語対応
+  
+  期待効果:
+    - 情報検索時間削減: 80%
+    - 情報アクセス性向上
+    - ナレッジ共有促進
+```
+
+**アーキテクチャ図:**
+
+```
+┌──────────────┐
+│  社内文書     │
+│  (S3)        │
+└──────┬───────┘
+       │
+       ▼
+┌─────────────────────────────────┐
+│  Bedrock Knowledge Base          │
+│  - データソース連携               │
+│  - チャンク化                    │
+│  - ベクトル化（Titan Embeddings）│
+└──────────┬──────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────┐
+│  Amazon OpenSearch Serverless    │
+│  (ベクトル検索)                   │
+└──────────┬──────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────┐
+│  Bedrock (Claude 3.5 Sonnet)     │
+│  (回答生成)                       │
+└─────────────────────────────────┘
+```
+
+**実装例:**
+
+```python
+def search_company_knowledge(query, knowledge_base_id, max_results=5):
+    """
+    社内ナレッジベースを検索する関数
+    
+    Args:
+        query (str): 検索クエリ
+        knowledge_base_id (str): Knowledge Base ID
+        max_results (int): 最大取得結果数
+    
+    Returns:
+        dict: 回答と参照元情報
+    
+    Raises:
+        Exception: Bedrock APIエラー時
+    """
+    bedrock_agent = boto3.client(
+        service_name='bedrock-agent-runtime',
+        region_name='us-east-1'
+    )
+    
+    try:
+        response = bedrock_agent.retrieve_and_generate(
+            input={
+                'text': query
+            },
+            retrieveAndGenerateConfiguration={
+                'type': 'KNOWLEDGE_BASE',
+                'knowledgeBaseConfiguration': {
+                    'knowledgeBaseId': knowledge_base_id,
+                    'modelArn': 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0',
+                    'retrievalConfiguration': {
+                        'vectorSearchConfiguration': {
+                            'numberOfResults': max_results,
+                            'overrideSearchType': 'HYBRID'
+                        }
+                    },
+                    'generationConfiguration': {
+                        'promptTemplate': {
+                            'textPromptTemplate': '''あなたは社内のナレッジアシスタントです。
+                            
+検索結果: $search_results$
+
+質問: $query$
+
+上記の検索結果に基づいて、質問に詳細に回答してください。
+必ず参照元を明記してください。
+検索結果に情報がない場合は、正直にその旨を伝えてください。'''
+                        }
+                    }
+                }
+            }
+        )
+        
+        generated_text = response['output']['text']
+        citations = response.get('citations', [])
+        
+        formatted_citations = []
+        for citation in citations:
+            for reference in citation.get('retrievedReferences', []):
+                formatted_citations.append({
+                    'text': reference.get('content', {}).get('text', ''),
+                    'source': reference.get('location', {}).get('s3Location', {}).get('uri', ''),
+                    'confidence': reference.get('metadata', {}).get('score', 0)
+                })
+        
+        return {
+            'answer': generated_text,
+            'sources': formatted_citations,
+            'query': query
+        }
+        
+    except Exception as error:
+        error_message = (
+            f"Error searching company knowledge. "
+            f"Query: '{query}', "
+            f"KB ID: '{knowledge_base_id}', "
+            f"Error: {str(error)}"
+        )
+        raise Exception(error_message) from error
+```
+
+#### 5. 画像生成（マーケティング素材）
+
+```yaml
+ユースケース:
+  概要: AI生成画像でマーケティング素材を作成
+  
+  利用モデル:
+    - Stable Diffusion XL 1.0
+    - Titan Image Generator
+  
+  主要機能:
+    - テキストから画像生成
+    - ブランドガイドライン適用
+    - バリエーション生成
+    - 自動最適化
+  
+  期待効果:
+    - 制作時間削減: 90%
+    - 制作コスト削減: 80%
+    - 迅速なA/Bテスト
+```
+
+**実装例:**
+
+```python
+import base64
+
+def generate_marketing_image(prompt, style="professional", size=(1024, 1024)):
+    """
+    マーケティング画像を生成する関数
+    
+    Args:
+        prompt (str): 画像生成プロンプト
+        style (str): スタイル（professional/creative/minimal）
+        size (tuple): 画像サイズ（幅, 高さ）
+    
+    Returns:
+        dict: 生成された画像データとメタデータ
+    
+    Raises:
+        Exception: Bedrock APIエラー時
+    """
+    style_presets = {
+        "professional": "photographic, high quality, professional lighting",
+        "creative": "artistic, vibrant colors, creative composition",
+        "minimal": "minimalist, clean, simple design"
+    }
+    
+    enhanced_prompt = f"{prompt}, {style_presets.get(style, '')}"
+    
+    try:
+        body = json.dumps({
+            "text_prompts": [
+                {
+                    "text": enhanced_prompt,
+                    "weight": 1.0
+                }
+            ],
+            "cfg_scale": 7,
+            "steps": 50,
+            "width": size[0],
+            "height": size[1],
+            "seed": 0
+        })
+        
+        response = bedrock_runtime.invoke_model(
+            modelId='stability.stable-diffusion-xl-v1',
+            body=body,
+            contentType='application/json',
+            accept='application/json'
+        )
+        
+        response_body = json.loads(response['body'].read())
+        
+        image_data = base64.b64decode(response_body['artifacts'][0]['base64'])
+        
+        s3_key = f"marketing-images/{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
+        s3_client.put_object(
+            Bucket='my-marketing-assets',
+            Key=s3_key,
+            Body=image_data,
+            ContentType='image/png'
+        )
+        
+        return {
+            'image_location': s3_key,
+            'prompt': enhanced_prompt,
+            'style': style,
+            'size': size
+        }
+        
+    except Exception as error:
+        error_message = (
+            f"Error generating marketing image. "
+            f"Prompt: '{prompt}', "
+            f"Style: '{style}', "
+            f"Size: {size}, "
+            f"Error: {str(error)}"
+        )
+        raise Exception(error_message) from error
+```
+
+### アーキテクチャパターン
+
+#### 1. マイクロサービスパターン
+
+```yaml
+構成:
+  - API Gateway: エンドポイント管理
+  - Lambda: ビジネスロジック
+  - Bedrock: AI処理
+  - DynamoDB: 状態管理
+  
+メリット:
+  - スケーラビリティ
+  - 疎結合
+  - 独立したデプロイ
+  
+適用場面:
+  - 大規模サービス
+  - 複数のAI機能
+  - 高可用性要求
+```
+
+#### 2. イベント駆動パターン
+
+```yaml
+構成:
+  - S3: データソース
+  - EventBridge: イベント管理
+  - Lambda: イベント処理
+  - Bedrock: AI処理
+  
+メリット:
+  - 非同期処理
+  - スケーラビリティ
+  - システム間疎結合
+  
+適用場面:
+  - バッチ処理
+  - 文書処理
+  - データパイプライン
+```
+
+#### 3. ストリーミングパターン
+
+```yaml
+構成:
+  - WebSocket API: リアルタイム通信
+  - Lambda: ストリーミング処理
+  - Bedrock: ストリーミング応答
+  
+メリット:
+  - リアルタイム体験
+  - 低レイテンシー
+  - ユーザー体験向上
+  
+適用場面:
+  - チャットボット
+  - リアルタイム翻訳
+  - コード生成ツール
+```
+
+### まとめ
+
+Amazon Bedrockは、様々なユースケースに対応できる柔軟なプラットフォームです。
+
+**実装時の考慮事項:**
+- ユースケースに適したモデル選択
+- コスト最適化
+- セキュリティとプライバシー
+- スケーラビリティ設計
+- エラーハンドリング
+
+次のセクションでは、実務で役立つTipsを紹介します。
