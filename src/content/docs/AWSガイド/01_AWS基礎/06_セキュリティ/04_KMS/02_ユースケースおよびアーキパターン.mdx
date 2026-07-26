@@ -1,0 +1,408 @@
+---
+title: "ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## ユースケース
+
+### 1. S3バケット暗号化
+
+```yaml
+シナリオ:
+  - 機密データをS3に保存
+  - アクセス制御の徹底
+  - 監査要件対応
+
+実装:
+  バケット設定:
+    - デフォルト暗号化有効化
+    - SSE-KMS（カスタマー管理キー）
+    - バケットポリシーで暗号化強制
+  
+  キーポリシー:
+    - 特定IAMロールのみアクセス
+    - S3サービスプリンシパル許可
+```
+
+### 2. RDSデータベース暗号化
+
+```yaml
+シナリオ:
+  - データベース保管時暗号化
+  - スナップショット暗号化
+  - クロスリージョンコピー
+
+実装:
+  RDS設定:
+    - 作成時に暗号化有効化
+    - KMSキー指定
+  
+  注意点:
+    - 既存DBは暗号化できない
+    - スナップショット→復元で対応
+    - リードレプリカも暗号化
+```
+
+### 3. Lambda環境変数暗号化
+
+```yaml
+シナリオ:
+  - API キーなどの機密情報
+  - 環境変数として保存
+  - 実行時に復号化
+
+実装:
+  暗号化:
+    - カスタマー管理キー使用
+    - コンソールまたはCLIで設定
+  
+  復号化:
+    - 実行ロールにKMS権限
+    - boto3で復号化
+```
+
+## アーキテクチャパターン
+
+### パターン1: エンベロープ暗号化（アプリケーション）
+
+```yaml
+構成:
+  アプリケーション:
+    - データ暗号化ロジック
+    - KMS SDK統合
+  
+  KMS:
+    - カスタマー管理キー
+    - データキー生成
+  
+  ストレージ:
+    - 暗号化データ保存
+    - 暗号化データキー保存
+
+フロー:
+  暗号化:
+    1. GenerateDataKey API呼び出し
+    2. プレーンテキストデータキー受け取り
+    3. データ暗号化
+    4. プレーンテキストデータキー破棄
+    5. 暗号化データ + 暗号化データキー保存
+  
+  復号化:
+    1. 暗号化データキー取得
+    2. Decrypt API呼び出し
+    3. プレーンテキストデータキー受け取り
+    4. データ復号化
+    5. プレーンテキストデータキー破棄
+```
+
+### パターン2: S3 + KMS + Lambda
+
+```yaml
+構成:
+  S3:
+    - SSE-KMS暗号化
+    - イベント通知
+  
+  Lambda:
+    - オブジェクト処理
+    - KMS復号化権限
+  
+  KMS:
+    - カスタマー管理キー
+    - キーポリシー設定
+
+キーポリシー:
+  Principal:
+    - Lambda実行ロール
+    - S3サービス
+  
+  Actions:
+    - kms:Decrypt
+    - kms:GenerateDataKey
+
+注意点:
+  - Lambda実行ロールに必要な権限
+  - S3バケットポリシーとの整合性
+  - VPC Lambda の場合はエンドポイント
+```
+
+```json
+// Lambda IAM ポリシー
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "kms:Decrypt",
+        "kms:DescribeKey"
+      ],
+      "Resource": "arn:aws:kms:ap-northeast-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::my-encrypted-bucket/*"
+    }
+  ]
+}
+```
+
+### パターン3: クロスアカウント暗号化
+
+```yaml
+構成:
+  アカウントA（キー所有）:
+    - KMS カスタマー管理キー
+    - キーポリシーでアカウントB許可
+  
+  アカウントB（利用側）:
+    - EC2 / Lambda
+    - IAMポリシーでKMSアクセス許可
+
+キーポリシー（アカウントA）:
+  Statement:
+    - アカウントA の管理者権限
+    - アカウントB のロール使用許可
+
+IAMポリシー（アカウントB）:
+  - KMS キー ARN 指定
+  - Encrypt, Decrypt, GenerateDataKey
+```
+
+```json
+// アカウントA キーポリシー
+{
+  "Sid": "Allow use of the key from Account B",
+  "Effect": "Allow",
+  "Principal": {
+    "AWS": "arn:aws:iam::999999999999:role/AppRole"
+  },
+  "Action": [
+    "kms:Encrypt",
+    "kms:Decrypt",
+    "kms:GenerateDataKey"
+  ],
+  "Resource": "*"
+}
+```
+
+### パターン4: マルチリージョン暗号化
+
+```yaml
+構成:
+  プライマリリージョン（ap-northeast-1）:
+    - マルチリージョンキー（プライマリ）
+    - DynamoDB Global Table
+  
+  レプリカリージョン（us-west-2）:
+    - マルチリージョンキー（レプリカ）
+    - DynamoDB Global Table
+
+特徴:
+  - 同じキーID
+  - リージョン間でデータ移動可能
+  - 各リージョンで独立管理
+  - キーポリシーは個別設定
+
+用途:
+  - DynamoDB Global Tables
+  - Aurora Global Database
+  - S3 クロスリージョンレプリケーション
+```
+
+### パターン5: CloudHSM統合
+
+```yaml
+シナリオ:
+  - FIPS 140-2 Level 3 準拠が必要
+  - 専用ハードウェアセキュリティモジュール
+  - カスタムキーストア
+
+構成:
+  CloudHSM:
+    - HSMクラスター（マルチAZ）
+    - 専用ハードウェア
+  
+  KMS:
+    - カスタムキーストア
+    - CloudHSM連携
+  
+  アプリケーション:
+    - KMS API経由でアクセス
+    - 透過的な利用
+
+メリット:
+  - 最高レベルのセキュリティ
+  - キーマテリアルの完全制御
+  - コンプライアンス対応
+
+デメリット:
+  - 高コスト（$1.50/時間/HSM）
+  - 運用負荷増加
+```
+
+## 実装例
+
+### Python SDK（boto3）
+
+```python
+import boto3
+import base64
+from botocore.exceptions import ClientError
+
+class KMSEncryption:
+    """KMS暗号化ヘルパー"""
+    
+    def __init__(self, key_id, region='ap-northeast-1'):
+        self.kms_client = boto3.client('kms', region_name=region)
+        self.key_id = key_id
+    
+    def encrypt_data(self, plaintext):
+        """データを暗号化"""
+        try:
+            response = self.kms_client.encrypt(
+                KeyId=self.key_id,
+                Plaintext=plaintext
+            )
+            # Base64エンコード
+            encrypted_data = base64.b64encode(response['CiphertextBlob'])
+            return encrypted_data
+        except ClientError as e:
+            print(f"暗号化エラー: {e}")
+            raise
+    
+    def decrypt_data(self, encrypted_data):
+        """データを復号化"""
+        try:
+            # Base64デコード
+            ciphertext_blob = base64.b64decode(encrypted_data)
+            
+            response = self.kms_client.decrypt(
+                CiphertextBlob=ciphertext_blob
+            )
+            plaintext = response['Plaintext'].decode('utf-8')
+            return plaintext
+        except ClientError as e:
+            print(f"復号化エラー: {e}")
+            raise
+
+# 使用例
+kms = KMSEncryption(key_id='alias/my-app-key')
+
+# 暗号化
+plaintext = "機密データ"
+encrypted = kms.encrypt_data(plaintext)
+print(f"暗号化データ: {encrypted}")
+
+# 復号化
+decrypted = kms.decrypt_data(encrypted)
+print(f"復号化データ: {decrypted}")
+```
+
+### エンベロープ暗号化実装
+
+```python
+import os
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
+
+class EnvelopeEncryption:
+    """エンベロープ暗号化"""
+    
+    def __init__(self, kms_key_id):
+        self.kms_client = boto3.client('kms')
+        self.kms_key_id = kms_key_id
+    
+    def encrypt_file(self, input_file, output_file):
+        """ファイルを暗号化"""
+        # データキー生成
+        response = self.kms_client.generate_data_key(
+            KeyId=self.kms_key_id,
+            KeySpec='AES_256'
+        )
+        
+        plaintext_key = response['Plaintext']
+        encrypted_key = response['CiphertextBlob']
+        
+        # ファイル暗号化
+        iv = os.urandom(16)
+        cipher = Cipher(
+            algorithms.AES(plaintext_key),
+            modes.CBC(iv),
+            backend=default_backend()
+        )
+        encryptor = cipher.encryptor()
+        
+        with open(input_file, 'rb') as f_in:
+            plaintext_data = f_in.read()
+        
+        # パディング
+        padding_length = 16 - (len(plaintext_data) % 16)
+        plaintext_data += bytes([padding_length] * padding_length)
+        
+        # 暗号化
+        ciphertext = encryptor.update(plaintext_data) + encryptor.finalize()
+        
+        # 保存: 暗号化データキー長 + 暗号化データキー + IV + 暗号化データ
+        with open(output_file, 'wb') as f_out:
+            f_out.write(len(encrypted_key).to_bytes(4, 'big'))
+            f_out.write(encrypted_key)
+            f_out.write(iv)
+            f_out.write(ciphertext)
+        
+        # プレーンテキストキー破棄
+        del plaintext_key
+    
+    def decrypt_file(self, input_file, output_file):
+        """ファイルを復号化"""
+        with open(input_file, 'rb') as f_in:
+            # 暗号化データキー取得
+            key_length = int.from_bytes(f_in.read(4), 'big')
+            encrypted_key = f_in.read(key_length)
+            iv = f_in.read(16)
+            ciphertext = f_in.read()
+        
+        # データキー復号化
+        response = self.kms_client.decrypt(
+            CiphertextBlob=encrypted_key
+        )
+        plaintext_key = response['Plaintext']
+        
+        # ファイル復号化
+        cipher = Cipher(
+            algorithms.AES(plaintext_key),
+            modes.CBC(iv),
+            backend=default_backend()
+        )
+        decryptor = cipher.decryptor()
+        
+        plaintext_data = decryptor.update(ciphertext) + decryptor.finalize()
+        
+        # パディング削除
+        padding_length = plaintext_data[-1]
+        plaintext_data = plaintext_data[:-padding_length]
+        
+        with open(output_file, 'wb') as f_out:
+            f_out.write(plaintext_data)
+        
+        # プレーンテキストキー破棄
+        del plaintext_key
+
+# 使用例
+envelope = EnvelopeEncryption(kms_key_id='alias/my-app-key')
+envelope.encrypt_file('input.txt', 'encrypted.bin')
+envelope.decrypt_file('encrypted.bin', 'decrypted.txt')
+```
+
+## まとめ
+
+**アーキテクチャ設計のポイント:**
+- エンベロープ暗号化で大容量データ対応
+- キーポリシーで細かいアクセス制御
+- クロスアカウント設計で一元管理
+- マルチリージョンキーでグローバル対応
+- CloudTrailで監査証跡確保
+- VPCエンドポイントでセキュリティ向上

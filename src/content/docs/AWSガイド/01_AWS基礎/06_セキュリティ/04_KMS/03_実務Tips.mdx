@@ -1,0 +1,494 @@
+---
+title: "実務Tips"
+label: "実務Tips"
+---
+
+## AWS CLI コマンド
+
+### キー管理
+
+```bash
+# カスタマー管理キー作成
+aws kms create-key \
+  --description "Application encryption key" \
+  --key-usage ENCRYPT_DECRYPT \
+  --origin AWS_KMS
+
+# エイリアス作成
+aws kms create-alias \
+  --alias-name alias/my-app-key \
+  --target-key-id 12345678-1234-1234-1234-123456789012
+
+# エイリアス更新（手動ローテーション）
+aws kms update-alias \
+  --alias-name alias/my-app-key \
+  --target-key-id new-key-id
+
+# タグ付きキー作成
+aws kms create-key \
+  --description "Production key" \
+  --tags TagKey=Environment,TagValue=Production TagKey=Application,TagValue=WebApp
+
+# 非対称キー作成（RSA署名用）
+aws kms create-key \
+  --key-usage SIGN_VERIFY \
+  --key-spec RSA_2048
+
+# マルチリージョンキー作成
+aws kms create-key \
+  --description "Multi-region key" \
+  --multi-region \
+  --origin AWS_KMS
+```
+
+### キー情報取得
+
+```bash
+# キー情報取得
+aws kms describe-key \
+  --key-id alias/my-app-key
+
+# キー一覧取得
+aws kms list-keys
+
+# エイリアス一覧
+aws kms list-aliases
+
+# キーポリシー取得
+aws kms get-key-policy \
+  --key-id alias/my-app-key \
+  --policy-name default
+
+# キーローテーション状態確認
+aws kms get-key-rotation-status \
+  --key-id alias/my-app-key
+```
+
+### 暗号化・復号化
+
+```bash
+# データ暗号化（4KB以下）
+aws kms encrypt \
+  --key-id alias/my-app-key \
+  --plaintext "機密データ" \
+  --output text \
+  --query CiphertextBlob
+
+# Base64エンコードしたデータ暗号化
+echo -n "機密データ" | base64 | \
+  aws kms encrypt \
+    --key-id alias/my-app-key \
+    --plaintext fileb:///dev/stdin \
+    --output text \
+    --query CiphertextBlob
+
+# データ復号化
+aws kms decrypt \
+  --ciphertext-blob fileb://encrypted-data.bin \
+  --output text \
+  --query Plaintext | base64 --decode
+
+# 再暗号化（キー変更）
+aws kms re-encrypt \
+  --ciphertext-blob fileb://encrypted-data.bin \
+  --destination-key-id alias/new-key \
+  --output text \
+  --query CiphertextBlob
+```
+
+### データキー生成
+
+```bash
+# データキー生成（AES-256）
+aws kms generate-data-key \
+  --key-id alias/my-app-key \
+  --key-spec AES_256
+
+# データキー生成（プレーンテキストなし）
+aws kms generate-data-key-without-plaintext \
+  --key-id alias/my-app-key \
+  --key-spec AES_256
+
+# ランダム値生成
+aws kms generate-random \
+  --number-of-bytes 32
+```
+
+### キーポリシー管理
+
+```bash
+# キーポリシー設定
+aws kms put-key-policy \
+  --key-id alias/my-app-key \
+  --policy-name default \
+  --policy file://key-policy.json
+
+# 例: key-policy.json
+cat > key-policy.json << 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Enable IAM User Permissions",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:root"
+      },
+      "Action": "kms:*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "Allow use of the key",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:role/AppRole"
+      },
+      "Action": [
+        "kms:Encrypt",
+        "kms:Decrypt",
+        "kms:GenerateDataKey"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+```
+
+### グラント管理
+
+```bash
+# グラント作成（一時的な権限）
+aws kms create-grant \
+  --key-id alias/my-app-key \
+  --grantee-principal arn:aws:iam::123456789012:role/TempRole \
+  --operations Encrypt Decrypt GenerateDataKey \
+  --retiring-principal arn:aws:iam::123456789012:role/AdminRole
+
+# グラント一覧
+aws kms list-grants \
+  --key-id alias/my-app-key
+
+# グラント取り消し
+aws kms revoke-grant \
+  --key-id alias/my-app-key \
+  --grant-id grant-id-here
+```
+
+### キーローテーション
+
+```bash
+# 自動ローテーション有効化
+aws kms enable-key-rotation \
+  --key-id alias/my-app-key
+
+# 自動ローテーション無効化
+aws kms disable-key-rotation \
+  --key-id alias/my-app-key
+
+# ローテーション状態確認
+aws kms get-key-rotation-status \
+  --key-id alias/my-app-key
+```
+
+### キー状態管理
+
+```bash
+# キー無効化
+aws kms disable-key \
+  --key-id alias/my-app-key
+
+# キー有効化
+aws kms enable-key \
+  --key-id alias/my-app-key
+
+# キー削除スケジュール（7-30日）
+aws kms schedule-key-deletion \
+  --key-id alias/my-app-key \
+  --pending-window-in-days 30
+
+# キー削除キャンセル
+aws kms cancel-key-deletion \
+  --key-id alias/my-app-key
+```
+
+### マルチリージョンキー
+
+```bash
+# レプリカキー作成
+aws kms replicate-key \
+  --key-id mrk-xxxxxxxxxxxxxxxxxxxx \
+  --replica-region us-west-2 \
+  --description "Replica in us-west-2"
+
+# レプリカ一覧
+aws kms describe-key \
+  --key-id mrk-xxxxxxxxxxxxxxxxxxxx \
+  --query 'MultiRegionConfiguration'
+
+# プライマリキー更新
+aws kms update-primary-region \
+  --key-id mrk-xxxxxxxxxxxxxxxxxxxx \
+  --primary-region us-west-2
+```
+
+## ベストプラクティス
+
+### キー管理戦略
+
+```yaml
+キー分離:
+  環境別:
+    - dev-key
+    - staging-key
+    - prod-key
+  
+  用途別:
+    - database-key
+    - application-key
+    - backup-key
+  
+  メリット:
+    - 影響範囲の限定
+    - アクセス制御の明確化
+    - 監査の容易化
+```
+
+### エイリアス活用
+
+```yaml
+推奨パターン:
+  - alias/env/service/purpose
+  - 例: alias/prod/app/database
+  - 例: alias/staging/api/secrets
+
+メリット:
+  - アプリケーションコード変更不要
+  - キーローテーション容易
+  - 環境毎の切り替え簡単
+```
+
+### キーポリシー設計
+
+```json
+// 最小権限の原則
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Enable IAM policies",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:root"
+      },
+      "Action": "kms:*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "Allow application use",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:role/AppRole"
+      },
+      "Action": [
+        "kms:Decrypt",
+        "kms:DescribeKey"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": [
+            "s3.ap-northeast-1.amazonaws.com"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "Allow CloudTrail to encrypt logs",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "cloudtrail.amazonaws.com"
+      },
+      "Action": [
+        "kms:GenerateDataKey",
+        "kms:DecryptDataKey"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringLike": {
+          "kms:EncryptionContext:aws:cloudtrail:arn": "arn:aws:cloudtrail:*:123456789012:trail/*"
+        }
+      }
+    }
+  ]
+}
+```
+
+### コスト最適化
+
+```yaml
+戦略:
+  キー統合:
+    - 用途が似ているものは統合
+    - EncryptionContextで識別
+  
+  API呼び出し削減:
+    - キャッシング実装
+    - データキー再利用
+    - バッチ処理
+  
+  AWS管理キー活用:
+    - コスト重視の場合
+    - 標準機能で十分な場合
+
+計算例:
+  カスタマー管理キー 10個: $10/月
+  API呼び出し 100万回/月: $3/月
+  合計: $13/月
+```
+
+### セキュリティ強化
+
+```yaml
+推奨設定:
+  キーローテーション:
+    - 自動ローテーション有効化
+    - 1年毎に実行
+  
+  アクセス制御:
+    - 最小権限の原則
+    - ViaService条件使用
+    - タグベース制御
+  
+  監査:
+    - CloudTrail有効化
+    - CloudWatch Alarms設定
+    - 異常アクセス検知
+
+VPCエンドポイント:
+  - インターネット経由なし
+  - プライベート接続
+  - エンドポイントポリシー設定
+```
+
+### モニタリング
+
+```yaml
+CloudWatch Metrics:
+  - NumberOfRequests: API呼び出し数
+  - KeyAge: キーの経過日数
+  - KeyState: キーの状態
+
+CloudWatch Alarms:
+  - 高頻度のDecrypt呼び出し
+  - 失敗した暗号化操作
+  - キー無効化
+
+CloudTrail分析:
+  - 誰がいつアクセスしたか
+  - どのキーが使用されたか
+  - 失敗したアクセス
+
+ログフィルタ例:
+  { $.eventName = "Decrypt" && $.errorCode = "AccessDenied" }
+  { $.eventName = "DisableKey" || $.eventName = "ScheduleKeyDeletion" }
+```
+
+### エンベロープ暗号化のベストプラクティス
+
+```yaml
+推奨:
+  データキー再利用:
+    - 複数オブジェクト暗号化
+    - メモリにキャッシュ
+    - 一定期間後に破棄
+  
+  プレーンテキストキー管理:
+    - 使用後すぐに破棄
+    - メモリに長期保持しない
+    - ログに出力しない
+  
+  エラーハンドリング:
+    - リトライロジック実装
+    - 適切なエラーメッセージ
+    - フォールバック戦略
+```
+
+### トラブルシューティング
+
+```yaml
+よくある問題:
+
+1. AccessDeniedException:
+   原因:
+     - IAMポリシー不足
+     - キーポリシー制限
+     - キー無効化
+   
+   対処:
+     - IAMポリシー確認
+     - キーポリシー確認
+     - キー状態確認
+     - CloudTrail詳細確認
+
+2. DisabledException:
+   原因:
+     - キーが無効化
+     - 削除スケジュール中
+   
+   対処:
+     - aws kms describe-key で状態確認
+     - aws kms enable-key で有効化
+     - 削除キャンセル
+
+3. InvalidKeyUsageException:
+   原因:
+     - 暗号化用キーで署名操作
+     - 署名用キーで暗号化操作
+   
+   対処:
+     - キーの用途確認
+     - 適切なキー使用
+
+4. ThrottlingException:
+   原因:
+     - APIレート制限超過
+   
+   対処:
+     - リトライロジック実装
+     - キャッシング導入
+     - サービス制限緩和申請
+```
+
+### コンプライアンス対応
+
+```yaml
+監査証跡:
+  CloudTrail:
+    - 全リージョン有効化
+    - ログファイル暗号化（KMS）
+    - ログファイル整合性検証
+    - S3バケット（MFA Delete）
+  
+  ログ保管:
+    - 最低7年間保管
+    - S3ライフサイクルポリシー
+    - Glacierアーカイブ
+
+キー管理:
+  - キーローテーション記録
+  - アクセス履歴保管
+  - 定期的な権限レビュー
+  - インシデント対応計画
+```
+
+## まとめ
+
+**実務での重要ポイント:**
+- エイリアス活用でキー管理を柔軟に
+- キーポリシーで詳細なアクセス制御
+- 自動ローテーションでセキュリティ向上
+- CloudTrailで監査証跡確保
+- VPCエンドポイントでセキュリティ強化
+- コスト最適化とセキュリティのバランス
+- エンベロープ暗号化で大容量データ対応

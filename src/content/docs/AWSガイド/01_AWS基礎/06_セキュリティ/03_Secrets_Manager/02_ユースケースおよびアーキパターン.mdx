@@ -1,0 +1,314 @@
+---
+title: "ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## ユースケース
+
+### 1. RDSデータベース認証情報管理
+
+```yaml
+シナリオ:
+  - RDS接続情報の安全な管理
+  - 定期的なパスワードローテーション
+  - 複数環境での管理
+
+実装:
+  シークレット作成:
+    - RDSマスターパスワード保管
+    - 自動ローテーション有効化
+  
+  アプリケーション:
+    - SDK経由でシークレット取得
+    - 接続文字列の動的生成
+```
+
+### 2. マルチリージョンアプリケーション
+
+```yaml
+シナリオ:
+  - グローバル展開アプリケーション
+  - リージョン間でシークレット同期
+  - DRシナリオ対応
+
+実装:
+  レプリケーション:
+    - プライマリシークレット作成
+    - 自動レプリカ作成
+    - ローテーション自動同期
+```
+
+### 3. サードパーティAPI統合
+
+```yaml
+シナリオ:
+  - 外部APIキー管理
+  - 複数サービスのトークン管理
+  - 定期的な更新
+
+実装:
+  シークレット:
+    - JSON形式で複数キー保管
+    - Lambda関数でローテーション
+    - IAMで細かいアクセス制御
+```
+
+## アーキテクチャパターン
+
+### パターン1: Lambda + RDS統合
+
+```yaml
+構成:
+  VPC:
+    Subnet (Private):
+      - Lambda関数
+      - RDS（MySQL）
+    
+    VPCエンドポイント:
+      - Secrets Manager用
+
+フロー:
+  1. Lambda起動
+  2. Secrets Manager から認証情報取得
+  3. RDS接続
+  4. クエリ実行
+
+セキュリティ:
+  - Lambda実行ロール
+    - secretsmanager:GetSecretValue
+    - rds:DescribeDBInstances
+  - VPCエンドポイント経由でアクセス
+```
+
+```json
+// Lambda環境変数
+{
+  "DB_SECRET_ARN": "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:prod/db/mysql-abc123"
+}
+```
+
+### パターン2: 自動ローテーション
+
+```yaml
+構成:
+  Secrets Manager:
+    - シークレット
+    - ローテーション設定
+  
+  Lambda:
+    - ローテーション関数
+    - VPCアタッチ
+  
+  RDS:
+    - データベース
+
+ローテーションステップ:
+  1. CreateSecret:
+      - 新しいパスワード生成
+      - AWSPENDING ステージに設定
+  
+  2. SetSecret:
+      - データベースのパスワード変更
+      - 新パスワードでテスト接続
+  
+  3. TestSecret:
+      - 新パスワードで接続確認
+  
+  4. FinishSecret:
+      - AWSCURRENT を新バージョンに
+      - 旧バージョンは AWSPREVIOUS
+```
+
+### パターン3: クロスアカウントアクセス
+
+```yaml
+構成:
+  アカウントA（シークレット所有）:
+    - Secrets Manager
+    - リソースポリシー
+  
+  アカウントB（アプリケーション）:
+    - Lambda / EC2
+    - IAMロール
+
+設定:
+  アカウントA（リソースポリシー）:
+    - アカウントBのロール許可
+    - 特定アクションのみ
+  
+  アカウントB（IAMポリシー）:
+    - シークレットARN指定
+    - GetSecretValue権限
+```
+
+### パターン4: コンテナアプリケーション
+
+```yaml
+構成:
+  ECS/Fargate:
+    - コンテナ定義
+    - タスクロール
+  
+  Secrets Manager:
+    - アプリケーションシークレット
+  
+  Parameter Store:
+    - 設定値
+
+タスク定義:
+  secrets:
+    - DB認証情報（Secrets Manager）
+    - APIキー（Secrets Manager）
+  
+  environment:
+    - 設定値（Parameter Store）
+```
+
+```json
+// ECS タスク定義
+{
+  "containerDefinitions": [
+    {
+      "name": "app",
+      "secrets": [
+        {
+          "name": "DB_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:region:account-id:secret:db-password-abc123"
+        },
+        {
+          "name": "API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:region:account-id:secret:api-key-def456:api_key::"
+        }
+      ]
+    }
+  ]
+}
+```
+
+## 実装例
+
+### SDK実装（Python）
+
+```python
+import boto3
+import json
+from botocore.exceptions import ClientError
+
+def get_secret(secret_name, region_name="ap-northeast-1"):
+    """
+    Secrets Manager からシークレットを取得
+    """
+    client = boto3.client(
+        service_name='secretsmanager',
+        region_name=region_name
+    )
+    
+    try:
+        response = client.get_secret_value(
+            SecretId=secret_name
+        )
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceNotFoundException':
+            print(f"シークレット {secret_name} が見つかりません")
+        elif e.response['Error']['Code'] == 'InvalidRequestException':
+            print(f"リクエストが無効です: {e}")
+        elif e.response['Error']['Code'] == 'InvalidParameterException':
+            print(f"パラメータが無効です: {e}")
+        else:
+            print(f"エラーが発生しました: {e}")
+        raise e
+    
+    # JSONシークレットをパース
+    if 'SecretString' in response:
+        secret = response['SecretString']
+        return json.loads(secret)
+    else:
+        # バイナリシークレットの場合
+        return response['SecretBinary']
+
+# 使用例
+def connect_to_database():
+    secret = get_secret('prod/db/mysql')
+    
+    # データベース接続
+    db_config = {
+        'host': secret['host'],
+        'port': secret['port'],
+        'username': secret['username'],
+        'password': secret['password'],
+        'database': secret['dbname']
+    }
+    
+    # connection = mysql.connector.connect(**db_config)
+    return db_config
+```
+
+### キャッシング実装
+
+```python
+import time
+from functools import wraps
+
+class SecretCache:
+    """シークレットキャッシュ"""
+    
+    def __init__(self, ttl=3600):
+        self.cache = {}
+        self.ttl = ttl
+    
+    def get(self, secret_name):
+        """キャッシュからシークレット取得"""
+        if secret_name in self.cache:
+            cached_time, value = self.cache[secret_name]
+            if time.time() - cached_time < self.ttl:
+                return value
+        
+        # キャッシュミス、取得して保存
+        value = get_secret(secret_name)
+        self.cache[secret_name] = (time.time(), value)
+        return value
+    
+    def invalidate(self, secret_name=None):
+        """キャッシュ無効化"""
+        if secret_name:
+            self.cache.pop(secret_name, None)
+        else:
+            self.cache.clear()
+
+# グローバルキャッシュ
+secret_cache = SecretCache(ttl=3600)
+
+# 使用例
+db_secret = secret_cache.get('prod/db/mysql')
+```
+
+### ローテーション通知
+
+```yaml
+構成:
+  EventBridge:
+    - ローテーション成功/失敗イベント
+  
+  SNS:
+    - 通知トピック
+  
+  Lambda:
+    - 追加処理（オプション）
+
+EventBridgeルール:
+  source: aws.secretsmanager
+  detail-type: "AWS API Call via CloudTrail"
+  detail:
+    eventName: 
+      - RotationSucceeded
+      - RotationFailed
+```
+
+### まとめ
+
+**アーキテクチャ設計のポイント:**
+- VPCエンドポイント活用でセキュリティ向上
+- キャッシング戦略でコスト削減
+- 自動ローテーションで運用負荷軽減
+- クロスアカウントで一元管理
+- コンテナ統合でセキュアなデプロイ
