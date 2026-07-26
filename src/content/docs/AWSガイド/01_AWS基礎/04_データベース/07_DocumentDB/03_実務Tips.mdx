@@ -1,0 +1,363 @@
+---
+title: "DocumentDB 実務Tips"
+label: "実務Tips"
+---
+
+## DocumentDB 実務Tips
+
+### AWS CLI
+
+```bash
+# クラスター作成
+aws docdb create-db-cluster \
+  --db-cluster-identifier mycluster \
+  --engine docdb \
+  --engine-version 5.0.0 \
+  --master-username admin \
+  --master-user-password MyPassword123 \
+  --vpc-security-group-ids sg-xxxxx \
+  --db-subnet-group-name mysubnet-group \
+  --backup-retention-period 7 \
+  --preferred-backup-window "03:00-04:00" \
+  --storage-encrypted \
+  --kms-key-id arn:aws:kms:region:account:key/xxxxx
+
+# インスタンス作成（プライマリ）
+aws docdb create-db-instance \
+  --db-instance-identifier mycluster-instance-1 \
+  --db-instance-class db.r6g.large \
+  --engine docdb \
+  --db-cluster-identifier mycluster
+
+# レプリカ追加
+aws docdb create-db-instance \
+  --db-instance-identifier mycluster-instance-2 \
+  --db-instance-class db.r6g.large \
+  --engine docdb \
+  --db-cluster-identifier mycluster
+
+# クラスター情報取得
+aws docdb describe-db-clusters \
+  --db-cluster-identifier mycluster
+
+# インスタンス一覧
+aws docdb describe-db-instances \
+  --filters "Name=db-cluster-id,Values=mycluster"
+
+# スナップショット作成
+aws docdb create-db-cluster-snapshot \
+  --db-cluster-snapshot-identifier mycluster-snapshot-20260726 \
+  --db-cluster-identifier mycluster
+
+# クラスター削除
+aws docdb delete-db-cluster \
+  --db-cluster-identifier mycluster \
+  --skip-final-snapshot
+```
+
+### 接続方法
+
+#### 1. MongoDB Shell接続
+
+```bash
+# 証明書ダウンロード
+wget https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+
+# mongoshで接続
+mongosh --host mycluster.cluster-xxxxx.docdb.amazonaws.com:27017 \
+  --username admin \
+  --password MyPassword123 \
+  --tls \
+  --tlsCAFile global-bundle.pem \
+  --tlsAllowInvalidHostnames
+
+# 接続文字列形式
+mongodb://admin:MyPassword123@mycluster.cluster-xxxxx.docdb.amazonaws.com:27017/?tls=true&tlsCAFile=global-bundle.pem&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false
+```
+
+#### 2. Python（PyMongo）接続
+
+```python
+import pymongo
+import sys
+
+# 接続文字列
+connection_string = "mongodb://admin:MyPassword123@mycluster.cluster-xxxxx.docdb.amazonaws.com:27017/?tls=true&tlsCAFile=global-bundle.pem&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false"
+
+# クライアント作成
+client = pymongo.MongoClient(connection_string)
+
+# データベース選択
+db = client['mydb']
+
+# コレクション選択
+collection = db['mycollection']
+
+# ドキュメント挿入
+doc = {
+    "name": "John Doe",
+    "email": "john@example.com",
+    "age": 30
+}
+result = collection.insert_one(doc)
+print(f"Inserted ID: {result.inserted_id}")
+
+# ドキュメント検索
+for doc in collection.find({"age": {"$gte": 25}}):
+    print(doc)
+
+# クライアント閉じる
+client.close()
+```
+
+#### 3. Node.js（MongoDB Driver）接続
+
+```javascript
+const { MongoClient } = require('mongodb');
+
+// 接続文字列
+const uri = "mongodb://admin:MyPassword123@mycluster.cluster-xxxxx.docdb.amazonaws.com:27017/?tls=true&tlsCAFile=global-bundle.pem&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false";
+
+// クライアント作成
+const client = new MongoClient(uri);
+
+async function run() {
+  try {
+    // 接続
+    await client.connect();
+    console.log("Connected to DocumentDB");
+
+    // データベース・コレクション選択
+    const db = client.db('mydb');
+    const collection = db.collection('mycollection');
+
+    // ドキュメント挿入
+    const doc = { name: "Jane Doe", email: "jane@example.com", age: 28 };
+    const result = await collection.insertOne(doc);
+    console.log(`Inserted ID: ${result.insertedId}`);
+
+    // ドキュメント検索
+    const docs = await collection.find({ age: { $gte: 25 } }).toArray();
+    console.log(docs);
+
+  } finally {
+    await client.close();
+  }
+}
+
+run().catch(console.dir);
+```
+
+#### 4. Lambda接続（Python）
+
+```python
+import pymongo
+import os
+
+# グローバル変数（コネクション再利用）
+client = None
+
+def get_client():
+    global client
+    if client is None:
+        connection_string = os.environ['DOCDB_CONNECTION_STRING']
+        client = pymongo.MongoClient(
+            connection_string,
+            connectTimeoutMS=5000,
+            socketTimeoutMS=5000,
+            maxPoolSize=10
+        )
+    return client
+
+def lambda_handler(event, context):
+    # クライアント取得
+    client = get_client()
+    db = client['mydb']
+    collection = db['mycollection']
+    
+    # 処理
+    result = collection.find_one({"_id": event['id']})
+    
+    return {
+        'statusCode': 200,
+        'body': result
+    }
+```
+
+### データ移行
+
+#### 1. mongodump/mongorestore
+
+```bash
+# ソースMongoDBからエクスポート
+mongodump --uri="mongodb://source-host:27017/mydb" --out=/tmp/dump
+
+# DocumentDBへインポート
+mongorestore --host mycluster.cluster-xxxxx.docdb.amazonaws.com:27017 \
+  --username admin \
+  --password MyPassword123 \
+  --ssl \
+  --sslCAFile global-bundle.pem \
+  /tmp/dump
+```
+
+#### 2. AWS DMS（Database Migration Service）
+
+```yaml
+移行手順:
+  1. レプリケーションインスタンス作成
+  2. ソースエンドポイント設定（MongoDB）
+  3. ターゲットエンドポイント設定（DocumentDB）
+  4. 移行タスク作成
+  5. フルロード + CDC（継続レプリケーション）
+
+メリット:
+  - ダウンタイム最小化
+  - 継続レプリケーション
+  - データ検証機能
+
+注意点:
+  - シャードクラスターは事前統合必要
+  - インデックスは手動作成推奨
+```
+
+#### 3. Change Streams同期
+
+```python
+# ソースMongoDBのChange Streams監視
+pipeline = [{'$match': {'operationType': {'$in': ['insert', 'update', 'delete']}}}]
+change_stream = source_collection.watch(pipeline)
+
+# DocumentDBに同期
+for change in change_stream:
+    if change['operationType'] == 'insert':
+        target_collection.insert_one(change['fullDocument'])
+    elif change['operationType'] == 'update':
+        target_collection.update_one(
+            {'_id': change['documentKey']['_id']},
+            {'$set': change['updateDescription']['updatedFields']}
+        )
+    elif change['operationType'] == 'delete':
+        target_collection.delete_one({'_id': change['documentKey']['_id']})
+```
+
+### インデックス管理
+
+```javascript
+// インデックス作成
+db.collection.createIndex({ "email": 1 }, { unique: true })
+db.collection.createIndex({ "created_at": 1 })
+db.collection.createIndex({ "name": "text" })
+db.collection.createIndex({ "category": 1, "price": -1 })
+
+// 複合インデックス
+db.collection.createIndex({ "user_id": 1, "timestamp": -1 })
+
+// インデックス一覧
+db.collection.getIndexes()
+
+// インデックス削除
+db.collection.dropIndex("email_1")
+
+// インデックス使用状況確認
+db.collection.find({ email: "test@example.com" }).explain("executionStats")
+```
+
+### パフォーマンス最適化
+
+```yaml
+クエリ最適化:
+  - 適切なインデックス作成
+  - カバードクエリ活用
+  - プロジェクション（必要フィールドのみ）
+  - ページネーション（limit/skip）
+
+接続プーリング:
+  Lambda: 10-20接続
+  EC2/ECS: 50-100接続
+  コネクション再利用
+
+読み取り分散:
+  - リーダーエンドポイント使用
+  - readPreference: secondaryPreferred
+  - レプリカ数調整
+
+書き込み最適化:
+  - バッチ挿入（insertMany）
+  - unordered bulkWrite
+  - writeConcern調整
+```
+
+### モニタリング
+
+```yaml
+CloudWatch メトリクス:
+  - DatabaseConnections: 接続数
+  - CPUUtilization: CPU使用率
+  - FreeableMemory: 空きメモリ
+  - ReadLatency / WriteLatency: レイテンシ
+  - VolumeReadIOPs / VolumeWriteIOPs: IOPS
+  - BufferCacheHitRatio: キャッシュヒット率
+
+アラーム設定:
+  - CPUUtilization > 80%
+  - DatabaseConnections > 1000
+  - ReadLatency > 50ms
+  - FreeableMemory < 1GB
+
+プロファイラ:
+  db.setProfilingLevel(1, { slowms: 100 })
+  db.system.profile.find().sort({ ts: -1 }).limit(10)
+```
+
+### トラブルシューティング
+
+```bash
+# 接続テスト
+telnet mycluster.cluster-xxxxx.docdb.amazonaws.com 27017
+
+# セキュリティグループ確認
+aws ec2 describe-security-groups --group-ids sg-xxxxx
+
+# CloudWatch Logs確認
+aws logs tail /aws/docdb/mycluster/audit --follow
+
+# スロークエリ確認
+db.system.profile.find({ millis: { $gt: 100 } }).sort({ ts: -1 })
+
+# 接続数確認
+db.serverStatus().connections
+
+# 現在の操作確認
+db.currentOp()
+```
+
+### ベストプラクティス
+
+```yaml
+セキュリティ:
+  ✓ VPC内プライベートサブネット配置
+  ✓ セキュリティグループ最小権限
+  ✓ TLS接続強制
+  ✓ IAMデータベース認証
+  ✓ 監査ログ有効化
+
+可用性:
+  ✓ 最低3インスタンス構成
+  ✓ 複数AZ配置
+  ✓ 自動バックアップ有効
+  ✓ クラスターエンドポイント使用
+
+パフォーマンス:
+  ✓ 適切なインスタンスクラス
+  ✓ インデックス最適化
+  ✓ コネクションプーリング
+  ✓ リーダーエンドポイント活用
+  ✓ Change Streams慎重に使用
+
+コスト:
+  ✓ リザーブドインスタンス活用
+  ✓ 開発環境のインスタンス削減
+  ✓ ストレージ使用量監視
+  ✓ バックアップ保持期間最適化
+```

@@ -1,0 +1,261 @@
+---
+title: "DocumentDB ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## DocumentDB ユースケースおよびアーキテクチャパターン
+
+### 1. コンテンツ管理システム（CMS）
+
+```yaml
+構成:
+  CloudFront → ALB → ECS → DocumentDB
+  
+DocumentDB設定:
+  クラスター: 3インスタンス（1プライマリ + 2レプリカ）
+  インスタンス: db.r6g.large
+  ストレージ: 自動拡張
+  
+データモデル:
+  コレクション:
+    - articles: 記事メタデータ・本文
+    - media: 画像・動画情報
+    - users: ユーザープロファイル
+    - comments: コメント
+  
+メリット:
+  - 柔軟なスキーマ（記事タイプごとに異なる属性）
+  - 階層データの格納（ネストしたJSONドキュメント）
+  - 高速な読み取り（レプリカで負荷分散）
+  - Change Streamsでキャッシュ無効化
+```
+
+### 2. 製品カタログ
+
+```yaml
+構成:
+  API Gateway → Lambda → DocumentDB
+  
+DocumentDB設定:
+  クラスター: 5インスタンス（1プライマリ + 4レプリカ）
+  インスタンス: db.r6g.xlarge
+  読み取り: リーダーエンドポイント
+  
+データモデル:
+  products:
+    _id: ObjectId
+    name: String
+    category: String
+    price: Number
+    attributes: Object（製品ごとに異なる）
+    inventory: Object
+    reviews: Array
+  
+クエリ例:
+  - カテゴリ検索: category インデックス
+  - 価格帯検索: price インデックス
+  - テキスト検索: $text インデックス
+  
+メリット:
+  - 製品タイプごとに異なる属性を柔軟に格納
+  - ネストした配列・オブジェクト
+  - 高速な読み取り（レプリカ）
+```
+
+### 3. ユーザープロファイル管理
+
+```yaml
+構成:
+  Cognito → API Gateway → Lambda → DocumentDB
+  
+DocumentDB設定:
+  クラスター: 3インスタンス
+  インスタンス: db.r6g.large
+  Change Streams: Lambda統合
+  
+データモデル:
+  users:
+    _id: user_id
+    profile:
+      name: String
+      email: String
+      preferences: Object
+    activity:
+      lastLogin: Date
+      sessions: Array
+    metadata: Object（柔軟な属性）
+  
+メリット:
+  - ユーザーごとに異なるプロファイル属性
+  - 1ドキュメントで完結（JOIN不要）
+  - 高速な単一ドキュメント取得
+```
+
+### 4. IoTデータ収集・分析
+
+```yaml
+構成:
+  IoTデバイス → IoT Core → Lambda → DocumentDB
+  
+DocumentDB設定:
+  クラスター: 5インスタンス
+  インスタンス: db.r6g.2xlarge
+  書き込み: プライマリ
+  読み取り: レプリカ（分析用）
+  
+データモデル:
+  sensor_data:
+    device_id: String
+    timestamp: Date
+    metrics:
+      temperature: Number
+      humidity: Number
+      pressure: Number
+    location: GeoJSON
+  
+集約クエリ:
+  - 時系列集約
+  - デバイスごとの統計
+  - 地理空間クエリ
+  
+メリット:
+  - 柔軟なメトリクス追加
+  - 高速な書き込み
+  - アグリゲーションパイプライン
+```
+
+### 5. モバイルアプリバックエンド
+
+```yaml
+構成:
+  Mobile App → AppSync → Lambda → DocumentDB
+  
+DocumentDB設定:
+  クラスター: 3インスタンス
+  インスタンス: db.r6g.large
+  Change Streams: リアルタイム同期
+  
+データモデル:
+  app_data:
+    user_id: String
+    sync_token: String
+    data: Object（アプリ固有データ）
+    updated_at: Date
+  
+同期:
+  - Change Streamsで変更検知
+  - Lambda → AppSync → Mobile App
+  - オフライン対応
+  
+メリット:
+  - 柔軟なデータモデル
+  - リアルタイム同期
+  - スケーラブル
+```
+
+### 6. ゲームプレイヤーデータ
+
+```yaml
+構成:
+  Game Client → API Gateway → Lambda → DocumentDB
+  
+DocumentDB設定:
+  クラスター: 5インスタンス
+  インスタンス: db.r6g.xlarge
+  トランザクション: 有効
+  
+データモデル:
+  players:
+    player_id: String
+    profile: Object
+    inventory: Array
+    achievements: Array
+    game_state: Object
+    friends: Array
+  
+メリット:
+  - 1ドキュメントで全データ管理
+  - トランザクション（アイテム交換）
+  - 高速な読み書き
+  - 柔軟なスキーマ
+```
+
+### 7. リアルタイムパーソナライゼーション
+
+```yaml
+構成:
+  Web/Mobile → CloudFront → API Gateway → Lambda → DocumentDB
+  
+DocumentDB設定:
+  クラスター: 5インスタンス
+  インスタンス: db.r6g.2xlarge
+  Change Streams: リアルタイム更新
+  
+データモデル:
+  user_behavior:
+    user_id: String
+    sessions: Array
+    clicks: Array
+    purchases: Array
+    recommendations: Array（パーソナライズ）
+  
+処理フロー:
+  1. ユーザー行動データ保存
+  2. Change Streams → Lambda
+  3. ML推論 → 推奨更新
+  4. リアルタイム配信
+  
+メリット:
+  - 柔軟な行動データ格納
+  - Change Streamsでリアルタイム処理
+  - 高速な読み取り
+```
+
+### 8. MongoDB移行
+
+```yaml
+移行元:
+  オンプレミスMongoDB 4.0
+  シャードクラスター
+  
+移行先:
+  DocumentDB 4.0互換
+  クラスター: 3インスタンス
+  
+移行方法:
+  1. AWS DMS（継続レプリケーション）
+  2. mongodump/mongorestore
+  3. Change Streamsで差分同期
+  
+移行後:
+  ✓ 運用負荷削減
+  ✓ 自動バックアップ
+  ✓ 高可用性
+  × シャーディング非対応（レプリカで対応）
+```
+
+### ベストプラクティス
+
+```yaml
+データモデル設計:
+  - ドキュメント指向（1ドキュメント1エンティティ）
+  - ネストしたオブジェクト・配列活用
+  - 適切なインデックス設計
+  - 非正規化でJOIN削減
+
+接続管理:
+  - コネクションプーリング
+  - Lambda: グローバル変数で再利用
+  - ECS/EC2: 適切なプールサイズ
+
+読み取りスケール:
+  - リーダーエンドポイント活用
+  - 読み取りレプリカ追加
+  - アプリケーションレベルのキャッシュ
+
+高可用性:
+  - 3つ以上のインスタンス
+  - 複数AZ配置
+  - クラスターエンドポイント使用
+  - 接続リトライロジック
+```
