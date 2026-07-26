@@ -1,0 +1,85 @@
+---
+title: "Systems Manager 実務Tips"
+label: "実務Tips"
+---
+
+## Systems Manager 実務Tips
+
+### AWS CLI
+
+```bash
+# Parameter Store（パラメータ作成）
+aws ssm put-parameter \
+  --name /myapp/prod/db-password \
+  --value "MySecretPassword123" \
+  --type SecureString \
+  --key-id alias/aws/ssm
+
+# パラメータ取得
+aws ssm get-parameter \
+  --name /myapp/prod/db-password \
+  --with-decryption
+
+# Run Command実行
+aws ssm send-command \
+  --document-name "AWS-RunShellScript" \
+  --targets "Key=tag:Environment,Values=prod" \
+  --parameters 'commands=["sudo yum update -y"]'
+
+# Session Manager起動
+aws ssm start-session --target i-1234567890abcdef0
+```
+
+### Parameter Store使用例（Python）
+
+```python
+import boto3
+
+ssm = boto3.client('ssm')
+
+# パラメータ取得
+response = ssm.get_parameter(
+    Name='/myapp/prod/db-password',
+    WithDecryption=True
+)
+password = response['Parameter']['Value']
+
+# 複数パラメータ取得
+response = ssm.get_parameters_by_path(
+    Path='/myapp/prod/',
+    Recursive=True,
+    WithDecryption=True
+)
+for param in response['Parameters']:
+    print(f"{param['Name']}: {param['Value']}")
+```
+
+### ベストプラクティス
+
+```yaml
+セキュリティ:
+  - Session Manager使用（SSH不要）
+  - SecureString for secrets
+  - IAM最小権限
+
+運用:
+  - Maintenance Windows設定
+  - 段階的パッチ適用
+  - CloudWatch統合
+
+コスト:
+  - Standard Parameter Store（無料）
+  - 不要なAutomation削減
+```
+
+### トラブルシューティング
+
+```bash
+# コマンド履歴確認
+aws ssm list-commands
+
+# コマンド結果確認
+aws ssm get-command-invocation \
+  --command-id xxxxx \
+  --instance-id i-xxxxx
+```

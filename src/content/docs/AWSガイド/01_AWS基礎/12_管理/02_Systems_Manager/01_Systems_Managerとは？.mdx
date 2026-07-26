@@ -1,0 +1,94 @@
+---
+title: "Systems Managerとは？"
+label: "Systems Managerとは？"
+---
+
+## AWS Systems Manager とは？
+
+Systems Managerは、AWSおよびオンプレミスのインフラを統合管理するサービスです。運用タスクを自動化し、可視性を向上させます。
+
+### 主要機能
+
+```yaml
+Session Manager:
+  - ブラウザベースシェル
+  - SSH/RDP不要
+  - 監査ログ自動記録
+
+Run Command:
+  - リモートコマンド実行
+  - 複数インスタンス一括操作
+  - CloudWatch Logs統合
+
+Patch Manager:
+  - パッチ管理自動化
+  - スケジュール適用
+  - コンプライアンス
+
+Parameter Store:
+  - 設定・シークレット保管
+  - 暗号化（KMS）
+  - バージョン管理
+
+State Manager:
+  - 構成維持
+  - 定期的な状態確認
+
+Automation:
+  - 運用タスク自動化
+  - ワークフロー定義
+```
+
+### Session Manager
+
+```yaml
+特徴:
+  - SSH/RDPポート不要
+  - ブラウザアクセス
+  - IAM認証
+  - CloudWatch Logs記録
+
+メリット:
+  - セキュア
+  - 監査可能
+  - Bastion不要
+```
+
+### Parameter Store
+
+```yaml
+タイプ:
+  String: 通常文字列
+  StringList: カンマ区切り
+  SecureString: KMS暗号化
+
+階層:
+  /app/dev/db-password
+  /app/prod/db-password
+
+無料枠: 10,000パラメータ
+```
+
+### 料金
+
+```yaml
+Session Manager: 無料
+Run Command: 無料
+Patch Manager: 無料
+State Manager: 無料
+
+Parameter Store:
+  Standard: 無料（10,000個）
+  Advanced: $0.05/パラメータ/月
+
+Automation: $0.002/ステップ
+```
+
+### まとめ
+
+**Systems Managerの重要ポイント:**
+- 統合運用管理
+- Session Manager（SSH不要）
+- Run Command（一括操作）
+- Parameter Store（設定管理）
+- Patch Manager（パッチ自動化）
