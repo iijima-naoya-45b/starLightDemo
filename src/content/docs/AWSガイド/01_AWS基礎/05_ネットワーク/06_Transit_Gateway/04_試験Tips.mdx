@@ -1,0 +1,667 @@
+---
+title: "Transit Gateway 試験Tips"
+label: "試験Tips"
+---
+
+## Transit Gateway 試験Tips (SAA/SAP)
+
+AWS Solutions Architect Associate/Professional試験でのTransit Gateway頻出問題と対策を解説します。
+
+### 頻出トピック
+
+#### 1. Transit Gateway vs VPC Peering
+
+**必須理解ポイント:**
+
+```yaml
+VPC Peering:
+  接続モデル: 1対1
+  推移的ルーティング: 不可
+  スケール: 最大125 Peering/VPC
+  コスト: 接続自体無料、データ転送 $0.01/GB
+  管理: 接続数増加で複雑化
+  
+  適用シーン:
+    - 2-3個のVPC接続
+    - シンプルな構成
+    - コスト重視
+    - 小規模環境
+
+Transit Gateway:
+  接続モデル: ハブアンドスポーク
+  推移的ルーティング: 対応
+  スケール: 最大5,000 VPC/TGW
+  コスト: $0.05/時間/アタッチメント + $0.02/GB
+  管理: 中央集約、容易
+  
+  適用シーン:
+    - 3個以上のVPC接続
+    - オンプレミス統合
+    - 複雑なルーティング
+    - 大規模環境
+    - 将来の拡張性重視
+
+損益分岐点分析:
+  VPC数: 2個
+    - Peering: 1接続 = 無料 + データ転送
+    - Transit Gateway: 2アタッチメント = $72/月 + データ転送
+    → Peeringが安価
+  
+  VPC数: 5個
+    - Peering: 10接続 = 管理複雑、無料 + データ転送
+    - Transit Gateway: 5アタッチメント = $180/月 + データ転送
+    → Transit Gatewayが管理容易
+  
+  VPC数: 10個
+    - Peering: 45接続 = 管理不可能
+    - Transit Gateway: 10アタッチメント = $360/月
+    → Transit Gateway必須
+```
+
+**頻出問題パターン:**
+
+```
+Q1: 企業が5個のVPCを運用しており、全VPC間で通信が必要。
+    VPC Peeringで接続しているが管理が複雑化している。
+    どのように改善すべきか？
+
+A: Transit Gatewayに移行
+理由:
+- VPC Peeringは5個のVPCで10接続必要（N(N-1)/2 = 5×4/2 = 10）
+- Transit Gatewayは5アタッチメントのみ
+- 中央集約管理で運用容易
+- VPC追加が容易
+
+× 誤答例:
+- VPC Peering追加: さらに複雑化
+- VPN接続: コスト高、パフォーマンス低下
+
+---
+
+Q2: 2個のVPCを接続したい。最もコスト効率的な方法は？
+
+A: VPC Peering
+理由:
+- 接続数が少ない（1接続のみ）
+- Peering自体は無料
+- 管理も容易
+
+× 誤答例:
+- Transit Gateway: オーバースペック、コスト高（$72/月）
+
+---
+
+Q3: 10個のVPCとオンプレミスを接続し、全て相互通信が必要。
+    Direct Connect も活用したい。
+
+A: Transit Gateway
+理由:
+- 複数VPCとオンプレミスの統合
+- Direct Connect Gateway Attachment使用
+- ハブアンドスポークアーキテクチャ
+- 推移的ルーティング対応
+
+× 誤答例:
+- VPC Peering: オンプレミス接続不可、推移的ルーティング不可
+- 各VPCにVirtual Private Gateway: 管理複雑、コスト高
+```
+
+#### 2. ハブアンドスポークアーキテクチャ
+
+**重要ポイント:**
+
+```yaml
+概念:
+  Hub (Transit Gateway):
+    - 中央ハブ
+    - 全トラフィックが通過
+    - ルーティング制御
+  
+  Spoke (VPC/オンプレミス):
+    - Transit Gatewayに接続
+    - 他Spokeと通信
+
+メリット:
+  - 接続数削減: Nの接続（メッシュはN(N-1)/2）
+  - 管理簡素化: 中央集約
+  - スケーラビリティ: 容易な拡張
+  - 柔軟なルーティング: ルートテーブルで制御
+
+制限:
+  - 単一障害点: Transit Gateway障害時
+    （実際はマルチAZ冗長化されており高可用性）
+  - レイテンシー: ホップ数増加
+  - コスト: アタッチメント課金
+```
+
+**頻出問題:**
+
+```
+Q: 本番VPC、開発VPC、共有サービスVPCがある。
+   本番と開発は相互通信不可、両方とも共有サービスには通信可能にしたい。
+
+A: Transit Gateway + 複数ルートテーブル
+
+構成:
+  本番RT:
+    - 本番VPC関連付け
+    - 共有サービスVPCへのルート
+    - 開発VPCへのルート無し
+  
+  開発RT:
+    - 開発VPC関連付け
+    - 共有サービスVPCへのルート
+    - 本番VPCへのルート無し
+  
+  共有RT:
+    - 共有サービスVPC関連付け
+    - 本番VPCへのルート
+    - 開発VPCへのルート
+
+実装:
+1. Transit Gateway作成（デフォルトRT無効）
+2. 3つのルートテーブル作成
+3. 各VPCアタッチメント作成
+4. 適切なRTに関連付け
+5. ルート伝播またはスタティックルート設定
+
+採点ポイント:
+✓ ルートテーブル分離
+✓ 環境間の分離
+✓ 共有サービスへのアクセス
+```
+
+#### 3. オンプレミス統合
+
+**重要ポイント:**
+
+```yaml
+接続方法:
+  VPN Attachment:
+    - Site-to-Site VPN
+    - IPsec暗号化
+    - 最大1.25Gbps/トンネル
+    - ECMP対応（複数トンネル）
+    - コスト: $0.05/時間 + $0.05/GB
+  
+  Direct Connect Gateway Attachment:
+    - 専用線接続
+    - 1Gbps または 10Gbps
+    - 低レイテンシー
+    - 安定した帯域
+    - コスト: Direct Connect料金 + TGW料金
+
+冗長化:
+  プライマリ: Direct Connect
+  バックアップ: Site-to-Site VPN
+  
+  フェイルオーバー:
+    - BGP AS_PATH prepending
+    - 自動切り替え
+    - 数十秒でフェイルオーバー
+```
+
+**頻出問題:**
+
+```
+Q: オンプレミスから5個のVPCへ接続したい。
+   高可用性と低レイテンシーが必要。
+   Direct Connect障害時のバックアップも必要。
+
+A: Transit Gateway + Direct Connect + VPN
+
+構成:
+1. Transit Gateway作成
+2. 5個のVPCをアタッチメント
+3. Direct Connect Gateway作成
+   - Transit Gateway Attachment
+   - プライマリ接続
+4. Site-to-Site VPN作成
+   - Transit Gateway Attachment
+   - バックアップ接続
+
+ルーティング:
+  BGP設定:
+    - Direct Connect: AS_PATH短い（優先）
+    - VPN: AS_PATH長い（バックアップ）
+  
+  フェイルオーバー:
+    - Direct Connect障害時、自動的にVPNへ
+    - BGPによる自動切り替え
+
+メリット:
+- 単一のTransit Gatewayで全VPC接続
+- 推移的ルーティング対応
+- 自動フェイルオーバー
+- 管理容易
+
+× 誤答例:
+- 各VPCにVPN接続: 管理複雑、コスト高
+- VPC Peeringとの併用: 推移的ルーティング不可
+```
+
+#### 4. クロスリージョン接続
+
+**重要ポイント:**
+
+```yaml
+Transit Gateway Peering:
+  - 異なるリージョン間接続
+  - プライベート通信
+  - 暗号化
+  - 帯域制限: 最大50Gbps
+
+構成:
+  リージョンA:
+    - Transit Gateway A
+    - 複数VPC
+  
+  リージョンB:
+    - Transit Gateway B
+    - 複数VPC
+  
+  接続:
+    - Peering Attachment
+    - 双方向静的ルート必要
+
+料金:
+  - 両側でアタッチメント課金
+  - データ処理料金（両側）
+  - クロスリージョンデータ転送料
+```
+
+**頻出問題:**
+
+```
+Q: 東京リージョン（ap-northeast-1）とバージニアリージョン（us-east-1）
+   に複数のVPCがあり、リージョン間でプライベート通信したい。
+
+A: Transit Gateway Peering
+
+手順:
+1. 各リージョンでTransit Gateway作成
+2. 各リージョンで各VPCをアタッチメント
+3. Transit Gateway Peering作成
+   - 東京側から申請
+   - バージニア側で承認
+4. 両側でルート追加
+   - 東京側: us-east-1 CIDR → Peering
+   - バージニア側: ap-northeast-1 CIDR → Peering
+
+メリット:
+- プライベート通信
+- 暗号化自動
+- 高帯域（最大50Gbps）
+- VPC追加が容易
+
+× 誤答例:
+- VPC Peering（クロスリージョン）: 
+  各VPCペアで個別設定必要、管理複雑
+- VPN over インターネット: 
+  セキュリティ低、パフォーマンス不安定
+
+料金例（月間100GB）:
+- アタッチメント（東京）: $0.05 × 24 × 30 = $36
+- アタッチメント（バージニア）: $0.05 × 24 × 30 = $36
+- データ処理（両側）: 100GB × $0.02 × 2 = $4
+- クロスリージョン転送: 100GB × $0.02 = $2
+- 合計: $78/月
+```
+
+#### 5. ECMP (Equal Cost Multi-Path)
+
+**重要ポイント:**
+
+```yaml
+概念:
+  - 複数の等コストパス使用
+  - 帯域幅集約
+  - 負荷分散
+  - 冗長性向上
+
+使用例:
+  VPN接続:
+    - 複数VPNトンネル作成
+    - 各トンネル1.25Gbps
+    - ECMP で帯域幅合算
+    - 最大: 50Gbps (40トンネル)
+  
+  Direct Connect:
+    - 複数接続
+    - 帯域幅合算
+    - 自動負荷分散
+
+設定:
+  Transit Gateway:
+    - VPN ECMP Support: Enable
+  
+  VPN:
+    - 複数トンネル作成
+    - BGP設定（同じAS_PATH）
+```
+
+**頻出問題:**
+
+```
+Q: オンプレミスからAWSへのVPN接続で10Gbpsの帯域が必要。
+   どのように実現するか？
+
+A: Transit Gateway + ECMP + 複数VPN接続
+
+構成:
+1. Transit Gateway作成（VPN ECMP有効）
+2. 複数のSite-to-Site VPN作成
+   - 最低8接続（1.25Gbps × 8 = 10Gbps）
+3. BGP設定
+   - 同じAS_PATH（等コスト）
+   - ECMP自動負荷分散
+
+計算:
+- 目標帯域: 10Gbps
+- トンネルあたり: 1.25Gbps
+- 必要トンネル数: 10 / 1.25 = 8トンネル
+- VPN接続数: 8接続（各VPNは2トンネル）
+
+メリット:
+- 帯域幅集約
+- 冗長性向上
+- 一部トンネル障害時も継続
+
+コスト（8 VPN, 月間10TB）:
+- VPN接続: $0.05 × 8 × 24 × 30 = $288
+- データ転送: 10,000GB × $0.09 = $900
+- 合計: $1,188/月
+
+× 誤答例:
+- 単一Direct Connect (10Gbps): コスト高、冗長性なし
+- 複数VPN（ECMP無し）: 帯域分散されない
+```
+
+### 頻出シナリオ問題
+
+#### シナリオ1: 大規模マルチVPC環境
+
+```
+要件:
+- 15個のVPC（本番10個、開発5個）
+- 本番環境VPC間は相互通信可能
+- 開発環境VPC間は相互通信可能
+- 本番と開発は完全分離
+- 共有サービス（AD, DNS）は全環境からアクセス可能
+- オンプレミスは本番環境のみアクセス可能
+- コスト効率的
+
+解答:
+Transit Gateway + 複数ルートテーブル
+
+構成:
+1. Transit Gateway作成
+2. 3つのルートテーブル作成
+   - 本番RT
+   - 開発RT
+   - 共有サービスRT
+
+3. アタッチメント作成（計16個）
+   - 本番VPC × 10
+   - 開発VPC × 5
+   - 共有サービスVPC × 1
+
+4. ルートテーブル関連付け
+   本番RT:
+     - 本番VPC関連付け
+     - 本番VPC間ルート伝播
+     - 共有サービスVPCへルート
+     - オンプレミスへルート
+   
+   開発RT:
+     - 開発VPC関連付け
+     - 開発VPC間ルート伝播
+     - 共有サービスVPCへルート
+   
+   共有サービスRT:
+     - 共有サービスVPC関連付け
+     - 全VPCへルート伝播
+
+5. オンプレミス接続
+   - Direct Connect Gateway Attachment
+   - 本番RTのみに関連付け
+
+採点ポイント:
+✓ Transit Gateway使用（VPC Peeringは不適切）
+✓ ルートテーブル分離
+✓ 環境間の完全分離
+✓ 共有サービスへの全環境アクセス
+✓ オンプレミスアクセス制御
+
+コスト（月間5TB）:
+- アタッチメント: $0.05 × 17 × 24 × 30 = $612
+- データ処理: 5,000GB × $0.02 = $100
+- 合計: $712/月
+```
+
+#### シナリオ2: グローバルネットワーク
+
+```
+要件:
+- 3リージョン展開（東京、バージニア、アイルランド）
+- 各リージョンに複数VPC
+- リージョン間プライベート通信
+- オンプレミスは東京経由で全リージョンアクセス
+- 低レイテンシー
+- DR対応
+
+解答:
+Transit Gateway + Transit Gateway Peering + Direct Connect
+
+構成:
+1. 各リージョンでTransit Gateway作成
+   - 東京TGW
+   - バージニアTGW
+   - アイルランドTGW
+
+2. リージョン内VPC接続
+   - 各リージョンで各VPCをアタッチメント
+
+3. リージョン間接続
+   オプションA（フルメッシュ）:
+     - 東京 ↔ バージニア Peering
+     - 東京 ↔ アイルランド Peering
+     - バージニア ↔ アイルランド Peering
+     → 低レイテンシー、高コスト
+   
+   オプションB（ハブアンドスポーク）:
+     - 東京（Hub） ↔ バージニア Peering
+     - 東京（Hub） ↔ アイルランド Peering
+     → バージニア-アイルランドは東京経由
+     → レイテンシー増加、コスト削減
+
+4. オンプレミス接続
+   - Direct Connect → 東京TGW
+   - 東京経由で全リージョンアクセス
+
+SAP試験での推奨:
+- 要件次第で選択
+- レイテンシー重視: フルメッシュ
+- コスト重視: ハブアンドスポーク
+- バランス型: 主要リージョン間のみメッシュ
+
+DR戦略:
+- 各リージョンにスタンバイ環境
+- Route 53 Health Check
+- 自動フェイルオーバー
+- RTO: 5分、RPO: 1分
+
+採点ポイント:
+✓ リージョン間プライベート通信（TGW Peering）
+✓ トポロジー選択の理由説明
+✓ オンプレミス統合
+✓ DR考慮
+```
+
+#### シナリオ3: セキュリティ重視環境
+
+```
+要件:
+- PCI DSS準拠環境構築
+- カード情報処理VPCは完全分離
+- 監査ログは全環境から収集
+- インターネット向けトラフィックは集中検査
+- 管理容易性
+
+解答:
+Transit Gateway + Egress VPC + セグメンテーション
+
+構成:
+1. VPC分類
+   - PCI DSS VPC（カード情報処理）
+   - 一般本番VPC
+   - Egress VPC（セキュリティ）
+   - ログVPC
+
+2. Transit Gateway + ルートテーブル
+   PCI DSS RT:
+     - PCI DSS VPC関連付け
+     - ログVPCへのみルート
+     - Egress VPCへルート
+     - 他VPCへのルート無し
+   
+   Production RT:
+     - 一般本番VPC関連付け
+     - 本番VPC間通信可能
+     - ログVPCへルート
+     - Egress VPCへルート
+   
+   Egress RT:
+     - Egress VPC関連付け
+     - インターネット向けトラフィック検査
+     - Network Firewall
+   
+   Log RT:
+     - ログVPC関連付け
+     - 全VPCへルート（ログ収集用）
+
+3. トラフィックフロー
+   インターネット向け:
+     各VPC → TGW → Egress VPC → Firewall → NAT → Internet
+   
+   VPC間:
+     ルートテーブルで制御
+
+4. セキュリティ
+   - Network Firewall（Egress VPC）
+   - Transit Gateway Network ACL
+   - VPC Security Group
+   - VPC Flow Logs
+   - GuardDuty
+
+採点ポイント:
+✓ PCI DSS環境の完全分離
+✓ 集中型セキュリティ（Egress VPC）
+✓ ログ収集の一元化
+✓ 多層防御
+```
+
+### よくある間違い
+
+#### 1. Transit Gateway vs VPC Peering の選択ミス
+
+```
+× 誤り: 2個のVPC接続にTransit Gateway使用
+○ 正解: VPC Peering使用（コスト効率的）
+
+× 誤り: 10個のVPC接続にVPC Peering使用
+○ 正解: Transit Gateway使用（管理容易）
+
+× 誤り: オンプレミス接続にVPC Peering検討
+○ 正解: VPC PeeringはAWS-AWS間のみ、オンプレミスは不可
+```
+
+#### 2. ルートテーブル設定の誤解
+
+```
+× 誤り: デフォルトルートテーブルに全て任せる
+○ 正解: 環境別ルートテーブル作成で明示的管理
+
+× 誤り: 推移的ルーティングを想定してVPC Peering使用
+○ 正解: 推移的ルーティング必要ならTransit Gateway
+
+× 誤り: ルート伝播を全てのアタッチメントで有効化
+○ 正解: セキュリティ要件に応じて選択的に有効化
+```
+
+#### 3. ECMP の理解不足
+
+```
+× 誤り: 単一VPN接続で高帯域期待
+○ 正解: ECMP有効化 + 複数VPN接続で帯域集約
+
+× 誤り: ECMP無しで複数VPN作成
+○ 正解: Transit GatewayでVPN ECMP有効化必須
+```
+
+### 試験対策チェックリスト
+
+```yaml
+基本概念:
+  ☐ Transit Gatewayの役割
+  ☐ ハブアンドスポークアーキテクチャ
+  ☐ アタッチメントタイプ
+  ☐ ルートテーブル機能
+
+比較:
+  ☐ Transit Gateway vs VPC Peering
+  ☐ 推移的ルーティング対応
+  ☐ スケーラビリティ
+  ☐ コスト比較
+  ☐ 使い分け判断
+
+接続:
+  ☐ VPC Attachment
+  ☐ VPN Attachment
+  ☐ Direct Connect Gateway Attachment
+  ☐ Peering Attachment（クロスリージョン）
+
+ルーティング:
+  ☐ ルートテーブル設計
+  ☐ ルート伝播 vs 静的ルート
+  ☐ 環境分離設計
+  ☐ ルートテーブル関連付け
+
+高度な機能:
+  ☐ ECMP
+  ☐ マルチキャスト
+  ☐ Network Manager
+  ☐ Transit Gateway Network ACL
+
+コスト:
+  ☐ アタッチメント課金
+  ☐ データ処理課金
+  ☐ VPC Peeringとの比較
+  ☐ 損益分岐点理解
+```
+
+### まとめ
+
+**SAA試験重要ポイント:**
+- Transit Gateway vs VPC Peering の使い分け
+- ハブアンドスポークアーキテクチャ
+- 基本的なルートテーブル設計
+- オンプレミス統合（VPN, Direct Connect）
+
+**SAP試験重要ポイント:**
+- 大規模環境設計（複数VPC、マルチリージョン）
+- 複雑なルーティング設計
+- セグメンテーション（環境分離）
+- ECMP活用
+- コスト最適化
+- セキュリティアーキテクチャ（Egress VPC等）
+- マルチアカウント戦略
+
+**共通の重要ポイント:**
+- 推移的ルーティング対応の可否
+- スケーラビリティ
+- 管理容易性
+- コスト考慮
+- 高可用性設計
+
+適切なTransit Gateway設計により、スケーラブルで管理しやすい大規模ネットワークを実現できます。
