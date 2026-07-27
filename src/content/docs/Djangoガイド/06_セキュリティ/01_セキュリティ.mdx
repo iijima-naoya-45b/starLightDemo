@@ -356,7 +356,7 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 2621440  # 2.5MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 2621440  # 2.5MB
 ```
 
-### ファイルタイプの検証
+### ファイル種類の検証
 
 ```python
 # forms.py
@@ -370,7 +370,7 @@ class DocumentForm(forms.ModelForm):
     
     def clean_file(self):
         file = self.cleaned_data['file']
-        # ファイルタイプの検証
+        # ファイル種類の検証
         file_type = magic.from_buffer(file.read(), mime=True)
         allowed_types = ['application/pdf', 'application/msword']
         if file_type not in allowed_types:

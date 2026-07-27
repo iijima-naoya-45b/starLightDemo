@@ -100,7 +100,7 @@ docker-compose up -d
 
 Topicは、メッセージのカテゴリです。
 
-### Partition（パーティション）
+### Partition（チームション）
 
 Partitionは、Topicを分割した単位です。並列処理を可能にします。
 
@@ -323,18 +323,18 @@ finally:
     consumer.close()
 ```
 
-## 7. パーティションとレプリケーション
+## 7. チームションとレプリケーション
 
-### パーティションの設定
+### チームションの設定
 
 ```bash
-# パーティション数の変更
+# チームション数の変更
 kafka-topics.sh --alter \
   --bootstrap-server localhost:9092 \
   --topic my-topic \
   --partitions 6
 
-# パーティションの確認
+# チームションの確認
 kafka-topics.sh --describe \
   --bootstrap-server localhost:9092 \
   --topic my-topic
@@ -444,25 +444,25 @@ export KAFKA_JMX_OPTS="-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxre
 # ログディレクトリの確認
 ls -la /tmp/kafka-logs/
 
-# パーティションログの確認
+# チームションログの確認
 ls -la /tmp/kafka-logs/my-topic-0/
 ```
 
 ## 12. 実践的なベストプラクティス
 
-### パーティション数の決定
+### チームション数の決定
 
 ```bash
-# パーティション数の目安
+# チームション数の目安
 # - コンシューマーの数と同じか、その倍数
-# - 通常は3-10パーティション
-# - 最大1000パーティション程度
+# - 通常は3-10チームション
+# - 最大1000チームション程度
 ```
 
 ### メッセージの順序保証
 
 ```java
-// 同じキーを使用することで、同じパーティションに送信
+// 同じキーを使用することで、同じチームションに送信
 ProducerRecord<String, String> record = new ProducerRecord<>(
     "my-topic",
     "user-123",  // 同じキーを使用
@@ -514,7 +514,7 @@ Kafka完全ガイドのポイント：
 - **ストリーム処理**: リアルタイムデータ処理
 - **セキュリティ**: SASL、SSL/TLS
 - **監視**: JMXメトリクス
-- **ベストプラクティス**: パーティション数、順序保証、バッチ処理
+- **ベストプラクティス**: チームション数、順序保証、バッチ処理
 
 適切なKafkaの使用により、高スループットでスケーラブルなメッセージングシステムを構築できます。
 

@@ -116,7 +116,7 @@ graph LR
   
   Kinesis Data Streams:
     - 複数シャード
-    - パーティションキー: user_id
+    - チームションキー: user_id
   
   Consumer:
     - Lambda関数
@@ -159,7 +159,7 @@ graph LR
     - エンリッチメント
   
   S3:
-    - パーティション: year/month/day/hour
+    - チームション: year/month/day/hour
     - 圧縮: GZIP
     - ライフサイクル: Glacier移行
 
@@ -492,6 +492,6 @@ def transform_record(data):
 - Firehose で簡単配信
 - Lambda でサーバーレス処理
 - Data Analytics で集計・分析
-- パーティションキーで均等分散
+- チームションキーで均等分散
 - エラーハンドリング設計
 - モニタリング必須

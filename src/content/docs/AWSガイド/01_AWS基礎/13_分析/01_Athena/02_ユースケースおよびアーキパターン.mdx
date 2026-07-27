@@ -107,11 +107,11 @@ graph TB
   
   S3:
     - ログファイル保存
-    - パーティション: year/month/day
+    - チームション: year/month/day
   
   Glue Crawler:
     - 自動テーブル作成
-    - パーティション検出
+    - チームション検出
   
   Athena:
     - SQLクエリ
@@ -141,7 +141,7 @@ SQL例:
   
   Athena CTAS:
     - Parquet変換
-    - パーティション作成
+    - チームション作成
     - 圧縮
   
   変換後データ（S3）:
@@ -212,7 +212,7 @@ SQL例:
   
   Glue Crawler:
     - 定期実行（5分毎）
-    - パーティション更新
+    - チームション更新
   
   Athena:
     - 最新データクエリ
@@ -267,12 +267,12 @@ WITH SERDEPROPERTIES (
 )
 LOCATION 's3://my-bucket/alb-logs/';
 
--- パーティション追加
+-- チームション追加
 ALTER TABLE alb_logs ADD
 PARTITION (year='2024', month='01', day='01')
 LOCATION 's3://my-bucket/alb-logs/year=2024/month=01/day=01/';
 
--- パーティション自動検出
+-- チームション自動検出
 MSCK REPAIR TABLE alb_logs;
 ```
 
@@ -320,7 +320,7 @@ GROUP BY event_date, event_type;
 SELECT * FROM logs
 WHERE timestamp > '2024-01-01';
 
--- ✅ 効率的（パーティション利用）
+-- ✅ 効率的（チームション利用）
 SELECT 
   user_id, 
   event_type, 
@@ -362,7 +362,7 @@ EXECUTE query_by_date USING '2024', '01';
 
 **アーキテクチャ設計のポイント:**
 - Parquet/ORC でコスト削減
-- パーティション設計でスキャン量削減
+- チームション設計でスキャン量削減
 - Glue Crawler で自動カタログ管理
 - CTAS でデータ最適化
 - QuickSight で可視化

@@ -682,7 +682,7 @@ public class FileController {
         // ファイル名をサニタイズ（パストラバーサル攻撃を防ぐ）
         String sanitizedFilename = sanitizeFilename(originalFilename);
         
-        // ファイルの内容を検証（MIMEタイプのチェック）
+        // ファイルの内容を検証（MIME種類のチェック）
         String contentType = file.getContentType();
         if (!isAllowedContentType(contentType)) {
             return ResponseEntity.badRequest().body("Invalid content type");

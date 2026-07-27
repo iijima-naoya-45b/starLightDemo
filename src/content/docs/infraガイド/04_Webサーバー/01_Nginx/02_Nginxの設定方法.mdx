@@ -143,7 +143,7 @@ server {
 server {
     # ...
     add_header X-Frame-Options SAMEORIGIN; # クリックジャッキング防止
-    add_header X-Content-Type-Options nosniff; # MIMEタイプスニッフィング防止
+    add_header X-Content-Type-Options nosniff; # MIME種類スニッフィング防止
     add_header X-XSS-Protection "1; mode=block"; # XSS攻撃防止
     # ...
 }
@@ -168,7 +168,7 @@ server {
         
         # S3への認証ヘッダー
         # AWS署名V4を設定する必要があります
-        # この設定は複雑なため、サードパーティのモジュール（e.g., ngx_aws_auth）が推奨されます
+        # この設定は複雑なため、サードチームのモジュール（e.g., ngx_aws_auth）が推奨されます
         # ここでは概念的な例を示します
 
         # S3の認証ヘッダーを動的に生成・追加
@@ -182,7 +182,7 @@ server {
 ```
 
 - **`proxy_pass`**: `S3`バケットの`URL`を指定します。
-- **認証**: `S3`はプライベートなバケットへのアクセスに認証が必要です。`Nginx`のデフォルト機能だけでは複雑な署名（`AWS`署名`V4`）を生成できないため、多くの場合、サードパーティ製のモジュールを利用するか、`S3`バケットをパブリックに設定して対応します。
+- **認証**: `S3`はプライベートなバケットへのアクセスに認証が必要です。`Nginx`のデフォルト機能だけでは複雑な署名（`AWS`署名`V4`）を生成できないため、多くの場合、サードチーム製のモジュールを利用するか、`S3`バケットをパブリックに設定して対応します。
 
 この設定により、`cdn.your-domain.com/path/to/image.jpg`へのリクエストが、`your-s3-bucket.s3.amazonaws.com/path/to/image.jpg`に転送され、`Nginx`が`S3`からのレスポンスをクライアントに返します。`Nginx`の`HTTP`キャッシュ機能と組み合わせることで、`S3`へのアクセス回数を減らし、さらに高速な配信を実現できます。
 

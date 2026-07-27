@@ -104,7 +104,7 @@ pkill -9 nginx   # SIGKILLで強制終了（必要に応じて）
 # CPUとメモリの使用状況を1行で表示
 echo "CPU: $(top -bn1 | grep "Cpu(s)" | awk '{print $2}') | Memory: $(free -h | awk '/^Mem:/ {print $3 "/" $2}')"
 
-# ディスク使用率が80%を超えるパーティション
+# ディスク使用率が80%を超えるチームション
 df -h | awk '$5+0 > 80 {print $0}'
 
 # メモリ使用率が高いプロセス

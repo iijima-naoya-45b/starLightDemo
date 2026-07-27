@@ -243,10 +243,10 @@ public class Person implements Comparable<Person> {
 
 #### 上限境界（Upper Bounded）
 
-型パラメータを特定の型のサブタイプに制限します。
+型パラメータを特定の型のサブ種類に制限します。
 
 ```java
-// Numberのサブタイプのみを受け入れる
+// Numberのサブ種類のみを受け入れる
 public class NumberBox<T extends Number> {
     private T value;
     
@@ -288,7 +288,7 @@ public class MultiBounded<T extends Number & Comparable<T> & Serializable> {
 `super`キーワードを使用して下限を指定します（主にワイルドカードで使用）。
 
 ```java
-// Integerのスーパータイプのみを受け入れる
+// Integerのスーパー種類のみを受け入れる
 public void addNumbers(List<? super Integer> list) {
     list.add(1);
     list.add(2);
@@ -329,10 +329,10 @@ printList(intList);  // OK
 
 #### 上限境界ワイルドカード（Upper Bounded Wildcard）
 
-`? extends T`で、Tまたはそのサブタイプを受け入れます。
+`? extends T`で、Tまたはそのサブ種類を受け入れます。
 
 ```java
-// Numberまたはそのサブタイプのリストを受け入れる
+// Numberまたはそのサブ種類のリストを受け入れる
 public double sumNumbers(List<? extends Number> numbers) {
     double sum = 0.0;
     for (Number number : numbers) {
@@ -351,10 +351,10 @@ double sum2 = sumNumbers(doubles);  // 7.5
 
 #### 下限境界ワイルドカード（Lower Bounded Wildcard）
 
-`? super T`で、Tまたはそのスーパータイプを受け入れます。
+`? super T`で、Tまたはそのスーパー種類を受け入れます。
 
 ```java
-// Integerまたはそのスーパータイプのリストを受け入れる
+// Integerまたはそのスーパー種類のリストを受け入れる
 public void addIntegers(List<? super Integer> list) {
     list.add(1);
     list.add(2);

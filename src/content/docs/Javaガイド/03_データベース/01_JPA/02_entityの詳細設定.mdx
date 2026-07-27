@@ -338,7 +338,7 @@ public class User {
     @OneToMany(cascade = CascadeType.DETACH)
     private List<Order> orders;
     
-    // 複数のカスケードタイプを指定
+    // 複数のカスケード種類を指定
     @OneToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     private List<Order> orders;
 }

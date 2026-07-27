@@ -173,7 +173,7 @@ aws athena delete-named-query \
   - EMR
 ```
 
-### パーティション設計
+### チームション設計
 
 ```yaml
 適切な粒度:
@@ -185,10 +185,10 @@ aws athena delete-named-query \
     - 過剰: 秒単位
     - 不足: 年単位のみ
 
-パーティション数:
+チームション数:
   - 推奨: 100〜1000個
   - 避ける: 10万個以上
-  - パーティション追加コスト考慮
+  - チームション追加コスト考慮
 
 ネーミング:
   - Hive形式推奨: year=2024/month=01/
@@ -222,7 +222,7 @@ aws athena delete-named-query \
 スキャン量削減:
   - SELECT *避ける
   - 必要な列のみ指定
-  - パーティション活用
+  - チームション活用
   - Parquet/ORC使用
   - LIMIT活用（開発時）
 
@@ -323,12 +323,12 @@ CloudWatch Metrics:
 
 1. HIVE_PARTITION_SCHEMA_MISMATCH:
    原因:
-     - パーティション毎にスキーマ不一致
+     - チームション毎にスキーマ不一致
    
    対処:
      - スキーマ統一
      - MSCK REPAIR TABLE実行
-     - パーティション再作成
+     - チームション再作成
 
 2. EXCEEDED_MEMORY_LIMIT:
    原因:
@@ -352,12 +352,12 @@ CloudWatch Metrics:
 
 4. Too many partitions:
    原因:
-     - パーティション過多（10万+）
+     - チームション過多（10万+）
    
    対処:
-     - パーティション粒度見直し
-     - 古いパーティション削除
-     - パーティション統合
+     - チームション粒度見直し
+     - 古いチームション削除
+     - チームション統合
 ```
 
 ### Glue Crawler設定
@@ -398,7 +398,7 @@ aws glue get-crawler --name my-crawler
 
 **実務での重要ポイント:**
 - Parquet/ORC で大幅コスト削減
-- パーティション設計が最重要
+- チームション設計が最重要
 - ファイルサイズ最適化（128MB以上）
 - SELECT * を避ける
 - ワークグループでコスト管理

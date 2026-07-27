@@ -124,7 +124,7 @@ public class OrderProducer {
         );
     }
     
-    // パーティション指定
+    // チームション指定
     public void sendToPartition(Order order, int partition) {
         kafkaTemplate.send(TOPIC, partition, order.getId().toString(), order);
     }
@@ -157,7 +157,7 @@ public class OrderConsumer {
         }
     }
     
-    // パーティション指定
+    // チームション指定
     @KafkaListener(
         topicPartitions = @TopicPartition(
             topic = "orders",
@@ -323,14 +323,14 @@ public class OrderEventConsumer {
 
 ### パフォーマンス最適化
 
-#### 1. パーティション数の設定
+#### 1. チームション数の設定
 
 ```java
-// Topic作成時にパーティション数を指定
+// Topic作成時にチームション数を指定
 @Bean
 public NewTopic ordersTopic() {
     return TopicBuilder.name("orders")
-        .partitions(3) // 3つのパーティション
+        .partitions(3) // 3つのチームション
         .replicas(1)
         .build();
 }
@@ -366,7 +366,7 @@ Apache Kafkaを使用したメッセージストリーミングのポイント�
 - **高スループット**: 大量のメッセージを処理
 - **イベントストリーミング**: イベントの履歴を保持
 - **複数のコンシューマー**: 同じメッセージを複数のサービスが処理
-- **パーティション**: 並列処理によるスケーラビリティ
+- **チームション**: 並列処理によるスケーラビリティ
 - **バッチ処理**: 効率的なメッセージ処理
 
 Kafkaは、高スループットが必要なアプリケーションやイベントソーシングパターンを実装する際に非常に有用です。適切に実装することで、アプリケーションのパフォーマンスとスケーラビリティを大幅に向上させることができます。

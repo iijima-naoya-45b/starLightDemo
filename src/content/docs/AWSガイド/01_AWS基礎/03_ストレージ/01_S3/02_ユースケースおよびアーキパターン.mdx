@@ -118,7 +118,7 @@ aws s3 sync ./dist s3://example-corporate-site/ \
   データ取り込み:
     - Kinesis Data Firehose
     - Lambda: データ変換
-    - S3: パーティション保存
+    - S3: チームション保存
   
   S3バケット構造:
     s3://company-datalake/
@@ -185,7 +185,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "data_lake_lifecycle" {
 
 **実務での判断ポイント:**
 - **Athena vs Redshift**: アドホック分析ならAthena、定常分析ならRedshift
-- **パーティション**: 必須（date=YYYY-MM-DD で分割）
+- **チームション**: 必須（date=YYYY-MM-DD で分割）
 - **Parquet形式**: JSON比で70%圧縮、クエリ10倍高速
 - **Glue Crawler**: 週1回実行で自動スキーマ更新
 
@@ -401,7 +401,7 @@ print(f"署名付きURL: {signed_url}")
   CloudTrail:
     - 全リージョン有効化
     - S3バケット: company-logs/cloudtrail/
-    - パーティション: account_id/region/year/month/day/
+    - チームション: account_id/region/year/month/day/
   
   VPC Flow Logs:
     - 全VPC有効化
@@ -479,7 +479,7 @@ ORDER BY attempt_count DESC;
 ```
 
 **実務での判断ポイント:**
-- **パーティション必須**: account_id/region/year/month/day で分割
+- **チームション必須**: account_id/region/year/month/day で分割
 - **圧縮**: gzip で70%削減（Athenaも対応）
 - **Athena最適化**: Parquet形式でクエリコスト90%削減
 - **Security Hub統合**: 自動脅威検知
@@ -507,7 +507,7 @@ ORDER BY attempt_count DESC;
   → 署名付きURL（有料コンテンツ）
 
 ログ集約:
-  → パーティション設計
+  → チームション設計
   → Athena + Glue
   → Glacier自動移行
 ```
@@ -515,5 +515,5 @@ ORDER BY attempt_count DESC;
 **実務での失敗パターン:**
 1. **S3単体配信**: CloudFrontなしで高額転送コスト
 2. **ライフサイクル未設定**: 古いデータが残りコスト増
-3. **パーティション未設定**: Athenaクエリが全スキャン
+3. **チームション未設定**: Athenaクエリが全スキャン
 4. **バージョニング未設定**: 誤削除時の復旧不可
