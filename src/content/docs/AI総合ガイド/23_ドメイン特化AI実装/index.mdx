@@ -1,0 +1,937 @@
+---
+title: "ドメイン特化AI実装"
+description: "医療・金融・小売・製造など各業界に特化したAIの実装方法を、ポケモンのタイプ相性に例えて解説。業界特有の規制・データ・評価指標を網羅。"
+---
+
+## 🏥 ドメイン特化AI実装：タイプ相性で学ぶ業界別AI戦略
+
+### 📝 この章について
+
+**ドメイン特化AI**を「ポケモンのタイプ相性」に例えて解説します。汎用AIはノーマルタイプのポケモンで器用だが特化性能は低い。業界ごとに最適化されたAIは、そのドメインで圧倒的な強さを発揮します。
+
+#### ポケモンでいえば
+
+- **汎用AI（GPT-4）** = ノーマルタイプ：どんな相手にもそこそこ戦える
+- **医療AI** = エスパータイプ：高度な診断と予測に特化
+- **金融AI** = はがねタイプ：正確性と堅牢性が命
+- **小売AI** = でんきタイプ：高速な需要予測と在庫最適化
+- **製造AI** = いわタイプ：異常検知と品質管理に強い
+
+### 🎯 この章で学べること
+
+| 項目 | 内容 |
+|------|------|
+| **業界別AI要件** | 医療・金融・小売・製造の4大ドメインの特殊要件 |
+| **規制対応** | HIPAA、GDPR、金融規制等の法的制約への対処 |
+| **データ戦略** | 業界特有のデータ収集・アノテーション・品質管理 |
+| **評価指標** | ドメイン固有の成功指標（診断精度、不正検知率、需要予測誤差等） |
+| **実装例** | 各業界の実践コード |
+
+---
+
+## 🏥 医療AI：診断支援と予測モデル
+
+### 業界特有の課題
+
+| 課題 | 内容 | ポケモンの例え |
+|------|------|--------------|
+| **規制の厳しさ** | FDA承認、HIPAA準拠が必須 | ポケモンリーグの厳格なルール審査 |
+| **説明可能性** | 診断根拠を医師に説明できる必要 | 技の効果を理論的に説明できること |
+| **ミス許容度ゼロ** | 誤診は人命に関わる | 対戦で負けるだけでは済まない |
+| **希少疾患** | データが極端に少ない症例への対応 | 伝説ポケモンの出現率0.01% |
+
+### 実装例1: 医療画像診断（肺炎検出）
+
+```python
+import torch
+import torchvision.models as models
+from torch import nn
+from grad_cam import GradCAM  # 説明可能性のため
+
+class MedicalImageClassifier(nn.Module):
+    """HIPAA準拠の医療画像分類器"""
+    
+    def __init__(self, num_classes=3):  # 正常/肺炎/COVID-19
+        super().__init__()
+        # 事前学習済みResNet50をベースに
+        self.backbone = models.resnet50(pretrained=True)
+        self.backbone.fc = nn.Linear(2048, num_classes)
+        
+        # Grad-CAMで診断根拠を可視化
+        self.grad_cam = GradCAM(self.backbone, target_layer='layer4')
+    
+    def forward(self, x):
+        return self.backbone(x)
+    
+    def explain_prediction(self, x):
+        """診断根拠を可視化（医師への説明用）"""
+        pred = self.forward(x)
+        heatmap = self.grad_cam(x, target_class=pred.argmax().item())
+        return pred, heatmap
+
+# 使用例
+model = MedicalImageClassifier()
+model.load_state_dict(torch.load('medical_model.pth'))
+model.eval()
+
+x_ray_image = load_image('patient_xray.jpg')
+prediction, heatmap = model.explain_prediction(x_ray_image)
+
+# 診断結果と根拠を医師に提示
+if prediction.argmax() == 1:
+    print("診断: 肺炎の疑い")
+    print(f"信頼度: {prediction.softmax(dim=1)[0][1].item():.2%}")
+    visualize_heatmap(x_ray_image, heatmap)  # 病変部位をハイライト
+```
+
+### 実装例2: 電子カルテからのリスク予測
+
+```python
+from transformers import AutoTokenizer, AutoModel
+import pandas as pd
+
+class ClinicalRiskPredictor:
+    """電子カルテから患者リスクを予測（再入院率等）"""
+    
+    def __init__(self):
+        # 医療特化BERT（BioBERT/ClinicalBERT）を使用
+        self.tokenizer = AutoTokenizer.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
+        self.model = AutoModel.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
+        
+        # リスク予測ヘッド
+        self.classifier = nn.Sequential(
+            nn.Linear(768, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 1),  # 再入院リスク（0～1）
+            nn.Sigmoid()
+        )
+    
+    def predict_readmission_risk(self, clinical_notes: str) -> dict:
+        """30日以内再入院リスクを予測"""
+        # カルテをトークン化
+        inputs = self.tokenizer(
+            clinical_notes,
+            return_tensors="pt",
+            max_length=512,
+            truncation=True,
+            padding=True
+        )
+        
+        # BERTで特徴抽出
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            pooled_output = outputs.pooler_output
+        
+        # リスク予測
+        risk_score = self.classifier(pooled_output).item()
+        
+        # リスク因子を抽出（説明可能性）
+        risk_factors = self.extract_risk_factors(clinical_notes)
+        
+        return {
+            "readmission_risk": risk_score,
+            "risk_level": "高" if risk_score > 0.7 else "中" if risk_score > 0.4 else "低",
+            "risk_factors": risk_factors
+        }
+    
+    def extract_risk_factors(self, text: str) -> list:
+        """リスク因子を抽出（医師への説明用）"""
+        risk_keywords = {
+            "糖尿病": 1.5,
+            "高血圧": 1.3,
+            "心不全": 2.0,
+            "腎機能低下": 1.8,
+            "多剤併用": 1.4
+        }
+        
+        factors = []
+        for keyword, weight in risk_keywords.items():
+            if keyword in text:
+                factors.append({"factor": keyword, "impact_weight": weight})
+        
+        return sorted(factors, key=lambda x: x["impact_weight"], reverse=True)
+
+# 使用例
+predictor = ClinicalRiskPredictor()
+clinical_note = """
+患者: 68歳男性
+主訴: 息切れ、浮腫
+既往歴: 糖尿病、高血圧、心不全
+現病歴: 3日前より呼吸困難増悪...
+"""
+
+result = predictor.predict_readmission_risk(clinical_note)
+print(f"再入院リスク: {result['readmission_risk']:.1%} ({result['risk_level']})")
+print("主要リスク因子:")
+for factor in result['risk_factors']:
+    print(f"  - {factor['factor']} (重み: {factor['impact_weight']})")
+```
+
+### HIPAA準拠のデータ管理
+
+```python
+from cryptography.fernet import Fernet
+import hashlib
+
+class HIPAACompliantDataStore:
+    """HIPAA準拠のデータストア"""
+    
+    def __init__(self, encryption_key: bytes):
+        self.cipher = Fernet(encryption_key)
+    
+    def anonymize_patient_id(self, patient_id: str) -> str:
+        """患者IDを匿名化（ハッシュ化）"""
+        return hashlib.sha256(patient_id.encode()).hexdigest()
+    
+    def encrypt_phi(self, phi_data: dict) -> bytes:
+        """保護対象保健情報（PHI）を暗号化"""
+        import json
+        phi_json = json.dumps(phi_data)
+        return self.cipher.encrypt(phi_json.encode())
+    
+    def decrypt_phi(self, encrypted_data: bytes) -> dict:
+        """暗号化されたPHIを復号"""
+        import json
+        decrypted = self.cipher.decrypt(encrypted_data)
+        return json.loads(decrypted.decode())
+    
+    def audit_log(self, user_id: str, action: str, patient_id: str):
+        """アクセスログの記録（HIPAA要件）"""
+        import datetime
+        log_entry = {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "user_id": user_id,
+            "action": action,
+            "patient_id": self.anonymize_patient_id(patient_id),
+            "ip_address": get_user_ip()
+        }
+        # ログをimmutableストレージに保存（改ざん防止）
+        save_to_audit_trail(log_entry)
+
+# 使用例
+key = Fernet.generate_key()
+store = HIPAACompliantDataStore(key)
+
+phi_data = {
+    "name": "山田太郎",
+    "dob": "1980-01-01",
+    "diagnosis": "糖尿病"
+}
+
+encrypted = store.encrypt_phi(phi_data)
+store.audit_log(user_id="doctor_123", action="view", patient_id="P12345")
+```
+
+---
+
+## 💰 金融AI：不正検知とリスク管理
+
+### 業界特有の課題
+
+| 課題 | 内容 | ポケモンの例え |
+|------|------|--------------|
+| **リアルタイム性** | クレカ決済は100ms以内に判定 | 素早さ種族値150のドラパルト |
+| **偽陽性の痛み** | 正常取引をブロックすると顧客離反 | 味方への誤爆は即敗北 |
+| **敵対的進化** | 詐欺師がAIの穴を突いてくる | メタゲームの変化に対応 |
+| **金融規制** | Basel III、PSD2等への準拠 | 禁止伝説ルール |
+
+### 実装例1: リアルタイム不正検知
+
+```python
+import numpy as np
+from sklearn.ensemble import IsolationForest
+import redis
+
+class FraudDetectionSystem:
+    """リアルタイム不正検知システム"""
+    
+    def __init__(self):
+        self.model = self.load_model()
+        self.redis = redis.Redis(host='localhost', port=6379, decode_responses=True)
+        self.fraud_threshold = 0.75
+    
+    def detect_fraud(self, transaction: dict) -> dict:
+        """取引の不正スコアを計算（100ms以内）"""
+        start_time = time.time()
+        
+        # 特徴量抽出
+        features = self.extract_features(transaction)
+        
+        # モデル推論
+        fraud_score = self.model.predict_proba([features])[0][1]
+        
+        # ユーザー行動履歴を考慮
+        user_risk_factor = self.get_user_risk_factor(transaction['user_id'])
+        adjusted_score = fraud_score * user_risk_factor
+        
+        # 判定
+        is_fraud = adjusted_score > self.fraud_threshold
+        
+        elapsed = (time.time() - start_time) * 1000  # ms
+        
+        return {
+            "is_fraud": is_fraud,
+            "fraud_score": adjusted_score,
+            "latency_ms": elapsed,
+            "reason": self.explain_fraud(transaction, features) if is_fraud else None
+        }
+    
+    def extract_features(self, tx: dict) -> np.ndarray:
+        """取引から特徴量を抽出"""
+        # 最近のキャッシュから統計情報を取得
+        user_stats = self.get_user_statistics(tx['user_id'])
+        
+        features = [
+            tx['amount'],
+            tx['amount'] / (user_stats['avg_amount'] + 1e-6),  # 平均額との比率
+            self.time_since_last_transaction(tx['user_id']),
+            self.distance_from_home(tx['location'], user_stats['home_location']),
+            int(tx['merchant_category'] in user_stats['frequent_categories']),
+            int(self.is_unusual_time(tx['timestamp'])),
+            user_stats['recent_transaction_count'],
+        ]
+        
+        return np.array(features)
+    
+    def get_user_statistics(self, user_id: str) -> dict:
+        """Redisから高速にユーザー統計を取得"""
+        cache_key = f"user_stats:{user_id}"
+        cached = self.redis.get(cache_key)
+        
+        if cached:
+            return json.loads(cached)
+        
+        # キャッシュミス時はDBから計算してキャッシュ
+        stats = calculate_user_stats_from_db(user_id)
+        self.redis.setex(cache_key, 3600, json.dumps(stats))  # 1時間キャッシュ
+        return stats
+    
+    def explain_fraud(self, tx: dict, features: np.ndarray) -> str:
+        """不正と判定した理由を説明"""
+        reasons = []
+        
+        if features[1] > 5.0:  # 平均額の5倍以上
+            reasons.append(f"通常の{features[1]:.1f}倍の高額取引")
+        
+        if features[3] > 500:  # 自宅から500km以上
+            reasons.append(f"通常と異なる場所での取引（{features[3]:.0f}km離れている）")
+        
+        if features[5] == 1:
+            reasons.append("深夜の異常時間帯")
+        
+        return "；".join(reasons)
+
+# 使用例
+detector = FraudDetectionSystem()
+
+transaction = {
+    "user_id": "U12345",
+    "amount": 50000,
+    "merchant_category": "electronics",
+    "location": {"lat": 35.6762, "lng": 139.6503},
+    "timestamp": "2024-07-27T03:30:00Z"
+}
+
+result = detector.detect_fraud(transaction)
+print(f"不正スコア: {result['fraud_score']:.2%}")
+print(f"レイテンシ: {result['latency_ms']:.1f}ms")
+
+if result['is_fraud']:
+    print(f"⚠️ 不正の疑い: {result['reason']}")
+    # 取引をブロックまたは追加認証を要求
+```
+
+### 実装例2: 信用スコアリング
+
+```python
+class CreditScoringModel:
+    """Basel III準拠の信用スコアリングモデル"""
+    
+    def __init__(self):
+        self.model = self.load_model()
+    
+    def calculate_credit_score(self, applicant: dict) -> dict:
+        """与信審査スコアを計算"""
+        # 特徴量エンジニアリング
+        features = {
+            "income": applicant['annual_income'],
+            "debt_to_income_ratio": applicant['total_debt'] / (applicant['annual_income'] + 1),
+            "employment_length_months": applicant['employment_length_months'],
+            "credit_history_length_months": applicant['credit_history_length'],
+            "num_delinquencies": applicant['num_past_delinquencies'],
+            "num_credit_inquiries": applicant['num_recent_inquiries'],
+        }
+        
+        # スコア予測（0～850）
+        credit_score = self.model.predict([list(features.values())])[0]
+        
+        # リスクグレード判定
+        risk_grade = self.classify_risk(credit_score)
+        
+        # 承認可否と金利提示
+        approval_decision = self.make_decision(credit_score, applicant)
+        
+        return {
+            "credit_score": int(credit_score),
+            "risk_grade": risk_grade,
+            "approval_status": approval_decision['status'],
+            "interest_rate": approval_decision['rate'],
+            "max_loan_amount": approval_decision['max_amount'],
+            "explanation": self.explain_score(features, credit_score)
+        }
+    
+    def classify_risk(self, score: float) -> str:
+        """リスクグレード分類"""
+        if score >= 750: return "AAA"
+        elif score >= 700: return "AA"
+        elif score >= 650: return "A"
+        elif score >= 600: return "BBB"
+        elif score >= 550: return "BB"
+        else: return "B"
+    
+    def make_decision(self, score: float, applicant: dict) -> dict:
+        """融資承認判断"""
+        if score >= 700:
+            return {
+                "status": "承認",
+                "rate": 3.5,  # 年利3.5%
+                "max_amount": applicant['annual_income'] * 5
+            }
+        elif score >= 600:
+            return {
+                "status": "条件付き承認",
+                "rate": 7.5,
+                "max_amount": applicant['annual_income'] * 3
+            }
+        else:
+            return {
+                "status": "否決",
+                "rate": None,
+                "max_amount": 0
+            }
+    
+    def explain_score(self, features: dict, score: float) -> str:
+        """スコア算出根拠を説明（規制対応）"""
+        explanation = []
+        
+        if features['debt_to_income_ratio'] > 0.4:
+            explanation.append("負債比率が高い（40%超）")
+        
+        if features['num_delinquencies'] > 0:
+            explanation.append(f"過去の延滞歴 ({features['num_delinquencies']}件)")
+        
+        if features['employment_length_months'] < 12:
+            explanation.append("勤続年数が短い")
+        
+        return "、".join(explanation) if explanation else "良好な信用状態"
+
+# 使用例
+scorer = CreditScoringModel()
+
+applicant = {
+    "annual_income": 5000000,
+    "total_debt": 1500000,
+    "employment_length_months": 36,
+    "credit_history_length": 60,
+    "num_past_delinquencies": 0,
+    "num_recent_inquiries": 2
+}
+
+result = scorer.calculate_credit_score(applicant)
+print(f"信用スコア: {result['credit_score']} ({result['risk_grade']})")
+print(f"審査結果: {result['approval_status']}")
+if result['interest_rate']:
+    print(f"提示金利: {result['interest_rate']}%")
+    print(f"最大融資額: ¥{result['max_loan_amount']:,}")
+```
+
+---
+
+## 🛒 小売AI：需要予測と在庫最適化
+
+### 業界特有の課題
+
+| 課題 | 内容 | ポケモンの例え |
+|------|------|--------------|
+| **季節性・トレンド** | クリスマス、バレンタイン等の急激な需要変動 | 天候パーティ（雨パ/晴れパ） |
+| **欠品コスト** | 在庫切れは機会損失 | 主力ポケモンが瀕死で戦えない |
+| **過剰在庫リスク** | 売れ残りは廃棄ロス | 育てすぎて使わないポケモン |
+| **個別化** | 顧客ごとに最適な商品推薦 | ポケモンのタイプ相性 |
+
+### 実装例1: 需要予測モデル
+
+```python
+import pandas as pd
+from prophet import Prophet  # Facebookの時系列予測ライブラリ
+import numpy as np
+
+class DemandForecastingSystem:
+    """小売需要予測システム"""
+    
+    def __init__(self):
+        self.models = {}  # 商品ごとにモデルを保持
+    
+    def train(self, sales_history: pd.DataFrame):
+        """過去の販売履歴から予測モデルを訓練"""
+        for product_id in sales_history['product_id'].unique():
+            product_data = sales_history[sales_history['product_id'] == product_id]
+            
+            # Prophetの形式に変換（ds=日付、y=販売数）
+            df = pd.DataFrame({
+                'ds': product_data['date'],
+                'y': product_data['quantity_sold']
+            })
+            
+            # モデル訓練
+            model = Prophet(
+                yearly_seasonality=True,
+                weekly_seasonality=True,
+                daily_seasonality=False,
+                changepoint_prior_scale=0.05  # トレンド変化の敏感度
+            )
+            
+            # 外部変数を追加（価格、プロモーション、天気等）
+            model.add_regressor('price')
+            model.add_regressor('is_promotion')
+            model.add_regressor('temperature')
+            
+            df['price'] = product_data['price'].values
+            df['is_promotion'] = product_data['is_promotion'].values
+            df['temperature'] = product_data['temperature'].values
+            
+            model.fit(df)
+            self.models[product_id] = model
+    
+    def forecast(self, product_id: str, days_ahead: int = 30, 
+                 future_prices: list = None, promotions: list = None) -> pd.DataFrame:
+        """将来の需要を予測"""
+        if product_id not in self.models:
+            raise ValueError(f"Product {product_id} not trained")
+        
+        model = self.models[product_id]
+        
+        # 未来の日付を生成
+        future = model.make_future_dataframe(periods=days_ahead)
+        
+        # 未来の外部変数を設定
+        if future_prices:
+            future['price'] = future_prices
+        else:
+            future['price'] = future['price'].fillna(method='ffill')
+        
+        if promotions:
+            future['is_promotion'] = promotions
+        else:
+            future['is_promotion'] = 0
+        
+        # 気温は過去の平均値を使用
+        future['temperature'] = future['temperature'].fillna(20.0)
+        
+        # 予測実行
+        forecast = model.predict(future)
+        
+        return forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].tail(days_ahead)
+    
+    def optimize_inventory(self, product_id: str, lead_time_days: int = 7) -> dict:
+        """安全在庫と発注点を計算"""
+        forecast = self.forecast(product_id, days_ahead=lead_time_days * 2)
+        
+        # リードタイム期間の需要予測
+        demand_during_lead_time = forecast['yhat'].head(lead_time_days).sum()
+        demand_std = forecast['yhat'].std()
+        
+        # 安全在庫（サービスレベル95%）
+        z_score = 1.65  # 95%信頼区間
+        safety_stock = z_score * demand_std * np.sqrt(lead_time_days)
+        
+        # 発注点
+        reorder_point = demand_during_lead_time + safety_stock
+        
+        # 経済的発注量（EOQ）
+        annual_demand = forecast['yhat'].sum() * (365 / len(forecast))
+        ordering_cost = 5000  # 1回の発注コスト
+        holding_cost_rate = 0.25  # 年間在庫維持費率
+        unit_cost = self.get_unit_cost(product_id)
+        
+        eoq = np.sqrt((2 * annual_demand * ordering_cost) / (holding_cost_rate * unit_cost))
+        
+        return {
+            "product_id": product_id,
+            "reorder_point": int(reorder_point),
+            "safety_stock": int(safety_stock),
+            "economic_order_quantity": int(eoq),
+            "expected_demand_next_week": int(demand_during_lead_time)
+        }
+
+# 使用例
+forecaster = DemandForecastingSystem()
+
+# 過去データで訓練
+sales_history = pd.read_csv('sales_history.csv')
+forecaster.train(sales_history)
+
+# 需要予測
+forecast = forecaster.forecast(
+    product_id="P12345",
+    days_ahead=30,
+    future_prices=[1000] * 30,  # 今後30日間の価格
+    promotions=[1] * 7 + [0] * 23  # 最初の1週間はセール
+)
+
+print("今後30日間の需要予測:")
+print(forecast)
+
+# 在庫最適化
+inventory_plan = forecaster.optimize_inventory(product_id="P12345", lead_time_days=7)
+print(f"\n在庫管理パラメータ:")
+print(f"  発注点: {inventory_plan['reorder_point']}個")
+print(f"  安全在庫: {inventory_plan['safety_stock']}個")
+print(f"  経済的発注量: {inventory_plan['economic_order_quantity']}個")
+```
+
+### 実装例2: パーソナライズド推薦
+
+```python
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+
+class RecommendationEngine:
+    """協調フィルタリング + コンテンツベース推薦"""
+    
+    def __init__(self):
+        self.user_item_matrix = None
+        self.item_features = None
+    
+    def fit(self, purchase_history: pd.DataFrame, item_catalog: pd.DataFrame):
+        """購買履歴と商品カタログで訓練"""
+        # ユーザー×商品の購買マトリックス
+        self.user_item_matrix = purchase_history.pivot_table(
+            index='user_id',
+            columns='product_id',
+            values='quantity',
+            fill_value=0
+        )
+        
+        # 商品特徴量（カテゴリ、価格帯、ブランド等をOne-Hot化）
+        self.item_features = pd.get_dummies(
+            item_catalog,
+            columns=['category', 'brand', 'price_range']
+        )
+    
+    def recommend(self, user_id: str, top_n: int = 10, method: str = 'hybrid') -> list:
+        """ユーザーに商品を推薦"""
+        if method == 'collaborative':
+            return self.collaborative_filtering(user_id, top_n)
+        elif method == 'content':
+            return self.content_based(user_id, top_n)
+        else:  # hybrid
+            cf_recs = self.collaborative_filtering(user_id, top_n * 2)
+            cb_recs = self.content_based(user_id, top_n * 2)
+            # スコアを統合
+            return self.merge_recommendations(cf_recs, cb_recs, top_n)
+    
+    def collaborative_filtering(self, user_id: str, top_n: int) -> list:
+        """協調フィルタリング推薦"""
+        if user_id not in self.user_item_matrix.index:
+            return self.popular_items(top_n)  # 新規ユーザーはベストセラーを推薦
+        
+        # ユーザー間類似度を計算
+        user_vector = self.user_item_matrix.loc[user_id].values.reshape(1, -1)
+        similarities = cosine_similarity(user_vector, self.user_item_matrix.values)[0]
+        
+        # 類似ユーザーの購買履歴から推薦
+        similar_users_idx = np.argsort(similarities)[::-1][1:11]  # 上位10名
+        similar_users = self.user_item_matrix.iloc[similar_users_idx]
+        
+        # 類似ユーザーが購入した商品を集計
+        recommendations = similar_users.sum(axis=0).sort_values(ascending=False)
+        
+        # ユーザーが既に購入済みの商品を除外
+        purchased = self.user_item_matrix.loc[user_id]
+        recommendations = recommendations[purchased == 0]
+        
+        return recommendations.head(top_n).index.tolist()
+    
+    def content_based(self, user_id: str, top_n: int) -> list:
+        """コンテンツベース推薦"""
+        # ユーザーの購買履歴から嗜好プロファイルを作成
+        purchased_items = self.user_item_matrix.loc[user_id]
+        purchased_items = purchased_items[purchased_items > 0].index.tolist()
+        
+        if not purchased_items:
+            return self.popular_items(top_n)
+        
+        # 購入済み商品の特徴量を平均化
+        user_profile = self.item_features[
+            self.item_features['product_id'].isin(purchased_items)
+        ].drop('product_id', axis=1).mean(axis=0)
+        
+        # 全商品との類似度を計算
+        similarities = cosine_similarity(
+            user_profile.values.reshape(1, -1),
+            self.item_features.drop('product_id', axis=1).values
+        )[0]
+        
+        # 類似度が高い商品を推薦（購入済みを除外）
+        recommendations = pd.Series(
+            similarities,
+            index=self.item_features['product_id']
+        ).sort_values(ascending=False)
+        
+        recommendations = recommendations[~recommendations.index.isin(purchased_items)]
+        
+        return recommendations.head(top_n).index.tolist()
+
+# 使用例
+recommender = RecommendationEngine()
+recommender.fit(purchase_history, item_catalog)
+
+recommendations = recommender.recommend(user_id="U12345", top_n=10, method='hybrid')
+print(f"あなたへのおすすめ商品: {recommendations}")
+```
+
+---
+
+## 🏭 製造AI：異常検知と品質管理
+
+### 業界特有の課題
+
+| 課題 | 内容 | ポケモンの例え |
+|------|------|--------------|
+| **リアルタイム監視** | 生産ラインの異常を即座に検知 | バトル中の状態異常チェック |
+| **希少な不良品** | 99.9%が正常品で学習データ不足 | 色違いポケモンの出現率 |
+| **センサー多様性** | 温度・振動・音・画像等の複合データ | 複数のタイプを持つポケモン |
+| **ダウンタイムコスト** | ライン停止は1分100万円の損失 | 瀕死状態は即敗北 |
+
+### 実装例1: 時系列異常検知
+
+```python
+import pandas as pd
+from sklearn.ensemble import IsolationForest
+import numpy as np
+
+class AnomalyDetectionSystem:
+    """製造ラインの異常検知"""
+    
+    def __init__(self):
+        self.model = IsolationForest(
+            contamination=0.001,  # 異常率0.1%を想定
+            random_state=42
+        )
+        self.sensor_stats = {}
+    
+    def train(self, normal_data: pd.DataFrame):
+        """正常運転時のセンサーデータで訓練"""
+        features = self.extract_features(normal_data)
+        self.model.fit(features)
+        
+        # センサーごとの正常範囲を記録
+        for col in normal_data.columns:
+            self.sensor_stats[col] = {
+                'mean': normal_data[col].mean(),
+                'std': normal_data[col].std(),
+                'min': normal_data[col].quantile(0.01),
+                'max': normal_data[col].quantile(0.99)
+            }
+    
+    def detect_anomaly(self, sensor_data: dict) -> dict:
+        """リアルタイムで異常を検知"""
+        df = pd.DataFrame([sensor_data])
+        features = self.extract_features(df)
+        
+        # Isolation Forestで異常スコア計算
+        anomaly_score = self.model.decision_function(features)[0]
+        is_anomaly = self.model.predict(features)[0] == -1
+        
+        # 異常センサーを特定
+        anomalous_sensors = []
+        for sensor_name, value in sensor_data.items():
+            stats = self.sensor_stats[sensor_name]
+            z_score = abs((value - stats['mean']) / stats['std'])
+            
+            if z_score > 3.0:  # 3σ以上離れている
+                anomalous_sensors.append({
+                    'sensor': sensor_name,
+                    'value': value,
+                    'expected_range': f"{stats['min']:.2f} ~ {stats['max']:.2f}",
+                    'z_score': z_score
+                })
+        
+        return {
+            'is_anomaly': is_anomaly,
+            'anomaly_score': anomaly_score,
+            'anomalous_sensors': anomalous_sensors,
+            'severity': self.assess_severity(anomalous_sensors),
+            'recommended_action': self.recommend_action(anomalous_sensors)
+        }
+    
+    def extract_features(self, df: pd.DataFrame) -> np.ndarray:
+        """センサーデータから特徴量を抽出"""
+        # 各センサーの統計量（平均、標準偏差、最小値、最大値）
+        features = []
+        for col in df.columns:
+            features.extend([
+                df[col].mean(),
+                df[col].std(),
+                df[col].min(),
+                df[col].max()
+            ])
+        return np.array(features).reshape(1, -1)
+    
+    def assess_severity(self, anomalous_sensors: list) -> str:
+        """異常の深刻度を評価"""
+        if not anomalous_sensors:
+            return "正常"
+        
+        max_z_score = max([s['z_score'] for s in anomalous_sensors])
+        
+        if max_z_score > 5.0:
+            return "緊急（ライン停止推奨）"
+        elif max_z_score > 4.0:
+            return "警告（要監視）"
+        else:
+            return "注意"
+    
+    def recommend_action(self, anomalous_sensors: list) -> str:
+        """推奨アクションを提示"""
+        if not anomalous_sensors:
+            return "継続運転"
+        
+        sensor_types = [s['sensor'] for s in anomalous_sensors]
+        
+        if 'temperature' in sensor_types:
+            return "冷却システムを確認してください"
+        elif 'vibration' in sensor_types:
+            return "軸受けの点検を推奨します"
+        elif 'pressure' in sensor_types:
+            return "圧力調整弁をチェックしてください"
+        else:
+            return "メンテナンスチームに連絡してください"
+
+# 使用例
+detector = AnomalyDetectionSystem()
+
+# 正常運転データで訓練
+normal_data = pd.read_csv('normal_operation.csv')
+detector.train(normal_data)
+
+# リアルタイム監視
+sensor_reading = {
+    'temperature': 85.3,  # 通常は75±5℃
+    'vibration': 0.02,
+    'pressure': 2.1,
+    'rotation_speed': 3000
+}
+
+result = detector.detect_anomaly(sensor_reading)
+
+if result['is_anomaly']:
+    print(f"⚠️ 異常検知！深刻度: {result['severity']}")
+    print(f"異常センサー:")
+    for sensor in result['anomalous_sensors']:
+        print(f"  - {sensor['sensor']}: {sensor['value']} (正常範囲: {sensor['expected_range']})")
+    print(f"推奨アクション: {result['recommended_action']}")
+```
+
+### 実装例2: 画像ベース品質検査
+
+```python
+import torch
+from torchvision import models, transforms
+from PIL import Image
+
+class VisualInspectionSystem:
+    """画像認識による品質検査"""
+    
+    def __init__(self):
+        # 事前学習済みResNetをベースに
+        self.model = models.resnet50(pretrained=True)
+        self.model.fc = torch.nn.Linear(2048, 2)  # 良品/不良品の2クラス
+        
+        self.transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+    
+    def inspect(self, image_path: str) -> dict:
+        """製品画像を検査"""
+        image = Image.open(image_path).convert('RGB')
+        input_tensor = self.transform(image).unsqueeze(0)
+        
+        with torch.no_grad():
+            outputs = self.model(input_tensor)
+            probabilities = torch.nn.functional.softmax(outputs, dim=1)
+            prediction = outputs.argmax(dim=1).item()
+        
+        # 不良箇所を可視化（Grad-CAM）
+        defect_heatmap = None
+        if prediction == 1:  # 不良品
+            defect_heatmap = self.visualize_defect(image, input_tensor)
+        
+        return {
+            'is_defective': prediction == 1,
+            'confidence': probabilities[0][prediction].item(),
+            'defect_type': self.classify_defect_type(image) if prediction == 1 else None,
+            'defect_location': defect_heatmap
+        }
+    
+    def classify_defect_type(self, image: Image) -> str:
+        """不良タイプを分類（キズ、汚れ、変形等）"""
+        # 簡易実装：実際はより詳細な分類モデルを使用
+        return "表面キズ"  # or "汚れ", "変形", "色ムラ" etc.
+
+# 使用例
+inspector = VisualInspectionSystem()
+inspector.model.load_state_dict(torch.load('inspection_model.pth'))
+inspector.model.eval()
+
+result = inspector.inspect('product_image.jpg')
+
+if result['is_defective']:
+    print(f"❌ 不良品検出（信頼度: {result['confidence']:.1%}）")
+    print(f"不良タイプ: {result['defect_type']}")
+else:
+    print(f"✅ 良品（信頼度: {result['confidence']:.1%}）")
+```
+
+---
+
+## 📊 業界別成功指標の比較
+
+| 業界 | 主要KPI | 目標値 | ポケモンの例え |
+|------|---------|--------|--------------|
+| **医療** | 診断精度（AUC-ROC） | 0.95以上 | 技の命中率95% |
+| **金融** | 不正検知率 + 偽陽性率 | 80%検知、偽陽性1%以下 | 急所に当てて一撃必殺 |
+| **小売** | 需要予測MAPE | 10%以下 | 天気予報の的中率 |
+| **製造** | 異常検知F1スコア | 0.9以上 | 状態異常を見逃さない |
+
+---
+
+## 🎓 まとめ
+
+### 重要ポイント
+
+1. **業界ごとに最適化**  
+   汎用AIではなく、業界特有の規制・データ・評価指標に特化したAIを構築
+
+2. **規制対応が必須**  
+   HIPAA（医療）、Basel III（金融）等の法規制を最初から考慮
+
+3. **説明可能性を重視**  
+   医療の診断根拠、金融の審査理由等、判断根拠を説明できる設計
+
+4. **リアルタイム性**  
+   金融の不正検知（100ms）、製造の異常検知（即時）等、業界ごとのレイテンシ要件をクリア
+
+### 次のステップ
+
+- [24. AIコスト最適化戦略](/ai総合ガイド/24_aiコスト最適化戦略/) - API料金・インフラコストを削減
+- [22. AIセキュリティと敵対的攻撃](/ai総合ガイド/22_aiセキュリティと敵対的攻撃/) - 業界別のセキュリティ脅威に備える
+- [17. 主要AIモデル比較](/ai総合ガイド/17_主要aiモデル比較/) - 業界に最適なAIモデルを選択
+
+---
+
+**ポケモンマスターの知恵**  
+「ノーマルタイプは器用貧乏。本気で勝ちたいなら、相手のタイプに合わせた専門ポケモンを育てろ。AIも同じだ。」
