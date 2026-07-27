@@ -16,7 +16,7 @@ label: "ユースケースおよびアーキパターン"
 実装:
   1. Crawler でスキーマ検出
   2. ETL Job で変換（CSV→Parquet）
-  3. パーティション作成
+  3. チームション作成
   4. Athenaで分析
 ```
 
@@ -74,7 +74,7 @@ label: "ユースケースおよびアーキパターン"
   
   S3（変換後）:
     - Parquet
-    - パーティション化
+    - チームション化
   
   Athena:
     - SQL分析
@@ -102,7 +102,7 @@ ETLスクリプト例（PySpark）:
   
   S3（蓄積データ）:
     - Parquet
-    - パーティション: year/month/day
+    - チームション: year/month/day
 
 メリット:
   - 処理時間短縮
@@ -353,7 +353,7 @@ query.awaitTermination()
 - Crawler で自動スキーマ管理
 - ジョブブックマークで増分処理
 - Parquet変換でコスト削減
-- パーティション設計で効率化
+- チームション設計で効率化
 - DataBrew でデータ品質向上
 - Step Functions でオーケストレーション
 - VPC統合でセキュリティ強化

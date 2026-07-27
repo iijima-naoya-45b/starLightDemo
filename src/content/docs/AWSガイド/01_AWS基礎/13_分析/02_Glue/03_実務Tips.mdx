@@ -111,7 +111,7 @@ aws glue get-table \
 # テーブル一覧
 aws glue get-tables --database-name my_database
 
-# パーティション追加
+# チームション追加
 aws glue create-partition \
   --database-name my_database \
   --table-name my_table \
@@ -122,7 +122,7 @@ aws glue create-partition \
     }
   }'
 
-# パーティション一覧
+# チームション一覧
 aws glue get-partitions \
   --database-name my_database \
   --table-name my_table
@@ -201,7 +201,7 @@ Worker数:
 
 注意点:
   - ファイル名ソート順依存
-  - パーティション構造重要
+  - チームション構造重要
   - リセット可能（job-bookmark-reset）
 
 推奨用途:
@@ -210,7 +210,7 @@ Worker数:
   - ログ処理
 ```
 
-### パーティション設計
+### チームション設計
 
 ```yaml
 粒度:
@@ -229,7 +229,7 @@ Worker数:
   パスベース:
     s3://bucket/data/2024/01/15/
 
-自動パーティション:
+自動チームション:
   - Crawler自動検出
   - ETL Jobで作成
   - MSCK REPAIR TABLE不要
@@ -251,7 +251,7 @@ DPU最適化:
 
 Data Catalog:
   - 不要テーブル削除
-  - 古いパーティション削除
+  - 古いチームション削除
   - 100万オブジェクト超で課金
 
 ジョブブックマーク:
@@ -352,7 +352,7 @@ VPC:
      - Worker数増加
      - G.2X使用
      - データ分割処理
-     - パーティション活用
+     - チームション活用
 
 2. Job Timeout:
    原因:
@@ -428,7 +428,7 @@ aws databrew create-recipe-job \
 - Crawler でスキーマ自動管理
 - ジョブブックマークで増分処理
 - Worker設定最適化
-- パーティション設計重要
+- チームション設計重要
 - Spark UI でパフォーマンス分析
 - VPC統合でセキュリティ強化
 - DataBrew でデータ品質向上

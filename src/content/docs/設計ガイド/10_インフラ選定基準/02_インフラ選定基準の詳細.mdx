@@ -5,6 +5,9 @@ label: "インフラ選定基準の詳細"
 
 ## インフラ選定基準の詳細
 
+
+**ポケモンで例えると**: 設計を理解することは、新しい「わざ」を覚えるようなもの——使いこなせば、より強力な開発者になれます。
+
 各インフラコンポーネントの選定基準を詳しく解説します。
 
 ### コンピューティングリソースの選定
@@ -15,7 +18,7 @@ label: "インフラ選定基準の詳細"
 
 - **CPU**: 処理能力、コア数
 - **メモリ**: 容量、速度
-- **ストレージ**: 容量、タイプ（SSD/HDD）、IOPS
+- **ストレージ**: 容量、種類（SSD/HDD）、IOPS
 - **ネットワーク**: 帯域幅、レイテンシ
 
 **選定の実践例:**
@@ -32,13 +35,13 @@ interface ServerSelectionCriteria {
   // メモリ要件
   memory: {
     size: number; // 容量（GB）
-    type: 'standard' | 'high-memory'; // タイプ
+    type: 'standard' | 'high-memory'; // 種類
   };
   
   // ストレージ要件
   storage: {
     size: number; // 容量（GB）
-    type: 'ssd' | 'hdd'; // タイプ
+    type: 'ssd' | 'hdd'; // 種類
     iops: number; // IOPS
   };
   
@@ -355,7 +358,7 @@ const globalCDNCriteria: CDNSelectionCriteria = {
 
 **選定基準:**
 
-- **タイプ**: Application Load Balancer、Network Load Balancerなど
+- **種類**: Application Load Balancer、Network Load Balancerなど
 - **機能**: ヘルスチェック、SSL終端、セッションアフィニティ
 - **パフォーマンス**: スループット、レイテンシ
 - **可用性**: 高可用性の機能
