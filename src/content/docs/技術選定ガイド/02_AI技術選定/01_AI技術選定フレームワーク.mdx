@@ -1,0 +1,972 @@
+---
+title: "AI技術選定フレームワーク"
+label: "AI技術選定"
+---
+
+## 🤖 AI技術選定：ポケモン「タイプ統一パ」で理解する専門特化選択
+
+### 📝 ポケモン世界におけるAI技術選定の定義
+
+AI技術選定とは、**「伝説ポケモンの特性を理解し、最適な1匹を選ぶ」**ことです。GPT-4、Claude、Gemini、ローカルLlama——**それぞれが得意分野を持つ伝説級**。**ポケモンでいえば**、ミュウツー（汎用最強）、ルギア（安全特化）、レックウザ（マルチモーダル）——**ユースケース次第で最適解が変わる**のがAI選定です。
+
+---
+
+## 1. 🧠 AI技術選定の5つの評価軸
+
+### 【教科書的な説明】
+
+AI技術選定では、精度・コスト・レイテンシ・データプライバシー・カスタマイズ性を評価する。
+
+### 【ポケモン版・マサカリ的実務視点】
+
+| 評価軸 | ポケモン的解釈 | 実務での重要度 | 失敗パターン |
+|--------|--------------|--------------|--------------|
+| **1. タスク適合性** | 「タイプ相性」——やりたいことに合っているか | ⭐⭐⭐⭐⭐ | GPT-4で画像生成しようとする（Stable Diffusion使え） |
+| **2. 精度** | 「種族値」——出力の正確さ | ⭐⭐⭐⭐⭐ | Llama 2で医療診断→誤診リスク（GPT-4使え） |
+| **3. コスト** | 「わざマシン代」——トークン課金 | ⭐⭐⭐⭐ | GPT-4で全リクエスト→月100万円破産 |
+| **4. レイテンシ** | 「素早さ」——応答速度 | ⭐⭐⭐⭐ | Claude Opusでリアルタイムチャット→遅延でユーザー離脱 |
+| **5. プライバシー** | 「技漏れ」——データ学習リスク | ⭐⭐⭐⭐⭐ | OpenAI APIで顧客情報送信→GDPR違反 |
+| **6. カスタマイズ性** | 「個体値調整」——ファインチューニング | ⭐⭐⭐ | ドメイン特化が必要なのに汎用モデル固執 |
+
+---
+
+## 2. 🎯 AI技術選定の決定木
+
+### 【ステップ1】タスク分類
+
+```typescript
+// AI技術選定の決定木
+type AITask = 
+  | "text-generation"       // 文章生成
+  | "code-generation"       // コード生成
+  | "image-generation"      // 画像生成
+  | "video-generation"      // 動画生成
+  | "speech-to-text"        // 音声認識
+  | "text-to-speech"        // 音声合成
+  | "translation"           // 翻訳
+  | "summarization"         // 要約
+  | "qa"                    // 質問応答
+  | "classification"        // 分類
+  | "embedding"             // ベクトル化
+
+interface AIRequirements {
+  task: AITask;
+  accuracy: "high" | "medium" | "low";      // 精度要求
+  latency: "realtime" | "fast" | "batch";   // レイテンシ要求
+  volume: number;                            // 月間リクエスト数
+  budget: number;                            // 月額予算（円）
+  privacy: "strict" | "normal" | "relaxed"; // プライバシー要求
+  customization: boolean;                    // カスタマイズ必要性
+}
+
+// 例：社内チャットボット
+const chatbotRequirements: AIRequirements = {
+  task: "qa",
+  accuracy: "high",           // 誤答は許されない
+  latency: "fast",            // 3秒以内に応答
+  volume: 100000,             // 月10万リクエスト
+  budget: 100000,             // 月10万円
+  privacy: "strict",          // 社内データなので厳格
+  customization: true         // 社内ドキュメント学習
+};
+```
+
+---
+
+### 【ステップ2】AI技術の候補選定
+
+```typescript
+// AI技術カタログ
+interface AITechnology {
+  name: string;
+  provider: string;
+  tasks: AITask[];
+  pricing: {
+    inputCostPer1K: number;   // 入力1Kトークンあたり（円）
+    outputCostPer1K: number;  // 出力1Kトークンあたり（円）
+  };
+  latency: number;            // 平均レスポンス時間（ms）
+  accuracy: number;           // 精度スコア（0-100）
+  privacy: "cloud" | "on-premise" | "hybrid";
+  customizable: boolean;
+}
+
+const aiCatalog: AITechnology[] = [
+  // === テキスト生成 ===
+  {
+    name: "GPT-4 Turbo",
+    provider: "OpenAI",
+    tasks: ["text-generation", "code-generation", "qa", "summarization"],
+    pricing: {
+      inputCostPer1K: 1.5,    // $0.01 * 150円
+      outputCostPer1K: 4.5    // $0.03 * 150円
+    },
+    latency: 2000,
+    accuracy: 95,
+    privacy: "cloud",
+    customizable: false         // ファインチューニング終了
+  },
+  {
+    name: "GPT-4o",
+    provider: "OpenAI",
+    tasks: ["text-generation", "code-generation", "qa", "image-generation"],
+    pricing: {
+      inputCostPer1K: 0.75,
+      outputCostPer1K: 2.25
+    },
+    latency: 1000,              // GPT-4 Turboより高速
+    accuracy: 93,
+    privacy: "cloud",
+    customizable: false
+  },
+  {
+    name: "GPT-3.5 Turbo",
+    provider: "OpenAI",
+    tasks: ["text-generation", "code-generation", "qa"],
+    pricing: {
+      inputCostPer1K: 0.075,  // $0.0005 * 150円
+      outputCostPer1K: 0.225  // $0.0015 * 150円
+    },
+    latency: 500,
+    accuracy: 85,
+    privacy: "cloud",
+    customizable: true          // ファインチューニング可能
+  },
+  {
+    name: "Claude 3.5 Sonnet",
+    provider: "Anthropic",
+    tasks: ["text-generation", "code-generation", "qa", "summarization"],
+    pricing: {
+      inputCostPer1K: 0.45,   // $0.003 * 150円
+      outputCostPer1K: 2.25   // $0.015 * 150円
+    },
+    latency: 1500,
+    accuracy: 94,
+    privacy: "cloud",
+    customizable: false
+  },
+  {
+    name: "Claude 3 Opus",
+    provider: "Anthropic",
+    tasks: ["text-generation", "code-generation", "qa", "summarization"],
+    pricing: {
+      inputCostPer1K: 2.25,   // $0.015 * 150円
+      outputCostPer1K: 11.25  // $0.075 * 150円
+    },
+    latency: 3000,
+    accuracy: 96,             // 最高精度
+    privacy: "cloud",
+    customizable: false
+  },
+  {
+    name: "Gemini 1.5 Pro",
+    provider: "Google",
+    tasks: ["text-generation", "code-generation", "qa", "summarization", "video-generation"],
+    pricing: {
+      inputCostPer1K: 0.525,  // $0.0035 * 150円
+      outputCostPer1K: 1.575  // $0.0105 * 150円
+    },
+    latency: 1200,
+    accuracy: 90,
+    privacy: "cloud",
+    customizable: false
+  },
+  {
+    name: "Gemini 1.5 Flash",
+    provider: "Google",
+    tasks: ["text-generation", "qa"],
+    pricing: {
+      inputCostPer1K: 0.0525, // $0.00035 * 150円
+      outputCostPer1K: 0.21   // $0.0014 * 150円
+    },
+    latency: 300,             // 超高速
+    accuracy: 82,
+    privacy: "cloud",
+    customizable: false
+  },
+  {
+    name: "Llama 3 70B",
+    provider: "Meta (Self-hosted)",
+    tasks: ["text-generation", "code-generation", "qa"],
+    pricing: {
+      inputCostPer1K: 0,      // 自前GPU（初期投資のみ）
+      outputCostPer1K: 0
+    },
+    latency: 800,             // GPU次第
+    accuracy: 88,
+    privacy: "on-premise",    // 完全プライベート
+    customizable: true        // ファインチューニング可能
+  },
+  
+  // === 画像生成 ===
+  {
+    name: "DALL-E 3",
+    provider: "OpenAI",
+    tasks: ["image-generation"],
+    pricing: {
+      inputCostPer1K: 60,     // 1枚$0.04 * 150円 * 1000/画像
+      outputCostPer1K: 0
+    },
+    latency: 10000,
+    accuracy: 90,
+    privacy: "cloud",
+    customizable: false
+  },
+  {
+    name: "Stable Diffusion XL",
+    provider: "Stability AI (Self-hosted)",
+    tasks: ["image-generation"],
+    pricing: {
+      inputCostPer1K: 0,      // 自前GPU
+      outputCostPer1K: 0
+    },
+    latency: 5000,            // RTX 4090で5秒
+    accuracy: 88,
+    privacy: "on-premise",
+    customizable: true        // LoRA対応
+  },
+  {
+    name: "Midjourney",
+    provider: "Midjourney",
+    tasks: ["image-generation"],
+    pricing: {
+      inputCostPer1K: 4500,   // $30/月サブスク ÷ 200枚 * 1000
+      outputCostPer1K: 0
+    },
+    latency: 15000,
+    accuracy: 92,
+    privacy: "cloud",
+    customizable: false
+  },
+  
+  // === 埋め込み（Embedding） ===
+  {
+    name: "text-embedding-3-small",
+    provider: "OpenAI",
+    tasks: ["embedding"],
+    pricing: {
+      inputCostPer1K: 0.003,  // $0.00002 * 150円
+      outputCostPer1K: 0
+    },
+    latency: 100,
+    accuracy: 85,
+    privacy: "cloud",
+    customizable: false
+  },
+  {
+    name: "text-embedding-3-large",
+    provider: "OpenAI",
+    tasks: ["embedding"],
+    pricing: {
+      inputCostPer1K: 0.0195, // $0.00013 * 150円
+      outputCostPer1K: 0
+    },
+    latency: 150,
+    accuracy: 92,
+    privacy: "cloud",
+    customizable: false
+  }
+];
+```
+
+---
+
+### 【ステップ3】候補技術のフィルタリング
+
+```typescript
+// AI技術選定関数
+function selectAI(requirements: AIRequirements): AITechnology[] {
+  // Step 1: タスク対応フィルタ
+  let candidates = aiCatalog.filter(tech => 
+    tech.tasks.includes(requirements.task)
+  );
+  
+  // Step 2: プライバシー要件フィルタ
+  if (requirements.privacy === "strict") {
+    candidates = candidates.filter(tech => 
+      tech.privacy === "on-premise" || tech.privacy === "hybrid"
+    );
+  }
+  
+  // Step 3: カスタマイズ要件フィルタ
+  if (requirements.customization) {
+    candidates = candidates.filter(tech => tech.customizable);
+  }
+  
+  // Step 4: 精度フィルタ
+  const minAccuracy = requirements.accuracy === "high" ? 90 : 
+                      requirements.accuracy === "medium" ? 80 : 70;
+  candidates = candidates.filter(tech => tech.accuracy >= minAccuracy);
+  
+  // Step 5: レイテンシフィルタ
+  const maxLatency = requirements.latency === "realtime" ? 500 :
+                     requirements.latency === "fast" ? 2000 : 10000;
+  candidates = candidates.filter(tech => tech.latency <= maxLatency);
+  
+  // Step 6: コストスコア計算
+  const avgTokens = 1000; // 平均1000トークン/リクエストと仮定
+  candidates = candidates.map(tech => ({
+    ...tech,
+    monthlyCost: (
+      (tech.pricing.inputCostPer1K + tech.pricing.outputCostPer1K) *
+      (avgTokens / 1000) *
+      requirements.volume
+    )
+  })).filter((tech: any) => tech.monthlyCost <= requirements.budget);
+  
+  // Step 7: コストパフォーマンス順にソート
+  return candidates.sort((a: any, b: any) => {
+    const scoreA = a.accuracy / (a.monthlyCost + 1);
+    const scoreB = b.accuracy / (b.monthlyCost + 1);
+    return scoreB - scoreA;
+  });
+}
+
+// 例：社内チャットボット
+const recommendations = selectAI(chatbotRequirements);
+console.log(recommendations);
+// → Llama 3 70B（プライバシー・カスタマイズ・コスト全て満たす）
+```
+
+---
+
+## 3. 🏆 ユースケース別AI技術選定
+
+### ユースケース1: カスタマーサポートチャットボット
+
+**要件**:
+- 24時間対応
+- 応答速度: 3秒以内
+- 月間10万会話
+- 顧客情報を扱う（プライバシー重要）
+
+```typescript
+const customerSupportRequirements: AIRequirements = {
+  task: "qa",
+  accuracy: "high",
+  latency: "fast",
+  volume: 100000,
+  budget: 200000,           // 月20万円
+  privacy: "normal",        // API利用OK（オプトアウト必須）
+  customization: true       // FAQ学習
+};
+
+// 推奨: GPT-3.5 Turbo (Fine-tuned)
+// 理由:
+// - ファインチューニングでFAQ学習可能
+// - レイテンシ500ms（高速）
+// - 月額コスト: 0.3円/リクエスト × 10万 = 3万円（予算内）
+// - オプトアウト設定で学習防止
+```
+
+**実装例**:
+
+```typescript
+import OpenAI from "openai";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+// ファインチューニング済みモデルでチャットボット
+async function chatbot(userMessage: string, conversationHistory: any[]) {
+  const response = await openai.chat.completions.create({
+    model: "ft:gpt-3.5-turbo:company-name:customer-support:abc123", // Fine-tunedモデル
+    messages: [
+      {
+        role: "system",
+        content: "あなたは弊社のカスタマーサポート担当です。FAQ、製品情報、料金プランについて回答します。"
+      },
+      ...conversationHistory,
+      {
+        role: "user",
+        content: userMessage
+      }
+    ],
+    temperature: 0.3,       // 創造性低め（正確性重視）
+    max_tokens: 500
+  });
+  
+  return response.choices[0].message.content;
+}
+
+// 使用例
+const reply = await chatbot(
+  "返品ポリシーを教えてください",
+  []
+);
+console.log(reply);
+// → "弊社の返品ポリシーは、購入後30日以内であれば未開封品に限り返品可能です..."
+```
+
+---
+
+### ユースケース2: コード生成アシスタント
+
+**要件**:
+- 高精度なコード生成
+- 複雑なロジック対応
+- 月間1万リクエスト
+- レイテンシは許容（バッチ処理可）
+
+```typescript
+const codeGenRequirements: AIRequirements = {
+  task: "code-generation",
+  accuracy: "high",
+  latency: "batch",
+  volume: 10000,
+  budget: 100000,           // 月10万円
+  privacy: "relaxed",       // コード公開前提
+  customization: false
+};
+
+// 推奨: GPT-4 Turbo or Claude 3.5 Sonnet
+// 理由:
+// - コード生成精度最高
+// - 複雑なロジックも対応
+// - 月額コスト: 6円/リクエスト × 1万 = 6万円（予算内）
+```
+
+**実装例**:
+
+```typescript
+async function generateCode(prompt: string, language: string) {
+  const response = await openai.chat.completions.create({
+    model: "gpt-4-turbo",
+    messages: [
+      {
+        role: "system",
+        content: `あなたは${language}のエキスパートプログラマーです。高品質で保守性の高いコードを生成します。`
+      },
+      {
+        role: "user",
+        content: prompt
+      }
+    ],
+    temperature: 0.2,       // 創造性低め（正確性重視）
+    max_tokens: 2000
+  });
+  
+  return response.choices[0].message.content;
+}
+
+// 使用例
+const code = await generateCode(
+  "TypeScriptでバイナリサーチ木を実装してください。insert、search、deleteメソッドを含めてください。",
+  "TypeScript"
+);
+console.log(code);
+```
+
+---
+
+### ユースケース3: 社内ドキュメント検索（RAG）
+
+**要件**:
+- 社内Wikiから回答生成
+- 機密情報を扱う（外部送信不可）
+- 月間5万クエリ
+- 高精度必須
+
+```typescript
+const internalSearchRequirements: AIRequirements = {
+  task: "qa",
+  accuracy: "high",
+  latency: "fast",
+  volume: 50000,
+  budget: 500000,           // 月50万円（インフラ込み）
+  privacy: "strict",        // オンプレミス必須
+  customization: true
+};
+
+// 推奨: Llama 3 70B (Self-hosted) + RAG
+// 理由:
+// - 完全プライベート（データ漏洩リスクゼロ)
+// - ファインチューニング可能
+// - 初期投資: GPU 1台（A100）200万円、月額電気代10万円
+```
+
+**実装例（Llama 3 + RAG）**:
+
+```python
+# Llama 3をローカルで実行（Ollama使用）
+import ollama
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+# 1. 社内ドキュメントをベクトル化
+documents = [...]  # 社内Wiki、Confluence等から取得
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=500)
+chunks = text_splitter.split_documents(documents)
+
+embeddings = HuggingFaceEmbeddings(model_name="intfloat/multilingual-e5-large")
+vectorstore = Chroma.from_documents(chunks, embeddings)
+
+# 2. RAG検索
+def rag_search(query: str) -> str:
+    # 関連ドキュメント取得
+    relevant_docs = vectorstore.similarity_search(query, k=5)
+    context = "\n\n".join([doc.page_content for doc in relevant_docs])
+    
+    # Llama 3で回答生成
+    response = ollama.chat(model='llama3:70b', messages=[
+        {
+            'role': 'system',
+            'content': '以下のコンテキストを参考に、質問に回答してください。'
+        },
+        {
+            'role': 'user',
+            'content': f'コンテキスト:\n{context}\n\n質問: {query}'
+        }
+    ])
+    
+    return response['message']['content']
+
+# 使用例
+answer = rag_search("有給休暇の申請方法は？")
+print(answer)
+```
+
+---
+
+### ユースケース4: マーケティングコンテンツ生成
+
+**要件**:
+- ブログ記事、SNS投稿を大量生成
+- 月間1000記事（各2000トークン）
+- クリエイティブ性重視
+- コスト重視
+
+```typescript
+const contentGenRequirements: AIRequirements = {
+  task: "text-generation",
+  accuracy: "medium",       // 多少の誤字脱字OK
+  latency: "batch",
+  volume: 1000,             // 1000記事
+  budget: 50000,            // 月5万円
+  privacy: "relaxed",
+  customization: false
+};
+
+// 推奨: Gemini 1.5 Flash or GPT-3.5 Turbo
+// 理由:
+// - 大量生成に最適（安価）
+// - Gemini Flashなら1記事0.4円（月額400円！）
+// - GPT-3.5なら1記事0.6円（月額600円）
+```
+
+**実装例（Gemini Flash）**:
+
+```typescript
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+
+async function generateBlogPost(topic: string, keywords: string[]) {
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  
+  const prompt = `
+以下のトピックで、SEO最適化されたブログ記事（2000文字）を生成してください。
+
+トピック: ${topic}
+キーワード: ${keywords.join(", ")}
+
+記事構成:
+1. 導入（200文字）
+2. 本文（1500文字、見出し3つ）
+3. まとめ（300文字）
+  `;
+  
+  const result = await model.generateContent(prompt);
+  return result.response.text();
+}
+
+// バッチ生成
+const topics = [
+  { topic: "2026年最新SEO対策", keywords: ["SEO", "検索エンジン最適化", "Google"] },
+  { topic: "リモートワーク効率化ツール", keywords: ["リモートワーク", "生産性", "ツール"] }
+];
+
+for (const { topic, keywords } of topics) {
+  const article = await generateBlogPost(topic, keywords);
+  console.log(article);
+}
+```
+
+---
+
+## 4. 🚨 AI技術選定の5大失敗パターン
+
+### 失敗1: 「全てをGPT-4で解決」（コスト爆発）
+
+**ポケモンでいえば**: ストーリー攻略に伝説ポケモンLv100——**オーバーキル**。
+
+| 症状 | 実例 | 処方箋 |
+|------|-----|--------|
+| 簡単なタスクもGPT-4 | チャットボットの全返信にGPT-4 | **GPT-3.5で十分** |
+| 埋め込みもGPT-4 | ベクトル化にGPT-4使用 | **text-embedding-3使え** |
+| 月額100万円超え | スタートアップで破産 | **段階的にモデル格下げ** |
+
+```typescript
+// コスト最適化戦略
+interface TaskComplexity {
+  task: string;
+  complexity: "simple" | "medium" | "complex";
+  recommendedModel: string;
+  costPer1K: number;
+}
+
+const taskModelMapping: TaskComplexity[] = [
+  {
+    task: "簡単なFAQ",
+    complexity: "simple",
+    recommendedModel: "GPT-3.5 Turbo",
+    costPer1K: 0.3
+  },
+  {
+    task: "複雑な質問応答",
+    complexity: "medium",
+    recommendedModel: "GPT-4o",
+    costPer1K: 3.0
+  },
+  {
+    task: "高度な推論・分析",
+    complexity: "complex",
+    recommendedModel: "GPT-4 Turbo",
+    costPer1K: 6.0
+  }
+];
+
+// タスク複雑度判定
+function selectModelByComplexity(userQuery: string): string {
+  const wordCount = userQuery.split(" ").length;
+  const hasComplexKeywords = /分析|推論|詳細|比較/.test(userQuery);
+  
+  if (wordCount > 50 || hasComplexKeywords) {
+    return "gpt-4-turbo";
+  } else if (wordCount > 20) {
+    return "gpt-4o";
+  } else {
+    return "gpt-3.5-turbo";
+  }
+}
+```
+
+---
+
+### 失敗2: 「プライバシー無視」（GDPR違反）
+
+**ポケモンでいえば**: 技が漏れて対策される——**情報漏洩**。
+
+| 症状 | 実例 | 処方箋 |
+|------|-----|--------|
+| 顧客情報をOpenAI APIへ | 氏名・住所等を送信→学習される | **オプトアウト設定** |
+| 機密文書をChatGPT貼り付け | 社員が社外秘をペースト | **企業版ChatGPT導入** |
+| GDPR違反で罰金 | EU顧客データ無断送信 | **ローカルLlama使用** |
+
+```typescript
+// データプライバシー分類
+enum DataSensitivity {
+  PUBLIC = "public",           // 公開情報（ブログ等）
+  INTERNAL = "internal",       // 社内限定（Wiki等）
+  CONFIDENTIAL = "confidential", // 機密（顧客情報）
+  RESTRICTED = "restricted"    // 最高機密（財務等）
+}
+
+interface DataClassification {
+  data: string;
+  sensitivity: DataSensitivity;
+  allowedModels: string[];
+}
+
+function classifyData(data: string): DataSensitivity {
+  // PII検出（簡易版）
+  const hasPII = /\b\d{3}-\d{4}-\d{4}\b/.test(data) ||  // 電話番号
+                 /\b\d{7}\b/.test(data);                  // 郵便番号
+  
+  if (hasPII) {
+    return DataSensitivity.CONFIDENTIAL;
+  }
+  
+  // 機密キーワード検出
+  const hasConfidential = /機密|社外秘|confidential/i.test(data);
+  if (hasConfidential) {
+    return DataSensitivity.RESTRICTED;
+  }
+  
+  return DataSensitivity.INTERNAL;
+}
+
+function getAllowedModels(sensitivity: DataSensitivity): string[] {
+  switch (sensitivity) {
+    case DataSensitivity.PUBLIC:
+      return ["gpt-4", "claude", "gemini"]; // 何でもOK
+    case DataSensitivity.INTERNAL:
+      return ["gpt-4-with-optout", "claude"]; // オプトアウト必須
+    case DataSensitivity.CONFIDENTIAL:
+      return ["llama3-local", "azure-openai-private"]; // プライベートのみ
+    case DataSensitivity.RESTRICTED:
+      return ["llama3-airgap"]; // 完全エアギャップ
+  }
+}
+
+// 使用例
+const customerQuery = "山田太郎（03-1234-5678）の注文状況を教えて";
+const sensitivity = classifyData(customerQuery);
+const allowedModels = getAllowedModels(sensitivity);
+
+console.log(`データ分類: ${sensitivity}`);
+console.log(`使用可能モデル: ${allowedModels.join(", ")}`);
+// → "データ分類: confidential"
+// → "使用可能モデル: llama3-local, azure-openai-private"
+```
+
+---
+
+### 失敗3: 「ローカルLLMで破綻」（運用地獄）
+
+**ポケモンでいえば**: 伝説ポケモン捕獲→育成放棄。
+
+| 症状 | 実例 | 処方箋 |
+|------|-----|--------|
+| GPU購入したが動かない | A100買ったがセットアップできず放置 | **まずAPI試せ** |
+| モデル更新が追いつかない | Llama 2のまま→Llama 3に更新できず | **Managed Service検討** |
+| 運用コスト爆発 | 24時間稼働GPU電気代月50万円 | **クラウドGPU使え** |
+
+```typescript
+// ローカルLLM vs API判断基準
+interface LocalVsAPIDecision {
+  monthlyRequests: number;
+  avgTokensPerRequest: number;
+  privacyRequirement: "strict" | "normal";
+  teamExpertise: "high" | "medium" | "low";
+}
+
+function decideLocalOrAPI(decision: LocalVsAPIDecision): "local" | "api" {
+  // プライバシー要件が厳格ならローカル
+  if (decision.privacyRequirement === "strict") {
+    return "local";
+  }
+  
+  // チーム専門性が低いならAPI
+  if (decision.teamExpertise === "low") {
+    return "api";
+  }
+  
+  // コスト比較
+  const apiCost = decision.monthlyRequests * 
+                  (decision.avgTokensPerRequest / 1000) * 
+                  3; // GPT-4o: 3円/1K tokens
+  
+  const localCost = 
+    200000 + // GPU初期費用（償却：月16.6万円 ÷ 12ヶ月）
+    100000 + // 電気代（月10万円）
+    200000;  // エンジニア運用工数（月20万円）
+  
+  // 月間コストでAPI有利ならAPI
+  return apiCost < localCost ? "api" : "local";
+}
+
+// 例：スタートアップ
+console.log(decideLocalOrAPI({
+  monthlyRequests: 10000,
+  avgTokensPerRequest: 1000,
+  privacyRequirement: "normal",
+  teamExpertise: "low"
+}));
+// → "api"（API: 3万円 vs ローカル: 47万円）
+
+// 例：大企業（機密重視）
+console.log(decideLocalOrAPI({
+  monthlyRequests: 1000000,
+  avgTokensPerRequest: 1000,
+  privacyRequirement: "strict",
+  teamExpertise: "high"
+}));
+// → "local"（プライバシー必須）
+```
+
+---
+
+### 失敗4: 「マルチモーダル誤用」（タスク不一致）
+
+**ポケモンでいえば**: 水ポケモンで炎ジム攻略——**タイプ不一致**。
+
+| 症状 | 実例 | 処方箋 |
+|------|-----|--------|
+| GPT-4で画像生成 | テキストモデルで画像作ろうとする | **DALL-E/Stable Diffusion使え** |
+| Stable Diffusionでテキスト | 画像生成モデルで文章生成 | **GPT使え** |
+| 音声認識にGPT-4 | 音声ファイル送信→エラー | **Whisper使え** |
+
+```typescript
+// タスク別最適モデルマッピング
+const taskToModelMapping = {
+  "text-generation": ["GPT-4", "Claude", "Gemini"],
+  "code-generation": ["GPT-4 Turbo", "Claude 3.5", "Codex"],
+  "image-generation": ["DALL-E 3", "Stable Diffusion", "Midjourney"],
+  "image-understanding": ["GPT-4o", "Claude 3 Opus", "Gemini 1.5 Pro"],
+  "video-generation": ["Runway Gen-2", "Pika", "Stable Video"],
+  "video-understanding": ["Gemini 1.5 Pro"],
+  "speech-to-text": ["Whisper", "Google Speech-to-Text"],
+  "text-to-speech": ["ElevenLabs", "Google Text-to-Speech"],
+  "music-generation": ["MusicLM", "Suno AI"],
+  "3d-generation": ["Shap-E", "Point-E"]
+};
+
+// タスク判定関数
+function detectTask(input: any): AITask {
+  if (typeof input === "string") {
+    return "text-generation";
+  } else if (input instanceof File) {
+    if (input.type.startsWith("image/")) {
+      return "image-understanding";
+    } else if (input.type.startsWith("audio/")) {
+      return "speech-to-text";
+    } else if (input.type.startsWith("video/")) {
+      return "video-understanding";
+    }
+  }
+  throw new Error("Unknown task type");
+}
+```
+
+---
+
+### 失敗5: 「ハルシネーション放置」（幻覚対策なし）
+
+**ポケモンでいえば**: 混乱状態で自傷——**制御不能**。
+
+| 症状 | 実例 | 処方箋 |
+|------|-----|--------|
+| 嘘情報を堂々と出力 | 存在しない論文引用 | **RAG導入** |
+| 医療診断で誤診 | GPT-4が誤った診断→医療事故 | **人間レビュー必須** |
+| 金融アドバイス誤り | 投資助言AIが損失 | **免責条項明記** |
+
+```typescript
+// ハルシネーション対策
+interface HallucinationMitigation {
+  strategy: string;
+  implementation: string;
+}
+
+const mitigationStrategies: HallucinationMitigation[] = [
+  {
+    strategy: "RAG（検索拡張生成）",
+    implementation: `
+// ベクトルDBから事実確認
+const relevantDocs = await vectorstore.similaritySearch(query);
+const factCheckedResponse = await llm.generate({
+  context: relevantDocs,
+  query: query
+});
+    `
+  },
+  {
+    strategy: "温度パラメータ下げる",
+    implementation: `
+const response = await openai.chat.completions.create({
+  model: "gpt-4",
+  temperature: 0.0,  // 創造性ゼロ（事実重視）
+  messages: [...]
+});
+    `
+  },
+  {
+    strategy: "複数モデルで検証",
+    implementation: `
+const gptAnswer = await getGPT4Answer(query);
+const claudeAnswer = await getClaudeAnswer(query);
+
+// 両方一致すれば信頼度高い
+if (similarity(gptAnswer, claudeAnswer) > 0.9) {
+  return gptAnswer;
+} else {
+  return "回答が不確実です。人間に確認してください。";
+}
+    `
+  },
+  {
+    strategy: "信頼度スコア付与",
+    implementation: `
+const response = await openai.chat.completions.create({
+  model: "gpt-4",
+  messages: [...],
+  logprobs: true  // 確率情報取得
+});
+
+// 低確率トークンが多ければ警告
+const avgLogProb = calculateAvgLogProb(response.choices[0].logprobs);
+if (avgLogProb < -2.0) {
+  console.warn("⚠️ 信頼度低: 人間レビュー推奨");
+}
+    `
+  }
+];
+```
+
+---
+
+## 5. 🛠️ AI技術選定チェックリスト
+
+```markdown
+## AI技術選定チェックリスト
+
+### ✅ タスク適合性
+- [ ] タスクタイプを明確化（text-generation / qa / image-generation等）
+- [ ] 候補AIがタスクをサポートしているか確認
+- [ ] マルチモーダル必要性を判断
+
+### ✅ 精度要件
+- [ ] 誤答が許容されるか判断（カスタマーサポートは高精度必須）
+- [ ] ハルシネーション対策を検討（RAG / 温度調整）
+- [ ] テストデータで精度評価
+
+### ✅ コスト試算
+- [ ] 月間リクエスト数を見積もり
+- [ ] 1リクエストあたりのトークン数を計算
+- [ ] API vs ローカルLLMのコスト比較
+
+### ✅ プライバシー
+- [ ] 扱うデータの機密度を分類
+- [ ] オプトアウト設定（OpenAI API）
+- [ ] GDPR/個人情報保護法準拠確認
+
+### ✅ レイテンシ
+- [ ] リアルタイム要件か確認
+- [ ] モデルの平均応答時間をテスト
+- [ ] キャッシング戦略を検討
+
+### ✅ カスタマイズ性
+- [ ] ファインチューニング必要性を判断
+- [ ] RAG導入を検討
+- [ ] プロンプトエンジニアリングで対応可能か確認
+
+### ✅ 運用性
+- [ ] モデル更新頻度を確認
+- [ ] API制限（Rate Limit）を確認
+- [ ] 監視・ロギング体制を整備
+
+### ✅ ベンダーロックイン
+- [ ] 複数AIプロバイダー対応を検討
+- [ ] 抽象化レイヤー（LangChain等）導入
+- [ ] 移行コストを試算
+```
+
+---
+
+## 6. 📚 まとめ：AI技術選定の鉄則
+
+| 鉄則 | ポケモン的解釈 | 実務適用 |
+|------|--------------|---------|
+| **1. タスクに合ったAI** | タイプ相性 | テキスト→GPT、画像→Stable Diffusion |
+| **2. コスト最適化** | わざマシン代節約 | 簡単タスクはGPT-3.5 |
+| **3. プライバシー最優先** | 技漏れ防止 | 機密情報はローカルLlama |
+| **4. ハルシネーション対策** | 混乱状態回避 | RAG導入、温度下げる |
+| **5. 段階的導入** | Lv5から育成 | まずAPI→必要ならローカル |
+
+**最重要原則**:
+> 「AIは万能ではない」——**タスク・コスト・プライバシーを総合判断せよ**。
+
+**ポケモンでいえば**:
+> 「伝説ポケモンが最強とは限らない」——**相手（ユースケース）次第で最適解が変わる**。
