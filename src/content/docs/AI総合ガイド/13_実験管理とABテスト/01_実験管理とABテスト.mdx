@@ -1,0 +1,117 @@
+---
+title: "実験管理とA/Bテスト"
+label: "実験管理・A/Bテスト"
+---
+
+## 🧪 実験管理とA/Bテスト：ポケモンの「対戦データ分析」を科学する
+
+### 📝 ポケモン世界における実験管理の定義
+
+実験管理とは、**「複数の育成案を試し、どれが最強かをデータで判断する技術」**です。感覚ではなく、**「統計的に有意な差」**を証明する——これが科学的アプローチです。**ポケモンでいえば**、「HP252振り vs 耐久調整」どちらが勝率が高いか、**100戦させて統計的に検証**——これが実験管理の本質です。
+
+### 1. 🧬 実験管理の「真」の3要素
+
+| 要素 | 説明 | ポケモン的解釈 |
+|------|------|---------------|
+| **実験設計** | どの仮説を検証するか | **「技構成A vs B、どちらが強い？」** |
+| **データ収集** | 実験結果を記録 | **「100戦の戦績を全て記録」** |
+| **統計分析** | 有意差を検定 | **「偶然の差か、本当に強いのか判断」** |
+
+### 2. 🚀 A/Bテストの実装：新旧モデルを比較
+
+#### ステップ1: 実験設計
+
+```python
+# 仮説: 新モデル（B）は旧モデル（A）より購入率が高い
+# A群: 旧モデル（50%のユーザー）
+# B群: 新モデル（50%のユーザー）
+# 指標: 購入率（Conversion Rate）
+```
+
+#### ステップ2: ユーザー割り当て
+
+```python
+def assignGroup(userId):
+    if hashCode(userId) % 2 == 0:
+        return "A"  # 旧モデル
+    else:
+        return "B"  # 新モデル
+
+def predict(userId, data):
+    group = assignGroup(userId)
+    if group == "A":
+        return oldModel.predict(data)
+    else:
+        return newModel.predict(data)
+```
+
+#### ステップ3: データ収集
+
+```python
+def logExperiment(userId, group, prediction, actualPurchase):
+    db.insert({
+        "userId": userId,
+        "group": group,
+        "prediction": prediction,
+        "purchased": actualPurchase,
+        "timestamp": now()
+    })
+```
+
+#### ステップ4: 統計検定
+
+```python
+from scipy import stats
+
+def analyzeAbTest():
+    groupA = db.query("SELECT * FROM experiments WHERE group='A'")
+    groupB = db.query("SELECT * FROM experiments WHERE group='B'")
+    
+    conversionA = groupA['purchased'].mean()
+    conversionB = groupB['purchased'].mean()
+    
+    # t検定
+    tStat, pValue = stats.ttest_ind(
+        groupA['purchased'],
+        groupB['purchased']
+    )
+    
+    if pValue < 0.05 and conversionB > conversionA:
+        return "Bの勝利（統計的に有意）"
+    else:
+        return "Aを継続"
+```
+
+**ポケモン的解説**: **「100戦して勝率を比較」**——偶然ではなく、本当に強いか検証。
+
+### 3. ⚠️ A/Bテストの「落とし穴」
+
+#### 落とし穴1: サンプルサイズ不足
+
+**問題**: 10ユーザーだけでテスト→結論が信頼できない
+
+**必要サンプル数の計算**:
+
+```python
+from statsmodels.stats.power import ttest_power
+
+def calculateSampleSize(baselineRate, expectedLift, alpha=0.05, power=0.8):
+    effectSize = expectedLift / baselineRate
+    n = ttest_power(effect_size=effectSize, alpha=alpha, power=power)
+    return int(n)
+
+# 例: 基準購入率5%、20%改善を検出したい
+requiredN = calculateSampleSize(0.05, 0.01)  # → 約1000ユーザー必要
+```
+
+#### 落とし穴2: ピーキング問題（早期終了）
+
+**問題**: 「今日はBが勝ってる！」→即採用→実は偶然
+
+**処方箋**: 事前に「1000ユーザー到達まで継続」と決める
+
+### 🪓 リーダーへの最終助言
+
+「A/Bテストは『感覚』を『事実』に変える技術である。」
+
+「新モデルの方が良さそう」は幻想かもしれない——統計的検証なしで判断するのは博打。**ポケモンでいえば**、「このパーティ強そう」ではなく、「100戦して勝率65%」というデータで判断——経営者が投資すべきは「直感」ではなく、**「データドリブンな実験文化」**である。
