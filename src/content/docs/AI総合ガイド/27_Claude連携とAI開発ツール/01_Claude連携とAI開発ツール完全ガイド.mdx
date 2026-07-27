@@ -1,0 +1,1809 @@
+---
+title: "Claude連携とAI開発ツール完全ガイド"
+label: "Claude・AI開発ツール"
+description: "Claude API、MCP、Cursor、LangChain等のAI開発ツールを実戦的に解説。ポケモンの「最強の道具」を使いこなす。"
+---
+
+## 🤖 Claude連携とAI開発ツール：ポケモンの「最強の道具」を使いこなす
+
+### 📝 ポケモン世界におけるAI開発ツールの定義
+
+AI開発ツールとは、**「AI機能を効率的に実装・統合するための道具セット」**です。素手でコーディングするのではなく、**「最強の道具」**を使って生産性を10倍にする——それがプロの開発者です。**ポケモンでいえば**、モンスターボールなしでポケモンを捕まえようとするのは愚策——**「マスターボール（Claude API）」「学習装置（LangChain）」「そらをとぶ（Cursor）」**——適切な道具を使えば、誰でも効率的にAIシステムを構築できます。
+
+---
+
+## 🎯 この章で学べること
+
+| 項目 | 内容 |
+|------|------|
+| **Claude API** | Anthropic製の最先端LLMを使った開発 |
+| **MCP (Model Context Protocol)** | AI統合の新標準プロトコル |
+| **Cursor** | AI駆動のコードエディタ |
+| **LangChain** | LLMアプリケーション開発フレームワーク |
+| **その他ツール** | OpenAI API、Vercel AI SDK、LlamaIndex等 |
+
+---
+
+## 🚀 Claude API：最強のLLM連携
+
+### Claude APIの特徴
+
+| 特徴 | 説明 | ポケモン的解釈 |
+|------|------|---------------|
+| **長文理解** | 200K トークン（約15万語）対応 | **「メガシンカ級の記憶力」**: 書籍1冊分を一度に理解。 |
+| **安全性** | Constitutional AI による高い倫理性 | **「トレーナーの指示に忠実」**: 危険な指示を拒否。 |
+| **コーディング能力** | プログラミングに特化した性能 | **「わざマシンのエキスパート」**: コード生成が得意。 |
+| **日本語対応** | 高品質な日本語処理 | **「多言語対応」**: 自然な日本語会話。 |
+
+### 実装例：Claude API基本
+
+```python
+import anthropic
+
+# 1. クライアント初期化
+client = anthropic.Anthropic(
+    api_key="your-api-key-here"
+)
+
+# 2. 基本的な会話
+message = client.messages.create(
+    model="claude-3-5-sonnet-20241022",
+    max_tokens=1024,
+    messages=[
+        {
+            "role": "user",
+            "content": "Pythonで再帰関数を使ってフィボナッチ数列を実装してください。"
+        }
+    ]
+)
+
+print(message.content[0].text)
+```
+
+### 実装例：ストリーミングレスポンス
+
+```python
+# リアルタイムで回答を表示（ChatGPTのような体験）
+with client.messages.stream(
+    model="claude-3-5-sonnet-20241022",
+    max_tokens=1024,
+    messages=[
+        {
+            "role": "user",
+            "content": "AIの未来について500文字で説明してください。"
+        }
+    ]
+) as stream:
+    for text in stream.text_stream:
+        print(text, end="", flush=True)
+```
+
+### 実装例：Function Calling（ツール連携）
+
+```python
+# Claudeに外部ツール（関数）を使わせる
+tools = [
+    {
+        "name": "get_weather",
+        "description": "指定された都市の天気情報を取得します。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string",
+                    "description": "都市名（例: 東京、大阪）"
+                }
+            },
+            "required": ["city"]
+        }
+    }
+]
+
+message = client.messages.create(
+    model="claude-3-5-sonnet-20241022",
+    max_tokens=1024,
+    tools=tools,
+    messages=[
+        {
+            "role": "user",
+            "content": "東京の今日の天気を教えてください。"
+        }
+    ]
+)
+
+# Claudeがツールを使うべきと判断した場合
+if message.stop_reason == "tool_use":
+    tool_use = next(block for block in message.content if block.type == "tool_use")
+    
+    if tool_use.name == "get_weather":
+        city = tool_use.input["city"]
+        weather_data = get_weather_from_api(city)  # 実際のAPI呼び出し
+        
+        # 結果をClaudeに返す
+        response = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=1024,
+            tools=tools,
+            messages=[
+                {
+                    "role": "user",
+                    "content": "東京の今日の天気を教えてください。"
+                },
+                {
+                    "role": "assistant",
+                    "content": message.content
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_use.id,
+                            "content": str(weather_data)
+                        }
+                    ]
+                }
+            ]
+        )
+        
+        print(response.content[0].text)
+```
+
+**ポケモン的解説**: **「技マシン装着」**——Claudeに「天気取得」という技を覚えさせる。
+
+### 実装例：マルチモーダル（画像解析）
+
+```python
+import base64
+
+# 画像をBase64エンコード
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.standard_b64encode(image_file.read()).decode("utf-8")
+
+# 画像を含むメッセージ
+message = client.messages.create(
+    model="claude-3-5-sonnet-20241022",
+    max_tokens=1024,
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": encode_image("screenshot.jpg")
+                    }
+                },
+                {
+                    "type": "text",
+                    "text": "この画像に写っているUIの問題点を指摘してください。"
+                }
+            ]
+        }
+    ]
+)
+
+print(message.content[0].text)
+```
+
+---
+
+## 🔌 MCP (Model Context Protocol)：AI統合の新標準
+
+### MCPとは
+
+**Model Context Protocol**は、Anthropicが2024年11月に発表した、**AIアプリケーションとデータソースを接続する統一プロトコル**です。
+
+| 従来の方法 | MCP |
+|----------|-----|
+| ❌ AIごとに個別の統合コード | ✅ 統一されたプロトコル |
+| ❌ ツールごとに実装が必要 | ✅ 一度実装すれば全AI対応 |
+| ❌ メンテナンスコストが高い | ✅ 標準化で管理が容易 |
+
+**ポケモン的解釈**: **「ユニバーサルコネクタ」**——どんなポケモンでも使える統一規格の道具。
+
+### MCP実装例：ローカルファイルシステムサーバー
+
+```python
+# MCPサーバーの実装例
+from mcp.server import Server, McpError
+from mcp.types import Resource, Tool
+import os
+
+# MCPサーバーを作成
+server = Server("filesystem-server")
+
+# リソース登録（読み取り可能なファイル）
+@server.list_resources()
+async def list_resources() -> list[Resource]:
+    """利用可能なファイル一覧を返す"""
+    files = []
+    for root, dirs, filenames in os.walk("/workspace/docs"):
+        for filename in filenames:
+            if filename.endswith(".md"):
+                path = os.path.join(root, filename)
+                files.append(
+                    Resource(
+                        uri=f"file://{path}",
+                        name=filename,
+                        mimeType="text/markdown"
+                    )
+                )
+    return files
+
+# ツール登録（AIが実行できる操作）
+@server.tool()
+async def read_file(uri: str) -> str:
+    """ファイルの内容を読み取る"""
+    if not uri.startswith("file://"):
+        raise McpError("INVALID_PARAMS", "Invalid URI")
+    
+    path = uri.replace("file://", "")
+    
+    if not os.path.exists(path):
+        raise McpError("INVALID_PARAMS", "File not found")
+    
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+@server.tool()
+async def search_files(query: str) -> list[str]:
+    """ファイル内容を検索"""
+    results = []
+    for root, dirs, filenames in os.walk("/workspace/docs"):
+        for filename in filenames:
+            if filename.endswith(".md"):
+                path = os.path.join(root, filename)
+                with open(path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    if query.lower() in content.lower():
+                        results.append(path)
+    return results
+
+# サーバー起動
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(server.run())
+```
+
+### MCP実装例：Claude Desktopとの統合
+
+```json
+// Claude Desktop設定ファイル (claude_desktop_config.json)
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "python",
+      "args": ["/path/to/filesystem_server.py"],
+      "env": {
+        "WORKSPACE": "/workspace"
+      }
+    },
+    "database": {
+      "command": "node",
+      "args": ["/path/to/database_server.js"],
+      "env": {
+        "DB_CONNECTION": "postgresql://localhost/mydb"
+      }
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+### 主要なMCPサーバー
+
+| サーバー | 機能 | 用途 |
+|---------|------|------|
+| **@modelcontextprotocol/server-filesystem** | ファイルシステムアクセス | ローカルファイルの読み書き |
+| **@modelcontextprotocol/server-github** | GitHub統合 | リポジトリ操作、PR作成 |
+| **@modelcontextprotocol/server-postgres** | PostgreSQL接続 | データベースクエリ実行 |
+| **@modelcontextprotocol/server-slack** | Slack統合 | メッセージ送信、チャンネル管理 |
+| **@modelcontextprotocol/server-google-drive** | Google Drive統合 | ドキュメント読み書き |
+
+---
+
+## 💻 Cursor：AI駆動のコードエディタ
+
+### Cursorの特徴
+
+| 機能 | 説明 | ショートカット |
+|------|------|--------------|
+| **AI Chat** | コードについて会話形式で質問 | `Cmd/Ctrl + L` |
+| **Inline Edit** | コード中に直接AI指示 | `Cmd/Ctrl + K` |
+| **Codebase Context** | リポジトリ全体を理解 | `@Codebase` |
+| **Auto-complete** | 高精度なコード補完 | 自動 |
+| **Terminal Integration** | ターミナルコマンドも生成 | `Cmd/Ctrl + K` in terminal |
+
+### Cursor使用例
+
+```typescript
+// 1. コメントで指示を書く
+// TODO: ユーザー認証APIエンドポイントを作成
+// - JWTトークンを使用
+// - email/passwordで認証
+// - Prismaでユーザー検索
+
+// 2. Cmd/Ctrl + K を押す → Cursorが自動生成
+
+import { NextRequest, NextResponse } from 'next/server';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
+import { prisma } from '@/lib/prisma';
+
+export async function POST(request: NextRequest) {
+  try {
+    const { email, password } = await request.json();
+    
+    // ユーザー検索
+    const user = await prisma.user.findUnique({
+      where: { email }
+    });
+    
+    if (!user) {
+      return NextResponse.json(
+        { error: '認証に失敗しました' },
+        { status: 401 }
+      );
+    }
+    
+    // パスワード検証
+    const isValid = await bcrypt.compare(password, user.hashedPassword);
+    
+    if (!isValid) {
+      return NextResponse.json(
+        { error: '認証に失敗しました' },
+        { status: 401 }
+      );
+    }
+    
+    // JWTトークン生成
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      process.env.JWT_SECRET!,
+      { expiresIn: '7d' }
+    );
+    
+    return NextResponse.json({ token, user });
+  } catch (error) {
+    console.error('認証エラー:', error);
+    return NextResponse.json(
+      { error: '内部サーバーエラー' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+### Cursor Rules（.cursorrules）
+
+```markdown
+# プロジェクト固有のAI指示
+
+## コーディング規約
+- 変数名はlowerCamelCaseを使用
+- 関数には必ずJSDocコメントを記述
+- エラーハンドリングは必須
+- 型定義はTypeScriptで厳密に
+
+## アーキテクチャ
+- Next.js App Router を使用
+- データベースはPrisma経由でアクセス
+- 認証はNextAuth.js v5を使用
+- スタイルはTailwind CSSで記述
+
+## テスト
+- 全ての関数にユニットテストを作成
+- Jestを使用
+- カバレッジは80%以上を維持
+```
+
+**ポケモン的解説**: **「育て屋の指示書」**——AIにプロジェクト固有のルールを教える。
+
+---
+
+## 🦜 LangChain：LLMアプリケーション開発フレームワーク
+
+### LangChainの主要機能
+
+| 機能 | 説明 | ユースケース |
+|------|------|------------|
+| **Chains** | LLM呼び出しを連鎖 | 複数ステップの処理 |
+| **Agents** | LLMが自律的にツール選択 | 動的な問題解決 |
+| **Memory** | 会話履歴の管理 | チャットボット |
+| **Embeddings** | テキストのベクトル化 | セマンティック検索 |
+| **Document Loaders** | 様々な形式のデータ読込 | RAG実装 |
+
+### 実装例：基本的なChain
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
+# 1. LLMの初期化
+llm = ChatAnthropic(
+    model="claude-3-5-sonnet-20241022",
+    api_key="your-api-key"
+)
+
+# 2. プロンプトテンプレート
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "あなたは優秀なプログラミングアシスタントです。"),
+    ("user", "{input}")
+])
+
+# 3. Chainの構築（LCEL: LangChain Expression Language）
+chain = prompt | llm | StrOutputParser()
+
+# 4. 実行
+response = chain.invoke({
+    "input": "Pythonで素数判定関数を書いてください。"
+})
+
+print(response)
+```
+
+### 実装例：RAG（Retrieval-Augmented Generation）
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_community.document_loaders import TextLoader
+from langchain_community.vectorstores import Chroma
+from langchain_openai import OpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.chains import RetrievalQA
+
+# 1. ドキュメント読み込み
+loader = TextLoader("company_docs.txt", encoding="utf-8")
+documents = loader.load()
+
+# 2. テキスト分割
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=1000,
+    chunk_overlap=200
+)
+texts = text_splitter.split_documents(documents)
+
+# 3. ベクトルDB作成
+embeddings = OpenAIEmbeddings()
+vectordb = Chroma.from_documents(
+    documents=texts,
+    embedding=embeddings,
+    persist_directory="./chroma_db"
+)
+
+# 4. RAG Chainの構築
+llm = ChatAnthropic(model="claude-3-5-sonnet-20241022")
+
+qa_chain = RetrievalQA.from_chain_type(
+    llm=llm,
+    chain_type="stuff",
+    retriever=vectordb.as_retriever(search_kwargs={"k": 3}),
+    return_source_documents=True
+)
+
+# 5. 質問
+result = qa_chain.invoke({
+    "query": "当社の返品ポリシーを教えてください。"
+})
+
+print("回答:", result["result"])
+print("ソース:", result["source_documents"])
+```
+
+### 実装例：Agent（自律的なツール使用）
+
+```python
+from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain.tools import tool
+from langchain_anthropic import ChatAnthropic
+from langchain_core.prompts import ChatPromptTemplate
+import requests
+
+# 1. ツール定義
+@tool
+def get_weather(city: str) -> str:
+    """指定された都市の天気情報を取得します。"""
+    api_key = "your-weather-api-key"
+    url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&lang=ja"
+    response = requests.get(url)
+    data = response.json()
+    
+    if response.status_code == 200:
+        temp = data["main"]["temp"] - 273.15  # ケルビンから摂氏へ
+        description = data["weather"][0]["description"]
+        return f"{city}の天気: {description}、気温: {temp:.1f}°C"
+    else:
+        return f"天気情報の取得に失敗しました: {data.get('message', '不明なエラー')}"
+
+@tool
+def calculate(expression: str) -> str:
+    """数式を計算します。例: '2 + 2', '10 * 5'"""
+    try:
+        result = eval(expression)
+        return f"{expression} = {result}"
+    except Exception as e:
+        return f"計算エラー: {str(e)}"
+
+# 2. Agentの構築
+tools = [get_weather, calculate]
+
+llm = ChatAnthropic(model="claude-3-5-sonnet-20241022", temperature=0)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "あなたは優秀なアシスタントです。必要に応じてツールを使用してください。"),
+    ("placeholder", "{chat_history}"),
+    ("human", "{input}"),
+    ("placeholder", "{agent_scratchpad}"),
+])
+
+agent = create_tool_calling_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# 3. 実行
+result = agent_executor.invoke({
+    "input": "東京の天気を教えて、そして気温を華氏に変換してください。"
+})
+
+print(result["output"])
+```
+
+**ポケモン的解説**: **「ポケモンが自分で判断」**——状況に応じて最適な技（ツール）を自動選択。
+
+---
+
+## 🌐 その他の主要AI開発ツール
+
+### 1. OpenAI API
+
+```python
+from openai import OpenAI
+
+client = OpenAI(api_key="your-api-key")
+
+# GPT-4を使用
+response = client.chat.completions.create(
+    model="gpt-4-turbo-preview",
+    messages=[
+        {"role": "system", "content": "あなたは優秀なアシスタントです。"},
+        {"role": "user", "content": "量子コンピューターについて説明してください。"}
+    ],
+    temperature=0.7,
+    max_tokens=1000
+)
+
+print(response.choices[0].message.content)
+
+# 画像生成（DALL-E 3）
+image_response = client.images.generate(
+    model="dall-e-3",
+    prompt="A futuristic city with flying cars and neon lights, cyberpunk style",
+    size="1024x1024",
+    quality="standard",
+    n=1
+)
+
+print(image_response.data[0].url)
+```
+
+### 2. Vercel AI SDK
+
+```typescript
+import { streamText } from 'ai';
+import { anthropic } from '@ai-sdk/anthropic';
+
+export async function POST(req: Request) {
+  const { messages } = await req.json();
+
+  // ストリーミングレスポンス
+  const result = await streamText({
+    model: anthropic('claude-3-5-sonnet-20241022'),
+    messages,
+    maxTokens: 1024,
+  });
+
+  return result.toAIStreamResponse();
+}
+```
+
+```tsx
+// React コンポーネント
+'use client';
+
+import { useChat } from 'ai/react';
+
+export default function ChatComponent() {
+  const { messages, input, handleInputChange, handleSubmit } = useChat({
+    api: '/api/chat'
+  });
+
+  return (
+    <div className="flex flex-col h-screen">
+      <div className="flex-1 overflow-y-auto p-4">
+        {messages.map(message => (
+          <div key={message.id} className={message.role === 'user' ? 'text-right' : 'text-left'}>
+            <div className="inline-block p-2 rounded-lg bg-gray-100 max-w-md">
+              {message.content}
+            </div>
+          </div>
+        ))}
+      </div>
+      
+      <form onSubmit={handleSubmit} className="p-4 border-t">
+        <input
+          value={input}
+          onChange={handleInputChange}
+          placeholder="メッセージを入力..."
+          className="w-full p-2 border rounded-lg"
+        />
+      </form>
+    </div>
+  );
+}
+```
+
+### 3. LlamaIndex（RAG特化）
+
+```python
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
+from llama_index.llms.anthropic import Anthropic
+
+# 1. ドキュメント読み込み
+documents = SimpleDirectoryReader("./data").load_data()
+
+# 2. インデックス作成
+llm = Anthropic(model="claude-3-5-sonnet-20241022")
+index = VectorStoreIndex.from_documents(documents, llm=llm)
+
+# 3. クエリエンジン
+query_engine = index.as_query_engine()
+
+# 4. 質問
+response = query_engine.query("この文書の主なポイントを3つ挙げてください。")
+print(response)
+```
+
+### 4. Langfuse（LLMモニタリング）
+
+```python
+from langfuse import Langfuse
+from langfuse.decorators import observe
+
+langfuse = Langfuse(
+    public_key="your-public-key",
+    secret_key="your-secret-key"
+)
+
+@observe()
+def generate_response(user_input: str) -> str:
+    """LLM呼び出しを自動トレース"""
+    response = client.messages.create(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": user_input}]
+    )
+    return response.content[0].text
+
+# 使用すると自動的にLangfuseダッシュボードに記録される
+result = generate_response("Pythonの非同期処理について教えてください。")
+```
+
+### 5. Prompt Management Tools
+
+#### a) PromptLayer
+
+```python
+from promptlayer import PromptLayer
+
+pl_client = PromptLayer(api_key="your-api-key")
+
+# プロンプトをバージョン管理
+response = pl_client.run(
+    prompt_name="code_review_prompt",
+    prompt_version=3,
+    input_variables={"code": source_code},
+    model="claude-3-5-sonnet-20241022"
+)
+```
+
+#### b) LangSmith
+
+```python
+from langsmith import Client
+from langchain_anthropic import ChatAnthropic
+
+# LangSmithでトレース
+client = Client()
+
+llm = ChatAnthropic(model="claude-3-5-sonnet-20241022")
+
+# 自動的にLangSmithに記録
+response = llm.invoke("ReactのuseEffectフックについて説明してください。")
+```
+
+---
+
+## 🎯 AI開発ツールの選び方
+
+| 用途 | おすすめツール | 理由 |
+|------|--------------|------|
+| **単純なLLM呼び出し** | Claude API直接 | オーバーヘッドなし、高速 |
+| **RAG実装** | LlamaIndex | RAGに特化、シンプル |
+| **複雑なAgent** | LangChain | 豊富なツール、柔軟性 |
+| **フロントエンド統合** | Vercel AI SDK | React統合が容易 |
+| **コード生成** | Cursor | 最高のDX |
+| **プロンプト管理** | LangSmith | バージョン管理、A/Bテスト |
+| **モニタリング** | Langfuse | コスト追跡、品質管理 |
+
+---
+
+## 🔐 セキュリティベストプラクティス
+
+### 1. APIキーの管理
+
+```bash
+# .envファイル（Gitにコミットしない）
+ANTHROPIC_API_KEY=sk-ant-xxxxx
+OPENAI_API_KEY=sk-xxxxx
+
+# .gitignore に追加
+.env
+.env.local
+```
+
+```python
+# 環境変数から読み込み
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+api_key = os.getenv("ANTHROPIC_API_KEY")
+if not api_key:
+    raise ValueError("ANTHROPIC_API_KEYが設定されていません")
+```
+
+### 2. レート制限の実装
+
+```python
+import time
+from functools import wraps
+
+def rate_limit(max_calls: int, time_frame: int):
+    """レート制限デコレータ"""
+    calls = []
+    
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            now = time.time()
+            
+            # 古い呼び出しを削除
+            calls[:] = [call for call in calls if call > now - time_frame]
+            
+            if len(calls) >= max_calls:
+                sleep_time = calls[0] + time_frame - now
+                print(f"レート制限: {sleep_time:.1f}秒待機")
+                time.sleep(sleep_time)
+                calls[:] = []
+            
+            calls.append(now)
+            return func(*args, **kwargs)
+        
+        return wrapper
+    return decorator
+
+@rate_limit(max_calls=50, time_frame=60)  # 1分間に50回まで
+def call_claude_api(prompt: str):
+    # API呼び出し
+    pass
+```
+
+### 3. コスト監視
+
+```python
+import tiktoken
+
+def estimate_cost(prompt: str, model: str = "claude-3-5-sonnet-20241022") -> float:
+    """APIコストを事前見積もり"""
+    # トークン数をカウント
+    encoding = tiktoken.encoding_for_model("gpt-4")  # Claudeの概算
+    tokens = len(encoding.encode(prompt))
+    
+    # 価格表（2024年時点）
+    prices = {
+        "claude-3-5-sonnet-20241022": {
+            "input": 3.00 / 1_000_000,   # $3 per 1M tokens
+            "output": 15.00 / 1_000_000  # $15 per 1M tokens
+        }
+    }
+    
+    input_cost = tokens * prices[model]["input"]
+    estimated_output_tokens = tokens * 1.5  # 出力は入力の1.5倍と仮定
+    output_cost = estimated_output_tokens * prices[model]["output"]
+    
+    total_cost = input_cost + output_cost
+    
+    print(f"推定コスト: ${total_cost:.4f} (入力: {tokens} tokens)")
+    
+    return total_cost
+```
+
+---
+
+## 📊 パフォーマンス最適化
+
+### 1. プロンプトキャッシング
+
+```python
+# Claudeのプロンプトキャッシング
+message = client.messages.create(
+    model="claude-3-5-sonnet-20241022",
+    max_tokens=1024,
+    system=[
+        {
+            "type": "text",
+            "text": "あなたは優秀なコードレビューアです。...",
+            "cache_control": {"type": "ephemeral"}  # このシステムプロンプトをキャッシュ
+        }
+    ],
+    messages=[
+        {
+            "role": "user",
+            "content": "このコードをレビューしてください: ..."
+        }
+    ]
+)
+
+# 同じシステムプロンプトを再利用すれば90%コスト削減
+```
+
+### 2. バッチ処理
+
+```python
+import asyncio
+from anthropic import AsyncAnthropic
+
+async def process_batch(prompts: list[str]):
+    """複数のプロンプトを並列処理"""
+    client = AsyncAnthropic()
+    
+    tasks = [
+        client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        for prompt in prompts
+    ]
+    
+    results = await asyncio.gather(*tasks)
+    return [r.content[0].text for r in results]
+
+# 使用例
+prompts = [
+    "Pythonのデコレータとは？",
+    "Reactのフックとは？",
+    "TypeScriptのジェネリクスとは？"
+]
+
+results = asyncio.run(process_batch(prompts))
+```
+
+---
+
+## 💰 AI開発のコスト削減戦略
+
+### コスト構造の理解
+
+| 項目 | 説明 | 最適化の重要度 |
+|------|------|--------------|
+| **入力トークン** | プロンプト＋コンテキスト | 🔴 超重要 |
+| **出力トークン** | LLMの生成テキスト | 🟡 重要 |
+| **API呼び出し回数** | リクエスト数 | 🟡 重要 |
+| **モデル選択** | Opus/Sonnet/Haiku | 🔴 超重要 |
+
+### 実践的なコスト削減テクニック
+
+#### 1. モデルの使い分け
+
+```python
+class SmartLLMRouter:
+    """タスクの複雑度に応じてモデルを自動選択"""
+    
+    def __init__(self):
+        self.client = anthropic.Anthropic()
+        
+        # 価格設定（2024年時点）
+        self.models = {
+            "haiku": {
+                "name": "claude-3-haiku-20240307",
+                "cost_per_1m_input": 0.25,
+                "cost_per_1m_output": 1.25,
+                "speed": "最速",
+                "use_case": "シンプルなタスク"
+            },
+            "sonnet": {
+                "name": "claude-3-5-sonnet-20241022",
+                "cost_per_1m_input": 3.00,
+                "cost_per_1m_output": 15.00,
+                "speed": "高速",
+                "use_case": "バランス型"
+            },
+            "opus": {
+                "name": "claude-3-opus-20240229",
+                "cost_per_1m_input": 15.00,
+                "cost_per_1m_output": 75.00,
+                "speed": "通常",
+                "use_case": "複雑なタスク"
+            }
+        }
+    
+    def select_model(self, task_complexity: str) -> str:
+        """タスクの複雑度に応じたモデル選択"""
+        if task_complexity == "simple":
+            return self.models["haiku"]["name"]
+        elif task_complexity == "complex":
+            return self.models["opus"]["name"]
+        else:
+            return self.models["sonnet"]["name"]
+    
+    def execute(self, prompt: str, complexity: str = "medium"):
+        model = self.select_model(complexity)
+        
+        response = self.client.messages.create(
+            model=model,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        return response
+
+# 使用例
+router = SmartLLMRouter()
+
+# シンプルなタスク → Haiku（コスト1/60）
+result1 = router.execute("こんにちは、挨拶してください。", complexity="simple")
+
+# 複雑なタスク → Opus（高精度）
+result2 = router.execute("複雑な法的契約書を分析してください。", complexity="complex")
+```
+
+**コスト削減効果**: シンプルなタスクでHaikuを使えば**コストを1/60に削減**
+
+#### 2. プロンプト圧縮
+
+```python
+def compress_prompt(long_prompt: str) -> str:
+    """冗長なプロンプトを圧縮"""
+    
+    # 不要な空白・改行を削除
+    compressed = " ".join(long_prompt.split())
+    
+    # 冗長な表現を短縮
+    replacements = {
+        "Please provide a detailed explanation": "Explain",
+        "I would like you to": "",
+        "Can you please": "",
+        "it would be great if you could": "",
+    }
+    
+    for old, new in replacements.items():
+        compressed = compressed.replace(old, new)
+    
+    return compressed
+
+# 例
+original = """
+I would like you to please provide a detailed explanation 
+of how quantum computing works. 
+Can you please make it easy to understand?
+"""
+
+compressed = compress_prompt(original)
+print(f"元: {len(original)} 文字")
+print(f"圧縮後: {len(compressed)} 文字")
+print(f"削減率: {(1 - len(compressed)/len(original)) * 100:.1f}%")
+```
+
+#### 3. レスポンスキャッシング
+
+```python
+from functools import lru_cache
+import hashlib
+
+class CachedLLMClient:
+    """LLMレスポンスをキャッシュしてAPI呼び出しを削減"""
+    
+    def __init__(self):
+        self.client = anthropic.Anthropic()
+        self.cache = {}
+    
+    def _generate_cache_key(self, prompt: str, model: str) -> str:
+        """プロンプトのハッシュをキャッシュキーとして使用"""
+        content = f"{prompt}:{model}"
+        return hashlib.md5(content.encode()).hexdigest()
+    
+    def call_with_cache(self, prompt: str, model: str, ttl_hours: int = 24):
+        """キャッシュを使ったAPI呼び出し"""
+        cache_key = self._generate_cache_key(prompt, model)
+        
+        # キャッシュヒット
+        if cache_key in self.cache:
+            print("💰 キャッシュヒット！API呼び出しなし")
+            return self.cache[cache_key]
+        
+        # API呼び出し
+        print("🔴 API呼び出し（コスト発生）")
+        response = self.client.messages.create(
+            model=model,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        # キャッシュに保存
+        self.cache[cache_key] = response.content[0].text
+        
+        return response.content[0].text
+
+# 使用例
+client = CachedLLMClient()
+
+# 初回: API呼び出し
+result1 = client.call_with_cache("Pythonとは？", "claude-3-5-sonnet-20241022")
+
+# 同じプロンプト: キャッシュヒット（コストゼロ）
+result2 = client.call_with_cache("Pythonとは？", "claude-3-5-sonnet-20241022")
+```
+
+**コスト削減効果**: 重複するクエリで**100%コスト削減**
+
+#### 4. ストリーミングの活用（無駄な生成を中断）
+
+```python
+def stream_with_early_stop(prompt: str, stop_condition: str):
+    """条件を満たしたら即座に停止してトークン節約"""
+    
+    client = anthropic.Anthropic()
+    accumulated_text = ""
+    
+    with client.messages.stream(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}]
+    ) as stream:
+        for text in stream.text_stream:
+            accumulated_text += text
+            print(text, end="", flush=True)
+            
+            # 停止条件を検出したら中断
+            if stop_condition in accumulated_text:
+                print("\n\n✅ 必要な情報を取得。生成を中断してコスト削減。")
+                stream.close()
+                break
+    
+    return accumulated_text
+
+# 使用例: "結論"が出たら停止
+result = stream_with_early_stop(
+    "AIの未来について長文で説明してください。最後に結論を述べてください。",
+    stop_condition="結論"
+)
+```
+
+#### 5. バッチ処理でレート制限を最大活用
+
+```python
+import asyncio
+from typing import List
+
+async def batch_process_optimized(prompts: List[str], batch_size: int = 5):
+    """レート制限内で最大限のスループットを実現"""
+    
+    client = anthropic.AsyncAnthropic()
+    results = []
+    
+    # バッチごとに並列処理
+    for i in range(0, len(prompts), batch_size):
+        batch = prompts[i:i+batch_size]
+        
+        tasks = [
+            client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=512,  # 短めに設定
+                messages=[{"role": "user", "content": p}]
+            )
+            for p in batch
+        ]
+        
+        batch_results = await asyncio.gather(*tasks)
+        results.extend([r.content[0].text for r in batch_results])
+        
+        print(f"✅ バッチ {i//batch_size + 1} 完了 ({len(batch)}件)")
+    
+    return results
+
+# 100件のプロンプトを効率的に処理
+prompts = [f"質問{i}: AIについて教えてください。" for i in range(100)]
+results = asyncio.run(batch_process_optimized(prompts, batch_size=5))
+```
+
+### コスト監視ダッシュボードの構築
+
+```python
+import sqlite3
+from datetime import datetime
+import pandas as pd
+import plotly.express as px
+
+class LLMCostTracker:
+    """LLMコストを追跡・可視化"""
+    
+    def __init__(self, db_path: str = "llm_costs.db"):
+        self.conn = sqlite3.connect(db_path)
+        self._create_tables()
+    
+    def _create_tables(self):
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS api_calls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT,
+                model TEXT,
+                input_tokens INTEGER,
+                output_tokens INTEGER,
+                cost_usd REAL,
+                user_id TEXT,
+                task_type TEXT
+            )
+        """)
+        self.conn.commit()
+    
+    def log_api_call(self, model: str, input_tokens: int, 
+                     output_tokens: int, user_id: str, task_type: str):
+        """API呼び出しをログ"""
+        
+        # コスト計算
+        prices = {
+            "claude-3-5-sonnet-20241022": {
+                "input": 3.00 / 1_000_000,
+                "output": 15.00 / 1_000_000
+            },
+            "claude-3-haiku-20240307": {
+                "input": 0.25 / 1_000_000,
+                "output": 1.25 / 1_000_000
+            }
+        }
+        
+        cost = (
+            input_tokens * prices[model]["input"] +
+            output_tokens * prices[model]["output"]
+        )
+        
+        self.conn.execute("""
+            INSERT INTO api_calls 
+            (timestamp, model, input_tokens, output_tokens, cost_usd, user_id, task_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now().isoformat(),
+            model,
+            input_tokens,
+            output_tokens,
+            cost,
+            user_id,
+            task_type
+        ))
+        self.conn.commit()
+    
+    def get_daily_cost(self, days: int = 30) -> pd.DataFrame:
+        """日次コストを取得"""
+        df = pd.read_sql_query(f"""
+            SELECT 
+                DATE(timestamp) as date,
+                SUM(cost_usd) as total_cost,
+                COUNT(*) as api_calls,
+                SUM(input_tokens + output_tokens) as total_tokens
+            FROM api_calls
+            WHERE timestamp >= datetime('now', '-{days} days')
+            GROUP BY DATE(timestamp)
+            ORDER BY date
+        """, self.conn)
+        
+        return df
+    
+    def generate_cost_report(self):
+        """コストレポートを生成"""
+        df = self.get_daily_cost(30)
+        
+        # グラフ生成
+        fig = px.line(
+            df, 
+            x='date', 
+            y='total_cost',
+            title='過去30日間のLLM APIコスト推移',
+            labels={'total_cost': 'コスト (USD)', 'date': '日付'}
+        )
+        fig.write_html("cost_report.html")
+        
+        # サマリー
+        total_cost = df['total_cost'].sum()
+        avg_daily_cost = df['total_cost'].mean()
+        
+        print(f"📊 コストサマリー（過去30日）")
+        print(f"  総コスト: ${total_cost:.2f}")
+        print(f"  平均日次コスト: ${avg_daily_cost:.2f}")
+        print(f"  月間予測: ${avg_daily_cost * 30:.2f}")
+        
+        return fig
+
+# 使用例
+tracker = LLMCostTracker()
+
+# API呼び出しをログ
+tracker.log_api_call(
+    model="claude-3-5-sonnet-20241022",
+    input_tokens=1000,
+    output_tokens=500,
+    user_id="user123",
+    task_type="code_review"
+)
+
+# レポート生成
+tracker.generate_cost_report()
+```
+
+---
+
+## 📊 AI開発の可視化・モニタリング
+
+### 1. LangSmith：包括的なLLM監視
+
+```python
+from langsmith import Client
+from langchain_anthropic import ChatAnthropic
+from langchain_core.prompts import ChatPromptTemplate
+
+# LangSmithクライアント初期化
+client = Client()
+
+# トレース自動記録
+llm = ChatAnthropic(
+    model="claude-3-5-sonnet-20241022",
+    callbacks=[],  # LangSmithが自動でトレース
+)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "あなたは優秀なコードレビューアです。"),
+    ("user", "{code}")
+])
+
+chain = prompt | llm
+
+# 実行するだけで自動的にLangSmithに記録される
+result = chain.invoke({"code": "def add(a, b): return a + b"})
+
+# LangSmithダッシュボードで確認:
+# - 実行時間
+# - トークン数
+# - コスト
+# - エラー率
+# - ユーザーフィードバック
+```
+
+### 2. Grafana + Prometheusダッシュボード
+
+```python
+from prometheus_client import Counter, Histogram, Gauge, start_http_server
+import time
+
+# メトリクス定義
+llm_requests_total = Counter(
+    'llm_requests_total',
+    'Total LLM API requests',
+    ['model', 'status', 'user_id']
+)
+
+llm_latency_seconds = Histogram(
+    'llm_latency_seconds',
+    'LLM API latency',
+    ['model']
+)
+
+llm_tokens_total = Counter(
+    'llm_tokens_total',
+    'Total tokens consumed',
+    ['model', 'token_type']
+)
+
+llm_cost_usd = Counter(
+    'llm_cost_usd',
+    'Total cost in USD',
+    ['model']
+)
+
+llm_active_users = Gauge(
+    'llm_active_users',
+    'Number of active users'
+)
+
+class MonitoredLLMClient:
+    """Prometheus統合したLLMクライアント"""
+    
+    def __init__(self):
+        self.client = anthropic.Anthropic()
+    
+    def call_api(self, prompt: str, user_id: str, model: str = "claude-3-5-sonnet-20241022"):
+        start_time = time.time()
+        
+        try:
+            response = self.client.messages.create(
+                model=model,
+                max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            # メトリクス記録
+            latency = time.time() - start_time
+            llm_latency_seconds.labels(model=model).observe(latency)
+            
+            llm_requests_total.labels(
+                model=model,
+                status="success",
+                user_id=user_id
+            ).inc()
+            
+            # トークン数
+            input_tokens = response.usage.input_tokens
+            output_tokens = response.usage.output_tokens
+            
+            llm_tokens_total.labels(model=model, token_type="input").inc(input_tokens)
+            llm_tokens_total.labels(model=model, token_type="output").inc(output_tokens)
+            
+            # コスト
+            cost = self._calculate_cost(model, input_tokens, output_tokens)
+            llm_cost_usd.labels(model=model).inc(cost)
+            
+            return response.content[0].text
+            
+        except Exception as e:
+            llm_requests_total.labels(
+                model=model,
+                status="error",
+                user_id=user_id
+            ).inc()
+            raise
+    
+    def _calculate_cost(self, model: str, input_tokens: int, output_tokens: int) -> float:
+        prices = {
+            "claude-3-5-sonnet-20241022": {
+                "input": 3.00 / 1_000_000,
+                "output": 15.00 / 1_000_000
+            }
+        }
+        return (
+            input_tokens * prices[model]["input"] +
+            output_tokens * prices[model]["output"]
+        )
+
+# Prometheusサーバー起動
+start_http_server(8000)
+
+# 使用例
+client = MonitoredLLMClient()
+result = client.call_api("Hello", user_id="user123")
+
+# Grafanaで以下をダッシュボード化:
+# - リクエスト数（成功/失敗）
+# - レイテンシ（p50, p95, p99）
+# - トークン消費量
+# - コスト推移
+# - アクティブユーザー数
+```
+
+### 3. リアルタイムアラート設定
+
+```python
+import smtplib
+from email.mime.text import MIMEText
+
+class CostAlertSystem:
+    """コスト超過時のアラートシステム"""
+    
+    def __init__(self, daily_budget_usd: float = 100.0):
+        self.daily_budget = daily_budget_usd
+        self.tracker = LLMCostTracker()
+    
+    def check_budget(self):
+        """予算チェック"""
+        df = self.tracker.get_daily_cost(1)
+        
+        if df.empty:
+            return
+        
+        today_cost = df['total_cost'].iloc[0]
+        usage_percent = (today_cost / self.daily_budget) * 100
+        
+        if usage_percent >= 80:
+            self.send_alert(
+                f"⚠️ LLM API予算警告: {usage_percent:.1f}%消費\n"
+                f"今日のコスト: ${today_cost:.2f} / ${self.daily_budget:.2f}"
+            )
+        
+        if usage_percent >= 100:
+            self.send_critical_alert(
+                f"🚨 LLM API予算超過！\n"
+                f"今日のコスト: ${today_cost:.2f} / ${self.daily_budget:.2f}"
+            )
+    
+    def send_alert(self, message: str):
+        """Slack通知"""
+        # Slack Webhook実装
+        print(f"📧 アラート送信: {message}")
+    
+    def send_critical_alert(self, message: str):
+        """緊急アラート + API制限"""
+        print(f"🚨 緊急アラート: {message}")
+        # 必要に応じてAPI呼び出しを一時停止
+```
+
+---
+
+## 👥 チームでのAI開発運用
+
+### 1. プロンプトのバージョン管理
+
+```python
+# prompts/code_review.py
+CODE_REVIEW_PROMPT_V1 = """
+あなたは優秀なコードレビューアです。
+以下のコードをレビューしてください:
+
+{code}
+"""
+
+CODE_REVIEW_PROMPT_V2 = """
+あなたは優秀なシニアエンジニアです。
+以下の観点でコードレビューしてください:
+
+1. セキュリティ
+2. パフォーマンス
+3. 可読性
+4. テストカバレッジ
+
+コード:
+{code}
+
+各項目について具体的な改善案を提示してください。
+"""
+
+# バージョン管理
+CURRENT_VERSION = CODE_REVIEW_PROMPT_V2
+
+class PromptManager:
+    """プロンプトのバージョン管理"""
+    
+    def __init__(self):
+        self.versions = {
+            "v1": CODE_REVIEW_PROMPT_V1,
+            "v2": CODE_REVIEW_PROMPT_V2,
+        }
+        self.current = "v2"
+    
+    def get_prompt(self, version: str = None) -> str:
+        """指定バージョンのプロンプトを取得"""
+        ver = version or self.current
+        return self.versions[ver]
+    
+    def rollback(self, version: str):
+        """ロールバック"""
+        if version in self.versions:
+            self.current = version
+            print(f"✅ プロンプトを {version} にロールバック")
+        else:
+            raise ValueError(f"バージョン {version} が存在しません")
+```
+
+### 2. チーム共有のLLMラッパー
+
+```python
+# shared_llm.py
+import os
+from typing import Optional
+from anthropic import Anthropic
+
+class TeamLLMClient:
+    """チーム全体で共有するLLMクライアント"""
+    
+    def __init__(self):
+        self.client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        self.tracker = LLMCostTracker()
+        self.prompt_manager = PromptManager()
+    
+    def code_review(
+        self, 
+        code: str, 
+        user_id: str,
+        prompt_version: Optional[str] = None
+    ) -> str:
+        """統一されたコードレビューAPI"""
+        
+        # バージョン管理されたプロンプト取得
+        prompt_template = self.prompt_manager.get_prompt(prompt_version)
+        prompt = prompt_template.format(code=code)
+        
+        # API呼び出し
+        response = self.client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=2048,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        # コスト追跡
+        self.tracker.log_api_call(
+            model="claude-3-5-sonnet-20241022",
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            user_id=user_id,
+            task_type="code_review"
+        )
+        
+        return response.content[0].text
+
+# 使用例（チームメンバー全員が同じAPIを使用）
+client = TeamLLMClient()
+
+# エンジニアA
+review_a = client.code_review(
+    code="def hello(): print('hi')",
+    user_id="engineer_a"
+)
+
+# エンジニアB
+review_b = client.code_review(
+    code="class User: pass",
+    user_id="engineer_b"
+)
+```
+
+### 3. A/Bテストフレームワーク
+
+```python
+import random
+from typing import Dict, List
+
+class PromptABTest:
+    """プロンプトのA/Bテスト"""
+    
+    def __init__(self):
+        self.results = []
+        self.client = Anthropic()
+    
+    def run_test(
+        self,
+        prompt_a: str,
+        prompt_b: str,
+        test_cases: List[Dict],
+        traffic_split: float = 0.5
+    ):
+        """A/Bテスト実行"""
+        
+        for i, test_case in enumerate(test_cases):
+            # トラフィック分割
+            use_prompt_a = random.random() < traffic_split
+            prompt = prompt_a if use_prompt_a else prompt_b
+            variant = "A" if use_prompt_a else "B"
+            
+            # 実行
+            start_time = time.time()
+            response = self.client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=1024,
+                messages=[{
+                    "role": "user",
+                    "content": prompt.format(**test_case["input"])
+                }]
+            )
+            latency = time.time() - start_time
+            
+            # 結果記録
+            self.results.append({
+                "variant": variant,
+                "latency": latency,
+                "tokens": response.usage.total_tokens,
+                "cost": self._calculate_cost(response.usage),
+                "case_id": i
+            })
+        
+        return self.analyze_results()
+    
+    def analyze_results(self):
+        """結果分析"""
+        df = pd.DataFrame(self.results)
+        
+        summary = df.groupby('variant').agg({
+            'latency': ['mean', 'std'],
+            'tokens': 'mean',
+            'cost': 'sum'
+        })
+        
+        print("📊 A/Bテスト結果:")
+        print(summary)
+        
+        return summary
+
+# 使用例
+ab_test = PromptABTest()
+
+results = ab_test.run_test(
+    prompt_a="短く答えてください: {question}",
+    prompt_b="詳しく説明してください: {question}",
+    test_cases=[
+        {"input": {"question": "Pythonとは？"}},
+        {"input": {"question": "AIとは？"}},
+    ],
+    traffic_split=0.5
+)
+```
+
+### 4. チームダッシュボード
+
+```python
+import streamlit as st
+import plotly.express as px
+
+def create_team_dashboard():
+    """チーム全体のLLM使用状況ダッシュボード"""
+    
+    st.title("🤖 チームLLM使用状況ダッシュボード")
+    
+    tracker = LLMCostTracker()
+    
+    # 期間選択
+    days = st.slider("表示期間（日）", 7, 90, 30)
+    
+    # 日次コスト
+    df_daily = tracker.get_daily_cost(days)
+    fig_cost = px.line(
+        df_daily,
+        x='date',
+        y='total_cost',
+        title='日次コスト推移'
+    )
+    st.plotly_chart(fig_cost)
+    
+    # ユーザー別コスト
+    df_users = pd.read_sql_query("""
+        SELECT 
+            user_id,
+            SUM(cost_usd) as total_cost,
+            COUNT(*) as api_calls
+        FROM api_calls
+        WHERE timestamp >= datetime('now', '-30 days')
+        GROUP BY user_id
+        ORDER BY total_cost DESC
+    """, tracker.conn)
+    
+    fig_users = px.bar(
+        df_users.head(10),
+        x='user_id',
+        y='total_cost',
+        title='ユーザー別コスト（Top 10）'
+    )
+    st.plotly_chart(fig_users)
+    
+    # タスクタイプ別コスト
+    df_tasks = pd.read_sql_query("""
+        SELECT 
+            task_type,
+            SUM(cost_usd) as total_cost,
+            COUNT(*) as count
+        FROM api_calls
+        WHERE timestamp >= datetime('now', '-30 days')
+        GROUP BY task_type
+    """, tracker.conn)
+    
+    fig_tasks = px.pie(
+        df_tasks,
+        values='total_cost',
+        names='task_type',
+        title='タスクタイプ別コスト分布'
+    )
+    st.plotly_chart(fig_tasks)
+    
+    # サマリー
+    total_cost = df_daily['total_cost'].sum()
+    st.metric("総コスト（過去30日）", f"${total_cost:.2f}")
+    st.metric("予測月間コスト", f"${total_cost:.2f}")
+
+# 実行: streamlit run dashboard.py
+```
+
+### 5. 開発環境の統一
+
+```yaml
+# .env.template
+# チームメンバー全員がこのテンプレートをコピー
+
+# API Keys
+ANTHROPIC_API_KEY=your-key-here
+OPENAI_API_KEY=your-key-here
+
+# Monitoring
+LANGSMITH_API_KEY=your-key-here
+LANGFUSE_PUBLIC_KEY=your-key-here
+LANGFUSE_SECRET_KEY=your-key-here
+
+# Database
+DATABASE_URL=postgresql://localhost/llm_app
+
+# Cost Limits
+DAILY_BUDGET_USD=100
+MONTHLY_BUDGET_USD=3000
+```
+
+```python
+# config.py
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    """環境設定の一元管理"""
+    
+    # API Keys
+    anthropic_api_key: str
+    openai_api_key: str
+    
+    # Monitoring
+    langsmith_api_key: str
+    
+    # Cost Limits
+    daily_budget_usd: float = 100.0
+    monthly_budget_usd: float = 3000.0
+    
+    # Model Defaults
+    default_model: str = "claude-3-5-sonnet-20241022"
+    max_tokens: int = 2048
+    temperature: float = 0.7
+    
+    class Config:
+        env_file = ".env"
+
+# 使用例
+settings = Settings()
+
+client = Anthropic(api_key=settings.anthropic_api_key)
+```
+
+---
+
+## 🎓 まとめ
+
+### 重要ポイント
+
+1. **Claude API** は長文理解と日本語対応に優れる
+2. **MCP** はAI統合の新標準プロトコル
+3. **Cursor** はAI駆動の最先端エディタ
+4. **LangChain** は複雑なLLMアプリに最適
+5. **コスト削減**: モデル選択、キャッシング、圧縮で大幅削減
+6. **可視化**: Prometheus + Grafana、LangSmithで監視
+7. **チーム運用**: バージョン管理、A/Bテスト、統一API
+
+### 次のステップ
+
+- [04. LLM実装ガイド](/ai総合ガイド/04_llm実装ガイド/) - LLMの基礎理論
+- [05. RAG実装](/ai総合ガイド/05_rag実装/) - RAGシステムの構築
+- [10. MLOps実践](/ai総合ガイド/10_mlops実践/) - 本番運用のベストプラクティス
+- [24. AIコスト最適化戦略](/ai総合ガイド/24_aiコスト最適化戦略/) - さらなるコスト削減手法
+
+---
+
+**ポケモンマスターの知恵**  
+「最強のトレーナーは、最強の道具を使いこなし、チーム全体で効率的に戦う。コストを管理し、可視化し、継続的に改善せよ。」
