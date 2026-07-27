@@ -1,0 +1,744 @@
+---
+title: "AIエージェントと自律システム"
+description: "自律的に行動するAIエージェントの設計と実装を、ポケモンのオートバトルに例えて解説。LangChain、AutoGPT、ReAct等の最新技術を網羅。"
+---
+
+## 🤖 AIエージェントと自律システム：オートバトルで学ぶ自律AI
+
+### 📝 この章について
+
+**AIエージェント**を「ポケモンのオートバトル」に例えて解説します。人間の指示を待たずに、目標達成のために自律的に行動するAIシステムの設計と実装を学びます。
+
+#### ポケモンでいえば
+
+- **単発LLM呼び出し** = トレーナーが毎回技を指示（手動バトル）
+- **AIエージェント** = ポケモンが自分で判断して技を選択（オートバトル）
+- **ReAct** = 「観察→思考→行動」を繰り返す戦術
+- **Tool Use** = 技だけでなく道具も使いこなす
+- **Multi-Agent** = 複数のポケモンが連携して戦う
+
+### 🎯 この章で学べること
+
+| 項目 | 内容 |
+|------|------|
+| **エージェントの基礎** | ReAct、Chain-of-Thought等の思考フレームワーク |
+| **Tool Useの実装** | LLMに外部ツールを使わせる技術 |
+| **LangChain活用** | エージェント構築の実践 |
+| **AutoGPT型エージェント** | 完全自律型AIの設計 |
+| **Multi-Agentシステム** | 複数AIの協調動作 |
+
+---
+
+## 🧠 AIエージェントとは
+
+### 教科書的な説明
+
+AIエージェントは、環境を観察し、目標達成のために自律的に行動を決定し、実行するシステムです。
+
+### ポケモン版・マサカリ的実務視点
+
+| 比較項目 | 従来のLLM | AIエージェント |
+|---------|----------|--------------|
+| **動作モード** | 1回の質問→1回の回答 | 目標達成まで繰り返し行動 |
+| **ツール使用** | なし | Web検索、API呼び出し、コード実行等 |
+| **思考プロセス** | 隠蔽 | 観察→思考→行動を明示 |
+| **ポケモンの例え** | トレーナーの指示待ち | オートバトルで自律行動 |
+| **実例** | ChatGPTの単発質問 | AutoGPT、BabyAGI |
+
+---
+
+## 🔄 ReAct: 推論と行動のループ
+
+### ReActフレームワーク
+
+```typescript
+// ReAct (Reasoning + Acting)の実装
+import OpenAI from 'openai';
+const openai = new OpenAI();
+
+interface Tool {
+  name: string;
+  description: string;
+  execute: (input: string) => Promise<string>;
+}
+
+class ReActAgent {
+  private tools: Tool[];
+  private maxIterations = 10;
+  
+  constructor(tools: Tool[]) {
+    this.tools = tools;
+  }
+  
+  async run(task: string): Promise<string> {
+    let thoughtHistory = [];
+    
+    for (let i = 0; i < this.maxIterations; i++) {
+      // ステップ1: 観察（Observation）
+      const context = this.buildContext(thoughtHistory);
+      
+      // ステップ2: 思考（Thought）
+      const thought = await this.think(task, context);
+      thoughtHistory.push({ type: 'thought', content: thought });
+      
+      // ステップ3: 行動（Action）
+      const action = this.parseAction(thought);
+      
+      if (action.type === 'finish') {
+        return action.answer;
+      }
+      
+      // ツールを実行
+      const observation = await this.executeAction(action);
+      thoughtHistory.push({ type: 'observation', content: observation });
+    }
+    
+    return "最大試行回数に達しました";
+  }
+  
+  async think(task: string, context: string): Promise<string> {
+    const prompt = `
+あなたは以下のタスクを解決するエージェントです。
+
+タスク: ${task}
+
+利用可能なツール:
+${this.tools.map(t => `- ${t.name}: ${t.description}`).join('\n')}
+
+これまでの経緯:
+${context}
+
+次に何をすべきか考えてください。以下の形式で回答してください:
+
+Thought: （現状の分析と次の行動の理由）
+Action: ツール名
+Action Input: ツールへの入力
+
+またはタスクが完了した場合:
+Thought: （完了の理由）
+Action: Finish
+Answer: （最終回答）
+`;
+    
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: prompt }]
+    });
+    
+    return response.choices[0].message.content!;
+  }
+  
+  parseAction(thought: string): { type: string; tool?: string; input?: string; answer?: string } {
+    // "Action: ツール名" と "Action Input: ..." を抽出
+    const actionMatch = thought.match(/Action:\s*(\w+)/);
+    const inputMatch = thought.match(/Action Input:\s*(.+)/);
+    const answerMatch = thought.match(/Answer:\s*(.+)/);
+    
+    if (actionMatch && actionMatch[1].toLowerCase() === 'finish') {
+      return { type: 'finish', answer: answerMatch?.[1] || '完了' };
+    }
+    
+    return {
+      type: 'tool',
+      tool: actionMatch?.[1],
+      input: inputMatch?.[1]
+    };
+  }
+  
+  async executeAction(action: any): Promise<string> {
+    const tool = this.tools.find(t => t.name === action.tool);
+    
+    if (!tool) {
+      return `エラー: ツール「${action.tool}」が見つかりません`;
+    }
+    
+    try {
+      return await tool.execute(action.input);
+    } catch (error) {
+      return `エラー: ${error.message}`;
+    }
+  }
+  
+  buildContext(history: any[]): string {
+    return history.map((item, idx) => 
+      `${idx + 1}. ${item.type}: ${item.content}`
+    ).join('\n');
+  }
+}
+
+// ツール定義
+const tools: Tool[] = [
+  {
+    name: "WebSearch",
+    description: "Webを検索して情報を取得",
+    execute: async (query: string) => {
+      // 実際はGoogle Search APIなどを呼び出し
+      return `「${query}」の検索結果: ...`;
+    }
+  },
+  {
+    name: "Calculator",
+    description: "数式を計算",
+    execute: async (expression: string) => {
+      return eval(expression).toString();
+    }
+  },
+  {
+    name: "Wikipedia",
+    description: "Wikipediaから情報を取得",
+    execute: async (topic: string) => {
+      // Wikipedia APIを呼び出し
+      return `${topic}について: ...`;
+    }
+  }
+];
+
+// 使用例
+const agent = new ReActAgent(tools);
+const result = await agent.run("2024年のノーベル物理学賞受賞者の年齢の合計は？");
+console.log(result);
+
+// 実行例:
+// Thought: ノーベル物理学賞の受賞者を調べる必要がある
+// Action: WebSearch
+// Action Input: 2024年 ノーベル物理学賞 受賞者
+// 
+// Observation: 受賞者はA氏（65歳）、B氏（58歳）
+// 
+// Thought: 年齢の合計を計算する
+// Action: Calculator
+// Action Input: 65 + 58
+// 
+// Observation: 123
+// 
+// Thought: タスク完了
+// Action: Finish
+// Answer: 2024年のノーベル物理学賞受賞者の年齢の合計は123歳です。
+```
+
+---
+
+## 🛠️ LangChainでのエージェント実装
+
+```python
+from langchain.agents import Tool, AgentExecutor, create_react_agent
+from langchain.prompts import PromptTemplate
+from langchain_openai import ChatOpenAI
+from langchain_community.tools import DuckDuckGoSearchRun
+from langchain_community.utilities import WikipediaAPIWrapper
+
+# 1. ツールの定義
+search = DuckDuckGoSearchRun()
+wikipedia = WikipediaAPIWrapper()
+
+tools = [
+    Tool(
+        name="Search",
+        func=search.run,
+        description="Webを検索して最新情報を取得。時事ニュースや統計データに使用。"
+    ),
+    Tool(
+        name="Wikipedia",
+        func=wikipedia.run,
+        description="Wikipediaから詳細な情報を取得。歴史や人物、概念の説明に使用。"
+    ),
+    Tool(
+        name="Calculator",
+        func=lambda x: str(eval(x)),
+        description="数式を計算。数値計算に使用。入力例: '123 * 456'"
+    )
+]
+
+# 2. プロンプトテンプレート
+prompt = PromptTemplate.from_template("""
+Answer the following questions as best you can. You have access to the following tools:
+
+{tools}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+
+Begin!
+
+Question: {input}
+Thought: {agent_scratchpad}
+""")
+
+# 3. エージェント作成
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+agent = create_react_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    verbose=True,
+    max_iterations=10,
+    handle_parsing_errors=True
+)
+
+# 4. 実行
+result = agent_executor.invoke({
+    "input": "OpenAIのCEOの出身大学はどこ？その大学の創立年は？"
+})
+
+print(result["output"])
+
+# 実行ログ例:
+# > Entering new AgentExecutor chain...
+# 
+# Thought: OpenAIのCEOを調べる必要がある
+# Action: Search
+# Action Input: OpenAI CEO 2024
+# Observation: Sam Altman is the CEO of OpenAI...
+# 
+# Thought: Sam Altmanの出身大学を調べる
+# Action: Wikipedia
+# Action Input: Sam Altman
+# Observation: ... studied computer science at Stanford University...
+# 
+# Thought: スタンフォード大学の創立年を調べる
+# Action: Wikipedia
+# Action Input: Stanford University
+# Observation: ... founded in 1885...
+# 
+# Thought: 全ての情報が揃った
+# Final Answer: OpenAIのCEOはSam Altmanで、出身大学はスタンフォード大学。
+# スタンフォード大学の創立年は1885年です。
+```
+
+---
+
+## 🚀 AutoGPT型の完全自律エージェント
+
+```python
+import json
+from typing import List, Dict
+
+class AutoGPTAgent:
+    """完全自律型AIエージェント"""
+    
+    def __init__(self, goal: str):
+        self.goal = goal
+        self.memory = []
+        self.tasks = []
+        self.completed_tasks = []
+    
+    async def run(self):
+        """目標達成まで自律的に実行"""
+        print(f"🎯 目標: {self.goal}")
+        
+        # ステップ1: タスクを分解
+        self.tasks = await self.decompose_goal(self.goal)
+        print(f"📋 タスクリスト:\n" + "\n".join(f"  {i+1}. {t}" for i, t in enumerate(self.tasks)))
+        
+        # ステップ2: タスクを順次実行
+        while self.tasks:
+            current_task = self.tasks.pop(0)
+            print(f"\n🔨 実行中: {current_task}")
+            
+            result = await self.execute_task(current_task)
+            self.completed_tasks.append((current_task, result))
+            self.memory.append(f"タスク「{current_task}」完了: {result}")
+            
+            # ステップ3: 必要に応じてタスクを追加
+            new_tasks = await self.reflect_and_plan(result)
+            if new_tasks:
+                print(f"💡 新しいタスクを追加: {new_tasks}")
+                self.tasks.extend(new_tasks)
+        
+        # ステップ4: 最終レポート
+        return await self.generate_final_report()
+    
+    async def decompose_goal(self, goal: str) -> List[str]:
+        """目標をタスクに分解"""
+        prompt = f"""
+目標: {goal}
+
+この目標を達成するための具体的なタスクリストを作成してください。
+各タスクは実行可能な単位に分割してください。
+
+JSON形式で出力:
+{{"tasks": ["タスク1", "タスク2", ...]}}
+"""
+        
+        response = await openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"}
+        )
+        
+        tasks_json = json.loads(response.choices[0].message.content)
+        return tasks_json["tasks"]
+    
+    async def execute_task(self, task: str) -> str:
+        """タスクを実行"""
+        # ReActエージェントでタスクを実行
+        agent = ReActAgent(tools)
+        result = await agent.run(task)
+        return result
+    
+    async def reflect_and_plan(self, result: str) -> List[str]:
+        """結果を分析して追加タスクを計画"""
+        prompt = f"""
+直近のタスク結果: {result}
+
+これまでの進捗:
+{chr(10).join(self.memory)}
+
+残りのタスク:
+{chr(10).join(self.tasks)}
+
+目標: {self.goal}
+
+結果を分析して、目標達成のために追加で必要なタスクがあれば提案してください。
+不要であれば空の配列を返してください。
+
+JSON形式で出力:
+{{"new_tasks": ["タスクA", "タスクB"], "reasoning": "理由"}}
+"""
+        
+        response = await openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"}
+        )
+        
+        plan_json = json.loads(response.choices[0].message.content)
+        
+        if plan_json.get("new_tasks"):
+            print(f"💭 追加理由: {plan_json['reasoning']}")
+        
+        return plan_json.get("new_tasks", [])
+    
+    async def generate_final_report(self) -> str:
+        """最終レポートを生成"""
+        prompt = f"""
+目標: {self.goal}
+
+完了したタスクと結果:
+{chr(10).join(f"- {task}: {result}" for task, result in self.completed_tasks)}
+
+上記の内容を統合して、目標に対する最終的な回答をまとめてください。
+"""
+        
+        response = await openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        return response.choices[0].message.content
+
+# 使用例
+agent = AutoGPTAgent(goal="2024年のAI業界の主要トレンドをまとめたレポートを作成")
+report = await agent.run()
+print("\n" + "="*50)
+print("📄 最終レポート")
+print("="*50)
+print(report)
+```
+
+---
+
+## 👥 Multi-Agentシステム
+
+```python
+from enum import Enum
+from typing import List
+
+class AgentRole(Enum):
+    RESEARCHER = "researcher"
+    WRITER = "writer"
+    CRITIC = "critic"
+    MANAGER = "manager"
+
+class SpecializedAgent:
+    """役割特化型エージェント"""
+    
+    def __init__(self, role: AgentRole):
+        self.role = role
+        self.system_prompt = self.get_system_prompt()
+    
+    def get_system_prompt(self) -> str:
+        prompts = {
+            AgentRole.RESEARCHER: "あなたはリサーチ専門家です。情報を収集し、整理します。",
+            AgentRole.WRITER: "あなたは技術ライターです。わかりやすい文章を書きます。",
+            AgentRole.CRITIC: "あなたは批評家です。内容の正確性と品質をチェックします。",
+            AgentRole.MANAGER: "あなたはプロジェクトマネージャーです。全体を調整します。"
+        }
+        return prompts[self.role]
+    
+    async def work(self, task: str, context: str = "") -> str:
+        """タスクを実行"""
+        prompt = f"{context}\n\nタスク: {task}"
+        
+        response = await openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        
+        return response.choices[0].message.content
+
+class MultiAgentSystem:
+    """複数エージェントの協調システム"""
+    
+    def __init__(self):
+        self.agents = {
+            role: SpecializedAgent(role) for role in AgentRole
+        }
+        self.conversation_history = []
+    
+    async def execute_workflow(self, topic: str) -> str:
+        """ブログ記事作成のワークフロー"""
+        
+        # ステップ1: Managerがタスクを計画
+        plan = await self.agents[AgentRole.MANAGER].work(
+            f"「{topic}」についてのブログ記事を作成する計画を立ててください"
+        )
+        print(f"📋 Manager: {plan}\n")
+        self.conversation_history.append(("Manager", plan))
+        
+        # ステップ2: Researcherが情報収集
+        research = await self.agents[AgentRole.RESEARCHER].work(
+            f"「{topic}」について調査してください",
+            context=self.format_history()
+        )
+        print(f"🔍 Researcher: {research[:200]}...\n")
+        self.conversation_history.append(("Researcher", research))
+        
+        # ステップ3: Writerが記事を執筆
+        draft = await self.agents[AgentRole.WRITER].work(
+            f"調査結果をもとに記事を書いてください",
+            context=self.format_history()
+        )
+        print(f"✍️ Writer: {draft[:200]}...\n")
+        self.conversation_history.append(("Writer", draft))
+        
+        # ステップ4: Criticが批評
+        feedback = await self.agents[AgentRole.CRITIC].work(
+            f"記事をレビューして改善点を指摘してください",
+            context=self.format_history()
+        )
+        print(f"🎯 Critic: {feedback}\n")
+        self.conversation_history.append(("Critic", feedback))
+        
+        # ステップ5: Writerが修正
+        final_article = await self.agents[AgentRole.WRITER].work(
+            f"フィードバックをもとに記事を改善してください",
+            context=self.format_history()
+        )
+        print(f"✅ Writer (revised): {final_article[:200]}...\n")
+        
+        return final_article
+    
+    def format_history(self) -> str:
+        """会話履歴を整形"""
+        return "\n\n".join(
+            f"[{role}]\n{content}" 
+            for role, content in self.conversation_history
+        )
+
+# 使用例
+system = MultiAgentSystem()
+article = await system.execute_workflow("生成AIの最新トレンド")
+print("\n" + "="*50)
+print("📄 完成記事")
+print("="*50)
+print(article)
+```
+
+---
+
+## 🎮 実用例: AIアシスタントの実装
+
+```typescript
+// Slack Bot + AIエージェント
+import { App } from '@slack/bolt';
+import { ReActAgent } from './react-agent';
+
+const app = new App({
+  token: process.env.SLACK_BOT_TOKEN,
+  signingSecret: process.env.SLACK_SIGNING_SECRET
+});
+
+// ツール定義
+const tools = [
+  {
+    name: "JiraCreateTicket",
+    description: "Jiraにチケットを作成",
+    execute: async (input: string) => {
+      const { title, description } = JSON.parse(input);
+      // Jira APIを呼び出し
+      const ticket = await jira.createIssue({ title, description });
+      return `チケット作成完了: ${ticket.key}`;
+    }
+  },
+  {
+    name: "GitHubSearchCode",
+    description: "GitHubのコードを検索",
+    execute: async (query: string) => {
+      const results = await octokit.search.code({ q: query });
+      return JSON.stringify(results.data.items.slice(0, 3));
+    }
+  },
+  {
+    name: "SlackSendMessage",
+    description: "Slackにメッセージを送信",
+    execute: async (input: string) => {
+      const { channel, text } = JSON.parse(input);
+      await app.client.chat.postMessage({ channel, text });
+      return "メッセージ送信完了";
+    }
+  }
+];
+
+const agent = new ReActAgent(tools);
+
+// Slackメンション時にエージェント起動
+app.event('app_mention', async ({ event, say }) => {
+  const userMessage = event.text.replace(/<@[^>]+>/, '').trim();
+  
+  // エージェントに処理を委譲
+  const thinkingMsg = await say("🤔 考え中...");
+  
+  try {
+    const result = await agent.run(userMessage);
+    
+    await app.client.chat.update({
+      channel: event.channel,
+      ts: thinkingMsg.ts,
+      text: result
+    });
+  } catch (error) {
+    await say(`エラーが発生しました: ${error.message}`);
+  }
+});
+
+// 使用例:
+// ユーザー: @bot 「ログイン機能のバグ」というJiraチケットを作成して、関連コードをGitHubで検索して
+// 
+// Bot: 🤔 考え中...
+//      Thought: まずJiraチケットを作成する
+//      Action: JiraCreateTicket
+//      ...
+//      ✅ 完了！
+//      - Jiraチケット ABC-123 を作成しました
+//      - 関連するコード3件を見つけました: auth.ts, login.tsx, session.ts
+```
+
+---
+
+## ⚠️ エージェントの課題と制約
+
+### 課題1: 無限ループのリスク
+
+```typescript
+// 対策: 最大試行回数とタイムアウト
+class SafeAgent extends ReActAgent {
+  private maxIterations = 10;
+  private timeoutMs = 60000;  // 60秒
+  
+  async run(task: string): Promise<string> {
+    const startTime = Date.now();
+    
+    for (let i = 0; i < this.maxIterations; i++) {
+      // タイムアウトチェック
+      if (Date.now() - startTime > this.timeoutMs) {
+        return "⏰ タイムアウト: 処理を中断しました";
+      }
+      
+      // ループ検知
+      if (this.isLooping()) {
+        return "🔄 ループを検出: 処理を中断しました";
+      }
+      
+      // 通常の処理...
+    }
+    
+    return "⚠️ 最大試行回数に達しました";
+  }
+  
+  isLooping(): boolean {
+    // 同じアクションが3回連続で発生したらループと判定
+    const recentActions = this.history.slice(-3).map(h => h.action);
+    return recentActions.every(a => a === recentActions[0]);
+  }
+}
+```
+
+### 課題2: コスト暴走
+
+```typescript
+// 対策: コスト監視とアラート
+class CostAwareAgent extends ReActAgent {
+  private costLimit = 1.00;  // $1上限
+  private currentCost = 0;
+  
+  async think(task: string, context: string): Promise<string> {
+    // コストチェック
+    if (this.currentCost > this.costLimit) {
+      throw new Error(`💸 コスト上限到達: $${this.currentCost.toFixed(2)}`);
+    }
+    
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: prompt }]
+    });
+    
+    // コストを記録
+    const cost = this.calculateCost(response.usage);
+    this.currentCost += cost;
+    
+    console.log(`💰 累計コスト: $${this.currentCost.toFixed(4)}`);
+    
+    return response.choices[0].message.content!;
+  }
+}
+```
+
+---
+
+## 🎓 まとめ
+
+### エージェント設計の原則
+
+1. **明確な目標設定**  
+   エージェントに何を達成させたいのか、具体的に定義
+
+2. **適切なツール提供**  
+   目標達成に必要なツールを過不足なく用意
+
+3. **セーフガード実装**  
+   無限ループ、コスト暴走、セキュリティリスクに対策
+
+4. **観測可能性**  
+   エージェントの思考プロセスをログに記録
+
+### 実用化のロードマップ
+
+| フェーズ | 内容 | 期間 |
+|---------|------|------|
+| **Phase 1** | ReActエージェントでPoC | 1週間 |
+| **Phase 2** | LangChainで本格実装 | 2週間 |
+| **Phase 3** | Multi-Agent協調 | 1ヶ月 |
+| **Phase 4** | 完全自律型（AutoGPT） | 2ヶ月 |
+
+### 次のステップ
+
+- [04. LLM実装ガイド](/ai総合ガイド/04_llm実装ガイド/) - エージェントの基盤となるLLM技術
+- [24. AIコスト最適化戦略](/ai総合ガイド/24_aiコスト最適化戦略/) - エージェントのコスト管理
+- [22. AIセキュリティと敵対的攻撃](/ai総合ガイド/22_aiセキュリティと敵対的攻撃/) - エージェントのセキュリティ
+
+---
+
+**ポケモンマスターの知恵**  
+「最強のトレーナーは、ポケモンに全てを任せられる者だ。だが、暴走しないよう見守ることも忘れるな。」
