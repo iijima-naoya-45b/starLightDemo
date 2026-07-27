@@ -44,6 +44,11 @@ export default defineConfig({
             },
             sidebar: [
                 {
+                    label: 'TIL (Today I Learned)',
+                    link: '/til/',
+                    badge: { text: '学習記録', variant: 'note' },
+                },
+                {
                     label: 'API設計ガイド拡張',
                     collapsed: true,
                     autogenerate: { directory: 'API設計ガイド拡張' },
