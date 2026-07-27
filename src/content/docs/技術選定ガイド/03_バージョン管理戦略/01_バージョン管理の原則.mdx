@@ -1,0 +1,841 @@
+---
+title: "バージョン管理の原則"
+label: "バージョン管理"
+---
+
+## 🔢 バージョン管理戦略：ポケモン「進化段階管理」で理解する依存関係制御
+
+### 📝 ポケモン世界におけるバージョン管理の定義
+
+バージョン管理とは、**「ポケモンの進化段階をチーム全員で揃える」**ことです。React 17 vs 18、Node.js 18 vs 20、Python 3.9 vs 3.12——**バージョン不一致はチーム崩壊の元凶**。**ポケモンでいえば**、リザードとリザードン混在パーティ——**進化段階バラバラでシナジーが生まれない**のと同じです。
+
+---
+
+## 1. 📊 バージョン管理の3大原則
+
+### 【教科書的な説明】
+
+ソフトウェアのバージョン管理では、セマンティックバージョニング（SemVer）に従い、依存関係を適切に固定する必要がある。
+
+### 【ポケモン版・マサカリ的実務視点】
+
+| 原則 | ポケモン的解釈 | 実務での重要度 | 失敗パターン |
+|------|--------------|--------------|--------------|
+| **1. バージョン固定** | 「進化キャンセル」——勝手に進化させない | ⭐⭐⭐⭐⭐ | `^` 使用→本番で突然破壊的変更 |
+| **2. 段階的アップグレード** | 「順番に進化」——いきなりLv100にしない | ⭐⭐⭐⭐ | Node.js 14→20一気に→互換性崩壊 |
+| **3. 依存関係の可視化** | 「パーティ相性確認」——誰が誰に依存しているか | ⭐⭐⭐⭐⭐ | 依存ツリー爆発→更新不能 |
+
+---
+
+## 2. 🏷️ セマンティックバージョニング（SemVer）
+
+### 基本ルール: `MAJOR.MINOR.PATCH`
+
+```
+例: 2.14.3
+     │  │  └─ PATCH: バグ修正（互換性あり）
+     │  └──── MINOR: 機能追加（互換性あり）
+     └─────── MAJOR: 破壊的変更（互換性なし）
+```
+
+**ポケモンでいえば**:
+- **MAJOR（進化）**: ヒトカゲ→リザードン——**見た目も技も変わる**
+- **MINOR（レベルアップ）**: Lv20→Lv21——**技覚える程度**
+- **PATCH（個体値調整）**: 努力値振り直し——**微調整**
+
+---
+
+### SemVerの実例
+
+```typescript
+// パッケージバージョンの変更例
+interface VersionChange {
+  before: string;
+  after: string;
+  type: "major" | "minor" | "patch";
+  description: string;
+  breaking: boolean;
+}
+
+const versionChanges: VersionChange[] = [
+  {
+    before: "2.5.1",
+    after: "2.5.2",
+    type: "patch",
+    description: "ログ出力のバグ修正",
+    breaking: false
+  },
+  {
+    before: "2.5.2",
+    after: "2.6.0",
+    type: "minor",
+    description: "新機能：ダークモード追加",
+    breaking: false
+  },
+  {
+    before: "2.6.0",
+    after: "3.0.0",
+    type: "major",
+    description: "APIエンドポイント変更（/api/v2 → /api/v3）",
+    breaking: true
+  }
+];
+
+// 破壊的変更の判定
+function isBreakingChange(oldVersion: string, newVersion: string): boolean {
+  const oldMajor = parseInt(oldVersion.split(".")[0]);
+  const newMajor = parseInt(newVersion.split(".")[0]);
+  return newMajor > oldMajor;
+}
+
+console.log(isBreakingChange("2.5.1", "2.6.0")); // → false
+console.log(isBreakingChange("2.6.0", "3.0.0")); // → true
+```
+
+---
+
+## 3. 🔒 依存関係の固定方法
+
+### npm/yarn/pnpmのバージョン指定
+
+| 記法 | 意味 | 許可される更新 | リスク | 推奨度 |
+|------|-----|---------------|--------|--------|
+| `"1.2.3"` | 完全固定 | なし | 最も安全 | ⭐⭐⭐⭐⭐ |
+| `"~1.2.3"` | PATCHのみ | 1.2.4, 1.2.5 | 低 | ⭐⭐⭐⭐ |
+| `"^1.2.3"` | MINORまで | 1.3.0, 1.9.0 | 中 | ⭐⭐⭐ |
+| `"*"` | 無制限 | 2.0.0, 3.0.0 | 高（危険） | ⭐ |
+| `"latest"` | 最新 | 常に最新 | 極高（禁止） | ❌ |
+
+**ポケモンでいえば**:
+- `"1.2.3"`: 進化キャンセル（ヒトカゲLv16維持）
+- `"~1.2.3"`: 同じ進化段階内でレベルアップ（ヒトカゲLv16→17）
+- `"^1.2.3"`: 次の進化まで許可（ヒトカゲ→リザード）
+- `"*"`: 勝手に最終進化（ヒトカゲ→リザードン）
+
+---
+
+### package.jsonのベストプラクティス
+
+```json
+{
+  "name": "my-app",
+  "version": "1.0.0",
+  "dependencies": {
+    "react": "18.2.0",
+    "next": "14.1.0",
+    "typescript": "5.3.3",
+    
+    "lodash": "~4.17.21",
+    
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "eslint": "8.56.0",
+    "prettier": "3.2.4",
+    "vitest": "~1.2.0"
+  },
+  "engines": {
+    "node": "20.11.0",
+    "npm": "10.2.4"
+  },
+  "packageManager": "pnpm@8.15.0"
+}
+```
+
+**推奨ルール**:
+1. **本番依存**: 完全固定（`"1.2.3"`）
+2. **開発依存**: PATCHのみ許可（`"~1.2.3"`）
+3. **Node.jsバージョン**: 完全固定（`engines`で指定）
+4. **パッケージマネージャー**: 完全固定（`packageManager`で指定）
+
+---
+
+### lockファイルの重要性
+
+```bash
+# package-lock.json / yarn.lock / pnpm-lock.yaml
+# → 「進化段階記録書」——全依存関係のスナップショット
+
+# ❌ 絶対やってはいけない
+echo "package-lock.json" >> .gitignore
+
+# ✅ 必ずコミット
+git add package-lock.json
+git commit -m "chore: update dependencies"
+```
+
+**ポケモンでいえば**:
+> lockファイルは「ポケモン図鑑の記録」——**どのポケモンがLv何でどの技を覚えているか全記録**。これがないと、チームメンバーが異なる進化段階で戦うことになる。
+
+---
+
+## 4. 🚀 バージョンアップグレード戦略
+
+### 戦略1: 保守的アップグレード（Boring Strategy）
+
+**ポケモンでいえば**: ジムリーダー倒すまで進化させない。
+
+| 特徴 | メリット | デメリット |
+|------|---------|-----------|
+| LTS版のみ使用 | 安定性最高 | 新機能遅れる |
+| 半年に1回更新 | 予測可能 | 脆弱性リスク |
+| 大企業向け | トラブル最小 | 技術的負債 |
+
+```typescript
+// 保守的アップグレードポリシー
+interface ConservativePolicy {
+  updateFrequency: "quarterly" | "biannually" | "annually";
+  allowedVersionTypes: ("patch" | "minor" | "major")[];
+  requiresApproval: boolean;
+  testingPeriod: number; // 日数
+}
+
+const enterprisePolicy: ConservativePolicy = {
+  updateFrequency: "quarterly",       // 四半期ごと
+  allowedVersionTypes: ["patch"],     // PATCHのみ
+  requiresApproval: true,             // 承認必須
+  testingPeriod: 14                   // 2週間テスト
+};
+
+// 例：Node.js LTS版のみ使用
+const nodeLTSVersions = [
+  { version: "20.11.0", lts: true, until: "2026-04-30" },
+  { version: "18.19.0", lts: true, until: "2025-04-30" },
+  { version: "16.20.2", lts: false, until: "2024-09-11" } // EOL
+];
+
+function selectNodeVersion(): string {
+  const now = new Date();
+  const activeLTS = nodeLTSVersions.filter(v => 
+    v.lts && new Date(v.until) > now
+  );
+  return activeLTS[0].version; // 最新LTS
+}
+
+console.log(selectNodeVersion()); // → "20.11.0"
+```
+
+---
+
+### 戦略2: 積極的アップグレード（Bleeding Edge）
+
+**ポケモンでいえば**: レベル上がったらすぐ進化。
+
+| 特徴 | メリット | デメリット |
+|------|---------|-----------|
+| 最新版即採用 | 新機能使える | 不安定 |
+| 週1回更新 | セキュリティ最新 | 破壊的変更多発 |
+| スタートアップ向け | 競争力高い | デバッグ地獄 |
+
+```typescript
+interface AggressivePolicy {
+  updateFrequency: "daily" | "weekly" | "monthly";
+  allowedVersionTypes: ("patch" | "minor" | "major")[];
+  autoUpdate: boolean;
+  rollbackStrategy: boolean;
+}
+
+const startupPolicy: AggressivePolicy = {
+  updateFrequency: "weekly",
+  allowedVersionTypes: ["patch", "minor"], // MAJORは手動
+  autoUpdate: true,                        // Dependabot有効
+  rollbackStrategy: true                   // ロールバック計画必須
+};
+
+// 自動更新設定（Dependabot）
+const dependabotYml = `
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "tech-lead"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+`;
+```
+
+---
+
+### 戦略3: バランス型（推奨）
+
+**ポケモンでいえば**: ジムバッジに合わせて計画的に進化。
+
+| 更新タイプ | 頻度 | 承認 | テスト |
+|-----------|------|------|--------|
+| PATCH | 週次 | 不要 | 自動テスト |
+| MINOR | 月次 | Tech Lead | ステージング1週間 |
+| MAJOR | 四半期 | CTO承認 | 本番前2週間 |
+
+```typescript
+interface BalancedPolicy {
+  patch: {
+    frequency: string;
+    approval: boolean;
+    testing: string;
+  };
+  minor: {
+    frequency: string;
+    approval: boolean;
+    testing: string;
+  };
+  major: {
+    frequency: string;
+    approval: boolean;
+    testing: string;
+  };
+}
+
+const balancedPolicy: BalancedPolicy = {
+  patch: {
+    frequency: "weekly",
+    approval: false,
+    testing: "automated"
+  },
+  minor: {
+    frequency: "monthly",
+    approval: true,
+    testing: "staging-1week"
+  },
+  major: {
+    frequency: "quarterly",
+    approval: true,
+    testing: "production-2weeks"
+  }
+};
+
+// アップグレード判定関数
+function shouldUpgrade(
+  currentVersion: string,
+  latestVersion: string,
+  policy: BalancedPolicy
+): { allowed: boolean; reason: string } {
+  const current = parseVersion(currentVersion);
+  const latest = parseVersion(latestVersion);
+  
+  // MAJOR変更
+  if (latest.major > current.major) {
+    return {
+      allowed: false,
+      reason: `MAJOR更新は四半期レビュー待ち（${currentVersion} → ${latestVersion}）`
+    };
+  }
+  
+  // MINOR変更
+  if (latest.minor > current.minor) {
+    const daysSinceRelease = getDaysSinceRelease(latestVersion);
+    if (daysSinceRelease < 7) {
+      return {
+        allowed: false,
+        reason: `MINOR更新は1週間待機（リリースから${daysSinceRelease}日）`
+      };
+    }
+    return {
+      allowed: true,
+      reason: "MINOR更新を承認"
+    };
+  }
+  
+  // PATCH変更
+  if (latest.patch > current.patch) {
+    return {
+      allowed: true,
+      reason: "PATCH更新を自動承認"
+    };
+  }
+  
+  return {
+    allowed: false,
+    reason: "最新バージョン使用中"
+  };
+}
+
+function parseVersion(version: string) {
+  const [major, minor, patch] = version.split(".").map(Number);
+  return { major, minor, patch };
+}
+
+function getDaysSinceRelease(version: string): number {
+  // 実装: NPMレジストリからリリース日取得
+  return 3; // 例：3日前リリース
+}
+
+// 例
+console.log(shouldUpgrade("2.5.1", "2.5.2", balancedPolicy));
+// → { allowed: true, reason: "PATCH更新を自動承認" }
+
+console.log(shouldUpgrade("2.5.2", "2.6.0", balancedPolicy));
+// → { allowed: false, reason: "MINOR更新は1週間待機（リリースから3日）" }
+
+console.log(shouldUpgrade("2.6.0", "3.0.0", balancedPolicy));
+// → { allowed: false, reason: "MAJOR更新は四半期レビュー待ち（2.6.0 → 3.0.0）" }
+```
+
+---
+
+## 5. 🛠️ AI/LLMのバージョン管理
+
+### AIモデルバージョンの特殊性
+
+**ポケモンでいえば**: 伝説ポケモンは勝手に進化しない——**プロバイダーが強制アップデート**。
+
+| プロバイダー | バージョン管理方式 | リスク |
+|-------------|------------------|--------|
+| OpenAI | `gpt-4-0613` → 日付固定 | EOL後使えない |
+| Anthropic | `claude-3-sonnet-20240229` | 同上 |
+| Google | `gemini-1.5-pro` → 自動更新 | 突然挙動変わる |
+
+---
+
+### AIモデルバージョン固定
+
+```typescript
+// ❌ 悪い例：バージョン不明
+const response = await openai.chat.completions.create({
+  model: "gpt-4",  // どのGPT-4？（0314 / 0613 / 1106-preview？）
+  messages: [...]
+});
+
+// ✅ 良い例：バージョン固定
+const response = await openai.chat.completions.create({
+  model: "gpt-4-0613",  // 2023年6月版を明示
+  messages: [...]
+});
+
+// さらに良い例：環境変数化
+const MODEL_VERSION = process.env.OPENAI_MODEL_VERSION || "gpt-4-0613";
+const response = await openai.chat.completions.create({
+  model: MODEL_VERSION,
+  messages: [...]
+});
+```
+
+---
+
+### AIモデルのEOL（End of Life）管理
+
+```typescript
+interface ModelLifecycle {
+  modelId: string;
+  released: string;
+  deprecated: string | null;
+  eol: string;
+  replacement: string;
+}
+
+const openaiModels: ModelLifecycle[] = [
+  {
+    modelId: "gpt-4-0314",
+    released: "2023-03-14",
+    deprecated: "2023-06-13",
+    eol: "2024-06-13",
+    replacement: "gpt-4-0613"
+  },
+  {
+    modelId: "gpt-4-0613",
+    released: "2023-06-13",
+    deprecated: null,
+    eol: "2025-06-13",  // 想定
+    replacement: "gpt-4-turbo-2024-04-09"
+  },
+  {
+    modelId: "gpt-3.5-turbo-0301",
+    released: "2023-03-01",
+    deprecated: "2023-06-13",
+    eol: "2024-06-13",
+    replacement: "gpt-3.5-turbo-0613"
+  }
+];
+
+// EOL警告システム
+function checkModelEOL(modelId: string): {
+  status: "active" | "deprecated" | "eol";
+  daysUntilEOL: number;
+  replacement: string | null;
+} {
+  const model = openaiModels.find(m => m.modelId === modelId);
+  if (!model) {
+    throw new Error(`Unknown model: ${modelId}`);
+  }
+  
+  const now = new Date();
+  const eolDate = new Date(model.eol);
+  const daysUntilEOL = Math.floor((eolDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  
+  if (daysUntilEOL < 0) {
+    return {
+      status: "eol",
+      daysUntilEOL: 0,
+      replacement: model.replacement
+    };
+  }
+  
+  if (model.deprecated) {
+    return {
+      status: "deprecated",
+      daysUntilEOL,
+      replacement: model.replacement
+    };
+  }
+  
+  return {
+    status: "active",
+    daysUntilEOL,
+    replacement: null
+  };
+}
+
+// モニタリング
+const currentModel = "gpt-4-0613";
+const status = checkModelEOL(currentModel);
+
+if (status.status === "deprecated") {
+  console.warn(
+    `⚠️ ${currentModel}は非推奨です。` +
+    `${status.daysUntilEOL}日後にEOL。` +
+    `${status.replacement}への移行を推奨。`
+  );
+}
+```
+
+---
+
+### AIプロンプトのバージョン管理
+
+```typescript
+// プロンプトもバージョン管理が必要
+interface PromptVersion {
+  version: string;
+  prompt: string;
+  modelId: string;
+  createdAt: string;
+  performance: {
+    accuracy: number;      // 精度
+    latency: number;       // レイテンシ（ms）
+    cost: number;          // コスト（円/リクエスト）
+  };
+}
+
+const customerSupportPrompts: PromptVersion[] = [
+  {
+    version: "1.0.0",
+    prompt: "あなたはカスタマーサポート担当です。",
+    modelId: "gpt-3.5-turbo-0301",
+    createdAt: "2023-03-01",
+    performance: {
+      accuracy: 75,
+      latency: 800,
+      cost: 0.5
+    }
+  },
+  {
+    version: "2.0.0",
+    prompt: `あなたは弊社のカスタマーサポート担当です。
+以下のガイドラインに従って回答してください：
+1. 簡潔に回答する（3文以内）
+2. 専門用語を避ける
+3. 解決できない場合は人間にエスカレーション`,
+    modelId: "gpt-4-0613",
+    createdAt: "2023-08-01",
+    performance: {
+      accuracy: 92,
+      latency: 1500,
+      cost: 3.0
+    }
+  },
+  {
+    version: "2.1.0",
+    prompt: `あなたは弊社のカスタマーサポート担当です。
+以下のガイドラインに従って回答してください：
+1. 簡潔に回答する（3文以内）
+2. 専門用語を避ける
+3. 解決できない場合は人間にエスカレーション
+4. 「申し訳ございません」を多用しない（過剰謝罪回避）`,
+    modelId: "gpt-4-0613",
+    createdAt: "2023-09-15",
+    performance: {
+      accuracy: 94,
+      latency: 1500,
+      cost: 3.0
+    }
+  }
+];
+
+// プロンプトバージョン選択
+function selectPromptVersion(
+  targetAccuracy: number,
+  maxCost: number
+): PromptVersion {
+  const candidates = customerSupportPrompts.filter(
+    p => p.performance.accuracy >= targetAccuracy &&
+         p.performance.cost <= maxCost
+  );
+  
+  // 最新バージョンを返す
+  return candidates[candidates.length - 1];
+}
+
+const selectedPrompt = selectPromptVersion(90, 5.0);
+console.log(`使用プロンプト: v${selectedPrompt.version}`);
+// → "使用プロンプト: v2.1.0"
+```
+
+---
+
+## 6. 🚨 バージョン管理の5大失敗パターン
+
+### 失敗1: 「lockファイルを無視」（進化記録破棄）
+
+**ポケモンでいえば**: ポケモン図鑑を捨てる——**誰がどの技を覚えているか不明**。
+
+| 症状 | 実例 | 処方箋 |
+|------|-----|--------|
+| `package-lock.json`を`.gitignore` | ローカルとCIで異なるバージョン | **絶対コミット** |
+| `yarn.lock`を削除 | チームメンバーごとに挙動違う | **lockファイル尊重** |
+| `npm ci`ではなく`npm install` | CI/CDでバージョンずれ | **`npm ci`使用** |
+
+```bash
+# ❌ 悪い例
+npm install  # package.jsonから再計算→バージョンずれる
+
+# ✅ 良い例
+npm ci       # package-lock.jsonを厳格に再現
+```
+
+---
+
+### 失敗2: 「^（キャレット）依存地獄」（勝手に進化）
+
+**ポケモンでいえば**: 勝手にリザードンに進化→技構成崩壊。
+
+| 症状 | 実例 | 処方箋 |
+|------|-----|--------|
+| `"^1.2.3"`で破壊的変更 | 1.9.0で内部API変更→エラー | **`~`か完全固定** |
+| 本番とステージングで挙動違う | ステージング1.5.0、本番1.9.0 | **lockファイル同期** |
+
+```json
+{
+  "dependencies": {
+    "react": "^18.0.0"  
+  }
+}
+```
+
+↓ `npm install`実行時
+
+```
+ローカル:    18.0.0（2022年3月）
+ステージング: 18.2.0（2023年6月）
+本番:        18.3.0（2024年4月） ← 破壊的変更含む
+```
+
+**結果**: 本番でのみバグ発生。
+
+---
+
+### 失敗3: 「大量依存パッケージ」（パーティ人数超過）
+
+**ポケモンでいえば**: 手持ち100匹——**管理不能**。
+
+| 症状 | 実例 | 処方箋 |
+|------|-----|--------|
+| `node_modules`が1GB超 | 1000個以上の依存 | **定期的に`npm prune`** |
+| 未使用パッケージ放置 | `lodash`入れたが使ってない | **`depcheck`で検出** |
+| 重複依存 | `axios`が3バージョン存在 | **`npm dedupe`** |
+
+```bash
+# 未使用依存チェック
+npx depcheck
+
+# 重複依存解消
+npm dedupe
+
+# 依存ツリー可視化
+npm ls --all
+
+# 脆弱性チェック
+npm audit
+```
+
+---
+
+### 失敗4: 「MAJOR更新を放置」（進化拒否）
+
+**ポケモンでいえば**: Lv100ヒトカゲ——**進化させないと弱い**。
+
+| 症状 | 実例 | 処方箋 |
+|------|-----|--------|
+| Node.js 14使用（EOL） | セキュリティ脆弱性 | **LTS版へ移行** |
+| React 16（3世代前） | Concurrent Mode使えない | **段階的移行** |
+| 技術的負債蓄積 | 移行コスト爆発 | **四半期ごとレビュー** |
+
+```typescript
+// MAJOR更新の段階的移行計画
+interface MigrationPlan {
+  currentVersion: string;
+  targetVersion: string;
+  breakingChanges: string[];
+  estimatedEffort: number;  // 人日
+  rolloutPhases: {
+    phase: string;
+    duration: string;
+    goal: string;
+  }[];
+}
+
+const react18Migration: MigrationPlan = {
+  currentVersion: "17.0.2",
+  targetVersion: "18.2.0",
+  breakingChanges: [
+    "自動バッチング導入",
+    "Suspense SSR対応",
+    "ReactDOM.render → createRoot"
+  ],
+  estimatedEffort: 20,      // 20人日
+  rolloutPhases: [
+    {
+      phase: "Phase 1: 調査",
+      duration: "1週間",
+      goal: "破壊的変更の影響範囲特定"
+    },
+    {
+      phase: "Phase 2: テスト環境移行",
+      duration: "1週間",
+      goal: "開発環境でReact 18動作確認"
+    },
+    {
+      phase: "Phase 3: 段階的ロールアウト",
+      duration: "2週間",
+      goal: "カナリアリリース → 全体展開"
+    }
+  ]
+};
+```
+
+---
+
+### 失敗5: 「プロダクションとステージングで差分」（パーティ不一致）
+
+**ポケモンでいえば**: 練習と本番で違うポケモン——**本番で負ける**。
+
+| 症状 | 実例 | 処方箋 |
+|------|-----|--------|
+| ステージングOK、本番NG | 環境ごとにNode.jsバージョン違う | **Dockerコンテナ統一** |
+| ローカルで動くがCIで失敗 | M1 Macとx86_64で挙動違う | **multi-arch対応** |
+
+```dockerfile
+# Dockerfile（本番・ステージング・開発で統一）
+FROM node:20.11.0-alpine
+
+WORKDIR /app
+
+# 依存関係インストール
+COPY package.json package-lock.json ./
+RUN npm ci --production
+
+# アプリケーションコピー
+COPY . .
+
+# ビルド
+RUN npm run build
+
+# 起動
+CMD ["npm", "start"]
+```
+
+```yaml
+# .node-version（全環境で統一）
+20.11.0
+```
+
+---
+
+## 7. 🛠️ バージョン管理ツール
+
+### 1. Renovate / Dependabot（自動更新）
+
+```yaml
+# renovate.json
+{
+  "extends": ["config:base"],
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
+    },
+    {
+      "matchUpdateTypes": ["minor"],
+      "schedule": ["before 3am on Monday"]
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
+  ]
+}
+```
+
+---
+
+### 2. npm-check-updates（一括更新）
+
+```bash
+# 更新可能なパッケージ確認
+npx npm-check-updates
+
+# MINOR更新のみ適用
+npx ncu -u --target minor
+
+# 特定パッケージのみ更新
+npx ncu -u react react-dom
+```
+
+---
+
+### 3. Volta（Node.jsバージョン管理）
+
+```bash
+# Voltaインストール
+curl https://get.volta.sh | bash
+
+# Node.jsバージョン固定（プロジェクトごと）
+volta pin node@20.11.0
+volta pin npm@10.2.4
+
+# package.jsonに記録される
+{
+  "volta": {
+    "node": "20.11.0",
+    "npm": "10.2.4"
+  }
+}
+
+# チームメンバーは自動で同じバージョン使用
+cd my-project
+node --version  # → 20.11.0（自動切り替え）
+```
+
+---
+
+## 8. 📚 まとめ：バージョン管理の鉄則
+
+| 鉄則 | ポケモン的解釈 | 実務適用 |
+|------|--------------|---------|
+| **1. lockファイル必須** | 図鑑記録 | `package-lock.json`コミット |
+| **2. バージョン完全固定** | 進化キャンセル | `"1.2.3"`形式 |
+| **3. 段階的MAJOR更新** | 計画的進化 | 四半期ごとレビュー |
+| **4. 環境統一** | パーティ統一 | Docker + Volta |
+| **5. AIモデルもバージョン管理** | 伝説ポケモン管理 | `gpt-4-0613`形式 |
+
+**最重要原則**:
+> 「バージョンは固定し、更新は計画的に」——**勝手に進化させるな**。
+
+**ポケモンでいえば**:
+> 「チーム全員が同じ進化段階で戦う」——**パーティの統一感が勝利の鍵**。

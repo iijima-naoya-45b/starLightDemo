@@ -1,0 +1,727 @@
+---
+title: "依存関係の管理"
+label: "依存関係管理"
+---
+
+## 🔗 依存関係管理：ポケモン「タイプ相性ツリー」で理解する複雑な依存解決
+
+### 📝 ポケモン世界における依存関係管理の定義
+
+依存関係管理とは、**「パーティのシナジー（相性）を最大化する」**ことです。React → ReactDOM、Express → Body-Parser——**誰が誰に依存しているか把握しないとパーティ崩壊**。**ポケモンでいえば**、エーフィ（エスパー）がブラッキー（悪）に依存——**進化先が間違うと戦略崩壊**するのと同じです。
+
+---
+
+## 1. 📊 依存関係の3つの種類
+
+### 【教科書的な説明】
+
+依存関係には、本番依存（dependencies）、開発依存（devDependencies）、ピア依存（peerDependencies）の3種類がある。
+
+### 【ポケモン版・マサカリ的実務視点】
+
+| 種類 | ポケモン的解釈 | 実務での用途 | 例 |
+|------|--------------|-------------|---|
+| **dependencies** | 「バトルメンバー」——本番で戦う | 本番コードで使用 | `react`, `express`, `axios` |
+| **devDependencies** | 「育て屋道具」——育成のみ | 開発・テストのみ | `typescript`, `eslint`, `vitest` |
+| **peerDependencies** | 「タイプ相性」——特定ポケモンと組む | プラグイン・ライブラリ | `react-router` → `react@^18.0.0` |
+| **optionalDependencies** | 「サブメンバー」——いなくてもOK | 機能拡張（任意） | `fsevents`（Mac専用） |
+
+---
+
+### dependencies（本番依存）
+
+```json
+{
+  "dependencies": {
+    "react": "18.2.0",
+    "next": "14.1.0",
+    "axios": "1.6.0",
+    "dayjs": "1.11.10"
+  }
+}
+```
+
+**特徴**:
+- 本番環境で必須
+- ビルドに含まれる
+- ユーザーに配信される
+
+---
+
+### devDependencies（開発依存）
+
+```json
+{
+  "devDependencies": {
+    "typescript": "5.3.3",
+    "eslint": "8.56.0",
+    "vitest": "1.2.0",
+    "@types/react": "18.2.0"
+  }
+}
+```
+
+**特徴**:
+- 開発・テストのみ使用
+- 本番ビルドに含まれない
+- CI/CDで必要
+
+```bash
+# 本番用インストール（devDependencies除外）
+npm ci --production
+```
+
+---
+
+### peerDependencies（ピア依存）
+
+```json
+{
+  "name": "my-react-library",
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  }
+}
+```
+
+**ポケモンでいえば**:
+> 「このプラグインはReact 18以上のパーティでしか動かない」——**相性指定**。
+
+**実例**:
+- `react-router` → `react`が必要
+- `@mui/material` → `react`が必要
+- `eslint-plugin-react` → `eslint`が必要
+
+---
+
+## 2. 🌲 依存ツリーの可視化
+
+### npm ls（依存ツリー表示）
+
+```bash
+# 全依存ツリー表示
+npm ls
+
+# 特定パッケージのみ
+npm ls react
+
+# 深さ指定
+npm ls --depth=1
+```
+
+**出力例**:
+
+```
+my-app@1.0.0
+├── react@18.2.0
+├── next@14.1.0
+│   ├── react@18.2.0 (deduped)
+│   ├── react-dom@18.2.0
+│   └── styled-jsx@5.1.1
+├── axios@1.6.0
+│   └── follow-redirects@1.15.4
+└── dayjs@1.11.10
+```
+
+**ポケモンでいえば**:
+> 「パーティ構成図」——誰が誰に依存しているか一目瞭然。
+
+---
+
+### 依存ツリーの問題検出
+
+```typescript
+// 依存ツリー解析ツール
+import { execSync } from "child_process";
+
+interface DependencyNode {
+  name: string;
+  version: string;
+  dependencies: DependencyNode[];
+  issues: string[];
+}
+
+// 重複依存検出
+function findDuplicates(): Map<string, string[]> {
+  const output = execSync("npm ls --json", { encoding: "utf-8" });
+  const tree = JSON.parse(output);
+  
+  const versionMap = new Map<string, Set<string>>();
+  
+  function traverse(node: any) {
+    if (node.dependencies) {
+      for (const [name, dep] of Object.entries(node.dependencies)) {
+        const depNode = dep as any;
+        if (!versionMap.has(name)) {
+          versionMap.set(name, new Set());
+        }
+        versionMap.get(name)!.add(depNode.version);
+        traverse(depNode);
+      }
+    }
+  }
+  
+  traverse(tree);
+  
+  // 複数バージョン存在するパッケージ抽出
+  const duplicates = new Map<string, string[]>();
+  for (const [name, versions] of versionMap.entries()) {
+    if (versions.size > 1) {
+      duplicates.set(name, Array.from(versions));
+    }
+  }
+  
+  return duplicates;
+}
+
+// 使用例
+const duplicates = findDuplicates();
+for (const [name, versions] of duplicates.entries()) {
+  console.warn(`⚠️ ${name}: ${versions.join(", ")} が重複`);
+}
+// → "⚠️ axios: 1.5.0, 1.6.0 が重複"
+```
+
+---
+
+## 3. 🚀 依存関係のアップグレード戦略
+
+### 戦略1: 段階的アップグレード
+
+```bash
+# Step 1: 更新可能なパッケージ確認
+npm outdated
+
+# 出力例:
+# Package    Current  Wanted  Latest  Location
+# react      18.2.0   18.2.0  18.3.0  my-app
+# axios      1.5.0    1.5.1   1.6.0   my-app
+# next       14.0.0   14.0.4  14.1.0  my-app
+
+# Step 2: PATCH更新のみ適用
+npx ncu -u --target patch
+npm install
+
+# Step 3: テスト実行
+npm test
+
+# Step 4: MINOR更新（1週間後）
+npx ncu -u --target minor
+npm install
+npm test
+
+# Step 5: MAJOR更新（四半期ごと）
+npx ncu -u axios  # 個別に更新
+npm install
+npm test
+```
+
+---
+
+### 戦略2: カナリアアップグレード
+
+```typescript
+// 本番環境の一部ユーザーのみ新バージョン使用
+interface CanaryConfig {
+  packageName: string;
+  stableVersion: string;
+  canaryVersion: string;
+  rolloutPercentage: number; // 0-100
+}
+
+const canaryUpgrade: CanaryConfig = {
+  packageName: "axios",
+  stableVersion: "1.5.0",
+  canaryVersion: "1.6.0",
+  rolloutPercentage: 10        // 10%のユーザーのみ
+};
+
+// 動的インポート
+async function getAxios() {
+  const userId = getCurrentUserId();
+  const isCanaryUser = (hashCode(userId) % 100) < canaryUpgrade.rolloutPercentage;
+  
+  if (isCanaryUser) {
+    // @ts-ignore
+    return await import("axios-1.6.0");
+  } else {
+    // @ts-ignore
+    return await import("axios-1.5.0");
+  }
+}
+
+function hashCode(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+```
+
+---
+
+## 4. 🔍 依存関係の脆弱性管理
+
+### npm audit（脆弱性スキャン）
+
+```bash
+# 脆弱性チェック
+npm audit
+
+# 出力例:
+# found 3 vulnerabilities (1 moderate, 2 high)
+# run `npm audit fix` to fix them
+
+# 自動修正（PATCH/MINOR更新）
+npm audit fix
+
+# 強制修正（MAJOR更新含む）
+npm audit fix --force
+```
+
+---
+
+### Snyk / Dependabot（継続的監視）
+
+```yaml
+# .github/dependabot.yml
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    
+    # セキュリティアップデートのみ自動マージ
+    labels:
+      - "security"
+    reviewers:
+      - "security-team"
+    
+    # 脆弱性があるパッケージ優先
+    vulnerability-alerts:
+      enabled: true
+```
+
+---
+
+### 脆弱性スコアリング
+
+```typescript
+interface VulnerabilityReport {
+  packageName: string;
+  currentVersion: string;
+  vulnerableVersions: string[];
+  severity: "low" | "moderate" | "high" | "critical";
+  cvss: number;               // 0-10
+  cwe: string[];              // CWE-79（XSS）等
+  patchedVersion: string;
+  exploitAvailable: boolean;
+}
+
+const vulnerabilities: VulnerabilityReport[] = [
+  {
+    packageName: "axios",
+    currentVersion: "1.5.0",
+    vulnerableVersions: ["<1.6.0"],
+    severity: "high",
+    cvss: 7.5,
+    cwe: ["CWE-918"],  // SSRF
+    patchedVersion: "1.6.0",
+    exploitAvailable: true
+  },
+  {
+    packageName: "lodash",
+    currentVersion: "4.17.20",
+    vulnerableVersions: ["<4.17.21"],
+    severity: "moderate",
+    cvss: 5.3,
+    cwe: ["CWE-1321"], // Prototype Pollution
+    patchedVersion: "4.17.21",
+    exploitAvailable: false
+  }
+];
+
+// 優先度計算
+function calculatePriority(vuln: VulnerabilityReport): number {
+  let score = vuln.cvss;
+  
+  // 悪用コードが存在すれば優先度アップ
+  if (vuln.exploitAvailable) {
+    score += 3;
+  }
+  
+  // Criticalなら最優先
+  if (vuln.severity === "critical") {
+    score += 5;
+  }
+  
+  return score;
+}
+
+// 優先度順にソート
+const prioritized = vulnerabilities
+  .map(v => ({ ...v, priority: calculatePriority(v) }))
+  .sort((a, b) => b.priority - a.priority);
+
+console.log(prioritized);
+// → axios（priority: 10.5）が最優先
+```
+
+---
+
+## 5. 🛠️ モノレポでの依存関係管理
+
+### Workspace機能（npm/yarn/pnpm）
+
+```json
+// package.json（ルート）
+{
+  "name": "my-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ]
+}
+```
+
+```
+my-monorepo/
+├── package.json
+├── packages/
+│   ├── ui/
+│   │   ├── package.json
+│   │   └── src/
+│   └── utils/
+│       ├── package.json
+│       └── src/
+└── apps/
+    ├── web/
+    │   ├── package.json
+    │   └── src/
+    └── mobile/
+        ├── package.json
+        └── src/
+```
+
+**パッケージ間の依存**:
+
+```json
+// apps/web/package.json
+{
+  "name": "@my-monorepo/web",
+  "dependencies": {
+    "@my-monorepo/ui": "workspace:*",      // ローカルパッケージ
+    "@my-monorepo/utils": "workspace:*",
+    "react": "18.2.0"
+  }
+}
+
+// packages/ui/package.json
+{
+  "name": "@my-monorepo/ui",
+  "dependencies": {
+    "@my-monorepo/utils": "workspace:*",
+    "react": "18.2.0"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0"
+  }
+}
+```
+
+**ポケモンでいえば**:
+> 「進化前後が同じパーティ」——ヒトカゲ、リザード、リザードンが連携。
+
+---
+
+### pnpmの厳格な依存管理
+
+```bash
+# pnpmはデフォルトで厳格（幽霊依存を許さない）
+pnpm install
+
+# npmの緩い挙動
+npm install
+# → package.jsonに書いてなくても、node_modulesにあれば使える（危険）
+
+# pnpmの厳格な挙動
+pnpm install
+# → package.jsonに明示的に書いた依存のみ使用可能
+```
+
+**幽霊依存の例**:
+
+```typescript
+// package.jsonには`lodash`がないが...
+{
+  "dependencies": {
+    "some-library": "1.0.0"  // ← 内部でlodashを使用
+  }
+}
+
+// npm環境では動く（幽霊依存）
+import _ from "lodash";  // ❌ package.jsonにない
+console.log(_.chunk([1,2,3,4], 2));
+
+// pnpm環境ではエラー
+// Error: Cannot find module 'lodash'
+
+// 解決策: 明示的に追加
+{
+  "dependencies": {
+    "lodash": "4.17.21",
+    "some-library": "1.0.0"
+  }
+}
+```
+
+---
+
+## 6. 🚨 依存関係管理の5大失敗パターン
+
+### 失敗1: 「幽霊依存」（隠れた依存）
+
+**ポケモンでいえば**: 他人のポケモンを勝手に使う——**返却されたら終わり**。
+
+| 症状 | 実例 | 処方箋 |
+|------|-----|--------|
+| 依存の依存を直接使用 | `express`経由の`body-parser`を直接import | **package.jsonに明示** |
+| TypeScript型定義漏れ | `@types/react`なしで`React.FC`使用 | **`@types/*`追加** |
+
+---
+
+### 失敗2: 「循環依存」（無限ループ）
+
+**ポケモンでいえば**: エーフィがブラッキーに依存、ブラッキーがエーフィに依存——**進化できない**。
+
+```typescript
+// ❌ 悪い例：循環依存
+// utils/logger.ts
+import { getUserId } from "./user";
+
+export function log(message: string) {
+  console.log(`[${getUserId()}] ${message}`);
+}
+
+// utils/user.ts
+import { log } from "./logger";
+
+export function getUserId() {
+  log("Getting user ID");  // ← loggerがuserに依存、userがloggerに依存
+  return "user123";
+}
+
+// → エラー: Cannot access 'getUserId' before initialization
+```
+
+**解決策**:
+
+```typescript
+// ✅ 良い例：依存を一方向に
+// utils/logger.ts
+export function log(userId: string, message: string) {
+  console.log(`[${userId}] ${message}`);
+}
+
+// utils/user.ts
+export function getUserId() {
+  return "user123";
+}
+
+// app.ts
+import { log } from "./utils/logger";
+import { getUserId } from "./utils/user";
+
+log(getUserId(), "Hello");
+```
+
+---
+
+### 失敗3: 「バージョン不一致地獄」
+
+**ポケモンでいえば**: リザードとリザードンが同時存在——**どっちが本物？**
+
+```json
+// package.json
+{
+  "dependencies": {
+    "react": "18.2.0",
+    "react-router-dom": "6.20.0"  // react@^18.0.0を期待
+  }
+}
+
+// 誤ってReact 17も入る
+{
+  "dependencies": {
+    "react": "17.0.2",         // ← 古いバージョン
+    "react-router-dom": "6.20.0"
+  }
+}
+
+// 結果: react-router-domが動かない
+// Error: Invalid hook call. Hooks can only be called inside the body of a function component.
+```
+
+**検出方法**:
+
+```bash
+# 重複バージョン検出
+npm ls react
+
+# 出力:
+# ├── react@17.0.2
+# └─┬ react-router-dom@6.20.0
+#   └── react@18.2.0
+
+# 解決策
+npm dedupe
+```
+
+---
+
+### 失敗4: 「未使用依存の放置」（デッドコード）
+
+**ポケモンでいえば**: 預けたポケモンを忘れる——**ボックス圧迫**。
+
+```bash
+# 未使用パッケージ検出
+npx depcheck
+
+# 出力:
+# Unused dependencies
+# * lodash
+# * moment
+# * jquery
+
+# 削除
+npm uninstall lodash moment jquery
+```
+
+---
+
+### 失敗5: 「サプライチェーン攻撃」（悪意のある依存）
+
+**ポケモンでいえば**: ロケット団のポケモンが紛れ込む——**裏切り**。
+
+| 症状 | 実例 | 処方箋 |
+|------|-----|--------|
+| typosquatting | `react`のつもりで`reakt`インストール | **インストール前に確認** |
+| 乗っ取りパッケージ | メンテナが変わり悪意のコード混入 | **lock hash検証** |
+| 依存の依存が汚染 | 直接使ってないが内部で悪用 | **`npm audit`常時実行** |
+
+**有名な事例**:
+- **event-stream事件**（2018年）: 人気パッケージが乗っ取られ、暗号通貨ウォレットから盗む
+- **colors/faker事件**（2022年）: 開発者が意図的に破壊的コード混入
+
+**対策**:
+
+```bash
+# パッケージのメンテナ確認
+npm view react maintainers
+
+# ダウンロード数確認
+npm view react dist.tarball
+npm view react time
+
+# lock hashを厳格に検証
+npm ci --ignore-scripts  # postinstallスクリプト実行防止
+```
+
+---
+
+## 7. 🛠️ 依存関係管理のベストプラクティス
+
+### 1. 依存を最小化
+
+```typescript
+// ❌ 悪い例：不要な依存
+import _ from "lodash";  // 1つの関数のために100KBライブラリ
+
+const chunked = _.chunk([1,2,3,4], 2);
+
+// ✅ 良い例：標準機能で実装
+function chunk<T>(array: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    result.push(array.slice(i, i + size));
+  }
+  return result;
+}
+
+const chunked = chunk([1,2,3,4], 2);
+```
+
+---
+
+### 2. Tree Shaking対応
+
+```typescript
+// ❌ 悪い例：全体インポート
+import _ from "lodash";
+_.chunk([1,2,3,4], 2);
+
+// ✅ 良い例：必要な関数のみ
+import chunk from "lodash/chunk";
+chunk([1,2,3,4], 2);
+
+// さらに良い例：lodash-es（ESM）
+import { chunk } from "lodash-es";
+chunk([1,2,3,4], 2);
+```
+
+---
+
+### 3. Bundle Size分析
+
+```bash
+# Webpack Bundle Analyzer
+npm install --save-dev webpack-bundle-analyzer
+
+# Next.js
+npm install --save-dev @next/bundle-analyzer
+
+# ビルド後分析
+npm run build
+# → 各パッケージのサイズ可視化
+```
+
+---
+
+### 4. 依存のライセンス確認
+
+```bash
+# ライセンス一覧取得
+npx license-checker --summary
+
+# 出力例:
+# MIT: 1200 packages
+# Apache-2.0: 50 packages
+# GPL-3.0: 2 packages  ← 注意！
+
+# 特定ライセンスを除外
+npx license-checker --exclude "MIT, Apache-2.0"
+```
+
+---
+
+## 8. 📚 まとめ：依存関係管理の鉄則
+
+| 鉄則 | ポケモン的解釈 | 実務適用 |
+|------|--------------|---------|
+| **1. 依存を最小化** | パーティ6匹まで | 不要なパッケージ削除 |
+| **2. バージョン統一** | 進化段階揃える | `npm dedupe`実行 |
+| **3. 脆弱性監視** | ロケット団警戒 | `npm audit`常時実行 |
+| **4. Tree Shaking** | 技厳選 | 部分インポート使用 |
+| **5. ライセンス確認** | 捕獲可否確認 | GPL避ける |
+
+**最重要原則**:
+> 「依存は少なく、明示的に、常に監視せよ」——**見えない依存が最大のリスク**。
+
+**ポケモンでいえば**:
+> 「パーティは6匹まで、全員の相性を把握せよ」——**管理できる範囲で最強を目指す**。

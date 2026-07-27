@@ -55,6 +55,12 @@ export default defineConfig({
                     badge: { text: '🔥NEW', variant: 'danger' },
                 },
                 {
+                    label: '技術選定ガイド',
+                    collapsed: true,
+                    autogenerate: { directory: '技術選定ガイド' },
+                    badge: { text: '🔥NEW', variant: 'danger' },
+                },
+                {
                     label: 'API設計ガイド拡張',
                     collapsed: true,
                     autogenerate: { directory: 'API設計ガイド拡張' },
