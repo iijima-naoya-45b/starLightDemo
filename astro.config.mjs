@@ -49,6 +49,12 @@ export default defineConfig({
                     badge: { text: '学習記録', variant: 'note' },
                 },
                 {
+                    label: 'AI総合ガイド',
+                    collapsed: true,
+                    autogenerate: { directory: 'AI総合ガイド' },
+                    badge: { text: '🔥NEW', variant: 'danger' },
+                },
+                {
                     label: 'API設計ガイド拡張',
                     collapsed: true,
                     autogenerate: { directory: 'API設計ガイド拡張' },
