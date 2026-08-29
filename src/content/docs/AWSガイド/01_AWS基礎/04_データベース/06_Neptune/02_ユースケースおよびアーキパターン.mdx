@@ -1,0 +1,355 @@
+---
+title: "Neptune ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## Neptune ユースケースおよびアーキテクチャパターン
+
+### 1. ソーシャルネットワーク
+
+```yaml
+構成:
+  ALB → Lambda → Neptune（Gremlin）
+  
+データモデル:
+  ノード: User, Post, Comment
+  エッジ: follows, likes, commented
+  
+クエリ例:
+  - フォロワーの投稿取得
+  - 共通の友達検索
+  - 影響力スコア計算
+  - フォロー推薦（2-3ホップ先）
+
+メリット:
+  - 複雑な関係性を高速処理
+  - リアルタイム推薦
+  - N次の友達検索が効率的
+```
+
+**アーキテクチャ図:**
+
+```yaml
+┌─────────┐     ┌─────────┐     ┌──────────┐
+│ Client  │────▶│   ALB   │────▶│  Lambda  │
+└─────────┘     └─────────┘     └────┬─────┘
+                                      │
+                                      ▼
+                                ┌──────────┐
+                                │ Neptune  │
+                                │ (Gremlin)│
+                                └──────────┘
+                                   (Multi-AZ)
+```
+
+**Gremlinクエリ例:**
+
+```groovy
+// フォロワーの最新投稿を取得
+g.V().hasLabel('User').has('userId', 'u123')
+  .out('follows')
+  .out('posted')
+  .order().by('createdAt', desc)
+  .limit(20)
+
+// 共通の友達を検索
+g.V().hasLabel('User').has('userId', 'u123')
+  .out('friend')
+  .where(__.in('friend').has('userId', 'u456'))
+  .values('name')
+
+// フォロー推薦（2ホップ先）
+g.V().hasLabel('User').has('userId', 'u123')
+  .out('follows').out('follows')
+  .where(neq('u123'))
+  .groupCount().by('userId')
+  .order(local).by(values, desc)
+  .limit(10)
+```
+
+### 2. 推薦エンジン
+
+```yaml
+構成:
+  API Gateway → Lambda → Neptune → S3（ログ）
+  
+データモデル:
+  ノード: User, Product, Category
+  エッジ: purchased, viewed, rated
+  プロパティ: rating, timestamp, price
+
+推薦タイプ:
+  - 協調フィルタリング（他ユーザー基準）
+  - コンテンツベース（商品特性）
+  - ハイブリッド推薦
+
+用途:
+  - ECサイト（商品推薦）
+  - 動画配信（コンテンツ推薦）
+  - 求人サイト（マッチング）
+```
+
+**アーキテクチャ図:**
+
+```yaml
+┌─────────┐     ┌──────────────┐     ┌─────────┐
+│  User   │────▶│ API Gateway  │────▶│ Lambda  │
+└─────────┘     └──────────────┘     └────┬────┘
+                                           │
+                   ┌───────────────────────┼────────────┐
+                   │                       │            │
+                   ▼                       ▼            ▼
+             ┌──────────┐           ┌──────────┐  ┌───────┐
+             │ Neptune  │           │ Neptune  │  │  S3   │
+             │ (Primary)│───────────│ (Replica)│  │ (Log) │
+             └──────────┘           └──────────┘  └───────┘
+              (協調フィルタリング)     (リアルタイム推薦)
+```
+
+**Gremlinクエリ例:**
+
+```groovy
+// この商品を買った人は他に何を買った？
+g.V().hasLabel('Product').has('productId', 'p123')
+  .in('purchased').out('purchased')
+  .where(neq('p123'))
+  .groupCount().by('productId')
+  .order(local).by(values, desc)
+  .limit(10)
+
+// ユーザーに類似した人の高評価商品
+g.V().hasLabel('User').has('userId', 'u123')
+  .out('purchased').aggregate('myProducts')
+  .in('purchased')
+  .where(neq('u123'))
+  .out('purchased')
+  .where(without('myProducts'))
+  .has('rating', gte(4))
+  .dedup()
+  .limit(20)
+```
+
+### 3. ナレッジグラフ
+
+```yaml
+構成:
+  AppSync（GraphQL）→ Neptune（SPARQL）
+  
+データモデル:
+  - RDFトリプル（Subject-Predicate-Object）
+  - オントロジー（概念階層）
+  - セマンティックリンク
+
+用途:
+  - 企業ナレッジベース
+  - 医療情報統合
+  - 金融データ分析
+  - 検索エンジン強化
+
+メリット:
+  - 異種データ統合
+  - 推論機能
+  - 標準化（W3C RDF）
+```
+
+**アーキテクチャ図:**
+
+```yaml
+┌─────────┐     ┌──────────┐     ┌──────────┐
+│ Client  │────▶│ AppSync  │────▶│ Lambda   │
+└─────────┘     └──────────┘     └────┬─────┘
+                                       │
+                                       ▼
+                                 ┌──────────┐     ┌──────────┐
+                                 │ Neptune  │────▶│   S3     │
+                                 │ (SPARQL) │     │ (Export) │
+                                 └──────────┘     └──────────┘
+                                  (オントロジー)
+```
+
+**SPARQLクエリ例:**
+
+```sparql
+# 特定分野の専門家を検索
+PREFIX ex: <http://example.org/>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+
+SELECT ?expert ?name ?expertise
+WHERE {
+  ?expert a ex:Expert .
+  ?expert foaf:name ?name .
+  ?expert ex:expertise ?expertise .
+  ?expertise ex:field "Machine Learning" .
+  ?expert ex:yearsExperience ?years .
+  FILTER (?years > 5)
+}
+ORDER BY DESC(?years)
+
+# 関連する論文とその著者
+SELECT ?paper ?title ?author
+WHERE {
+  ?paper ex:topic ex:GraphDatabase .
+  ?paper ex:title ?title .
+  ?paper ex:author ?author .
+  ?author ex:affiliation ?org .
+  ?org ex:country "Japan" .
+}
+```
+
+### 4. 不正検知システム
+
+```yaml
+構成:
+  Kinesis Data Streams → Lambda → Neptune
+  
+データモデル:
+  ノード: Account, Transaction, Device, IP
+  エッジ: transfer, login_from, connected_to
+  
+検知パターン:
+  - 循環取引（マネーロンダリング）
+  - 異常アクセスパターン
+  - 複数アカウント関連分析
+  - リアルタイムリスクスコア
+
+用途:
+  - 金融機関（不正取引検知）
+  - ECサイト（不正購入防止）
+  - セキュリティ（不正アクセス検知）
+```
+
+**アーキテクチャ図:**
+
+```yaml
+┌──────────┐     ┌─────────┐     ┌─────────┐
+│ Kinesis  │────▶│ Lambda  │────▶│ Neptune │
+│ Streams  │     │(リアルタイム)│  │(グラフ分析)│
+└──────────┘     └─────────┘     └────┬────┘
+                                       │
+                                       ▼
+                                 ┌──────────┐
+                                 │   SNS    │
+                                 │ (アラート) │
+                                 └──────────┘
+```
+
+**Gremlinクエリ例:**
+
+```groovy
+// 循環取引の検出（3ホップ以内）
+g.V().hasLabel('Account').has('accountId', 'a123')
+  .repeat(out('transfer'))
+  .times(3)
+  .where(__.hasLabel('Account').has('accountId', 'a123'))
+  .path()
+
+// 共通デバイスからの複数アカウントアクセス
+g.V().hasLabel('Device').has('deviceId', 'd456')
+  .in('login_from')
+  .groupCount()
+  .unfold()
+  .where(select(values).is(gt(5)))
+```
+
+### 5. ネットワークトポロジー管理
+
+```yaml
+構成:
+  CloudWatch → Lambda → Neptune
+  
+データモデル:
+  ノード: Router, Server, LoadBalancer
+  エッジ: connects_to, routes_through
+  
+用途:
+  - ITインフラマッピング
+  - 依存関係分析
+  - 影響範囲分析
+  - キャパシティプランニング
+
+メリット:
+  - リアルタイム可視化
+  - 障害影響範囲の即座把握
+  - パス分析（最短経路）
+```
+
+**Gremlinクエリ例:**
+
+```groovy
+// サーバー障害の影響範囲
+g.V().hasLabel('Server').has('serverId', 's123')
+  .in('depends_on')
+  .path()
+
+// 最短経路の検索
+g.V().hasLabel('Router').has('routerId', 'r1')
+  .repeat(out('connects_to').simplePath())
+  .until(has('routerId', 'r99'))
+  .path()
+  .limit(1)
+```
+
+### 6. Neptune ML統合パターン
+
+```yaml
+構成:
+  Neptune → Neptune ML → SageMaker
+  
+機能:
+  - ノード分類
+  - リンク予測
+  - グラフ埋め込み
+
+用途:
+  - 新規フォロー推薦
+  - 購買予測
+  - 詐欺アカウント検出
+```
+
+**アーキテクチャ図:**
+
+```yaml
+┌──────────┐     ┌──────────────┐     ┌────────────┐
+│ Neptune  │────▶│  Neptune ML  │────▶│ SageMaker  │
+│  (Graph) │     │  (Export)    │     │ (Training) │
+└──────────┘     └──────────────┘     └─────┬──────┘
+                                             │
+                                             ▼
+                                       ┌──────────┐
+                                       │  Model   │
+                                       │(推論エンドポイント)│
+                                       └──────────┘
+```
+
+### ベストプラクティス
+
+```yaml
+データモデリング:
+  - 適切なパーティショニング
+  - インデックス戦略
+  - プロパティ最適化
+
+パフォーマンス:
+  - Read Replica活用
+  - バッチ処理の最適化
+  - クエリキャッシュ
+
+モニタリング:
+  - CloudWatch Metrics
+  - Gremlin Profile API
+  - スロークエリログ
+
+コスト最適化:
+  - 適切なインスタンスサイズ
+  - Read Replicaの活用
+  - I/O最適化
+```
+
+### まとめ
+
+**Neptune主要ユースケース:**
+- ソーシャルネットワーク（関係性分析）
+- 推薦エンジン（協調フィルタリング）
+- ナレッジグラフ（情報統合）
+- 不正検知（パターン分析）
+- ネットワーク管理（依存関係可視化）

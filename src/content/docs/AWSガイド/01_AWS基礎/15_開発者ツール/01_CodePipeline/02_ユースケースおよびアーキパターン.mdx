@@ -1,0 +1,231 @@
+---
+title: "CodePipeline ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## CodePipeline ユースケースおよびアーキテクチャパターン
+
+### 1. 基本的なCI/CDパイプライン
+
+```yaml
+構成:
+  Source: GitHub
+  Build: CodeBuild
+  Deploy: CodeDeploy → EC2
+
+フロー:
+  1. GitHubにコミット
+  2. CodePipelineトリガー
+  3. CodeBuildでビルド・テスト
+  4. CodeDeployでEC2にデプロイ
+  5. 完了通知（SNS）
+
+利点:
+  - 自動デプロイ
+  - 迅速なリリース
+  - 人的ミス削減
+```
+
+### 2. ECSコンテナデプロイ
+
+```yaml
+構成:
+  Source: CodeCommit
+  Build: CodeBuild → Docker Image → ECR
+  Deploy: ECS Blue/Green Deployment
+
+ステージ:
+  Source:
+    - CodeCommitからソース取得
+    - Dockerfileとソースコード
+
+  Build:
+    - Dockerイメージビルド
+    - ECRにプッシュ
+    - imagedefinitions.json作成
+
+  Deploy:
+    - ECSタスク定義更新
+    - Blue/Greenデプロイ
+    - ALBトラフィック切替
+```
+
+### 3. サーバーレスアプリケーション
+
+```yaml
+構成:
+  Source: GitHub
+  Build: CodeBuild → SAM/Serverless Framework
+  Deploy: CloudFormation → Lambda
+
+フロー:
+  1. Lambdaコードコミット
+  2. CodeBuildでパッケージング
+  3. CloudFormationでデプロイ
+  4. API Gateway設定更新
+
+特徴:
+  - SAMテンプレート利用
+  - Lambda関数自動更新
+  - インフラも一緒にデプロイ
+```
+
+### 4. マルチリージョンデプロイ
+
+```yaml
+構成:
+  Source: GitHub
+  Build: CodeBuild
+  Deploy Stage 1: ap-northeast-1（東京）
+  Deploy Stage 2: us-east-1（バージニア）
+  Deploy Stage 3: eu-west-1（アイルランド）
+
+設定:
+  - クロスリージョンアクション
+  - リージョン別S3アーティファクト
+  - 順次デプロイ
+
+用途:
+  - グローバルサービス
+  - DR構成
+  - 低レイテンシ
+```
+
+### 5. 本番承認プロセス
+
+```yaml
+ステージ構成:
+  1. Source: GitHub
+  2. Build: CodeBuild
+  3. Deploy Dev: 開発環境自動デプロイ
+  4. Test: 自動テスト
+  5. Manual Approval: 手動承認
+  6. Deploy Prod: 本番環境デプロイ
+
+承認設定:
+  - SNS通知
+  - 承認者指定
+  - タイムアウト設定
+  - コメント機能
+```
+
+### 6. CloudFormation IaCパイプライン
+
+```yaml
+構成:
+  Source: CodeCommit
+  Validate: CloudFormation Linting
+  Create Change Set: 変更セット作成
+  Approval: 変更内容確認・承認
+  Execute: 変更セット実行
+
+使用例:
+  - インフラ変更管理
+  - 環境構築自動化
+  - 安全な本番更新
+```
+
+### 7. マルチ環境パイプライン
+
+```yaml
+環境:
+  - Dev: 自動デプロイ
+  - Staging: 自動デプロイ + 自動テスト
+  - Production: 承認後デプロイ
+
+構成:
+  Source: GitHub
+  Build: CodeBuild
+  Deploy Dev: ECS Dev環境
+  Test Staging: 自動テスト
+  Approval: 手動承認
+  Deploy Prod: ECS本番環境
+
+パラメータ:
+  - 環境別設定ファイル
+  - パラメータストア参照
+  - Secrets Manager統合
+```
+
+### 8. テスト自動化パイプライン
+
+```yaml
+テストステージ:
+  Unit Test:
+    - CodeBuildで実行
+    - カバレッジ計測
+
+  Integration Test:
+    - テスト環境デプロイ
+    - APIテスト実行
+
+  Security Test:
+    - SAST/DAST
+    - 脆弱性スキャン
+
+  Performance Test:
+    - 負荷テスト
+    - メトリクス確認
+
+結果:
+  - 全テストパスで次ステージ
+  - 失敗時は停止・通知
+```
+
+### 9. Terraform統合パイプライン
+
+```yaml
+構成:
+  Source: GitHub
+  Plan: terraform plan → アーティファクト保存
+  Approval: プラン確認
+  Apply: terraform apply
+
+ステージ詳細:
+  Plan Action:
+    - CodeBuildでterraform plan実行
+    - 変更内容をS3保存
+    - SNS通知
+
+  Apply Action:
+    - 承認後terraform apply
+    - 状態ファイル更新
+```
+
+### 10. 並列デプロイパイプライン
+
+```yaml
+構成:
+  Source: GitHub
+  Build: CodeBuild
+
+  並列Deploy:
+    - Action 1: Lambda関数更新
+    - Action 2: ECSサービス更新
+    - Action 3: S3静的サイト更新
+
+利点:
+  - デプロイ時間短縮
+  - 独立したコンポーネント
+  - 並列実行効率化
+```
+
+### アーキテクチャベストプラクティス
+
+```yaml
+設計原則:
+  - 環境分離（Dev/Staging/Prod）
+  - 承認ゲート導入
+  - ロールバック計画
+  - モニタリング統合
+
+セキュリティ:
+  - IAMロール最小権限
+  - Secrets Manager活用
+  - 監査ログ（CloudTrail）
+
+運用:
+  - SNS通知設定
+  - CloudWatch Alarms
+  - 失敗時の自動ロールバック
+```

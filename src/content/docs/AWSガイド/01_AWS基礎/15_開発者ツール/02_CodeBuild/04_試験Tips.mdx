@@ -1,0 +1,255 @@
+---
+title: "CodeBuild 試験Tips"
+label: "試験Tips"
+---
+
+## CodeBuild 試験Tips (SAA/SAP)
+
+### 頻出トピック
+
+#### 1. CodeBuild vs Jenkins
+
+```yaml
+CodeBuild:
+  - フルマネージド
+  - 従量課金
+  - サーバーレス
+  - スケーラブル
+  - AWS統合深い
+
+Jenkins:
+  - 自己管理
+  - EC2/ECS上で実行
+  - サーバー維持費
+  - プラグイン豊富
+  - オンプレ統合容易
+
+試験での選択基準:
+  Q: AWS上でビルド自動化、運用負荷軽減
+  A: CodeBuild（マネージド、メンテナンス不要）
+
+  Q: 既存Jenkinsパイプライン、カスタムプラグイン
+  A: Jenkins on EC2/ECS（互換性維持）
+
+  Q: コスト最適化、使用時のみ課金
+  A: CodeBuild（従量課金）
+```
+
+#### 2. buildspec.yml
+
+```yaml
+重要ポイント:
+  - プロジェクトルートまたはS3に配置
+  - YAML形式
+  - フェーズ分割（install, pre_build, build, post_build）
+
+頻出問題:
+  Q: ビルド手順定義方法
+  A: buildspec.ymlで定義
+
+  Q: ビルド成果物の保存先
+  A: artifactsセクションで指定（S3）
+
+  Q: 環境変数の機密情報管理
+  A: Secrets Manager/Parameter Store参照
+```
+
+#### 3. Docker サポート
+
+```yaml
+特権モード:
+  - Docker-in-Docker対応
+  - Dockerイメージビルド
+  - 必須設定
+
+頻出シナリオ:
+  Q: CodeBuildでDockerイメージビルド
+  A: 特権モード有効化必須
+
+  Q: ビルドしたイメージをECRにプッシュ
+  A: buildspec.ymlでECRログイン + docker push
+```
+
+### 頻出シナリオ
+
+#### シナリオ1: CI/CDパイプライン構築
+
+```
+要件: GitHub → 自動テスト → ビルド → デプロイ
+解答: 
+  1. CodePipeline作成
+  2. ソース: GitHub連携
+  3. ビルド: CodeBuild（テスト + ビルド）
+  4. デプロイ: CodeDeploy
+
+ポイント:
+✓ CodeBuildでテスト自動化
+✓ buildspec.ymlでフェーズ定義
+✓ テストレポート活用
+```
+
+#### シナリオ2: コンテナアプリCI/CD
+
+```
+要件: Dockerイメージ自動ビルド → ECR → ECS
+解答:
+  1. CodeBuild特権モード有効化
+  2. buildspec.ymlでDocker build
+  3. ECRプッシュ
+  4. ECSデプロイ（Blue/Green）
+
+ポイント:
+✓ 特権モード必須
+✓ ECRログイン
+✓ imagedefinitions.json出力
+```
+
+#### シナリオ3: マルチ環境ビルド
+
+```
+要件: dev/staging/prod環境で異なる設定
+解答:
+  1. 環境変数で切替
+  2. buildspec.ymlで条件分岐
+  3. Parameter Storeで設定管理
+
+ポイント:
+✓ 環境変数活用
+✓ Secrets Manager/Parameter Store
+✓ 1つのbuildspec.ymlで複数環境対応
+```
+
+#### シナリオ4: ビルド時間短縮
+
+```
+要件: ビルド時間が長い（20分 → 5分に短縮）
+解答:
+  1. キャッシュ有効化（node_modules等）
+  2. 適切なインスタンスサイズ
+  3. 並列ビルド検討
+
+ポイント:
+✓ S3キャッシュまたはローカルキャッシュ
+✓ インスタンスサイズアップ
+✓ ビルドマトリクス（バッチビルド）
+```
+
+#### シナリオ5: プライベートリソースアクセス
+
+```
+要件: ビルド中にRDS（プライベートサブネット）にアクセス
+解答:
+  1. CodeBuildをVPC配置
+  2. プライベートサブネット指定
+  3. セキュリティグループ設定
+  4. NAT Gateway設定（外部アクセス用）
+
+ポイント:
+✓ VPC設定必須
+✓ NAT Gateway経由で外部アクセス
+✓ VPC Endpoint推奨（S3, ECR等）
+```
+
+### よくある間違い
+
+```yaml
+× 誤り: Dockerビルドで特権モード無効
+○ 正解: 特権モード有効化必須
+
+× 誤り: 機密情報をbuildspec.ymlにハードコード
+○ 正解: Secrets Manager/Parameter Store参照
+
+× 誤り: キャッシュなしで毎回依存関係インストール
+○ 正解: S3キャッシュ有効化でビルド時間短縮
+
+× 誤り: ビルドログをデフォルト設定（14日保持）
+○ 正解: CloudWatch Logs保持期間設定
+
+× 誤り: 全ビルドをgeneral1.large実行
+○ 正解: 小規模ビルドはsmall、必要時のみlarge
+```
+
+### SAA試験重要ポイント
+
+```yaml
+基本:
+  ☐ CodeBuildの概念
+  ☐ buildspec.yml基礎
+  ☐ フルマネージドサービス
+
+統合:
+  ☐ CodePipeline連携
+  ☐ ECR統合
+  ☐ S3成果物保存
+
+セキュリティ:
+  ☐ IAMロール
+  ☐ Secrets Manager統合
+  ☐ VPC配置
+
+コスト:
+  ☐ 従量課金
+  ☐ キャッシング
+  ☐ インスタンスサイズ選択
+```
+
+### SAP試験重要ポイント
+
+```yaml
+高度な構成:
+  ☐ バッチビルド（並列実行）
+  ☐ VPC配置とネットワーク設計
+  ☐ カスタムDockerイメージ
+  ☐ クロスアカウントアクセス
+
+パフォーマンス:
+  ☐ キャッシュ戦略
+  ☐ ビルド時間最適化
+  ☐ 並列ビルド設計
+
+セキュリティ:
+  ☐ 最小権限IAMロール設計
+  ☐ VPC Endpoint活用
+  ☐ イメージスキャン統合
+
+運用:
+  ☐ CloudWatch統合
+  ☐ EventBridge連携
+  ☐ テストレポート活用
+```
+
+### 比較表（試験頻出）
+
+#### CodeBuild vs Jenkins
+
+| 項目 | CodeBuild | Jenkins |
+|---|---|---|
+| **管理** | フルマネージド | 自己管理（EC2/ECS） |
+| **料金** | 従量課金（分単位） | EC2/ECS料金（常時） |
+| **スケーリング** | 自動、無制限 | 手動設定必要 |
+| **メンテナンス** | AWS管理 | 自己管理 |
+| **統合** | AWS統合深い | プラグイン豊富 |
+| **初期設定** | 簡単 | 複雑 |
+
+#### CodeBuild 環境選択
+
+| シナリオ | 推奨環境 | 理由 |
+|---|---|---|
+| 小規模Node.jsアプリ | general1.small | コスト効率良い |
+| 中規模Javaアプリ | general1.medium | バランス良い |
+| Dockerビルド | general1.large | リソース必要 |
+| 大規模C++ビルド | general1.2xlarge | 高速コンパイル |
+
+### 試験対策チェックリスト
+
+```yaml
+必須理解項目:
+  ☐ buildspec.ymlの構造と各フェーズ
+  ☐ Dockerビルドには特権モード必須
+  ☐ 機密情報はSecrets Manager/Parameter Store
+  ☐ キャッシュでビルド時間短縮
+  ☐ VPC配置の用途と設定
+  ☐ CodeBuild vs Jenkinsの選択基準
+  ☐ 従量課金モデルの理解
+  ☐ CodePipeline統合パターン
+```

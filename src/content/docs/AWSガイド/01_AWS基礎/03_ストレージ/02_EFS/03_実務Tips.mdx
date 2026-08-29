@@ -1,0 +1,384 @@
+---
+title: "EFS 実務Tips"
+label: "実務Tips"
+---
+
+## EFS 実務Tips
+
+### AWS CLI基本操作
+
+```bash
+# ファイルシステム作成
+aws efs create-file-system \
+  --performance-mode generalPurpose \
+  --throughput-mode elastic \
+  --encrypted \
+  --tags Key=Name,Value=my-efs \
+  --region ap-northeast-1
+
+# ファイルシステム一覧
+aws efs describe-file-systems --region ap-northeast-1
+
+# 特定のファイルシステム詳細
+aws efs describe-file-systems \
+  --file-system-id fs-12345678 \
+  --region ap-northeast-1
+
+# マウントターゲット作成
+aws efs create-mount-target \
+  --file-system-id fs-12345678 \
+  --subnet-id subnet-12345678 \
+  --security-groups sg-12345678 \
+  --region ap-northeast-1
+
+# マウントターゲット一覧
+aws efs describe-mount-targets \
+  --file-system-id fs-12345678 \
+  --region ap-northeast-1
+
+# アクセスポイント作成
+aws efs create-access-point \
+  --file-system-id fs-12345678 \
+  --posix-user Uid=1001,Gid=1001 \
+  --root-directory \
+    Path=/app1,CreationInfo={OwnerUid=1001,OwnerGid=1001,Permissions=755} \
+  --tags Key=Name,Value=app1-access-point
+
+# ライフサイクルポリシー設定
+aws efs put-lifecycle-configuration \
+  --file-system-id fs-12345678 \
+  --lifecycle-policies \
+    TransitionToIA=AFTER_30_DAYS,TransitionToPrimaryStorageClass=AFTER_1_ACCESS
+
+# ファイルシステム削除（マウントターゲット削除後）
+aws efs delete-mount-target \
+  --mount-target-id fsmt-12345678
+
+aws efs delete-file-system \
+  --file-system-id fs-12345678
+```
+
+### マウント方法
+
+#### 1. EFSマウントヘルパー使用（推奨）
+
+```bash
+# amazon-efs-utilsインストール
+# Amazon Linux 2/2023
+sudo yum install -y amazon-efs-utils
+
+# Ubuntu/Debian
+# 手動インストールが必要
+git clone https://github.com/aws/efs-utils
+cd efs-utils
+./build-deb.sh
+sudo apt-get -y install ./build/amazon-efs-utils*deb
+
+# マウント（TLS暗号化）
+sudo mount -t efs -o tls fs-12345678:/ /mnt/efs
+
+# マウント（アクセスポイント使用）
+sudo mount -t efs -o tls,accesspoint=fsap-12345678 fs-12345678:/ /mnt/efs
+
+# /etc/fstab自動マウント設定
+fs-12345678:/ /mnt/efs efs _netdev,tls,iam 0 0
+
+# アクセスポイント + IAM認証
+fs-12345678:/ /mnt/efs efs _netdev,tls,iam,accesspoint=fsap-12345678 0 0
+```
+
+#### 2. 標準NFSクライアント使用
+
+```bash
+# nfs-utilsインストール
+sudo yum install -y nfs-utils  # Amazon Linux
+sudo apt-get install -y nfs-common  # Ubuntu
+
+# マウント（暗号化なし）
+sudo mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport \
+  fs-12345678.efs.ap-northeast-1.amazonaws.com:/ /mnt/efs
+
+# /etc/fstab設定
+fs-12345678.efs.ap-northeast-1.amazonaws.com:/ /mnt/efs nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport,_netdev 0 0
+```
+
+### セキュリティグループ設定
+
+```yaml
+インバウンドルール:
+  - Type: NFS
+  - Protocol: TCP
+  - Port: 2049
+  - Source: EC2セキュリティグループ（sg-xxxxxxxxx）
+  - Description: Allow NFS from EC2 instances
+
+ベストプラクティス:
+  - 特定のセキュリティグループのみ許可
+  - 0.0.0.0/0は避ける
+  - VPC内部のみアクセス
+```
+
+```bash
+# セキュリティグループルール追加（CLI）
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-efs-mount-target \
+  --protocol tcp \
+  --port 2049 \
+  --source-group sg-ec2-instances \
+  --region ap-northeast-1
+```
+
+### IAMポリシー設定
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "elasticfilesystem:ClientMount",
+        "elasticfilesystem:ClientWrite"
+      ],
+      "Resource": "arn:aws:elasticfilesystem:ap-northeast-1:123456789012:file-system/fs-12345678",
+      "Condition": {
+        "StringEquals": {
+          "elasticfilesystem:AccessPointArn": "arn:aws:elasticfilesystem:ap-northeast-1:123456789012:access-point/fsap-12345678"
+        }
+      }
+    }
+  ]
+}
+```
+
+### ファイルシステムポリシー
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "*"
+      },
+      "Action": [
+        "elasticfilesystem:ClientMount",
+        "elasticfilesystem:ClientWrite"
+      ],
+      "Resource": "arn:aws:elasticfilesystem:ap-northeast-1:123456789012:file-system/fs-12345678",
+      "Condition": {
+        "Bool": {
+          "elasticfilesystem:AccessedViaMountTarget": "true"
+        }
+      }
+    },
+    {
+      "Effect": "Deny",
+      "Principal": {
+        "AWS": "*"
+      },
+      "Action": "*",
+      "Resource": "arn:aws:elasticfilesystem:ap-northeast-1:123456789012:file-system/fs-12345678",
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "false"
+        }
+      }
+    }
+  ]
+}
+```
+
+### CloudFormationテンプレート
+
+```yaml
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'EFS File System with Mount Targets'
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID
+  
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnet IDs for mount targets (multiple AZs)
+
+Resources:
+  EFSFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: true
+      LifecyclePolicies:
+        - TransitionToIA: AFTER_30_DAYS
+        - TransitionToPrimaryStorageClass: AFTER_1_ACCESS
+      PerformanceMode: generalPurpose
+      ThroughputMode: elastic
+      FileSystemTags:
+        - Key: Name
+          Value: MyEFS
+
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EFS Mount Target Security Group
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref EC2SecurityGroup
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EC2 Instance Security Group
+      VpcId: !Ref VpcId
+
+  MountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId: !Select [0, !Ref SubnetIds]
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+
+  MountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId: !Select [1, !Ref SubnetIds]
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+
+  AccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      PosixUser:
+        Uid: "1001"
+        Gid: "1001"
+      RootDirectory:
+        CreationInfo:
+          OwnerUid: "1001"
+          OwnerGid: "1001"
+          Permissions: "0755"
+        Path: "/app"
+
+Outputs:
+  FileSystemId:
+    Value: !Ref EFSFileSystem
+    Description: EFS File System ID
+  
+  AccessPointId:
+    Value: !Ref AccessPoint
+    Description: EFS Access Point ID
+  
+  MountCommand:
+    Value: !Sub |
+      sudo mount -t efs -o tls ${EFSFileSystem}:/ /mnt/efs
+    Description: Mount command
+```
+
+### パフォーマンス監視
+
+```bash
+# CloudWatchメトリクス取得
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/EFS \
+  --metric-name BurstCreditBalance \
+  --dimensions Name=FileSystemId,Value=fs-12345678 \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-02T00:00:00Z \
+  --period 3600 \
+  --statistics Average \
+  --region ap-northeast-1
+
+# 主要メトリクス
+# - BurstCreditBalance: バーストクレジット残高
+# - ClientConnections: 接続数
+# - DataReadIOBytes: 読み取りバイト数
+# - DataWriteIOBytes: 書き込みバイト数
+# - TotalIOBytes: 総IOバイト数
+# - PercentIOLimit: IO制限利用率
+```
+
+### ベストプラクティス
+
+```yaml
+パフォーマンス:
+  ☑ Elastic Throughputモード推奨（新規）
+  ☑ Max I/Oは高並列時のみ
+  ☑ 転送時暗号化（TLS）有効化
+  ☑ NFSオプション最適化（rsize/wsize=1048576）
+  ☑ CloudWatchで監視
+
+セキュリティ:
+  ☑ 保管時暗号化必須
+  ☑ 転送時暗号化（TLS）推奨
+  ☑ セキュリティグループ最小権限
+  ☑ IAM認証活用（アクセスポイント）
+  ☑ ファイルシステムポリシー設定
+
+コスト最適化:
+  ☑ ライフサイクル管理有効化（30日推奨）
+  ☑ 不要なファイル削除
+  ☑ One Zoneクラス検討（非本番）
+  ☑ Provisioned Throughput見直し
+  ☑ Cost Explorerで分析
+
+可用性:
+  ☑ マルチAZマウントターゲット
+  ☑ Auto Scalingグループ活用
+  ☑ AWS Backup設定
+  ☑ CloudWatch Alarm設定
+
+運用:
+  ☑ タグ付け（環境、プロジェクト等）
+  ☑ 命名規則統一
+  ☑ ドキュメント整備
+  ☑ 定期バックアップ
+```
+
+### トラブルシューティング
+
+```yaml
+マウントできない:
+  確認項目:
+    - セキュリティグループ（ポート2049）
+    - サブネット（マウントターゲット存在）
+    - DNS解決（VPC DNS有効）
+    - amazon-efs-utilsインストール済み
+  
+  デバッグ:
+    sudo mount -t efs -o tls,verbose fs-12345678:/ /mnt/efs
+
+パフォーマンス低下:
+  確認項目:
+    - BurstCreditBalance（バースト枯渇）
+    - スループットモード確認
+    - 同時接続数
+    - ネットワーク帯域
+  
+  対策:
+    - Provisioned/Elastic Throughput検討
+    - General Purpose → Max I/O変更（新規作成）
+
+アクセス拒否:
+  確認項目:
+    - IAMロール・ポリシー
+    - ファイルシステムポリシー
+    - POSIX権限（chmod/chown）
+    - アクセスポイント設定
+```
+
+### まとめ
+
+**実務での重要ポイント:**
+- amazon-efs-utils + TLS暗号化が推奨
+- セキュリティグループの適切な設定
+- ライフサイクル管理で自動コスト削減
+- Elastic Throughputモードがシンプル
+- アクセスポイントでマルチテナント実現
+- CloudWatchで継続的監視

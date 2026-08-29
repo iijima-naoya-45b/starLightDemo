@@ -1,0 +1,373 @@
+---
+title: "Elastic Beanstalk 実務Tips"
+label: "実務Tips"
+---
+
+## Elastic Beanstalk 実務Tips
+
+### AWS Console での環境作成
+
+```
+手順:
+1. Elastic Beanstalkコンソール → 「アプリケーションの作成」
+2. アプリケーション名: my-web-app
+3. プラットフォーム: Python 3.11
+4. アプリケーションコード: サンプルまたはアップロード
+5. プリセット: 高可用性（本番）またはシングルインスタンス（開発）
+6. サービスロール: aws-elasticbeanstalk-service-role
+7. EC2インスタンスプロファイル: aws-elasticbeanstalk-ec2-role
+8. VPC: 既存VPC選択
+9. インスタンス設定: t3.medium、キーペア選択
+10. データベース: スキップ（別途RDS作成推奨）
+11. 「送信」
+```
+
+### EB CLI インストール・初期化
+
+```bash
+# EB CLI インストール
+pip install awsebcli
+
+# バージョン確認
+eb --version
+
+# プロジェクト初期化
+cd my-app
+eb init
+
+# 対話形式で設定:
+# - リージョン: ap-northeast-1
+# - アプリケーション名: my-web-app
+# - プラットフォーム: Python 3.11
+# - SSH接続: yes
+# - キーペア: 既存または新規作成
+
+# .elasticbeanstalk/config.yml が生成される
+```
+
+### EB CLI 環境作成・デプロイ
+
+```bash
+# 環境作成
+eb create production \
+  --instance-type t3.medium \
+  --envvars DATABASE_URL=postgres://...,SECRET_KEY=... \
+  --elb-type application \
+  --single
+
+# 環境一覧
+eb list
+
+# アプリケーションデプロイ
+eb deploy
+
+# 環境変数設定
+eb setenv DATABASE_URL=postgres://... REDIS_URL=redis://...
+
+# 環境情報表示
+eb status
+
+# ログ表示
+eb logs
+
+# ログストリーミング
+eb logs --stream
+
+# SSH接続
+eb ssh
+
+# 環境URL表示
+eb open
+
+# 環境削除
+eb terminate production
+```
+
+### AWS CLI でのデプロイ
+
+```bash
+# アプリケーションバージョン作成
+aws s3 cp myapp.zip s3://elasticbeanstalk-region-account/myapp-v1.0.zip
+
+aws elasticbeanstalk create-application-version \
+  --application-name my-web-app \
+  --version-label v1.0 \
+  --source-bundle S3Bucket=elasticbeanstalk-region-account,S3Key=myapp-v1.0.zip
+
+# 環境更新（デプロイ）
+aws elasticbeanstalk update-environment \
+  --environment-name production \
+  --version-label v1.0
+
+# 環境ステータス確認
+aws elasticbeanstalk describe-environments \
+  --environment-names production
+
+# 環境変数設定
+aws elasticbeanstalk update-environment \
+  --environment-name production \
+  --option-settings \
+    Namespace=aws:elasticbeanstalk:application:environment,OptionName=DATABASE_URL,Value=postgres://... \
+    Namespace=aws:elasticbeanstalk:application:environment,OptionName=SECRET_KEY,Value=...
+```
+
+### .ebextensions（設定ファイル）
+
+#### 基本構造
+
+```
+プロジェクト/
+├── .ebextensions/
+│   ├── 01_packages.config
+│   ├── 02_environment.config
+│   └── 03_commands.config
+├── application.py
+└── requirements.txt
+```
+
+#### 01_packages.config - パッケージインストール
+
+```yaml
+# .ebextensions/01_packages.config
+packages:
+  yum:
+    git: []
+    postgresql-devel: []
+    gcc: []
+
+commands:
+  01_update_pip:
+    command: "pip install --upgrade pip"
+```
+
+#### 02_environment.config - 環境設定
+
+```yaml
+# .ebextensions/02_environment.config
+option_settings:
+  aws:elasticbeanstalk:application:environment:
+    DJANGO_SETTINGS_MODULE: myapp.settings.production
+    PYTHONPATH: /opt/python/current/app
+  
+  aws:autoscaling:launchconfiguration:
+    InstanceType: t3.medium
+    IamInstanceProfile: aws-elasticbeanstalk-ec2-role
+    EC2KeyName: my-keypair
+  
+  aws:autoscaling:asg:
+    MinSize: 2
+    MaxSize: 10
+  
+  aws:autoscaling:trigger:
+    MeasureName: CPUUtilization
+    Statistic: Average
+    Unit: Percent
+    UpperThreshold: 70
+    LowerThreshold: 30
+  
+  aws:elasticbeanstalk:environment:
+    LoadBalancerType: application
+  
+  aws:elbv2:listener:443:
+    Protocol: HTTPS
+    SSLCertificateArns: arn:aws:acm:region:account:certificate/xxx
+```
+
+#### 03_commands.config - デプロイ時コマンド実行
+
+```yaml
+# .ebextensions/03_commands.config
+commands:
+  01_migrate:
+    command: "source /opt/python/run/venv/bin/activate && python manage.py migrate --noinput"
+    leader_only: true
+  
+  02_collectstatic:
+    command: "source /opt/python/run/venv/bin/activate && python manage.py collectstatic --noinput"
+    leader_only: true
+
+container_commands:
+  01_wsgipass:
+    command: 'echo "WSGIPassAuthorization On" >> ../wsgi.conf'
+  
+  02_createsu:
+    command: "source /opt/python/run/venv/bin/activate && python manage.py createsu"
+    leader_only: true
+```
+
+#### HTTPS リダイレクト設定
+
+```yaml
+# .ebextensions/https_redirect.config
+files:
+  "/etc/httpd/conf.d/ssl_rewrite.conf":
+    mode: "000644"
+    owner: root
+    group: root
+    content: |
+      RewriteEngine On
+      <If "-n '%{HTTP:X-Forwarded-Proto}' && %{HTTP:X-Forwarded-Proto} != 'https'">
+      RewriteRule (.*) https://%{HTTP_HOST}%{REQUEST_URI} [R,L]
+      </If>
+```
+
+### Worker環境設定
+
+#### cron.yaml - 定期実行
+
+```yaml
+# cron.yaml（プロジェクトルート）
+version: 1
+cron:
+  - name: "daily_report"
+    url: "/tasks/daily-report"
+    schedule: "0 2 * * *"  # 毎日2:00 AM UTC
+  
+  - name: "cleanup"
+    url: "/tasks/cleanup"
+    schedule: "0 0 * * 0"  # 毎週日曜 0:00 AM UTC
+```
+
+#### Procfile - プロセス定義
+
+```yaml
+# Procfile
+web: gunicorn --bind :8000 --workers 4 --timeout 120 myapp.wsgi:application
+worker: celery -A myapp worker --loglevel=info
+```
+
+### ベストプラクティス
+
+```yaml
+セキュリティ:
+  - IAMロール使用（EC2インスタンスプロファイル）
+  - Secrets Manager統合（機密情報）
+  - セキュリティグループ最小権限
+  - HTTPS強制（ACM証明書）
+  - RDS暗号化
+
+コスト最適化:
+  - 開発環境: Single Instance
+  - 本番環境: Reserved Instances（ベースライン）
+  - Auto Scaling適切設定
+  - 不要なアプリケーションバージョン削除
+  - ログローテーション設定
+
+運用:
+  - Enhanced Health Reporting有効化
+  - CloudWatchアラーム設定
+  - ログストリーミング（CloudWatch Logs）
+  - 定期バックアップ（RDS、S3）
+  - Blue/Greenデプロイ（本番）
+  - Rolling with additional batch（ステージング）
+
+開発:
+  - .ebignore使用（不要ファイル除外）
+  - 環境変数管理（開発・本番分離）
+  - .ebextensions バージョン管理
+  - ローカルテスト → Dev → Staging → Production
+```
+
+### デプロイ自動化（CI/CD）
+
+#### GitHub Actions
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy to Elastic Beanstalk
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install EB CLI
+        run: pip install awsebcli
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-1
+      
+      - name: Deploy to Elastic Beanstalk
+        run: |
+          eb init my-web-app --region ap-northeast-1 --platform python-3.11
+          eb deploy production
+```
+
+### トラブルシューティング
+
+```bash
+# 環境ヘルス確認
+eb health
+
+# 詳細ログ取得
+eb logs --all
+
+# イベント確認
+aws elasticbeanstalk describe-events \
+  --environment-name production \
+  --max-items 20
+
+# インスタンスログ確認（SSH）
+eb ssh
+sudo tail -f /var/log/eb-engine.log
+sudo tail -f /var/log/web.stdout.log
+
+# 環境再構築（リセット）
+eb rebuild
+
+# 設定検証
+aws elasticbeanstalk validate-configuration-settings \
+  --application-name my-web-app \
+  --option-settings file://options.json
+
+# デプロイ失敗時ロールバック
+eb deploy --version previous-version-label
+```
+
+### よくあるエラーと対処
+
+```yaml
+デプロイタイムアウト:
+  原因: requirements.txtのパッケージインストール遅延
+  対処: .ebextensions でタイムアウト延長、または AMI に焼き込み
+
+環境変数が反映されない:
+  原因: デプロイ後に設定変更
+  対処: eb setenv 後に eb deploy 実行
+
+マイグレーションエラー:
+  原因: leader_only 設定なし
+  対処: container_commands で leader_only: true
+
+502 Bad Gateway:
+  原因: アプリケーション起動失敗
+  対処: eb logs でエラーログ確認、WSGI設定確認
+
+ヘルスチェック失敗:
+  原因: ヘルスチェックパス誤設定
+  対処: /health エンドポイント実装、パス確認
+```
+
+### まとめ
+
+**実務で重要なポイント:**
+- **EB CLI**: 効率的な開発・デプロイ
+- **.ebextensions**: インフラをコード管理
+- **環境変数**: 機密情報分離、環境別設定
+- **CI/CD統合**: 自動デプロイパイプライン
+- **ログ監視**: CloudWatch Logs、ヘルスチェック
+- **Blue/Green**: 安全な本番デプロイ

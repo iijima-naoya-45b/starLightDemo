@@ -1,0 +1,619 @@
+---
+title: "試験Tips"
+label: "試験Tips"
+---
+
+## SAA（ソリューションアーキテクト アソシエイト）
+
+### 頻出ポイント
+
+#### 1. CloudFrontとACMのリージョン制約
+
+```yaml
+出題パターン:
+  「CloudFrontでカスタムドメインを使用したい」
+  「HTTPS通信を有効にしたい」
+
+重要ポイント:
+  ✅ CloudFrontはus-east-1のACM証明書のみ
+  ❌ 他リージョンの証明書は使用不可
+  ✅ グローバルサービスでもリージョン固有
+
+よくある間違い:
+  ❌ ap-northeast-1の証明書をCloudFrontで使用
+  ❌ リージョン指定なし
+  ✅ us-east-1で証明書発行してからCloudFront設定
+
+キーワード:
+  - us-east-1
+  - CloudFront
+  - カスタムドメイン
+  - ACM証明書
+```
+
+#### 2. ALBとACMの統合
+
+```yaml
+シナリオ:
+  「EC2インスタンスでWebアプリケーション稼働。
+   HTTPSアクセスを実現したい」
+
+ベストプラクティス:
+  設計:
+    - ALBでTLS Termination
+    - ACM証明書アタッチ
+    - EC2はHTTP通信（内部）
+    - 証明書自動更新
+  
+  メリット:
+    - EC2の負荷軽減
+    - 証明書管理簡素化
+    - 自動更新（運用負荷削減）
+    - セキュリティ向上
+
+間違った選択肢:
+  ❌ EC2に直接証明書インストール
+     → ACMの秘密鍵はエクスポート不可
+  ❌ CLB使用（レガシー）
+     → ALB推奨（SNI対応、高機能）
+  ❌ Route 53だけでHTTPS化
+     → Route 53はDNSのみ、暗号化なし
+```
+
+#### 3. DNS検証 vs メール検証
+
+```yaml
+出題:
+  「証明書の検証方法を選択してください」
+
+比較:
+  DNS検証（推奨）:
+    ✅ 自動更新対応
+    ✅ Route 53で自動化
+    ✅ ワイルドカード証明書対応
+    ✅ 完全自動化可能
+  
+  メール検証:
+    ❌ 手動承認必要
+    ❌ 更新時に再検証
+    ❌ 自動化困難
+    ⚠️  レガシー方法
+
+正解:
+  - 自動化が必要 → DNS検証
+  - Route 53使用 → DNS検証
+  - 継続運用 → DNS検証
+```
+
+#### 4. ワイルドカード証明書
+
+```yaml
+シナリオ:
+  「複数のサブドメインでHTTPSアクセス」
+  「api.example.com、auth.example.com、admin.example.com」
+
+解決策:
+  ワイルドカード証明書:
+    - *.example.com
+    - 全サブドメイン対応
+    - 1つの証明書で管理
+    - コスト効率良い
+
+カバー範囲:
+  ✅ api.example.com
+  ✅ auth.example.com
+  ✅ admin.example.com
+  ❌ sub.api.example.com（2階層目不可）
+  ❌ example.com（apex domain）
+     → SANで追加: example.com, *.example.com
+
+注意点:
+  - セキュリティ影響範囲拡大
+  - 環境分離には向かない
+  - 本番/ステージングは別証明書推奨
+```
+
+#### 5. ACM証明書の料金
+
+```yaml
+出題:
+  「コスト効率の良い証明書管理方法は？」
+
+重要:
+  ACM発行のパブリック証明書:
+    - 完全無料
+    - 発行無料
+    - 更新無料
+    - 管理無料
+  
+  インポート証明書:
+    - ACM管理は無料
+    - 購入費用は別途（サードパーティCA）
+  
+  プライベート証明書:
+    - Private CA: $400/月
+    - 証明書: $0.75/月/枚
+    - 内部用途
+
+選択肢:
+  ✅ ACM発行証明書使用（無料）
+  ❌ サードパーティCA購入後インポート（有料）
+  ❌ 自己署名証明書（ブラウザ警告）
+```
+
+## SAP（ソリューションアーキテクト プロフェッショナル）
+
+### 高度なシナリオ
+
+#### 1. マルチリージョンHTTPS設計
+
+```yaml
+要件:
+  「グローバルアプリケーション。
+   複数リージョンでHTTPSアクセス。
+   フェイルオーバー機能も実装」
+
+設計:
+  アーキテクチャ:
+    プライマリ（ap-northeast-1）:
+      - ACM証明書: api.example.com
+      - ALB + Auto Scaling
+      - RDS Multi-AZ
+    
+    DR（us-west-2）:
+      - ACM証明書: api.example.com（同じドメイン）
+      - ALB + Auto Scaling
+      - RDS Read Replica
+    
+    グローバル:
+      - Route 53 フェイルオーバールーティング
+      - ヘルスチェック
+      - 自動切り替え
+
+証明書戦略:
+  各リージョンで発行:
+    - 同じドメイン名
+    - DNS検証（同じCNAMEでOK）
+    - 独立した証明書ARN
+  
+  重要:
+    - 証明書はリージョン固有リソース
+    - リージョン間コピー不可
+    - 各リージョンで個別発行必須
+
+Route 53設定:
+  - プライマリ: ap-northeast-1 ALB
+  - セカンダリ: us-west-2 ALB
+  - ヘルスチェック: /health エンドポイント
+  - フェイルオーバー: 自動
+```
+
+#### 2. CloudFront + マルチリージョンALB
+
+```yaml
+要件:
+  「グローバル配信、低レイテンシ、高可用性」
+
+設計:
+  CloudFront:
+    - グローバルエッジロケーション
+    - ACM証明書（us-east-1）
+    - カスタムドメイン: www.example.com
+    - Origin Groups（フェイルオーバー）
+  
+  オリジン:
+    プライマリ: ap-northeast-1 ALB
+      - ACM証明書（ap-northeast-1）
+      - Auto Scaling
+    
+    セカンダリ: us-west-2 ALB
+      - ACM証明書（us-west-2）
+      - Auto Scaling
+
+証明書設計:
+  必要な証明書:
+    1. CloudFront用（us-east-1）:
+       - www.example.com
+       - DNS検証
+    
+    2. ALB用（ap-northeast-1）:
+       - origin1.example.com または
+       - www.example.com
+       - DNS検証
+    
+    3. ALB用（us-west-2）:
+       - origin2.example.com または
+       - www.example.com
+       - DNS検証
+
+メリット:
+  - エッジでのTLS Termination
+  - キャッシング効果
+  - DDoS保護（Shield統合）
+  - 自動フェイルオーバー
+  - グローバル低レイテンシ
+
+注意点:
+  - 証明書3つ必要（CloudFront + ALB×2）
+  - CloudFrontは必ず us-east-1
+  - オリジン間でもHTTPS推奨
+```
+
+#### 3. SNI活用（コスト最適化）
+
+```yaml
+シナリオ:
+  「1つのALBで複数の独立ドメインを処理したい。
+   マルチテナントSaaS」
+
+設計:
+  ALB:
+    - HTTPSリスナー（443）
+    - デフォルト証明書: *.saas-platform.com
+    - 追加証明書（SNI）:
+      - customer1.com
+      - customer2.com
+      - customer3.com
+  
+  証明書:
+    各顧客ドメイン:
+      - ACM証明書個別発行
+      - DNS検証（顧客側でCNAME設定）
+      - ALBに追加
+  
+  ルーティング:
+    リスナールール:
+      - Host: customer1.com → TG1
+      - Host: customer2.com → TG2
+      - Host: customer3.com → TG3
+      - Default → TG-Default
+
+メリット:
+  - ALB1台で複数ドメイン対応
+  - コスト削減
+  - SNI対応（モダンブラウザ）
+  - 証明書個別管理
+
+制限:
+  - SNI非対応クライアント（古いブラウザ）
+  - 最大25証明書/ALB
+  - 上限緩和申請可能
+```
+
+#### 4. プライベート証明書（内部通信）
+
+```yaml
+要件:
+  「マイクロサービス間のmTLS通信」
+  「内部APIの暗号化」
+
+設計:
+  AWS Private CA:
+    - CA階層作成
+    - ルートCA + サブCA
+    - $400/月/CA
+  
+  ACM:
+    - プライベート証明書発行
+    - $0.75/月/証明書
+    - 自動ローテーション
+  
+  サービスメッシュ:
+    - App Mesh
+    - ECS/EKS
+    - Envoy Proxy
+    - mTLS設定
+
+証明書配布:
+  各マイクロサービス:
+    - サーバー証明書（ACM発行）
+    - クライアント証明書（mTLS）
+    - 証明書検証
+  
+  自動化:
+    - Secrets Manager統合
+    - ECS Task Role
+    - 自動更新
+
+メリット:
+  - ゼロトラストセキュリティ
+  - 内部通信暗号化
+  - 相互認証（mTLS）
+  - コンプライアンス対応
+
+コスト:
+  例: CA 1台 + 証明書50枚
+  $400 + ($0.75 × 50) = $437.50/月
+```
+
+#### 5. 証明書インポート戦略
+
+```yaml
+シナリオ:
+  「既存のEV証明書をAWSで使用したい」
+  「特定のCAからの証明書が必要（規制要件）」
+
+実装:
+  証明書準備:
+    - サードパーティCAで購入
+    - EV/OV証明書
+    - PEM形式に変換
+  
+  インポート:
+    - ACM Import API
+    - 証明書本体
+    - 証明書チェーン
+    - 秘密鍵
+  
+  使用:
+    - ALB/CloudFront/API Gateway
+    - ACM発行証明書と同じ
+  
+  更新管理:
+    - 自動更新なし
+    - EventBridge監視
+    - Lambda自動アップロード
+    - 期限45日前に通知
+
+注意点:
+  - 秘密鍵エクスポート可能（セキュリティリスク）
+  - 手動更新必須
+  - コスト（CA購入費用）
+  - ACM管理は無料
+
+ユースケース:
+  - EV証明書必要（グリーンバー）
+  - 特定CA指定（コンプライアンス）
+  - 既存証明書移行
+```
+
+## よくある間違い
+
+### 間違い 1: CloudFrontリージョン誤解
+
+```yaml
+❌ 誤り:
+  「CloudFrontはグローバルサービスなので、
+   どのリージョンのACM証明書でも使える」
+
+✅ 正解:
+  - CloudFrontは us-east-1 のACM証明書のみ
+  - グローバルサービスでもリージョン制約あり
+  - カスタムドメイン使用時は必須
+```
+
+### 間違い 2: EC2での証明書使用
+
+```yaml
+❌ 誤り:
+  「ACM証明書をEC2にインストールできる」
+
+✅ 正解:
+  - ACMの秘密鍵はエクスポート不可
+  - EC2では使用不可（セキュリティ理由）
+  - ALB/CloudFront等のAWSサービスのみ
+  - EC2直接の場合はサードパーティ証明書インポート
+```
+
+### 間違い 3: 証明書の共有
+
+```yaml
+❌ 誤り:
+  「1つの証明書を複数リージョンで使える」
+
+✅ 正解:
+  - ACM証明書はリージョン固有
+  - リージョン間コピー不可
+  - 各リージョンで個別発行必要
+  - DNS検証は同じCNAMEで可能
+```
+
+### 間違い 4: ワイルドカード範囲
+
+```yaml
+❌ 誤り:
+  「*.example.com で全てのサブドメイン対応」
+
+✅ 正解:
+  *.example.com でカバー:
+    ✅ api.example.com
+    ✅ auth.example.com
+    ❌ sub.api.example.com（2階層目不可）
+    ❌ example.com（apex domain不可）
+  
+  対処:
+    - SANで追加: example.com, *.example.com
+    - または個別証明書発行
+```
+
+### 間違い 5: 自動更新の誤解
+
+```yaml
+❌ 誤り:
+  「全てのACM証明書は自動更新される」
+
+✅ 正解:
+  自動更新される:
+    - ACM発行証明書
+    - DNS検証
+    - DNS検証レコード維持
+  
+  自動更新されない:
+    - メール検証
+    - インポート証明書
+    - DNS検証レコード削除済み
+```
+
+### 間違い 6: 料金の誤解
+
+```yaml
+❌ 誤り:
+  「ACMは全て無料」
+
+✅ 正解:
+  無料:
+    - パブリック証明書（ACM発行）
+    - 証明書管理
+    - 自動更新
+    - インポート証明書の管理
+  
+  有料:
+    - Private CA: $400/月/CA
+    - プライベート証明書: $0.75/月/枚
+    - サードパーティCA購入（インポート元）
+```
+
+## 試験頻出シナリオ
+
+### シナリオ1: 静的サイトHTTPS化
+
+```yaml
+問題:
+  「S3でホストする静的サイトをHTTPS化したい。
+   カスタムドメイン www.example.com を使用」
+
+正解アプローチ:
+  1. Route 53でホストゾーン作成
+  2. ACM証明書発行（us-east-1）
+     - ドメイン: www.example.com
+     - DNS検証
+  3. Route 53でDNS検証CNAME追加
+  4. CloudFrontディストリビューション作成
+     - オリジン: S3バケット
+     - カスタムドメイン: www.example.com
+     - ACM証明書選択
+  5. Route 53でAレコード（Alias）追加
+     - www.example.com → CloudFront
+
+キーポイント:
+  - us-east-1 の証明書必須
+  - DNS検証推奨
+  - CloudFront必須（S3単体ではカスタムドメインHTTPS不可）
+```
+
+### シナリオ2: ALB HTTPS化（コスト重視）
+
+```yaml
+問題:
+  「複数のEC2インスタンスでWebアプリ稼働。
+   HTTPS化したい。コスト効率重視」
+
+正解アプローチ:
+  1. ACM証明書発行（使用リージョン）
+     - DNS検証（無料）
+  2. ALB作成
+     - HTTPSリスナー（443）
+     - ACM証明書アタッチ
+     - ターゲットグループ: EC2（HTTP:80）
+  3. HTTPリスナー追加
+     - HTTPSへリダイレクト
+  4. セキュリティグループ
+     - ALB: 443許可
+     - EC2: 80許可（ALBからのみ）
+
+コスト:
+  - ACM証明書: 無料
+  - ALB: $0.0225/時間（約$16/月）
+  - EC2に証明書インストール不要
+
+間違った選択肢:
+  ❌ 各EC2に証明書インストール（ACM不可）
+  ❌ NLB使用（TLS TerminationはALB推奨）
+  ❌ サードパーティ証明書購入（有料）
+```
+
+### シナリオ3: マルチリージョン構成
+
+```yaml
+問題:
+  「ap-northeast-1とus-west-2でアプリケーション稼働。
+   両方でHTTPSアクセス。フェイルオーバー実装」
+
+正解アプローチ:
+  証明書:
+    - ap-northeast-1: ACM証明書（api.example.com）
+    - us-west-2: ACM証明書（api.example.com）
+    - 両方DNS検証（同じCNAME）
+  
+  ALB:
+    - ap-northeast-1: ALB + ACM証明書
+    - us-west-2: ALB + ACM証明書
+  
+  Route 53:
+    - フェイルオーバールーティング
+    - プライマリ: ap-northeast-1
+    - セカンダリ: us-west-2
+    - ヘルスチェック設定
+
+重要:
+  - 各リージョンで証明書発行必須
+  - 証明書共有不可
+  - DNS検証レコードは共通でOK
+```
+
+## 試験対策チェックリスト
+
+### 基本概念
+- [ ] ACMの用途（SSL/TLS証明書管理）
+- [ ] パブリック証明書は無料
+- [ ] DNS検証 vs メール検証
+- [ ] 自動更新の仕組み
+
+### リージョン制約
+- [ ] CloudFront は us-east-1 のみ
+- [ ] ALB/API Gateway は同一リージョン
+- [ ] 証明書はリージョン固有リソース
+- [ ] リージョン間コピー不可
+
+### サービス統合
+- [ ] CloudFront + ACM
+- [ ] ALB + ACM（TLS Termination）
+- [ ] API Gateway + ACM
+- [ ] Route 53（DNS検証自動化）
+
+### ワイルドカード証明書
+- [ ] *.example.com の範囲
+- [ ] 2階層目は不可
+- [ ] apex domainはSANで追加
+
+### セキュリティ
+- [ ] 秘密鍵はACMが管理（エクスポート不可）
+- [ ] HTTPSリダイレクト
+- [ ] TLSポリシー選択
+- [ ] IAMアクセス制御
+
+### 運用
+- [ ] 自動更新（DNS検証）
+- [ ] インポート証明書は手動更新
+- [ ] EventBridge監視
+- [ ] CloudTrail監査
+
+### 高度な設計（SAP）
+- [ ] マルチリージョンHTTPS設計
+- [ ] SNI活用（複数証明書）
+- [ ] CloudFront + マルチALB
+- [ ] プライベート証明書（Private CA）
+- [ ] 証明書インポート戦略
+
+## まとめ
+
+**試験で押さえるべき重要ポイント:**
+
+SAA:
+- CloudFrontは us-east-1 のACM証明書のみ
+- ALB/API Gatewayは同一リージョン
+- DNS検証推奨（自動更新、自動化）
+- ワイルドカード証明書の範囲理解
+- パブリック証明書は無料
+- 秘密鍵エクスポート不可（EC2使用不可）
+- TLS Termination（ALB推奨）
+
+SAP:
+- マルチリージョン証明書戦略
+- SNI活用（コスト最適化）
+- CloudFront + マルチリージョンALB設計
+- プライベート証明書とPrivate CA
+- 証明書インポート（EV/OV証明書）
+- mTLS実装（サービスメッシュ）
+- 大規模環境での証明書管理
+- 自動化戦略（IaC、Lambda）

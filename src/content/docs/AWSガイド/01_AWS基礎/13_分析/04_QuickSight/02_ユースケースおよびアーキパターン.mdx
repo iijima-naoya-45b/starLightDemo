@@ -1,0 +1,615 @@
+---
+title: "ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## ユースケース
+
+### 1. リアルタイムダッシュボード
+
+```yaml
+シナリオ:
+  - IoTセンサーデータの可視化
+  - Webアプリケーションメトリクス監視
+  - リアルタイム売上ダッシュボード
+
+実装:
+  1. Kinesis Data Firehose でデータ収集
+  2. S3 に保存 & Athena でクエリ
+  3. QuickSight で SPICE リフレッシュ（15分間隔）
+  4. ダッシュボードで可視化
+
+特徴:
+  - 準リアルタイム（数分遅延）
+  - 自動更新
+  - 高速表示（SPICE）
+```
+
+### 2. 埋め込み分析（Embedded Analytics）
+
+```yaml
+シナリオ:
+  - SaaS アプリケーション内での分析機能
+  - 顧客向けレポートポータル
+  - マルチテナントダッシュボード
+
+実装:
+  1. QuickSight ダッシュボード作成
+  2. 行レベルセキュリティ（RLS）設定
+  3. SDK で埋め込みURL生成
+  4. Webアプリに iframe 埋め込み
+
+セキュリティ:
+  - ユーザーごとにデータフィルター
+  - シングルサインオン統合
+  - セッション管理
+
+メリット:
+  - ホワイトラベル対応
+  - カスタマイズ可能
+  - スケーラブル
+```
+
+### 3. セルフサービスBI
+
+```yaml
+シナリオ:
+  - ビジネスユーザーが自分でレポート作成
+  - アドホック分析
+  - データ探索
+
+実装:
+  データ準備:
+    - AWS Glue で ETL
+    - Athena でクエリ最適化
+    - S3 Data Lake 構築
+  
+  QuickSight:
+    - データセット作成
+    - ビジュアル作成
+    - ダッシュボード公開
+  
+  QuickSight Q:
+    - 自然言語で質問
+    - AIが自動でビジュアル生成
+
+ユーザー:
+  - マーケティング: キャンペーン分析
+  - 営業: パイプライン管理
+  - 財務: コスト分析
+  - 経営: KPI ダッシュボード
+```
+
+### 4. コスト分析・最適化
+
+```yaml
+シナリオ:
+  - AWS Cost and Usage Report 分析
+  - リソース使用状況可視化
+  - タグベースコスト配分
+
+実装:
+  1. CUR を S3 に出力（Parquet）
+  2. Athena で CUR テーブル作成
+  3. QuickSight でデータセット作成
+  4. ダッシュボード作成
+     - サービス別コスト
+     - 部門別コスト
+     - トレンド分析
+     - 異常検知（ML Insights）
+```
+
+### 5. ログ分析
+
+```yaml
+シナリオ:
+  - CloudFront アクセスログ分析
+  - ALB ログ分析
+  - アプリケーションログ分析
+
+実装:
+  1. ログを S3 に保存
+  2. Glue Crawler でテーブル作成
+  3. Athena でクエリ
+  4. QuickSight で可視化
+     - アクセス数推移
+     - エラー率
+     - 地理的分布
+     - ユーザーエージェント分析
+```
+
+## アーキテクチャパターン
+
+### パターン1: 基本的なBIダッシュボード
+
+```mermaid
+graph TB
+    subgraph "Data Source"
+        RDS["Amazon RDS<br/>業務データ"]
+        S3["Amazon S3<br/>ログファイル"]
+    end
+    
+    subgraph "Catalog"
+        Glue["AWS Glue<br/>ETL処理"]
+        Catalog["Glue Data Catalog<br/>メタデータ"]
+    end
+    
+    subgraph "Query"
+        Athena["Amazon Athena<br/>SQLクエリ"]
+    end
+    
+    subgraph "BI"
+        QuickSight["Amazon QuickSight<br/>ダッシュボード"]
+        SPICE["SPICE<br/>インメモリ"]
+    end
+    
+    subgraph "Users"
+        Author["Author<br/>作成者"]
+        Reader["Reader<br/>閲覧者"]
+    end
+    
+    RDS --> Glue
+    S3 --> Glue
+    Glue --> Catalog
+    Catalog --> Athena
+    Athena --> QuickSight
+    QuickSight --> SPICE
+    SPICE --> Author
+    SPICE --> Reader
+```
+
+```yaml
+構成:
+  RDS:
+    - トランザクションデータ
+    - マスターデータ
+  
+  S3:
+    - ログファイル
+    - 履歴データ
+  
+  Glue ETL:
+    - データクレンジング
+    - 結合・集計
+    - S3に変換済みデータ出力
+  
+  Athena:
+    - 変換済みデータクエリ
+    - QuickSight用ビュー作成
+  
+  QuickSight:
+    - SPICE にデータロード
+    - ダッシュボード作成
+    - ユーザー配信
+
+リフレッシュ:
+  - 日次: Glue ETL ジョブ
+  - 自動: QuickSight SPICE リフレッシュ
+```
+
+### パターン2: 埋め込みマルチテナント分析
+
+```yaml
+構成:
+  データレイヤー:
+    Redshift:
+      - マルチテナントデータ
+      - tenant_id でパーティション
+  
+  QuickSight:
+    データセット:
+      - Redshift 直接接続
+      - カスタムSQL
+    
+    RLS（行レベルセキュリティ）:
+      - tenant_id フィルター
+      - ユーザーとテナントマッピング
+    
+    ダッシュボード:
+      - テナント共通デザイン
+      - 埋め込みURL生成
+  
+  アプリケーション:
+    認証:
+      - ユーザーログイン
+      - tenant_id 取得
+    
+    埋め込み:
+      - GenerateEmbedUrlForRegisteredUser API
+      - RLS 自動適用
+      - iframe で表示
+
+実装例:
+  # Lambda 関数（埋め込みURL生成）
+  import boto3
+  
+  quicksight = boto3.client('quicksight')
+  
+  def generate_embed_url(user_arn, tenant_id):
+      response = quicksight.generate_embed_url_for_registered_user(
+          AwsAccountId='123456789012',
+          SessionLifetimeInMinutes=600,
+          UserArn=user_arn,
+          ExperienceConfiguration={
+              'Dashboard': {
+                  'InitialDashboardId': 'dashboard-id'
+              }
+          }
+      )
+      return response['EmbedUrl']
+
+セキュリティ:
+  - tenant_id による RLS
+  - セッション管理
+  - API認証
+```
+
+### パターン3: データレイク分析基盤
+
+```yaml
+構成:
+  データ収集:
+    複数ソース:
+      - DMS: オンプレDB → S3
+      - Kinesis Firehose: ストリーミング → S3
+      - DataSync: ファイル → S3
+  
+  データレイク（S3）:
+    Raw層:
+      - s3://datalake/raw/
+      - 元データそのまま
+    
+    Processed層:
+      - s3://datalake/processed/
+      - Parquet形式
+      - パーティション化
+    
+    Curated層:
+      - s3://datalake/curated/
+      - BI用に最適化
+      - 集計済みデータ
+  
+  カタログ・クエリ:
+    Glue:
+      - Crawler でメタデータ作成
+      - ETL ジョブで変換
+    
+    Athena:
+      - アドホッククエリ
+      - ビュー作成
+  
+  BI:
+    QuickSight:
+      - Athena 経由でデータアクセス
+      - SPICE にキャッシュ
+      - 複数ダッシュボード
+        * 営業ダッシュボード
+        * マーケティングダッシュボード
+        * 財務ダッシュボード
+        * 経営ダッシュボード
+
+ガバナンス:
+  Lake Formation:
+    - 一元的なアクセス制御
+    - 列・行レベルセキュリティ
+    - 監査ログ
+```
+
+### パターン4: ML統合予測ダッシュボード
+
+```yaml
+構成:
+  データ準備:
+    S3:
+      - 履歴データ（時系列）
+    
+    Glue:
+      - データクレンジング
+      - 特徴量エンジニアリング
+  
+  機械学習:
+    SageMaker:
+      - 予測モデル訓練
+      - エンドポイントデプロイ
+    
+    Lambda:
+      - 定期的に予測実行
+      - 結果を S3 に保存
+  
+  ダッシュボード:
+    QuickSight:
+      - 実績データ表示
+      - 予測データ表示（SageMaker結果）
+      - ML Insights:
+        * 異常検知
+        * トレンド分析
+        * 寄与分析
+
+ユースケース:
+  - 売上予測ダッシュボード
+  - 需要予測
+  - 在庫最適化
+  - チャーン予測
+```
+
+### パターン5: 準リアルタイム運用ダッシュボード
+
+```yaml
+構成:
+  データ収集:
+    アプリケーション:
+      - イベント発生
+      - Kinesis Data Streams に送信
+    
+    Kinesis Firehose:
+      - バッファ（60秒）
+      - Parquet 変換
+      - S3 に配信
+  
+  カタログ更新:
+    EventBridge:
+      - S3 イベント検知
+      - Lambda トリガー
+    
+    Lambda:
+      - Athena で ADD PARTITION
+      - QuickSight SPICE リフレッシュ
+  
+  ダッシュボード:
+    QuickSight:
+      - 15分間隔 SPICE リフレッシュ
+      - 自動更新ダッシュボード
+      - リアルタイムKPI表示
+
+レイテンシ:
+  - データ到着: 1〜2分
+  - ダッシュボード更新: 3〜15分
+  - 十分多くの運用ユースケースに対応
+```
+
+## 実装例
+
+### データセット作成（Athena）
+
+```yaml
+# データセット接続
+データソース:
+  名前: athena-datasource
+  タイプ: Athena
+  ワークグループ: primary
+
+データセット:
+  名前: sales_analysis
+  ソース: athena-datasource
+  
+カスタムSQL:
+  SELECT 
+    DATE_TRUNC('day', order_date) as date,
+    product_category,
+    region,
+    SUM(sales_amount) as total_sales,
+    COUNT(DISTINCT customer_id) as unique_customers,
+    AVG(sales_amount) as avg_order_value
+  FROM sales_data
+  WHERE year = '2024'
+  GROUP BY 1, 2, 3
+
+SPICEモード:
+  - インポート: データをSPICEにロード
+  - 直接クエリ: Athenaに毎回クエリ
+```
+
+### 計算フィールド作成
+
+```sql
+-- 前年比成長率
+ifelse(
+  sum({total_sales} OVER ([date ASC] ROWS BETWEEN 365 PRECEDING AND 365 PRECEDING)) > 0,
+  (sum({total_sales}) - sum({total_sales} OVER ([date ASC] ROWS BETWEEN 365 PRECEDING AND 365 PRECEDING))) 
+    / sum({total_sales} OVER ([date ASC] ROWS BETWEEN 365 PRECEDING AND 365 PRECEDING)) * 100,
+  NULL
+)
+
+-- 累積売上
+sum({total_sales}) OVER ([date ASC] ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+
+-- 移動平均（7日間）
+avg({total_sales}) OVER ([date ASC] ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)
+
+-- カテゴリ別シェア
+sum({total_sales}) / sumOver(sum({total_sales}), [{date}], PRE_AGG) * 100
+
+-- 条件付き集計
+sumIf({sales_amount}, {region} = 'East')
+```
+
+### パラメータ設定
+
+```yaml
+パラメータ定義:
+  名前: date_range_start
+  タイプ: DateTime
+  デフォルト値: truncDate('MM', now()) # 月初
+  
+  名前: date_range_end
+  タイプ: DateTime
+  デフォルト値: now()
+  
+  名前: selected_region
+  タイプ: String
+  デフォルト値: All
+  許可値: [All, East, West, North, South]
+
+フィルター適用:
+  date >= ${date_range_start} 
+  AND date <= ${date_range_end}
+  AND (${selected_region} = 'All' OR region = ${selected_region})
+
+コントロール:
+  - 日付範囲セレクター
+  - ドロップダウンリスト
+  - ダッシュボードに配置
+```
+
+### 行レベルセキュリティ（RLS）
+
+```yaml
+# RLS ルール（CSV）
+UserName,Region
+sales-user-1,East
+sales-user-2,West
+manager-1,"East,West"
+admin,*
+
+# データセットにRLS適用
+QuickSight Console:
+  1. データセット選択
+  2. "Permissions" タブ
+  3. "Manage row-level security"
+  4. CSV ファイルアップロード
+  5. ルール適用
+
+# RLS フィルター（データセット）
+WHERE region IN (
+  SELECT region 
+  FROM rls_table 
+  WHERE user_name = '${currentUserName}'
+)
+```
+
+### 埋め込み実装
+
+```javascript
+// JavaScript SDK 埋め込み
+<div id="dashboardContainer"></div>
+
+<script src="https://unpkg.com/amazon-quicksight-embedding-sdk@2.0.0/dist/quicksight-embedding-js-sdk.min.js"></script>
+
+<script type="text/javascript">
+  var QuickSightEmbedding = QuickSightEmbedding;
+  
+  // バックエンドから埋め込みURL取得
+  fetch('/api/get-quicksight-embed-url')
+    .then(response => response.json())
+    .then(data => {
+      const containerDiv = document.getElementById("dashboardContainer");
+      
+      const options = {
+        url: data.embedUrl,
+        container: containerDiv,
+        scrolling: "no",
+        height: "700px",
+        width: "100%",
+        locale: "ja-JP",
+        footerPaddingEnabled: true
+      };
+      
+      const dashboard = QuickSightEmbedding.embedDashboard(options);
+      
+      // イベントリスナー
+      dashboard.on("load", function() {
+        console.log("Dashboard loaded");
+      });
+      
+      dashboard.on("error", function(err) {
+        console.error("Dashboard error:", err);
+      });
+      
+      // パラメータ更新
+      dashboard.setParameters({
+        region: "East",
+        date_start: "2024-01-01"
+      });
+    });
+</script>
+```
+
+```python
+# Python（Flask）バックエンド
+import boto3
+from flask import Flask, jsonify
+
+app = Flask(__name__)
+quicksight = boto3.client('quicksight', region_name='us-east-1')
+
+@app.route('/api/get-quicksight-embed-url')
+def get_embed_url():
+    # ユーザー認証（実装による）
+    user_id = get_current_user_id()
+    tenant_id = get_user_tenant_id(user_id)
+    
+    # QuickSight ユーザーARN
+    user_arn = f"arn:aws:quicksight:us-east-1:123456789012:user/default/{user_id}"
+    
+    try:
+        response = quicksight.generate_embed_url_for_registered_user(
+            AwsAccountId='123456789012',
+            SessionLifetimeInMinutes=600,
+            UserArn=user_arn,
+            ExperienceConfiguration={
+                'Dashboard': {
+                    'InitialDashboardId': 'your-dashboard-id'
+                }
+            },
+            AllowedDomains=['https://your-domain.com']
+        )
+        
+        return jsonify({
+            'embedUrl': response['EmbedUrl'],
+            'requestId': response['RequestId']
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+```
+
+### SPICE リフレッシュ自動化
+
+```python
+# Lambda 関数
+import boto3
+
+quicksight = boto3.client('quicksight')
+
+def lambda_handler(event, context):
+    account_id = '123456789012'
+    data_set_id = 'your-dataset-id'
+    
+    try:
+        response = quicksight.create_ingestion(
+            DataSetId=data_set_id,
+            IngestionId=f'ingestion-{context.request_id}',
+            AwsAccountId=account_id
+        )
+        
+        return {
+            'statusCode': 200,
+            'body': f"SPICE refresh started: {response['IngestionId']}"
+        }
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'body': f"Error: {str(e)}"
+        }
+```
+
+```bash
+# CloudWatch Events ルール（毎日午前6時）
+aws events put-rule \
+  --name "quicksight-daily-refresh" \
+  --schedule-expression "cron(0 6 * * ? *)"
+
+aws events put-targets \
+  --rule "quicksight-daily-refresh" \
+  --targets "Id"="1","Arn"="arn:aws:lambda:REGION:ACCOUNT:function:quicksight-refresh"
+```
+
+## まとめ
+
+**アーキテクチャ設計のポイント:**
+- データソースに応じた最適な接続方法選択
+- SPICE で高速化、適切なリフレッシュ戦略
+- 埋め込み分析で RLS によるセキュリティ確保
+- データレイクとの統合で柔軟な分析基盤
+- ML Insights で高度な分析機能
+- パラメータとフィルターで柔軟な操作性
+- セルフサービスBI でビジネスユーザー活用

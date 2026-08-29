@@ -1,0 +1,306 @@
+---
+title: "CodePipeline 試験Tips"
+label: "試験Tips"
+---
+
+## CodePipeline 試験Tips (SAA/SAP)
+
+### 頻出トピック
+
+#### 1. CI/CDパイプライン構成
+
+```yaml
+基本構成:
+  Source: CodeCommit/GitHub
+  Build: CodeBuild
+  Deploy: CodeDeploy
+
+ポイント:
+  - 自動化されたリリースプロセス
+  - 各ステージの役割理解
+  - サービス統合
+```
+
+#### 2. CodePipeline + CodeBuild + CodeDeploy統合
+
+```yaml
+統合フロー:
+  1. CodeCommit/GitHubからソース取得
+  2. CodeBuildでビルド・テスト
+  3. CodeDeployでEC2/ECS/Lambdaへデプロイ
+
+頻出:
+  Q: CI/CDパイプラインを構築したい
+  A: CodePipeline + CodeBuild + CodeDeploy
+
+  Q: ビルドとデプロイを自動化
+  A: CodePipelineでオーケストレーション
+```
+
+#### 3. 承認プロセス
+
+```yaml
+手動承認:
+  - Manual Approvalアクション
+  - SNS通知
+  - 本番デプロイ前の確認
+
+使用例:
+  Dev → 自動デプロイ
+  Approval → 手動承認
+  Prod → デプロイ
+```
+
+#### 4. マルチリージョン/マルチアカウント
+
+```yaml
+マルチリージョン:
+  - 複数リージョンに順次デプロイ
+  - リージョン別アーティファクトストア
+  - クロスリージョンアクション
+
+マルチアカウント:
+  - クロスアカウントIAMロール
+  - アーティファクトバケットポリシー
+  - KMS暗号化キー共有
+```
+
+### 頻出シナリオ
+
+#### シナリオ1: 自動デプロイ
+
+```
+要件: GitHubへのコミットで自動的にEC2にデプロイ
+解答: CodePipeline + CodeBuild + CodeDeploy
+
+構成:
+✓ Source: GitHub（Webhook）
+✓ Build: CodeBuild
+✓ Deploy: CodeDeploy（EC2/Auto Scaling）
+```
+
+#### シナリオ2: コンテナCI/CD
+
+```
+要件: ECSコンテナアプリの継続的デリバリー
+解答: CodePipeline + ECR + ECS Blue/Green
+
+フロー:
+✓ Dockerイメージビルド（CodeBuild）
+✓ ECRにプッシュ
+✓ ECS Blue/Greenデプロイ
+✓ ALBトラフィック自動切替
+```
+
+#### シナリオ3: 本番承認フロー
+
+```
+要件: 本番デプロイ前に承認が必要
+解答: Manual Approvalステージ追加
+
+設定:
+✓ Approvalステージ挿入
+✓ SNS通知設定
+✓ 承認者指定
+```
+
+#### シナリオ4: マルチリージョン展開
+
+```
+要件: 複数リージョンに同じアプリをデプロイ
+解答: クロスリージョンアクション
+
+ポイント:
+✓ リージョン別artifactStores
+✓ 各リージョンにDeployアクション
+✓ S3レプリケーション（必要に応じて）
+```
+
+#### シナリオ5: サーバーレスCI/CD
+
+```
+要件: Lambda関数の自動デプロイ
+解答: CodePipeline + SAM/CloudFormation
+
+フロー:
+✓ SAMテンプレート管理
+✓ CodeBuildでパッケージング
+✓ CloudFormationでデプロイ
+```
+
+#### シナリオ6: IaC自動化
+
+```
+要件: CloudFormationテンプレート変更の安全な適用
+解答: CodePipeline + CloudFormation ChangeSet
+
+ステップ:
+✓ ChangeSet作成
+✓ 変更内容レビュー（Approval）
+✓ ChangeSet実行
+```
+
+### CodePipelineとその他サービスの使い分け
+
+```yaml
+CodePipeline:
+  - フルマネージドCI/CD
+  - AWS統合深い
+  - GUIで設定可能
+
+Jenkins:
+  - セルフホスト必要
+  - プラグイン豊富
+  - 柔軟性高い
+
+頻出:
+  Q: フルマネージドCI/CD
+  A: CodePipeline
+
+  Q: 既存Jenkinsとの統合
+  A: CodePipelineのBuildステージでJenkins使用
+```
+
+### よくある間違い
+
+```yaml
+× 誤り: CodeCommit/GitHubで直接ビルド
+○ 正解: CodePipelineでオーケストレーション
+
+× 誤り: CodeBuildだけでCI/CD完結
+○ 正解: CodePipelineでステージ管理
+
+× 誤り: 手動デプロイ
+○ 正解: CodePipelineで自動化
+
+× 誤り: 本番直接デプロイ
+○ 正解: Approvalステージで承認
+```
+
+### SAA試験重要ポイント
+
+```yaml
+基本概念:
+  ☐ CI/CDとは
+  ☐ パイプライン構造
+  ☐ ステージとアクション
+
+サービス統合:
+  ☐ CodeCommit/GitHub（Source）
+  ☐ CodeBuild（Build）
+  ☐ CodeDeploy（Deploy）
+  ☐ CloudFormation（IaC）
+
+運用:
+  ☐ 手動承認
+  ☐ SNS通知
+  ☐ アーティファクト管理
+
+ユースケース:
+  ☐ Web アプリCI/CD
+  ☐ コンテナデプロイ
+  ☐ サーバーレスデプロイ
+```
+
+### SAP試験重要ポイント
+
+```yaml
+高度な構成:
+  ☐ マルチリージョンデプロイ
+  ☐ マルチアカウント戦略
+  ☐ クロスアカウントIAMロール
+
+複雑なパイプライン:
+  ☐ 並列アクション
+  ☐ 複数環境（Dev/Staging/Prod）
+  ☐ 段階的ロールアウト
+
+統合:
+  ☐ Lambda統合（カスタムアクション）
+  ☐ Terraform統合
+  ☐ サードパーティツール連携
+
+セキュリティ:
+  ☐ KMS暗号化
+  ☐ Secrets Manager統合
+  ☐ 最小権限IAMロール
+
+モニタリング:
+  ☐ CloudWatch Events
+  ☐ SNS通知戦略
+  ☐ 失敗時のロールバック
+```
+
+### 試験頻出パターン
+
+```yaml
+パターン1: EC2自動デプロイ
+Source: GitHub
+Build: CodeBuild
+Deploy: CodeDeploy（EC2）
+→ Blue/Greenまたはin-placeデプロイ
+
+パターン2: ECSコンテナ
+Source: CodeCommit
+Build: CodeBuild → ECR
+Deploy: ECS Blue/Green
+→ ALB自動トラフィック切替
+
+パターン3: Lambdaサーバーレス
+Source: GitHub
+Build: CodeBuild + SAM
+Deploy: CloudFormation
+→ Lambda関数更新
+
+パターン4: マルチリージョン
+Source: S3/GitHub
+Build: CodeBuild
+Deploy: 複数リージョン並列/順次
+→ グローバル展開
+
+パターン5: 承認フロー
+Source → Build → Deploy Dev → Approval → Deploy Prod
+→ 本番環境への安全なデプロイ
+```
+
+### 重要な制約と仕様
+
+```yaml
+制約:
+  - パイプラインは単一リージョンで作成
+  - クロスリージョンアクションは可能
+  - ステージ内アクションは並列実行可能
+  - ステージ間は順次実行
+
+アーティファクト:
+  - S3に自動保存
+  - ステージ間で受け渡し
+  - 暗号化推奨（KMS）
+
+通知:
+  - CloudWatch Events
+  - SNS統合
+  - 状態変更検知
+```
+
+### 暗記すべきキーワード
+
+```yaml
+必須キーワード:
+  - CI/CD
+  - パイプライン
+  - ステージ（Source、Build、Test、Deploy）
+  - アクション
+  - アーティファクト
+  - Manual Approval
+  - Blue/Green Deployment
+
+統合サービス:
+  - CodeCommit
+  - CodeBuild
+  - CodeDeploy
+  - CloudFormation
+  - ECS
+  - Lambda
+  - ECR
+```

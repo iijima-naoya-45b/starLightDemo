@@ -1,0 +1,293 @@
+---
+title: "FSxとは？"
+label: "FSxとは？"
+---
+
+## Amazon FSx とは？
+
+Amazon FSxは、フルマネージドなファイルシステムサービスで、複数の種類のファイルシステムを提供します。
+
+### 基本概念
+
+```yaml
+特徴:
+  - フルマネージド
+  - 高パフォーマンス
+  - 高可用性（Multi-AZ対応）
+  - 自動バックアップ
+  - スケーラブル
+
+展開オプション:
+  - Single-AZ: 単一AZ展開
+  - Multi-AZ: 複数AZ展開（高可用性）
+```
+
+## FSx for Windows File Server
+
+### 概要
+
+```yaml
+特徴:
+  - Windows Serverベース
+  - SMB/NTFSプロトコル
+  - Active Directory統合
+  - DFS Namespaces対応
+  - Windows ACL完全サポート
+
+パフォーマンス:
+  - スループット: 最大2GB/秒
+  - IOPS: 最大10万IOPS
+  - レイテンシー: サブミリ秒
+
+容量:
+  - SSD: 32GB 〜 64TB
+  - HDD: 2TB 〜 64TB
+```
+
+### ユースケース
+
+```yaml
+適用シーン:
+  - Windowsアプリケーション
+  - ホームディレクトリ
+  - CMS（コンテンツ管理システム）
+  - Microsoft SQL Serverデータ共有
+  - Active Directory統合環境
+```
+
+## FSx for Lustre
+
+### 概要
+
+```yaml
+特徴:
+  - ハイパフォーマンスコンピューティング（HPC）
+  - 並列ファイルシステム
+  - S3統合（シームレス）
+  - 低レイテンシー
+  - 高スループット
+
+パフォーマンス:
+  - スループット: 最大1TB/秒
+  - IOPS: 数百万IOPS
+  - レイテンシー: サブミリ秒
+
+展開タイプ:
+  Scratch:
+    - 一時データ
+    - レプリケーションなし
+    - 最高パフォーマンス
+    - 低コスト
+  
+  Persistent:
+    - 長期データ
+    - 自動レプリケーション
+    - 高可用性
+    - 自動バックアップ
+```
+
+### ユースケース
+
+```yaml
+適用シーン:
+  - 機械学習トレーニング
+  - ビッグデータ解析
+  - メディア処理・レンダリング
+  - ゲノム解析
+  - 金融モデリング
+  - シミュレーション
+```
+
+## FSx for NetApp ONTAP
+
+### 概要
+
+```yaml
+特徴:
+  - NetApp ONTAP機能
+  - マルチプロトコル（NFS, SMB, iSCSI）
+  - データ重複排除・圧縮
+  - スナップショット
+  - クローン（瞬時）
+  - SnapMirrorレプリケーション
+
+パフォーマンス:
+  - スループット: 最大10GB/秒
+  - IOPS: 最大35万IOPS
+  - 容量: 最大192TB
+
+ストレージ効率:
+  - データ重複排除
+  - データ圧縮
+  - コンパクション
+  - 通常50-70%削減
+```
+
+### ユースケース
+
+```yaml
+適用シーン:
+  - エンタープライズアプリケーション
+  - データベース（Oracle, SAP）
+  - 仮想デスクトップ（VDI）
+  - ファイルサーバー統合
+  - DevOpsワークロード
+  - コンテナ永続ストレージ
+```
+
+## FSx for OpenZFS
+
+### 概要
+
+```yaml
+特徴:
+  - OpenZFSファイルシステム
+  - NFSプロトコル
+  - 高パフォーマンス
+  - データ整合性保証
+  - スナップショット（低オーバーヘッド）
+  - クローン
+
+パフォーマンス:
+  - スループット: 最大10GB/秒
+  - IOPS: 最大100万IOPS
+  - レイテンシー: 数百マイクロ秒
+
+容量:
+  - 64GB 〜 512TB
+```
+
+### ユースケース
+
+```yaml
+適用シーン:
+  - Linuxワークロード
+  - データベース
+  - メディア処理
+  - EDA（電子設計自動化）
+  - コンテナストレージ
+  - DevOps環境
+```
+
+## FSxタイプ比較
+
+| 機能 | Windows | Lustre | NetApp ONTAP | OpenZFS |
+|---|---|---|---|---|
+| **プロトコル** | SMB | POSIX | NFS/SMB/iSCSI | NFS |
+| **OS** | Windows | Linux | マルチ | Linux |
+| **最大スループット** | 2GB/秒 | 1TB/秒 | 10GB/秒 | 10GB/秒 |
+| **S3統合** | ✗ | ✓ | ✓ | ✗ |
+| **Active Directory** | ✓ | ✗ | ✓ | ✗ |
+| **データ重複排除** | ✓ | ✗ | ✓ | ✓ |
+| **スナップショット** | ✓ | △ | ✓ | ✓ |
+| **主要用途** | Windows環境 | HPC/ML | エンタープライズ | Linux環境 |
+
+## 料金
+
+### FSx for Windows File Server
+
+```yaml
+ストレージ料金:
+  SSD:
+    - Multi-AZ: $0.13/GB/月
+    - Single-AZ: $0.065/GB/月
+  HDD:
+    - Multi-AZ: $0.026/GB/月
+    - Single-AZ: $0.013/GB/月
+
+スループット容量:
+  - $2.20/MBps/月
+
+バックアップ:
+  - $0.05/GB/月
+```
+
+### FSx for Lustre
+
+```yaml
+ストレージ料金:
+  Persistent SSD:
+    - 125MB/s/TB: $0.145/GB/月
+    - 250MB/s/TB: $0.210/GB/月
+    - 500MB/s/TB: $0.290/GB/月
+    - 1000MB/s/TB: $0.410/GB/月
+  
+  Scratch:
+    - $0.084/GB/月
+
+バックアップ:
+  - $0.05/GB/月
+```
+
+### FSx for NetApp ONTAP
+
+```yaml
+ストレージ料金:
+  SSD:
+    - $0.138/GB/月（プロビジョニング容量）
+  
+  容量プール:
+    - $0.066/GB/月（使用量課金）
+
+スループット容量:
+  - $0.066/MBps/月
+
+バックアップ:
+  - $0.05/GB/月
+```
+
+### FSx for OpenZFS
+
+```yaml
+ストレージ料金:
+  SSD:
+    - Single-AZ: $0.135/GB/月
+    - Multi-AZ: 非対応
+
+スループット容量:
+  - $0.10/MBps/月
+
+バックアップ:
+  - $0.05/GB/月
+```
+
+## 選択ガイド
+
+```yaml
+Windows File Server:
+  使用条件:
+    - Windowsアプリケーション
+    - SMBプロトコル必要
+    - Active Directory統合
+
+Lustre:
+  使用条件:
+    - HPC/MLワークロード
+    - 超高速パフォーマンス
+    - S3統合必要
+    - 一時データ処理
+
+NetApp ONTAP:
+  使用条件:
+    - エンタープライズ要件
+    - マルチプロトコル必要
+    - ストレージ効率重視
+    - 既存NetApp環境移行
+
+OpenZFS:
+  使用条件:
+    - Linuxワークロード
+    - 高パフォーマンスNFS
+    - スナップショット頻繁利用
+    - データ整合性重視
+```
+
+## まとめ
+
+**FSxの重要ポイント:**
+- 用途に応じた4タイプのファイルシステム
+- Windows環境はFSx for Windows
+- HPC/ML環境はFSx for Lustre
+- エンタープライズはFSx for NetApp ONTAP
+- Linux高性能環境はFSx for OpenZFS
+- Multi-AZ展開で高可用性確保

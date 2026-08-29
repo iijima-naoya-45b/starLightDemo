@@ -1,0 +1,391 @@
+---
+title: "FSx ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## FSx ユースケースおよびアーキテクチャパターン
+
+## FSx for Windows File Server
+
+### 1. エンタープライズファイル共有
+
+```yaml
+構成:
+  FSx Windows + Active Directory:
+    - FSx: ファイル共有
+    - AD: 認証・認可
+    - VPN/Direct Connect: オンプレミス接続
+    - Multi-AZ: 高可用性
+
+特徴:
+  - Windows ACL
+  - ユーザークォータ
+  - DFS Namespaces
+  - シャドウコピー（VSS）
+
+接続:
+  Windows: net use Z: \\fs-xxx.example.com\share
+  PowerShell: New-PSDrive -Name "Z" -PSProvider FileSystem -Root "\\fs-xxx\share"
+```
+
+### 2. ホームディレクトリ
+
+```yaml
+構成:
+  FSx Windows + WorkSpaces:
+    - FSx: ユーザーホームディレクトリ
+    - WorkSpaces: 仮想デスクトップ
+    - AD: ユーザー管理
+
+容量:
+  - ユーザー数: 1000人
+  - 1人あたり: 50GB
+  - 合計: 50TB
+  - バックアップ: 毎日自動
+```
+
+### 3. SQL Serverデータ共有
+
+```yaml
+構成:
+  EC2 (SQL Server) + FSx Windows:
+    - FSx: データベースファイル（.mdf, .ldf）
+    - Multi-AZ: SQL Always On対応
+    - バックアップ: ポイントインタイム
+
+パフォーマンス:
+  - SSDストレージ
+  - プロビジョンドIOPS
+  - 低レイテンシー
+```
+
+### 4. コンテンツ管理システム
+
+```yaml
+構成:
+  EC2 (IIS/SharePoint) + FSx Windows:
+    - FSx: コンテンツストア
+    - Multi-AZ: 高可用性
+    - ALB: 負荷分散
+
+スケール:
+  - 複数EC2同時アクセス
+  - 共有ストレージ
+  - セッション管理
+```
+
+## FSx for Lustre
+
+### 1. 機械学習トレーニング
+
+```yaml
+構成:
+  S3 → FSx Lustre → EC2 (GPU):
+    - S3: データレイク（学習データ）
+    - FSx: 高速キャッシュ
+    - EC2: トレーニング実行
+
+ワークフロー:
+  1. S3からFSxへ自動インポート
+  2. 学習データ読み込み（高速）
+  3. モデル学習実行
+  4. 結果をS3へエクスポート
+
+パフォーマンス向上:
+  - 10-100倍高速化
+  - 並列読み込み
+  - ローカルキャッシュ
+```
+
+### 2. ビッグデータ解析
+
+```yaml
+構成:
+  S3 + FSx Lustre + EMR:
+    - S3: データ保存
+    - FSx: 高速処理レイヤー
+    - EMR: Spark/Hadoop
+
+データフロー:
+  S3 → FSx Lustre:
+    - 自動データインポート
+    - 増分更新対応
+  
+  FSx → EMR:
+    - POSIXファイルシステム
+    - 並列アクセス
+
+コスト最適化:
+  - Scratchタイプ使用
+  - 処理後削除
+  - S3に永続保存
+```
+
+### 3. メディアレンダリング
+
+```yaml
+構成:
+  S3 + FSx Lustre + EC2 (レンダーファーム):
+    - S3: 素材・完成品保存
+    - FSx: レンダリング作業領域
+    - EC2: レンダーノード
+
+ワークフロー:
+  1. 素材をS3からFSxへ
+  2. 複数ノードで並列レンダリング
+  3. 完成品をS3へ
+  4. FSx削除（コスト削減）
+
+パフォーマンス:
+  - 1TB/秒スループット
+  - 数百万IOPS
+  - 100+ ノード同時アクセス
+```
+
+### 4. ゲノム解析
+
+```yaml
+構成:
+  S3 + FSx Lustre + Batch:
+    - S3: ゲノムデータ
+    - FSx: 解析作業領域
+    - Batch: ジョブスケジューリング
+
+解析フロー:
+  1. ゲノムデータFSxマウント
+  2. アラインメント・バリアント検出
+  3. 結果S3保存
+  4. FSx自動削除
+
+スケール:
+  - TB級データ処理
+  - 数千コア並列処理
+  - 数時間で完了
+```
+
+## FSx for NetApp ONTAP
+
+### 1. ハイブリッドクラウドストレージ
+
+```yaml
+構成:
+  オンプレミス (NetApp) + FSx ONTAP:
+    - SnapMirror: データレプリケーション
+    - FSx: AWSクラウド側
+    - Direct Connect: 専用線接続
+
+災害対策:
+  - RPO: 数分
+  - RTO: 数分
+  - 双方向レプリケーション
+
+移行戦略:
+  1. SnapMirror設定
+  2. 初期同期
+  3. 増分レプリケーション
+  4. フェイルオーバー準備
+```
+
+### 2. マルチプロトコルファイル共有
+
+```yaml
+構成:
+  FSx ONTAP + 複数OS:
+    - Windows: SMBプロトコル
+    - Linux: NFSプロトコル
+    - VMware: iSCSIプロトコル
+
+ユースケース:
+  - 混在環境
+  - 統一ストレージ
+  - データ共有
+
+データ管理:
+  - 単一ボリューム
+  - プロトコル自動変換
+  - ACL統合管理
+```
+
+### 3. データベースワークロード
+
+```yaml
+構成:
+  EC2 (Oracle/SAP) + FSx ONTAP:
+    - FSx: データベースファイル
+    - iSCSIプロトコル
+    - FlexClone: 開発環境複製
+
+パフォーマンス:
+  - 最大35万IOPS
+  - サブミリ秒レイテンシー
+  - データ重複排除・圧縮
+
+開発環境:
+  1. 本番環境スナップショット作成
+  2. FlexCloneで瞬時複製
+  3. 開発環境で使用
+  4. ストレージコスト最小
+```
+
+### 4. コンテナ永続ストレージ
+
+```yaml
+構成:
+  EKS + FSx ONTAP + Trident:
+    - EKS: Kubernetesクラスター
+    - FSx: 永続ボリューム
+    - Trident: CSIドライバー
+
+特徴:
+  - 動的プロビジョニング
+  - スナップショット
+  - クローン
+  - マルチAZサポート
+
+YAML例:
+  apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: fsx-pvc
+  spec:
+    accessModes:
+      - ReadWriteMany
+    resources:
+      requests:
+        storage: 100Gi
+    storageClassName: fsx-ontap
+```
+
+## FSx for OpenZFS
+
+### 1. 高性能Linuxワークロード
+
+```yaml
+構成:
+  EC2 (Linux) + FSx OpenZFS:
+    - FSx: NFSファイルシステム
+    - 低レイテンシー
+    - 高スループット
+
+アプリケーション:
+  - データベース（PostgreSQL, MySQL）
+  - Webアプリケーション
+  - DevOps環境
+
+マウント:
+  sudo mount -t nfs \
+    fs-xxx.fsx.region.amazonaws.com:/fsx/ \
+    /mnt/fsx \
+    -o nfsvers=4.1
+```
+
+### 2. メディア処理パイプライン
+
+```yaml
+構成:
+  EC2 + FSx OpenZFS:
+    - FSx: 作業領域
+    - スナップショット: チェックポイント
+    - クローン: 並列処理
+
+ワークフロー:
+  1. ソース動画インジェスト
+  2. トランスコーディング
+  3. 各ステップでスナップショット
+  4. 並列処理用クローン作成
+  5. 完成品エクスポート
+
+パフォーマンス:
+  - 数百マイクロ秒レイテンシー
+  - 10GB/秒スループット
+  - 瞬時スナップショット
+```
+
+### 3. EDA（電子設計自動化）
+
+```yaml
+構成:
+  EC2 (EDAツール) + FSx OpenZFS:
+    - FSx: 設計データ
+    - スナップショット: バージョン管理
+    - クローン: 複数設計者並行作業
+
+特徴:
+  - 小ファイル高速処理
+  - データ整合性保証
+  - ロールバック対応
+
+容量効率:
+  - スナップショット: 差分のみ
+  - クローン: ゼロコスト
+  - データ圧縮
+```
+
+### 4. DevOps環境
+
+```yaml
+構成:
+  EC2 + FSx OpenZFS + GitLab:
+    - FSx: リポジトリ・CI/CD作業領域
+    - スナップショット: バックアップ
+    - 高IOPS: ビルド高速化
+
+CI/CDパイプライン:
+  1. コードチェックアウト
+  2. ビルド実行（高速I/O）
+  3. テスト実行
+  4. アーティファクト保存
+  5. スナップショット作成
+
+効果:
+  - ビルド時間短縮
+  - テスト高速化
+  - ロールバック容易
+```
+
+## 比較: EFS vs FSx
+
+```yaml
+EFS (Elastic File System):
+  プロトコル: NFS
+  スケール: ペタバイト級
+  料金: 使用量課金
+  用途: シンプルなLinux共有ファイルシステム
+
+FSx for Windows:
+  プロトコル: SMB
+  機能: Windows完全互換
+  用途: Windows環境
+
+FSx for Lustre:
+  プロトコル: POSIX
+  性能: 超高性能
+  用途: HPC/ML
+
+FSx for NetApp ONTAP:
+  プロトコル: マルチ
+  機能: エンタープライズ
+  用途: 複雑な要件
+
+FSx for OpenZFS:
+  プロトコル: NFS
+  機能: 高性能・データ整合性
+  用途: Linuxワークロード
+
+選択基準:
+  - シンプルなLinux共有 → EFS
+  - Windows環境 → FSx for Windows
+  - HPC/ML → FSx for Lustre
+  - エンタープライズ → FSx for NetApp ONTAP
+  - 高性能Linux → FSx for OpenZFS
+```
+
+## まとめ
+
+**FSxアーキテクチャパターン:**
+- Windows環境は FSx for Windows + Active Directory
+- ML/HPCは FSx for Lustre + S3統合
+- エンタープライズは FSx for NetApp ONTAP + SnapMirror
+- Linux高性能は FSx for OpenZFS
+- Multi-AZ構成で高可用性確保
+- 適切なタイプ選択でコスト最適化

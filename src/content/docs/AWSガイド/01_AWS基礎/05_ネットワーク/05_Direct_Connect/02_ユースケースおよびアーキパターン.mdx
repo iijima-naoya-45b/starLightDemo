@@ -1,0 +1,499 @@
+---
+title: "Direct Connect ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## Direct Connect ユースケースおよびアーキパターン
+
+実際のビジネスシーンでの Direct Connect の活用方法と、代表的なアーキテクチャパターンを解説します。
+
+### 主要ユースケース
+
+#### 1. ハイブリッドクラウド
+
+```yaml
+シナリオ:
+  - オンプレミスとAWSの統合環境
+  - 既存システムとクラウドの共存
+  - 段階的なクラウド移行
+
+要件:
+  - 低レイテンシー通信
+  - 安定した帯域幅
+  - セキュアな接続
+  - オンプレミスからAWSリソースへのアクセス
+
+構成:
+  オンプレミスデータセンター
+    ↓ Direct Connect (1Gbps)
+  Direct Connect Gateway
+    ↓
+  ├─ VPC (本番環境 - ap-northeast-1)
+  ├─ VPC (開発環境 - ap-northeast-1)
+  └─ VPC (DR環境 - us-west-2)
+
+メリット:
+  - 既存投資の活用
+  - 段階的な移行
+  - 一貫したネットワーク体験
+  - コンプライアンス要件対応
+
+実装例:
+  - Active Directory連携
+  - オンプレミスDBとAWSアプリケーション連携
+  - ファイルサーバーとS3の統合
+```
+
+#### 2. 大容量データ転送
+
+```yaml
+シナリオ:
+  - ビッグデータ分析
+  - メディアファイル転送
+  - データレイク構築
+  - バックアップ/アーカイブ
+
+要件:
+  - 高帯域幅 (10Gbps以上)
+  - 継続的なデータ転送
+  - コスト効率
+  - 転送時間の予測可能性
+
+構成:
+  オンプレミス (ストレージ)
+    ↓ Direct Connect (10Gbps)
+  Public VIF
+    ↓
+  ├─ S3 (データレイク)
+  ├─ Glacier (長期アーカイブ)
+  └─ AWS Transfer Family
+
+データ転送量試算:
+  10Gbps接続で1日あたり:
+    - 理論値: 108TB/日
+    - 実効値: 80-90TB/日 (約80%効率)
+  
+  コスト比較 (月間100TB転送):
+    - Direct Connect: 約$3,000 (ポート + 転送料)
+    - インターネット: 約$5,000-$8,000
+    - AWS Snowball: $200/device + 輸送費
+
+メリット:
+  - 一貫した転送速度
+  - インターネット帯域への影響なし
+  - コスト削減 (大容量時)
+  - 予測可能な転送時間
+```
+
+#### 3. 災害復旧 (DR)
+
+```yaml
+シナリオ:
+  - オンプレミスのDR環境としてAWS活用
+  - RTO/RPO要件の厳しいシステム
+  - データベースレプリケーション
+
+要件:
+  - 低レイテンシー (<10ms)
+  - 高可用性 (99.99%以上)
+  - 自動フェイルオーバー
+  - リアルタイムレプリケーション
+
+構成:
+  オンプレミス (Primary)
+    ↓ Direct Connect (冗長化)
+    ↓ データベースレプリケーション
+  AWS VPC (DR環境)
+    - RDS / EC2 (Standby)
+    - Route 53 (DNS failover)
+    - CloudWatch (監視)
+
+RPO/RTO目標:
+  - RPO: 1分未満 (同期レプリケーション)
+  - RTO: 5分以内 (自動フェイルオーバー)
+
+実装パターン:
+  1. Pilot Light:
+     - 最小限のDR環境を常時起動
+     - 障害時にスケールアップ
+     - コスト効率的
+  
+  2. Warm Standby:
+     - 本番環境の縮小版を常時起動
+     - 障害時に即座にスケール
+     - バランス型
+  
+  3. Hot Standby (Multi-Site):
+     - フルスケールの環境を並行稼働
+     - 即座の切り替え
+     - 最高レベルの可用性
+```
+
+#### 4. リアルタイム処理
+
+```yaml
+シナリオ:
+  - IoTデータのリアルタイム分析
+  - 金融取引システム
+  - オンラインゲーム
+  - ビデオストリーミング
+
+要件:
+  - 超低レイテンシー (<5ms)
+  - 高スループット
+  - 予測可能なパフォーマンス
+  - Jitter最小化
+
+構成:
+  工場/支店 (IoTデバイス)
+    ↓ Direct Connect (1Gbps)
+  Private VIF
+    ↓
+  VPC
+    ├─ Kinesis Data Streams
+    ├─ Lambda (リアルタイム処理)
+    ├─ DynamoDB (低レイテンシーDB)
+    └─ ElastiCache (キャッシュ)
+
+性能指標:
+  - レイテンシー: 2-5ms (東京 Direct Connect Location)
+  - Jitter: <1ms
+  - パケットロス: <0.01%
+
+活用例:
+  - 製造業: 機械の異常検知
+  - 金融: 高頻度取引
+  - 小売: リアルタイム在庫管理
+  - メディア: ライブ配信
+```
+
+### アーキテクチャパターン
+
+#### パターン1: シングル Direct Connect + VPN バックアップ
+
+```yaml
+構成:
+  オンプレミス
+    ├─ Primary: Direct Connect (1Gbps)
+    └─ Backup: Site-to-Site VPN
+
+  AWS
+    ├─ Virtual Private Gateway
+    └─ VPC
+
+ルーティング:
+  - BGPでDirect Connect優先 (AS Path Prepend)
+  - VPNは自動フェイルオーバー用
+  - Direct Connect障害時に自動切り替え
+
+メリット:
+  - コスト効率的
+  - 自動フェイルオーバー
+  - 冗長性確保
+  - 中小規模に最適
+
+デメリット:
+  - VPN帯域制限 (1.25Gbps/tunnel)
+  - フェイルオーバー時のパフォーマンス低下
+
+実装:
+  1. Direct Connect接続確立
+  2. VPN接続作成
+  3. BGP設定:
+     - Direct Connect: AS Path = 65000
+     - VPN: AS Path = 65000 65000 65000 (Prepend)
+  4. ヘルスチェック設定
+  5. フェイルオーバーテスト
+
+コスト (月額):
+  - Direct Connect (1Gbps): $205
+  - VPN: $36
+  - データ転送: 従量課金
+  - 合計: 約$241 + データ転送料
+```
+
+#### パターン2: 冗長 Direct Connect (同一ロケーション)
+
+```yaml
+構成:
+  オンプレミス
+    ├─ Direct Connect 1 (1Gbps)
+    └─ Direct Connect 2 (1Gbps)
+    
+  Direct Connect Location (同一)
+    ├─ 異なる物理ポート
+    └─ 異なるデバイス (可能な限り)
+
+  AWS
+    └─ VPC (Virtual Private Gateway)
+
+ルーティング:
+  - ECMP (Equal Cost Multi-Path)
+  - Active/Active負荷分散
+  - 両方のパスで均等にトラフィック分散
+
+メリット:
+  - デバイス障害対策
+  - 帯域幅の合計利用 (2Gbps)
+  - Active/Active構成
+  - シンプルな構成
+
+デメリット:
+  - ロケーション障害には脆弱
+  - メンテナンス時の影響
+
+推奨設定:
+  - 異なる物理ポート
+  - 異なるカスタマールーター
+  - BGP設定で均等配分
+  - CloudWatch監視
+
+コスト (月額):
+  - Direct Connect × 2: $410
+  - データ転送: 従量課金
+  - 合計: 約$410 + データ転送料
+```
+
+#### パターン3: 冗長 Direct Connect (マルチロケーション) - 推奨
+
+```yaml
+構成:
+  オンプレミス
+    ├─ Direct Connect 1 → ロケーションA (1Gbps)
+    └─ Direct Connect 2 → ロケーションB (1Gbps)
+
+  AWS
+    ├─ Direct Connect Gateway
+    └─ 複数VPC (マルチリージョン対応)
+
+特徴:
+  - 最高レベルの可用性
+  - ロケーション障害対策
+  - 地理的な冗長性
+  - AWSが推奨する構成
+
+メリット:
+  - SLA: 99.99%
+  - ロケーション全体障害でも継続
+  - メンテナンス影響最小化
+  - エンタープライズグレード
+
+デメリット:
+  - コスト高
+  - 複雑な配線
+  - 2つのロケーションへの物理アクセス必要
+
+実装ベストプラクティス:
+  1. 異なるDirect Connect Location選択
+  2. 各ロケーションで冗長接続 (計4接続)
+  3. Direct Connect Gateway使用
+  4. BGP設定で負荷分散
+  5. CloudWatch + SNS で監視
+
+高可用性構成:
+  オンプレミス
+    ├─ ロケーションA
+    │   ├─ DX-1a (Primary)
+    │   └─ DX-1b (Backup)
+    └─ ロケーションB
+        ├─ DX-2a (Primary)
+        └─ DX-2b (Backup)
+  
+  可用性: 99.99%以上
+  
+コスト (月額) - 4接続:
+  - Direct Connect × 4: $820
+  - データ転送: 従量課金
+  - 合計: 約$820 + データ転送料
+```
+
+#### パターン4: Transit Gateway + Direct Connect
+
+```yaml
+構成:
+  オンプレミス
+    ↓ Direct Connect (10Gbps)
+  Transit VIF
+    ↓
+  Transit Gateway (ハブ)
+    ↓
+  ├─ VPC 1 (本番環境)
+  ├─ VPC 2 (開発環境)
+  ├─ VPC 3 (検証環境)
+  ├─ VPC 4 (共有サービス)
+  └─ Site-to-Site VPN (支店接続)
+
+メリット:
+  - 中央集約管理
+  - スケーラブル (最大5,000 VPC)
+  - VPC間ルーティング制御
+  - オンプレミスと複数VPC統合
+  - 支店からVPNとの統合
+
+ルーティングテーブル例:
+  Production RT:
+    - 10.0.0.0/16 → VPC-1
+    - 192.168.0.0/16 → Direct Connect
+  
+  Development RT:
+    - 10.1.0.0/16 → VPC-2
+    - 192.168.0.0/16 → Direct Connect
+  
+  Shared Services RT:
+    - すべてのVPCへのルート
+    - オンプレミスへのルート
+
+セグメンテーション:
+  - 本番と開発の分離
+  - コンプライアンス要件対応
+  - セキュリティ境界の明確化
+
+コスト (月額):
+  - Direct Connect (10Gbps): $1,620
+  - Transit Gateway アタッチメント × 4: $144
+  - データ転送 (TGW経由): $0.02/GB
+  - 合計: 約$1,764 + データ転送料
+```
+
+#### パターン5: マルチアカウント + AWS Organizations
+
+```yaml
+構成:
+  オンプレミス
+    ↓ Direct Connect
+  Direct Connect Gateway (共有)
+    ↓
+  Transit Gateway (Network Account)
+    ↓ RAM (Resource Access Manager)
+  ├─ Production Account
+  │   ├─ VPC-Prod-1
+  │   └─ VPC-Prod-2
+  ├─ Development Account
+  │   ├─ VPC-Dev-1
+  │   └─ VPC-Dev-2
+  └─ Shared Services Account
+      ├─ VPC-Shared
+      └─ Direct Connect 接続
+
+メリット:
+  - アカウント分離
+  - コスト配分明確
+  - セキュリティ境界
+  - ガバナンス強化
+  - 一元的なネットワーク管理
+
+実装:
+  1. Network Account作成
+  2. Direct Connect接続 (Network Account)
+  3. Transit Gateway作成
+  4. RAM でTransit Gateway共有
+  5. 各アカウントでVPCアタッチ
+  6. ルートテーブル設定
+
+ガバナンス:
+  - Service Control Policies (SCP)
+  - 集中ログ管理 (CloudWatch Logs)
+  - 統合請求
+  - タグポリシー
+
+セキュリティ:
+  - アカウントレベル分離
+  - IAMロール制御
+  - VPC Flowログ (全VPC)
+  - GuardDuty (全アカウント)
+```
+
+#### パターン6: グローバル展開 (Multi-Region)
+
+```yaml
+構成:
+  オンプレミス (東京)
+    ↓ Direct Connect (10Gbps)
+  Direct Connect Location (東京)
+    ↓ Direct Connect Gateway
+  ├─ ap-northeast-1 (東京)
+  │   ├─ VPC-Tokyo-1
+  │   └─ VPC-Tokyo-2
+  ├─ us-east-1 (バージニア)
+  │   ├─ VPC-US-1
+  │   └─ VPC-US-2
+  └─ eu-west-1 (アイルランド)
+      ├─ VPC-EU-1
+      └─ VPC-EU-2
+
+メリット:
+  - 単一Direct Connectから全リージョンアクセス
+  - グローバルバックボーン利用
+  - 各リージョンへの安定接続
+  - コスト効率的
+
+注意点:
+  - リージョン間はAWS Backboneを経由
+  - レイテンシーは物理距離に依存
+  - VPC間通信はVPC Peering別途必要
+
+レイテンシー目安 (東京から):
+  - ap-northeast-1: 2-5ms
+  - us-east-1: 150-180ms
+  - eu-west-1: 230-270ms
+
+データ転送料金:
+  - オンプレミス → AWS: 無料
+  - AWS → オンプレミス: $0.0514/GB (東京)
+  - リージョン間: 標準料金適用
+
+使用例:
+  - グローバルSaaSアプリケーション
+  - マルチリージョンDR
+  - データ主権対応
+  - グローバル企業の統合ネットワーク
+```
+
+### ユースケース別推奨構成
+
+```yaml
+スタートアップ / 小規模:
+  接続: Hosted Connection (200-500Mbps)
+  冗長化: Direct Connect + VPN
+  コスト: $250-500/月
+  用途: 開発環境、小規模本番
+
+中規模企業:
+  接続: Dedicated Connection (1Gbps)
+  冗長化: 同一ロケーション冗長 or DX + VPN
+  コスト: $400-800/月
+  用途: 本番環境、ハイブリッドクラウド
+
+大規模企業:
+  接続: Dedicated Connection (10Gbps)
+  冗長化: マルチロケーション冗長 (4接続)
+  Gateway: Transit Gateway + Direct Connect Gateway
+  コスト: $2,000-5,000/月
+  用途: エンタープライズ、ミッションクリティカル
+
+金融 / ヘルスケア:
+  接続: Dedicated Connection (10Gbps+)
+  冗長化: マルチロケーション + VPN
+  暗号化: MACsec
+  コンプライアンス: 専用構成
+  コスト: $5,000-20,000/月
+  用途: 高セキュリティ、低レイテンシー要求
+```
+
+### まとめ
+
+**ユースケース選択のポイント:**
+
+- **データ量**: 月間1TB以上でDirect Connectが効果的
+- **レイテンシー**: 10ms以下が必要ならDirect Connect必須
+- **コスト**: 初期費用 vs ランニングコストのバランス
+- **可用性**: ミッションクリティカル度に応じた冗長化
+
+**アーキテクチャ選択のポイント:**
+
+- **小規模**: Direct Connect + VPN (コスト重視)
+- **中規模**: 同一ロケーション冗長 (バランス重視)
+- **大規模**: マルチロケーション冗長 (可用性重視)
+- **複数VPC**: Transit Gateway活用
+
+適切なパターン選択により、コストと可用性のバランスが取れたハイブリッドクラウド環境を実現できます。

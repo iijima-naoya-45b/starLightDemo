@@ -1,0 +1,603 @@
+---
+title: "Direct Connect 実務Tips"
+label: "実務Tips"
+---
+
+## Direct Connect 実務Tips
+
+実務で役立つ Direct Connect の設定方法、運用ベストプラクティス、トラブルシューティングを解説します。
+
+### AWS Console での Direct Connect 設定
+
+#### 1. Direct Connect 接続作成
+
+```
+手順:
+1. Direct Connectダッシュボード → 「接続の作成」
+2. 接続タイプ選択:
+   - Dedicated Connection (専用接続)
+   - Request a connection through a service provider (Hosted接続)
+3. ロケーション選択: 
+   - Tokyo (東京、大手町など)
+4. ポート速度選択:
+   - 1Gbps / 10Gbps / 100Gbps
+5. 接続名: my-prod-dx-1
+6. オンデマンドキャパシティ: 有効/無効
+7. 「作成」クリック
+
+接続状態の遷移:
+  Requested → Pending → Available
+
+所要時間:
+- Dedicated: 数週間〜数ヶ月 (物理配線含む)
+- Hosted: 数日〜数週間
+```
+
+#### 2. Virtual Interface (VIF) 作成
+
+```
+Private VIF作成手順:
+1. 接続選択 → 「仮想インターフェイスの作成」
+2. タイプ: Private
+3. 仮想インターフェイス名: my-prod-private-vif
+4. VLAN: 100
+5. BGP ASN: 65000 (カスタマー側)
+6. Virtual Private Gateway 選択
+7. アドレスファミリー: IPv4
+8. ピアIPアドレス:
+   - Amazon側: 169.254.0.1/30
+   - カスタマー側: 169.254.0.2/30
+9. BGP認証キー: (自動生成 or カスタム)
+10. 「作成」クリック
+
+VIF状態の遷移:
+  Pending → Available → Up (BGP確立後)
+
+確認ポイント:
+- BGP Status: Up
+- BGP Peer State: Established
+- Advertised Routes: オンプレミスからのルート確認
+```
+
+### AWS CLI での Direct Connect 設定
+
+#### 1. 接続情報の確認
+
+```bash
+# Direct Connect接続一覧
+aws directconnect describe-connections
+
+# 特定の接続詳細
+aws directconnect describe-connections \
+  --connection-id dxcon-xxxxxxxx
+
+# Virtual Interface一覧
+aws directconnect describe-virtual-interfaces
+
+# Virtual Gateway一覧
+aws ec2 describe-vpn-gateways
+
+# Direct Connect Gateway一覧
+aws directconnect describe-direct-connect-gateways
+```
+
+#### 2. Private VIF 作成
+
+```bash
+# Virtual Private Gateway作成
+VGW_ID=$(aws ec2 create-vpn-gateway \
+  --type ipsec.1 \
+  --amazon-side-asn 64512 \
+  --tag-specifications 'ResourceType=vpn-gateway,Tags=[{Key=Name,Value=my-prod-vgw}]' \
+  --query 'VpnGateway.VpnGatewayId' \
+  --output text)
+
+echo "VGW ID: $VGW_ID"
+
+# VPCにアタッチ
+aws ec2 attach-vpn-gateway \
+  --vpn-gateway-id $VGW_ID \
+  --vpc-id vpc-xxxxxxxx
+
+# Private VIF作成
+VIF_ID=$(aws directconnect create-private-virtual-interface \
+  --connection-id dxcon-xxxxxxxx \
+  --new-private-virtual-interface \
+    "virtualInterfaceName=my-prod-private-vif,\
+    vlan=100,\
+    asn=65000,\
+    mtu=1500,\
+    authKey=MyBGPAuthKey123,\
+    amazonAddress=169.254.0.1/30,\
+    customerAddress=169.254.0.2/30,\
+    addressFamily=ipv4,\
+    virtualGatewayId=$VGW_ID" \
+  --query 'virtualInterfaceId' \
+  --output text)
+
+echo "VIF ID: $VIF_ID"
+
+# VIF状態確認
+aws directconnect describe-virtual-interfaces \
+  --virtual-interface-id $VIF_ID
+```
+
+#### 3. Public VIF 作成
+
+```bash
+# Public VIF作成 (S3, DynamoDBなどへのアクセス)
+aws directconnect create-public-virtual-interface \
+  --connection-id dxcon-xxxxxxxx \
+  --new-public-virtual-interface \
+    "virtualInterfaceName=my-prod-public-vif,\
+    vlan=200,\
+    asn=65000,\
+    authKey=MyBGPAuthKey456,\
+    amazonAddress=169.254.1.1/30,\
+    customerAddress=169.254.1.2/30,\
+    addressFamily=ipv4,\
+    routeFilterPrefixes=[{cidr=203.0.113.0/24}]"
+
+# Public VIFではカスタマーのパブリックIPを広告
+# routeFilterPrefixes: 広告するパブリックIPプレフィックス
+```
+
+#### 4. Direct Connect Gateway 作成
+
+```bash
+# Direct Connect Gateway作成
+DX_GW_ID=$(aws directconnect create-direct-connect-gateway \
+  --direct-connect-gateway-name my-prod-dx-gateway \
+  --amazon-side-asn 64512 \
+  --query 'directConnectGateway.directConnectGatewayId' \
+  --output text)
+
+echo "DX Gateway ID: $DX_GW_ID"
+
+# Virtual Private Gateway関連付け
+aws directconnect create-direct-connect-gateway-association \
+  --direct-connect-gateway-id $DX_GW_ID \
+  --virtual-gateway-id $VGW_ID
+
+# Transit Gateway関連付け (Transit VIF用)
+aws directconnect create-direct-connect-gateway-association \
+  --direct-connect-gateway-id $DX_GW_ID \
+  --gateway-id tgw-xxxxxxxx \
+  --add-allowed-prefixes-to-direct-connect-gateway Cidr=10.0.0.0/16
+
+# 関連付け確認
+aws directconnect describe-direct-connect-gateway-associations \
+  --direct-connect-gateway-id $DX_GW_ID
+```
+
+#### 5. Transit VIF 作成
+
+```bash
+# Transit VIF作成
+aws directconnect create-transit-virtual-interface \
+  --connection-id dxcon-xxxxxxxx \
+  --new-transit-virtual-interface \
+    "virtualInterfaceName=my-prod-transit-vif,\
+    vlan=300,\
+    asn=65000,\
+    mtu=8500,\
+    authKey=MyBGPAuthKey789,\
+    amazonAddress=169.254.2.1/29,\
+    customerAddress=169.254.2.2/29,\
+    addressFamily=ipv4,\
+    directConnectGatewayId=$DX_GW_ID"
+
+# Transit VIFはJumbo Frame (MTU 8500) 対応
+```
+
+### BGP設定
+
+#### BGP基本設定 (Cisco IOS例)
+
+```cisco
+! インターフェイス設定
+interface GigabitEthernet0/0/0.100
+ description Direct Connect Private VIF
+ encapsulation dot1Q 100
+ ip address 169.254.0.2 255.255.255.252
+ no shutdown
+
+! BGP設定
+router bgp 65000
+ bgp log-neighbor-changes
+ neighbor 169.254.0.1 remote-as 64512
+ neighbor 169.254.0.1 password MyBGPAuthKey123
+ !
+ address-family ipv4
+  network 192.168.0.0 mask 255.255.0.0
+  neighbor 169.254.0.1 activate
+  neighbor 169.254.0.1 soft-reconfiguration inbound
+  neighbor 169.254.0.1 prefix-list TO-AWS out
+ exit-address-family
+
+! プレフィックスリスト (広告するネットワーク)
+ip prefix-list TO-AWS seq 10 permit 192.168.0.0/16
+
+! ルートマップ (オプション: AS Path Prepend)
+route-map AS-PREPEND permit 10
+ set as-path prepend 65000 65000
+```
+
+#### BGP高度な設定
+
+```cisco
+! Active/Active構成 (ECMP)
+router bgp 65000
+ maximum-paths 4
+ !
+ address-family ipv4
+  maximum-paths 4
+  neighbor 169.254.0.1 activate
+  neighbor 169.254.1.1 activate
+
+! Active/Passive構成 (AS Path Prepend)
+route-map PRIMARY permit 10
+ ! プライマリはそのまま
+ 
+route-map BACKUP permit 10
+ set as-path prepend 65000 65000 65000
+
+router bgp 65000
+ neighbor 169.254.0.1 route-map PRIMARY out
+ neighbor 169.254.1.1 route-map BACKUP out
+
+! Local Preference設定 (受信ルート優先度)
+route-map SET-LOCAL-PREF permit 10
+ set local-preference 200
+
+router bgp 65000
+ neighbor 169.254.0.1 route-map SET-LOCAL-PREF in
+
+! BFD (Bidirectional Forwarding Detection) 有効化
+interface GigabitEthernet0/0/0.100
+ bfd interval 300 min_rx 300 multiplier 3
+
+router bgp 65000
+ neighbor 169.254.0.1 fall-over bfd
+```
+
+#### BGPトラブルシューティング
+
+```cisco
+! BGP状態確認
+show ip bgp summary
+show ip bgp neighbors 169.254.0.1
+show ip bgp neighbors 169.254.0.1 advertised-routes
+show ip bgp neighbors 169.254.0.1 received-routes
+
+! BGPルート確認
+show ip route bgp
+show ip bgp
+
+! デバッグ
+debug ip bgp
+debug ip bgp events
+debug ip bgp updates
+
+! BGPセッションリセット
+clear ip bgp 169.254.0.1 soft
+
+! BGP統計
+show ip bgp neighbors 169.254.0.1 statistics
+```
+
+### 冗長化の実装
+
+#### 構成1: Direct Connect + VPN バックアップ
+
+```bash
+# 1. Site-to-Site VPN作成
+aws ec2 create-vpn-connection \
+  --type ipsec.1 \
+  --customer-gateway-id cgw-xxxxxxxx \
+  --vpn-gateway-id $VGW_ID \
+  --options TunnelOptions=[{PreSharedKey=MyVPNKey123}]
+
+# 2. BGP設定でDirect Connect優先
+# カスタマーゲートウェイ側:
+# - Direct Connect: Local Preference 200
+# - VPN: Local Preference 100
+
+# 3. CloudWatch監視設定
+aws cloudwatch put-metric-alarm \
+  --alarm-name DirectConnect-BGP-Down \
+  --alarm-description "Direct Connect BGP session is down" \
+  --metric-name VirtualInterfaceBpsEgress \
+  --namespace AWS/DX \
+  --statistic Average \
+  --period 300 \
+  --threshold 0 \
+  --comparison-operator LessThanOrEqualToThreshold \
+  --evaluation-periods 2 \
+  --dimensions Name=VirtualInterfaceId,Value=$VIF_ID
+```
+
+#### 構成2: LAG (Link Aggregation Group)
+
+```bash
+# LAG作成
+LAG_ID=$(aws directconnect create-lag \
+  --location APNRT \
+  --connections-bandwidth 10Gbps \
+  --lag-name my-prod-lag \
+  --number-of-connections 2 \
+  --query 'lagId' \
+  --output text)
+
+# 既存の接続をLAGに追加
+aws directconnect associate-connection-with-lag \
+  --connection-id dxcon-xxxxxxxx \
+  --lag-id $LAG_ID
+
+# LAG最小リンク数設定
+aws directconnect update-lag \
+  --lag-id $LAG_ID \
+  --minimum-links 1
+
+# LAG状態確認
+aws directconnect describe-lags --lag-id $LAG_ID
+```
+
+### 監視とアラート
+
+#### CloudWatch メトリクス
+
+```bash
+# Direct Connect メトリクス取得
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/DX \
+  --metric-name ConnectionBpsIngress \
+  --dimensions Name=ConnectionId,Value=dxcon-xxxxxxxx \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-02T00:00:00Z \
+  --period 300 \
+  --statistics Average,Maximum
+
+# 重要メトリクス:
+# - ConnectionBpsEgress: 送信bps
+# - ConnectionBpsIngress: 受信bps
+# - ConnectionState: 接続状態 (0=Down, 1=Up)
+# - ConnectionPpsEgress: 送信pps
+# - ConnectionPpsIngress: 受信pps
+# - ConnectionLightLevelTx: 光レベル(送信)
+# - ConnectionLightLevelRx: 光レベル(受信)
+
+# Virtual Interface メトリクス
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/DX \
+  --metric-name VirtualInterfaceBpsEgress \
+  --dimensions Name=VirtualInterfaceId,Value=$VIF_ID \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-02T00:00:00Z \
+  --period 300 \
+  --statistics Average,Maximum
+```
+
+#### アラーム設定
+
+```bash
+# BGPセッションダウンアラーム
+aws cloudwatch put-metric-alarm \
+  --alarm-name DX-VIF-BGP-Down \
+  --alarm-description "Direct Connect VIF BGP is down" \
+  --metric-name VirtualInterfaceBpsEgress \
+  --namespace AWS/DX \
+  --statistic Average \
+  --period 60 \
+  --threshold 0 \
+  --comparison-operator LessThanOrEqualToThreshold \
+  --evaluation-periods 3 \
+  --datapoints-to-alarm 3 \
+  --dimensions Name=VirtualInterfaceId,Value=$VIF_ID \
+  --alarm-actions arn:aws:sns:ap-northeast-1:123456789012:dx-alerts
+
+# 高トラフィックアラーム (80%使用率)
+aws cloudwatch put-metric-alarm \
+  --alarm-name DX-High-Traffic \
+  --alarm-description "Direct Connect traffic > 80%" \
+  --metric-name ConnectionBpsEgress \
+  --namespace AWS/DX \
+  --statistic Average \
+  --period 300 \
+  --threshold 800000000 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 2 \
+  --dimensions Name=ConnectionId,Value=dxcon-xxxxxxxx
+
+# 光レベル低下アラーム
+aws cloudwatch put-metric-alarm \
+  --alarm-name DX-Light-Level-Low \
+  --alarm-description "Direct Connect light level is low" \
+  --metric-name ConnectionLightLevelRx \
+  --namespace AWS/DX \
+  --statistic Average \
+  --period 60 \
+  --threshold -15 \
+  --comparison-operator LessThanThreshold \
+  --evaluation-periods 5 \
+  --dimensions Name=ConnectionId,Value=dxcon-xxxxxxxx
+```
+
+### ベストプラクティス
+
+#### 設計フェーズ
+
+```yaml
+帯域幅の見積もり:
+  - ピーク時のトラフィック測定
+  - 将来の成長を考慮 (1.5〜2倍)
+  - バースト性のあるワークロード分析
+  
+推奨サイジング:
+  平均 100Mbps → 500Mbps Hosted接続
+  平均 500Mbps → 1Gbps Dedicated接続
+  平均 2Gbps → 10Gbps Dedicated接続
+
+ロケーション選択:
+  - データセンターからの距離
+  - 利用可能な帯域幅オプション
+  - 冗長化のための2つ目のロケーション
+  - キャリア対応状況
+
+VLAN設計:
+  - Private VIF: VLAN 100番台
+  - Public VIF: VLAN 200番台
+  - Transit VIF: VLAN 300番台
+  - 環境ごとに分離 (本番/開発)
+```
+
+#### BGPベストプラクティス
+
+```yaml
+AS番号:
+  - プライベートASN使用: 64512-65534
+  - 環境ごとに異なるASN推奨
+  - ドキュメント化必須
+
+ルート広告:
+  - 最小限のプレフィックス広告
+  - サマライズ推奨 (集約)
+  - フィルタリング必須
+
+認証:
+  - BGP MD5認証必須
+  - 強力なパスワード使用
+  - 定期的なパスワード変更
+
+タイマー調整:
+  - Keepalive: 10秒
+  - Hold Time: 30秒
+  - BFD有効化 (高速障害検知)
+```
+
+#### セキュリティ
+
+```yaml
+ネットワークセキュリティ:
+  - Private VIF使用 (VPC接続)
+  - セキュリティグループで制御
+  - NACLで追加防御
+  - VPC Flow Logs有効化
+
+暗号化:
+  - MACsec (10Gbps+対応)
+  - Site-to-Site VPN重ね掛け
+  - アプリケーションレベル暗号化
+
+アクセス制御:
+  - IAMロールで管理
+  - 最小権限の原則
+  - CloudTrailで監査
+
+Physical Security:
+  - Direct Connect Location のセキュリティ確認
+  - クロスコネクト配線の物理的保護
+  - 入退室管理
+```
+
+### トラブルシューティング
+
+#### 接続できない
+
+```bash
+# 1. Direct Connect接続状態確認
+aws directconnect describe-connections \
+  --connection-id dxcon-xxxxxxxx \
+  --query 'connections[0].connectionState'
+
+# 状態: requested, pending, available, down, deleting, deleted, rejected, unknown
+
+# 2. VIF状態確認
+aws directconnect describe-virtual-interfaces \
+  --virtual-interface-id $VIF_ID \
+  --query 'virtualInterfaces[0].[virtualInterfaceState,bgpPeers[0].bgpStatus]'
+
+# 3. BGPセッション確認
+# カスタマー側ルーターで:
+# show ip bgp summary
+# show ip bgp neighbors 169.254.0.1
+
+# 4. VLANタグ確認
+# - Direct Connectで設定したVLAN
+# - カスタマーデバイスのVLAN設定一致確認
+
+# 5. BGP ASN確認
+# - AWS側ASN: 64512 (デフォルト)
+# - カスタマー側ASN: VIF作成時に指定した値
+
+# 6. IPアドレス確認
+# - /30 または /31 CIDR
+# - 169.254.0.0/16 範囲推奨
+# - アドレス重複なし
+```
+
+#### パフォーマンス問題
+
+```bash
+# 1. 帯域幅使用率確認
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/DX \
+  --metric-name ConnectionBpsEgress \
+  --dimensions Name=ConnectionId,Value=dxcon-xxxxxxxx \
+  --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%S) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%S) \
+  --period 300 \
+  --statistics Average,Maximum
+
+# 2. MTU設定確認
+# Private VIF: 1500 (デフォルト) または 9001 (Jumbo Frame)
+# Transit VIF: 8500 (デフォルト)
+
+# パケットロステスト
+ping -M do -s 1472 <対象IP>  # MTU 1500
+ping -M do -s 8972 <対象IP>  # MTU 9000
+
+# 3. TCP Window Size調整 (Linux)
+sysctl -w net.ipv4.tcp_window_scaling=1
+sysctl -w net.core.rmem_max=134217728
+sysctl -w net.core.wmem_max=134217728
+
+# 4. パケットロス/遅延確認
+mtr -r -c 100 <対象IP>
+```
+
+#### BGPルート問題
+
+```bash
+# 1. 広告ルート確認
+aws directconnect describe-virtual-interfaces \
+  --virtual-interface-id $VIF_ID \
+  --query 'virtualInterfaces[0].bgpPeers[0].advertisedRoutes'
+
+# 2. カスタマー側で広告確認
+# show ip bgp neighbors 169.254.0.1 advertised-routes
+
+# 3. ルートフィルタ確認
+# ip prefix-list TO-AWS permit 192.168.0.0/16 le 24
+
+# 4. ルート上限確認
+# Private VIF: 最大100プレフィックス
+# 超過するとBGPセッションダウン
+
+# 5. Route Propagation確認 (VPC側)
+aws ec2 describe-route-tables \
+  --filters "Name=vpc-id,Values=vpc-xxxxxxxx" \
+  --query 'RouteTables[*].PropagatingVgws'
+```
+
+### まとめ
+
+**実務で重要なポイント:**
+
+- **事前準備**: 帯域幅見積もり、ロケーション選定、キャリア調整
+- **BGP設定**: 適切なAS番号、認証、ルートフィルタリング
+- **冗長化**: マルチロケーション or VPNバックアップ
+- **監視**: CloudWatch メトリクス、アラーム設定
+- **トラブルシューティング**: 段階的な切り分け、ログ確認
+
+適切な設定と運用により、安定した Direct Connect 接続を維持できます。

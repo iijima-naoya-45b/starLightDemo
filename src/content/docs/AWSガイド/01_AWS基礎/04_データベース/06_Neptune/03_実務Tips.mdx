@@ -1,0 +1,479 @@
+---
+title: "Neptune 実務Tips"
+label: "実務Tips"
+---
+
+## Neptune 実務Tips
+
+### AWS CLI
+
+#### クラスター管理
+
+```bash
+# Neptuneクラスター作成
+aws neptune create-db-cluster \
+  --db-cluster-identifier my-neptune-cluster \
+  --engine neptune \
+  --engine-version 1.2.1.0 \
+  --master-username admin \
+  --master-user-password MyPassword123! \
+  --vpc-security-group-ids sg-xxxxx \
+  --db-subnet-group-name my-db-subnet-group \
+  --backup-retention-period 7 \
+  --preferred-backup-window "03:00-04:00" \
+  --storage-encrypted \
+  --kms-key-id arn:aws:kms:ap-northeast-1:123456789012:key/xxxxx
+
+# インスタンス作成（プライマリ）
+aws neptune create-db-instance \
+  --db-instance-identifier my-neptune-instance-1 \
+  --db-instance-class db.r6g.large \
+  --engine neptune \
+  --db-cluster-identifier my-neptune-cluster
+
+# Read Replica作成
+aws neptune create-db-instance \
+  --db-instance-identifier my-neptune-replica-1 \
+  --db-instance-class db.r6g.large \
+  --engine neptune \
+  --db-cluster-identifier my-neptune-cluster
+
+# クラスター情報取得
+aws neptune describe-db-clusters \
+  --db-cluster-identifier my-neptune-cluster
+
+# インスタンス一覧取得
+aws neptune describe-db-instances \
+  --filters "Name=db-cluster-id,Values=my-neptune-cluster"
+
+# エンドポイント取得
+aws neptune describe-db-clusters \
+  --db-cluster-identifier my-neptune-cluster \
+  --query 'DBClusters[0].[Endpoint,ReaderEndpoint]'
+```
+
+#### スナップショット管理
+
+```bash
+# スナップショット作成
+aws neptune create-db-cluster-snapshot \
+  --db-cluster-identifier my-neptune-cluster \
+  --db-cluster-snapshot-identifier my-snapshot-20260726
+
+# スナップショット一覧
+aws neptune describe-db-cluster-snapshots \
+  --db-cluster-identifier my-neptune-cluster
+
+# スナップショットから復元
+aws neptune restore-db-cluster-from-snapshot \
+  --db-cluster-identifier my-restored-cluster \
+  --snapshot-identifier my-snapshot-20260726 \
+  --engine neptune \
+  --vpc-security-group-ids sg-xxxxx \
+  --db-subnet-group-name my-db-subnet-group
+
+# クロスリージョンコピー
+aws neptune copy-db-cluster-snapshot \
+  --source-db-cluster-snapshot-identifier \
+    arn:aws:rds:ap-northeast-1:123456789012:cluster-snapshot:my-snapshot \
+  --target-db-cluster-snapshot-identifier my-snapshot-us-east-1 \
+  --source-region ap-northeast-1 \
+  --region us-east-1
+```
+
+#### パラメータグループ
+
+```bash
+# パラメータグループ作成
+aws neptune create-db-cluster-parameter-group \
+  --db-cluster-parameter-group-name my-neptune-params \
+  --db-parameter-group-family neptune1.2 \
+  --description "Custom Neptune parameters"
+
+# パラメータ設定
+aws neptune modify-db-cluster-parameter-group \
+  --db-cluster-parameter-group-name my-neptune-params \
+  --parameters \
+    "ParameterName=neptune_query_timeout,ParameterValue=120000,ApplyMethod=immediate" \
+    "ParameterName=neptune_result_cache_enabled,ParameterValue=1,ApplyMethod=immediate"
+
+# パラメータ一覧
+aws neptune describe-db-cluster-parameters \
+  --db-cluster-parameter-group-name my-neptune-params
+```
+
+#### モニタリング
+
+```bash
+# CloudWatch メトリクス取得
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/Neptune \
+  --metric-name CPUUtilization \
+  --dimensions Name=DBClusterIdentifier,Value=my-neptune-cluster \
+  --start-time 2026-07-26T00:00:00Z \
+  --end-time 2026-07-26T23:59:59Z \
+  --period 3600 \
+  --statistics Average,Maximum
+
+# クエリ統計
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/Neptune \
+  --metric-name GremlinRequestsPerSec \
+  --dimensions Name=DBClusterIdentifier,Value=my-neptune-cluster \
+  --start-time 2026-07-26T00:00:00Z \
+  --end-time 2026-07-26T23:59:59Z \
+  --period 300 \
+  --statistics Sum
+```
+
+### Gremlinクエリ実行
+
+#### Python（gremlin_python）
+
+```python
+from gremlin_python.driver import client, serializer
+import sys
+
+# Neptune接続
+neptune_endpoint = "my-neptune-cluster.cluster-xxxxx.ap-northeast-1.neptune.amazonaws.com"
+neptune_port = 8182
+
+gremlin_client = client.Client(
+    f'wss://{neptune_endpoint}:{neptune_port}/gremlin',
+    'g',
+    message_serializer=serializer.GraphSONSerializersV2d0()
+)
+
+# ノード作成
+try:
+    # ユーザー作成
+    result = gremlin_client.submit(
+        "g.addV('User').property('userId', userId).property('name', name)",
+        {'userId': 'u123', 'name': 'Alice'}
+    ).all().result()
+    print(f"Created: {result}")
+    
+    # エッジ作成（フォロー関係）
+    result = gremlin_client.submit("""
+        g.V().has('User', 'userId', 'u123').as('user1')
+         .V().has('User', 'userId', 'u456').as('user2')
+         .addE('follows').from('user1').to('user2')
+         .property('since', since)
+    """, {'since': '2026-07-26'}).all().result()
+    
+except Exception as e:
+    print(f"Error: {e}")
+    sys.exit(1)
+
+# データ取得
+try:
+    # ユーザーのフォロワー取得
+    result = gremlin_client.submit(
+        "g.V().has('User', 'userId', userId).in('follows').values('name')",
+        {'userId': 'u123'}
+    ).all().result()
+    
+    print(f"Followers: {result}")
+    
+    # 推薦（2ホップ先）
+    result = gremlin_client.submit("""
+        g.V().has('User', 'userId', userId)
+         .out('follows').out('follows')
+         .where(neq('userId'))
+         .dedup()
+         .limit(10)
+         .valueMap()
+    """, {'userId': 'u123'}).all().result()
+    
+    print(f"Recommendations: {result}")
+    
+finally:
+    gremlin_client.close()
+```
+
+#### バルクデータロード
+
+```python
+# Neptune Bulk Loaderを使用（S3経由）
+import boto3
+import requests
+
+# S3にCSVアップロード
+s3_client = boto3.client('s3')
+s3_client.upload_file(
+    'vertices.csv',
+    'my-neptune-bucket',
+    'data/vertices.csv'
+)
+
+# ロードジョブ実行
+neptune_endpoint = "my-neptune-cluster.cluster-xxxxx.ap-northeast-1.neptune.amazonaws.com"
+load_url = f"https://{neptune_endpoint}:8182/loader"
+
+payload = {
+    "source": "s3://my-neptune-bucket/data/",
+    "format": "csv",
+    "iamRoleArn": "arn:aws:iam::123456789012:role/NeptuneLoadRole",
+    "region": "ap-northeast-1",
+    "failOnError": "FALSE",
+    "parallelism": "MEDIUM"
+}
+
+response = requests.post(load_url, json=payload)
+load_id = response.json()['payload']['loadId']
+
+print(f"Load ID: {load_id}")
+
+# ロード状態確認
+status_url = f"{load_url}/{load_id}"
+status_response = requests.get(status_url)
+print(status_response.json())
+```
+
+**CSV形式（vertices.csv）:**
+
+```csv
+~id,~label,userId:String,name:String,age:Int
+v1,User,u123,Alice,28
+v2,User,u456,Bob,32
+v3,Product,p789,Laptop,
+```
+
+**CSV形式（edges.csv）:**
+
+```csv
+~id,~label,~from,~to,since:String
+e1,follows,v1,v2,2026-01-15
+e2,purchased,v1,v3,2026-07-20
+```
+
+### SPARQLクエリ実行
+
+#### Python（SPARQLWrapper）
+
+```python
+from SPARQLWrapper import SPARQLWrapper, JSON
+
+# Neptune SPARQL接続
+neptune_endpoint = "my-neptune-cluster.cluster-xxxxx.ap-northeast-1.neptune.amazonaws.com"
+sparql = SPARQLWrapper(f"https://{neptune_endpoint}:8182/sparql")
+
+# データ挿入
+insert_query = """
+PREFIX ex: <http://example.org/>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+
+INSERT DATA {
+  ex:Alice a ex:User ;
+    foaf:name "Alice" ;
+    ex:age 28 .
+  
+  ex:Bob a ex:User ;
+    foaf:name "Bob" ;
+    ex:age 32 .
+  
+  ex:Alice ex:follows ex:Bob .
+}
+"""
+
+sparql.setQuery(insert_query)
+sparql.method = 'POST'
+sparql.query()
+
+# データ取得
+select_query = """
+PREFIX ex: <http://example.org/>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+
+SELECT ?name ?follower
+WHERE {
+  ?user foaf:name "Alice" .
+  ?user ex:follows ?followedUser .
+  ?followedUser foaf:name ?name .
+  
+  OPTIONAL {
+    ?followerUser ex:follows ?user .
+    ?followerUser foaf:name ?follower .
+  }
+}
+"""
+
+sparql.setQuery(select_query)
+sparql.setReturnFormat(JSON)
+results = sparql.query().convert()
+
+for result in results["results"]["bindings"]:
+    print(f"Follows: {result['name']['value']}")
+    if 'follower' in result:
+        print(f"Followed by: {result['follower']['value']}")
+```
+
+### ベストプラクティス
+
+#### セキュリティ
+
+```yaml
+VPC設定:
+  - プライベートサブネット配置
+  - NACLとセキュリティグループ
+  - VPCエンドポイント使用
+
+IAM認証:
+  - IAMデータベース認証有効化
+  - 最小権限の原則
+  - ロールベースアクセス
+
+暗号化:
+  - 保管時暗号化（KMS）
+  - TLS 1.2強制
+  - 証明書検証
+```
+
+```python
+# IAM認証を使用した接続
+import boto3
+from gremlin_python.driver import client
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
+
+def get_iam_token(host, port, region):
+    session = boto3.Session()
+    credentials = session.get_credentials()
+    
+    request = AWSRequest(
+        method='GET',
+        url=f'https://{host}:{port}/',
+        headers={'host': host}
+    )
+    
+    SigV4Auth(credentials, 'neptune-db', region).add_auth(request)
+    return request.headers.get('Authorization')
+
+# 接続
+neptune_endpoint = "my-neptune-cluster.cluster-xxxxx.ap-northeast-1.neptune.amazonaws.com"
+token = get_iam_token(neptune_endpoint, 8182, 'ap-northeast-1')
+
+gremlin_client = client.Client(
+    f'wss://{neptune_endpoint}:8182/gremlin',
+    'g',
+    headers={'Authorization': token}
+)
+```
+
+#### パフォーマンス最適化
+
+```yaml
+クエリ最適化:
+  - インデックス活用
+  - バッチ処理
+  - profile()による分析
+  - 不要なトラバーサル削減
+
+接続管理:
+  - コネクションプーリング
+  - Read Replica活用
+  - タイムアウト設定
+
+バルクロード:
+  - S3からの一括ロード
+  - パラレル処理
+  - エラーハンドリング
+```
+
+```python
+# コネクションプール設定
+from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
+from gremlin_python.process.anonymous_traversal import traversal
+
+# コネクションプール
+connection = DriverRemoteConnection(
+    f'wss://{neptune_endpoint}:8182/gremlin',
+    'g',
+    pool_size=8,
+    max_workers=8
+)
+
+g = traversal().withRemote(connection)
+
+# クエリプロファイリング
+result = g.V().has('User', 'userId', 'u123').profile().next()
+print(result)
+```
+
+#### バックアップとディザスタリカバリ
+
+```yaml
+バックアップ戦略:
+  - 自動日次バックアップ
+  - クロスリージョンスナップショット
+  - ポイントインタイムリカバリ
+
+DR構成:
+  - Multi-AZ配置
+  - Read Replicaの別リージョン配置
+  - 定期的なリストアテスト
+```
+
+```bash
+# 定期スナップショット（Lambdaで自動化）
+#!/bin/bash
+CLUSTER_ID="my-neptune-cluster"
+SNAPSHOT_ID="auto-snapshot-$(date +%Y%m%d-%H%M%S)"
+
+aws neptune create-db-cluster-snapshot \
+  --db-cluster-identifier $CLUSTER_ID \
+  --db-cluster-snapshot-identifier $SNAPSHOT_ID
+
+# 古いスナップショット削除（30日以上）
+SNAPSHOTS=$(aws neptune describe-db-cluster-snapshots \
+  --db-cluster-identifier $CLUSTER_ID \
+  --query 'DBClusterSnapshots[?SnapshotCreateTime<=`'$(date -d "30 days ago" -Iseconds)'`].DBClusterSnapshotIdentifier' \
+  --output text)
+
+for SNAPSHOT in $SNAPSHOTS; do
+  aws neptune delete-db-cluster-snapshot \
+    --db-cluster-snapshot-identifier $SNAPSHOT
+done
+```
+
+### モニタリングとトラブルシューティング
+
+```yaml
+主要メトリクス:
+  - CPUUtilization
+  - FreeableMemory
+  - GremlinRequestsPerSec
+  - SparqlRequestsPerSec
+  - ClusterReplicaLag
+
+CloudWatch Logs:
+  - 監査ログ
+  - スロークエリログ
+  - エラーログ
+
+アラート設定:
+  - CPU使用率 > 80%
+  - メモリ使用率 > 85%
+  - レプリケーション遅延 > 30秒
+```
+
+```bash
+# スロークエリ確認
+aws logs filter-log-events \
+  --log-group-name /aws/neptune/my-neptune-cluster/slowquery \
+  --start-time $(date -d "1 hour ago" +%s)000 \
+  --filter-pattern "{ $.duration > 1000 }"
+
+# エラーログ確認
+aws logs tail /aws/neptune/my-neptune-cluster/error --follow
+```
+
+### まとめ
+
+**Neptune実務の重要ポイント:**
+- AWS CLIでクラスター管理を自動化
+- Python SDKでGremlin/SPARQLクエリ実行
+- S3経由のバルクロード活用
+- IAM認証でセキュリティ強化
+- CloudWatchでモニタリング
+- 定期バックアップとDR対策

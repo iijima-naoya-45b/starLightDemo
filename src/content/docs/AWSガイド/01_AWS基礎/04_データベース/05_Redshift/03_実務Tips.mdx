@@ -1,0 +1,381 @@
+---
+title: "Redshift 実務Tips"
+label: "実務Tips"
+---
+
+## Redshift 実務Tips
+
+### AWS CLI
+
+#### クラスター管理
+
+```bash
+# クラスター作成
+aws redshift create-cluster \
+  --cluster-identifier my-redshift-cluster \
+  --node-type ra3.4xlarge \
+  --number-of-nodes 2 \
+  --master-username admin \
+  --master-user-password MyPassword123! \
+  --db-name mydb \
+  --vpc-security-group-ids sg-xxxxx \
+  --cluster-subnet-group-name my-subnet-group \
+  --encrypted \
+  --kms-key-id arn:aws:kms:ap-northeast-1:xxx:key/xxx
+
+# クラスター情報取得
+aws redshift describe-clusters \
+  --cluster-identifier my-redshift-cluster
+
+# クラスターリサイズ
+aws redshift modify-cluster \
+  --cluster-identifier my-redshift-cluster \
+  --node-type ra3.16xlarge \
+  --number-of-nodes 4
+
+# クラスター削除
+aws redshift delete-cluster \
+  --cluster-identifier my-redshift-cluster \
+  --skip-final-cluster-snapshot
+```
+
+#### スナップショット管理
+
+```bash
+# 手動スナップショット作成
+aws redshift create-cluster-snapshot \
+  --cluster-identifier my-redshift-cluster \
+  --snapshot-identifier my-snapshot-2026-07-26
+
+# スナップショット一覧
+aws redshift describe-cluster-snapshots \
+  --cluster-identifier my-redshift-cluster
+
+# スナップショットから復元
+aws redshift restore-from-cluster-snapshot \
+  --cluster-identifier my-new-cluster \
+  --snapshot-identifier my-snapshot-2026-07-26
+
+# スナップショットコピー（クロスリージョン）
+aws redshift copy-cluster-snapshot \
+  --source-snapshot-identifier my-snapshot \
+  --source-region ap-northeast-1 \
+  --target-snapshot-identifier my-snapshot-dr \
+  --region us-west-2
+```
+
+### SQL クエリ最適化
+
+#### 1. COPY コマンド（データロード）
+
+```sql
+-- S3からデータロード（推奨）
+COPY sales
+FROM 's3://my-bucket/sales/2026/'
+IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftCopyRole'
+FORMAT AS PARQUET
+COMPUPDATE ON
+STATUPDATE ON;
+
+-- CSV ロード
+COPY users
+FROM 's3://my-bucket/users.csv'
+IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftCopyRole'
+CSV
+DELIMITER ','
+IGNOREHEADER 1
+DATEFORMAT 'YYYY-MM-DD'
+COMPUPDATE ON;
+
+-- マニフェストファイル使用
+COPY orders
+FROM 's3://my-bucket/manifest.json'
+IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftCopyRole'
+MANIFEST
+FORMAT AS JSON 'auto';
+
+-- 並列ロード（複数ファイル）
+COPY transactions
+FROM 's3://my-bucket/data/'
+IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftCopyRole'
+GZIP;
+```
+
+#### 2. UNLOAD コマンド（データエクスポート）
+
+```sql
+-- Redshift から S3 へエクスポート
+UNLOAD ('SELECT * FROM sales WHERE year = 2026')
+TO 's3://my-bucket/export/sales_2026_'
+IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftUnloadRole'
+PARQUET
+PARALLEL ON
+ALLOWOVERWRITE;
+
+-- Parquet形式（推奨）
+UNLOAD ('SELECT * FROM users')
+TO 's3://my-bucket/users/'
+IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftUnloadRole'
+PARQUET
+PARTITION BY (region, created_date);
+```
+
+#### 3. テーブル設計最適化
+
+```sql
+-- 分散キー（KEY）: JOIN頻度高い列
+CREATE TABLE orders (
+  order_id BIGINT,
+  user_id BIGINT,
+  order_date DATE,
+  amount DECIMAL(10,2)
+)
+DISTKEY(user_id)
+SORTKEY(order_date);
+
+-- 分散スタイル（ALL）: 小さいディメンションテーブル
+CREATE TABLE dim_products (
+  product_id INT,
+  product_name VARCHAR(255),
+  category VARCHAR(100)
+)
+DISTSTYLE ALL
+SORTKEY(product_id);
+
+-- 分散スタイル（AUTO）: Redshift自動選択
+CREATE TABLE events (
+  event_id BIGINT,
+  user_id BIGINT,
+  event_type VARCHAR(50),
+  event_timestamp TIMESTAMP
+)
+DISTSTYLE AUTO
+SORTKEY(event_timestamp);
+
+-- 複合ソートキー（範囲クエリ向け）
+CREATE TABLE logs (
+  log_id BIGINT,
+  user_id BIGINT,
+  created_at TIMESTAMP,
+  log_level VARCHAR(10)
+)
+COMPOUND SORTKEY(created_at, user_id);
+
+-- インターリーブソートキー（複数カラムフィルタ）
+CREATE TABLE metrics (
+  metric_id BIGINT,
+  device_id VARCHAR(100),
+  metric_type VARCHAR(50),
+  timestamp TIMESTAMP
+)
+INTERLEAVED SORTKEY(device_id, metric_type, timestamp);
+```
+
+#### 4. Materialized Views
+
+```sql
+-- Materialized View 作成
+CREATE MATERIALIZED VIEW mv_daily_sales AS
+SELECT
+  DATE_TRUNC('day', order_date) AS sale_date,
+  product_id,
+  SUM(amount) AS total_sales,
+  COUNT(*) AS order_count
+FROM orders
+GROUP BY 1, 2;
+
+-- リフレッシュ（自動）
+REFRESH MATERIALIZED VIEW mv_daily_sales;
+
+-- リフレッシュ（増分）
+REFRESH MATERIALIZED VIEW mv_daily_sales INCREMENTAL;
+
+-- Auto Refresh 設定
+ALTER MATERIALIZED VIEW mv_daily_sales AUTO REFRESH YES;
+```
+
+### Redshift Spectrum
+
+#### 外部テーブル設定
+
+```sql
+-- 外部スキーマ作成
+CREATE EXTERNAL SCHEMA spectrum
+FROM DATA CATALOG
+DATABASE 'my_glue_database'
+IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftSpectrumRole'
+CREATE EXTERNAL DATABASE IF NOT EXISTS;
+
+-- 外部テーブル作成（Parquet）
+CREATE EXTERNAL TABLE spectrum.logs (
+  log_id BIGINT,
+  user_id BIGINT,
+  event_type VARCHAR(50),
+  event_timestamp TIMESTAMP
+)
+STORED AS PARQUET
+LOCATION 's3://my-bucket/logs/'
+TABLE PROPERTIES ('compression_type'='snappy');
+
+-- パーティション追加
+ALTER TABLE spectrum.logs
+ADD PARTITION (year=2026, month=07, day=26)
+LOCATION 's3://my-bucket/logs/2026/07/26/';
+
+-- Spectrum + Redshift JOIN
+SELECT
+  u.user_name,
+  l.event_type,
+  COUNT(*) AS event_count
+FROM users u
+INNER JOIN spectrum.logs l ON u.user_id = l.user_id
+WHERE l.event_timestamp >= '2026-07-01'
+GROUP BY 1, 2;
+```
+
+### パフォーマンスチューニング
+
+#### 1. ANALYZE でテーブル統計更新
+
+```sql
+-- テーブル統計更新
+ANALYZE orders;
+
+-- 全テーブル統計更新
+ANALYZE;
+
+-- 特定カラムのみ
+ANALYZE orders (order_date, amount);
+```
+
+#### 2. VACUUM でテーブル整理
+
+```sql
+-- 削除行回収、ソートキー順序再構築
+VACUUM orders;
+
+-- VACUUM FULL（完全再構築）
+VACUUM FULL orders;
+
+-- VACUUM SORT ONLY（ソートのみ）
+VACUUM SORT ONLY orders;
+
+-- VACUUM DELETE ONLY（削除行のみ）
+VACUUM DELETE ONLY orders;
+
+-- VACUUM BOOST（高速化）
+VACUUM BOOST orders;
+```
+
+#### 3. クエリ実行プラン確認
+
+```sql
+-- 実行プラン表示（実行しない）
+EXPLAIN
+SELECT *
+FROM orders o
+INNER JOIN users u ON o.user_id = u.user_id
+WHERE o.order_date >= '2026-01-01';
+
+-- 実行プラン + 実行
+EXPLAIN ANALYZE
+SELECT COUNT(*) FROM orders;
+```
+
+#### 4. クエリモニタリング
+
+```sql
+-- 実行中クエリ確認
+SELECT
+  query,
+  pid,
+  user_name,
+  starttime,
+  DATEDIFF(second, starttime, GETDATE()) AS runtime_sec,
+  query_text
+FROM stv_recents
+WHERE status = 'Running'
+ORDER BY starttime;
+
+-- 長時間実行クエリ
+SELECT
+  query,
+  elapsed / 1000000 AS elapsed_sec,
+  SUBSTRING(querytxt, 1, 100) AS query_text
+FROM svl_qlog
+WHERE elapsed > 60000000
+ORDER BY elapsed DESC
+LIMIT 10;
+
+-- クエリキャンセル
+CANCEL 12345;  -- query_id
+```
+
+### ベストプラクティス
+
+```yaml
+テーブル設計:
+  ☐ 分散キー: JOIN頻度高い列
+  ☐ ソートキー: WHERE, ORDER BY, GROUP BY列
+  ☐ 圧縮エンコーディング: 自動（COPY時）
+  ☐ 小さいテーブル: DISTSTYLE ALL
+
+データロード:
+  ☐ COPY コマンド使用（INSERT より高速）
+  ☐ Parquet/ORC形式推奨
+  ☐ ファイルサイズ: 1MB-1GB
+  ☐ ファイル数: ノード数の倍数
+  ☐ COMPUPDATE ON（圧縮自動設定）
+
+クエリ最適化:
+  ☐ WHERE句でフィルタリング
+  ☐ Materialized Views活用
+  ☐ Spectrum でコールドデータ
+  ☐ 定期的に ANALYZE 実行
+  ☐ VACUUM（週次推奨）
+
+コスト最適化:
+  ☐ RA3ノード推奨
+  ☐ リザーブドインスタンス（1年/3年）
+  ☐ Concurrency Scaling 無料枠活用
+  ☐ Spectrumでストレージ削減
+  ☐ 不要データ削除
+
+セキュリティ:
+  ☐ VPC配置
+  ☐ 暗号化有効化（KMS）
+  ☐ IAM認証
+  ☐ 監査ログ有効化
+  ☐ プライベートサブネット
+
+運用:
+  ☐ 自動スナップショット有効化
+  ☐ クロスリージョンコピー（DR）
+  ☐ CloudWatch監査
+  ☐ Performance Insights活用
+```
+
+### よくあるエラーと対処法
+
+```yaml
+エラー: Disk Full
+原因: VACUUM/ANALYZE未実行、削除行蓄積
+対処:
+  - VACUUM実行
+  - 不要データ削除
+  - ノード追加
+
+エラー: Memory Exceeded
+原因: 大きなJOIN、GROUP BY
+対処:
+  - WLM設定見直し
+  - クエリ最適化
+  - Materialized Views活用
+
+エラー: Serializable Isolation Violation
+原因: 同時更新競合
+対処:
+  - トランザクション分離
+  - リトライロジック
+  - 更新頻度調整
+```

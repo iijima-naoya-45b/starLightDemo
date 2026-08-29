@@ -1,0 +1,179 @@
+---
+title: "CodeBuildとは？"
+label: "CodeBuildとは？"
+---
+
+## AWS CodeBuild とは？
+
+CodeBuildは、フルマネージドなビルドサービスです。ソースコードのコンパイル、テスト実行、デプロイ可能なパッケージの生成を自動化します。
+
+### 基本概念
+
+```yaml
+ビルドプロジェクト:
+  - ビルド設定の定義
+  - ソース、環境、buildspec
+  - IAMロール
+
+ビルド環境:
+  - Dockerコンテナ
+  - マネージドイメージ
+  - カスタムイメージ
+
+buildspec.yml:
+  - ビルド手順定義
+  - フェーズ分割
+  - 成果物指定
+```
+
+### ビルド環境
+
+```yaml
+マネージドイメージ:
+  - Amazon Linux 2
+  - Ubuntu
+  - Windows Server
+
+コンピューティング:
+  - general1.small: 3GB メモリ、2 vCPU
+  - general1.medium: 7GB メモリ、4 vCPU
+  - general1.large: 15GB メモリ、8 vCPU
+  - general1.2xlarge: 145GB メモリ、72 vCPU
+
+特権モード:
+  - Dockerビルド対応
+  - Docker-in-Docker
+```
+
+### buildspec.yml 基本構造
+
+```yaml
+version: 0.2
+
+env:
+  variables:
+    NODE_ENV: production
+  secrets-manager:
+    DB_PASSWORD: prod/db:password
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - npm install
+
+  pre_build:
+    commands:
+      - echo "Running tests..."
+      - npm test
+
+  build:
+    commands:
+      - echo "Building..."
+      - npm run build
+
+  post_build:
+    commands:
+      - echo "Build completed"
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: dist
+
+cache:
+  paths:
+    - node_modules/**/*
+```
+
+### 主要機能
+
+```yaml
+ソース統合:
+  - CodeCommit、GitHub、Bitbucket
+  - S3
+  - GitLab
+
+成果物:
+  - S3保存
+  - ECRプッシュ
+
+キャッシング:
+  - S3キャッシュ
+  - ローカルキャッシュ
+
+ログ:
+  - CloudWatch Logs
+  - S3保存
+```
+
+### buildspec.yml フェーズ
+
+```yaml
+install:
+  - ランタイムインストール
+  - 依存関係インストール
+
+pre_build:
+  - テスト実行
+  - Lint
+  - 前処理
+
+build:
+  - コンパイル
+  - Dockerビルド
+  - パッケージング
+
+post_build:
+  - イメージプッシュ
+  - 通知
+  - 後処理
+```
+
+### 料金
+
+**従量課金制（ビルド時間のみ課金）**
+
+#### コンピューティング料金（Linux）
+
+| タイプ | メモリ | vCPU | 料金/分 | 料金/時間 |
+|---|---|---|---|---|
+| **general1.small** | 3GB | 2 | $0.005 | $0.30 |
+| **general1.medium** | 7GB | 4 | $0.01 | $0.60 |
+| **general1.large** | 15GB | 8 | $0.02 | $1.20 |
+| **general1.2xlarge** | 145GB | 72 | $0.20 | $12.00 |
+
+#### 料金例
+
+| ビルドケース | 環境 | 時間 | 回数/日 | 月額料金 |
+|---|---|---|---|---|
+| **小規模プロジェクト** | small | 5分 | 10回 | $7.50 |
+| **中規模プロジェクト** | medium | 10分 | 20回 | $60.00 |
+| **Dockerビルド** | large | 15分 | 10回 | $90.00 |
+| **大規模ビルド** | 2xlarge | 30分 | 5回 | $300.00 |
+
+**計算例（中規模プロジェクト）:**
+- 環境: general1.medium ($0.01/分)
+- ビルド時間: 10分
+- 実行回数: 20回/日 × 30日 = 600回/月
+- 月額料金: $0.01 × 10分 × 600回 = $60.00
+
+**無料枠:**
+- 最初の100ビルド分/月（general1.small）は無料
+- 約500分/月が無料
+
+**コストメリット:**
+- ビルド時のみ課金（アイドル時間なし）
+- Jenkinsサーバーの維持費不要
+- Auto Scalingで並列ビルド可能
+- キャッシュでビルド時間短縮
+
+### まとめ
+
+**CodeBuildの重要ポイント:**
+- フルマネージド
+- 従量課金
+- buildspec.ymlで定義
+- Docker対応
+- スケーラブル

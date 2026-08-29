@@ -1,0 +1,294 @@
+---
+title: "CodeBuild ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## CodeBuild ユースケースおよびアーキテクチャパターン
+
+### 1. Dockerイメージビルド
+
+```yaml
+構成:
+  CodeCommit → CodeBuild → ECR
+
+buildspec.yml:
+  - Dockerビルド
+  - イメージタグ付け
+  - ECRプッシュ
+
+特権モード:
+  必須: Docker-in-Docker
+
+ユースケース:
+  - コンテナアプリ
+  - ECS/EKSデプロイ
+  - マイクロサービス
+```
+
+**アーキテクチャ図:**
+
+```
+[GitHub/CodeCommit]
+        ↓
+   [CodeBuild]
+   - 特権モード有効
+   - Docker build
+   - Docker tag
+        ↓
+      [ECR]
+        ↓
+   [ECS/EKS]
+```
+
+### 2. CI/CDパイプライン
+
+```yaml
+フロー:
+  CodeCommit → CodePipeline → CodeBuild → CodeDeploy
+
+ステージ:
+  1. Source: コード取得
+  2. Build: CodeBuild（テスト + ビルド）
+  3. Deploy: CodeDeploy（デプロイ）
+
+並列ビルド:
+  - ユニットテスト
+  - E2Eテスト
+  - セキュリティスキャン
+```
+
+**パイプライン例:**
+
+```
+[CodeCommit] → [CodePipeline]
+                      ↓
+              ┌───────┴───────┐
+              ↓               ↓
+        [CodeBuild]     [CodeBuild]
+        (Unit Test)     (E2E Test)
+              ↓               ↓
+              └───────┬───────┘
+                      ↓
+              [Manual Approval]
+                      ↓
+               [CodeDeploy]
+```
+
+### 3. テスト自動化
+
+```yaml
+プルリクエストトリガー:
+  GitHub → CodeBuild Webhook → テスト実行
+
+テスト種類:
+  - ユニットテスト
+  - 統合テスト
+  - Lint/静的解析
+  - セキュリティスキャン
+
+レポート:
+  - テストレポート
+  - カバレッジ
+  - CodeGuru連携
+```
+
+**buildspec例（テスト）:**
+
+```yaml
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - npm install
+
+  pre_build:
+    commands:
+      - npm run lint
+      - npm run test:unit
+      
+  build:
+    commands:
+      - npm run test:integration
+
+reports:
+  unit-test-report:
+    files:
+      - 'junit.xml'
+    file-format: JUNITXML
+  coverage-report:
+    files:
+      - 'coverage/cobertura-coverage.xml'
+    file-format: COBERTURAXML
+```
+
+### 4. 並列ビルド
+
+```yaml
+マルチ環境:
+  - 開発環境
+  - ステージング環境
+  - 本番環境
+
+並列実行:
+  - 複数ブランチ同時ビルド
+  - 環境変数で切替
+  - バッチビルド
+
+バッチビルド:
+  - ビルドマトリクス
+  - 並列テスト
+```
+
+**buildspec（バッチビルド）:**
+
+```yaml
+version: 0.2
+
+batch:
+  fast-fail: false
+  build-matrix:
+    static:
+      env:
+        variables:
+          NODE_ENV: production
+    dynamic:
+      env:
+        variables:
+          NODE_VERSION:
+            - 16
+            - 18
+            - 20
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: $NODE_VERSION
+    commands:
+      - npm install
+      
+  build:
+    commands:
+      - npm run build
+      - npm test
+```
+
+### 5. マルチリージョンデプロイ
+
+```yaml
+戦略:
+  S3 → CodeBuild → 複数リージョンECR
+
+構成:
+  1. マスターリージョンでビルド
+  2. イメージをマルチリージョンECRに複製
+  3. 各リージョンでデプロイ
+
+メリット:
+  - 1回のビルド
+  - 全リージョンで同じイメージ
+  - コスト効率
+```
+
+### 6. Lambda デプロイ
+
+```yaml
+フロー:
+  CodeCommit → CodeBuild → SAM/CloudFormation → Lambda
+
+buildspec:
+  - テスト実行
+  - SAM package
+  - SAM deploy
+
+ユースケース:
+  - サーバーレスアプリ
+  - API Gateway連携
+```
+
+**buildspec例（Lambda）:**
+
+```yaml
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - pip install -r requirements.txt
+      - pip install aws-sam-cli
+
+  pre_build:
+    commands:
+      - pytest tests/
+
+  build:
+    commands:
+      - sam build
+      - sam package --output-template-file packaged.yaml --s3-bucket $S3_BUCKET
+      - sam deploy --template-file packaged.yaml --stack-name $STACK_NAME --capabilities CAPABILITY_IAM
+```
+
+### 7. 静的サイト生成
+
+```yaml
+フロー:
+  GitHub → CodeBuild → S3 + CloudFront
+
+処理:
+  - Next.js/Gatsby/Hugo ビルド
+  - S3アップロード
+  - CloudFront invalidation
+
+ユースケース:
+  - ドキュメントサイト
+  - ブログ
+  - マーケティングサイト
+```
+
+**buildspec例（静的サイト）:**
+
+```yaml
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - npm install
+
+  build:
+    commands:
+      - npm run build
+
+  post_build:
+    commands:
+      - aws s3 sync dist/ s3://$S3_BUCKET/ --delete
+      - aws cloudfront create-invalidation --distribution-id $CF_DISTRIBUTION_ID --paths "/*"
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: dist
+```
+
+### 8. セキュリティスキャン統合
+
+```yaml
+スキャンツール:
+  - Trivy（コンテナスキャン）
+  - OWASP Dependency Check
+  - SonarQube
+  - Snyk
+
+フロー:
+  ビルド → スキャン → 脆弱性レポート → 承認/却下
+
+通知:
+  - SNS
+  - EventBridge
+```

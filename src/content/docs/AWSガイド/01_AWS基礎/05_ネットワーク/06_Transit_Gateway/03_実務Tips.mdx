@@ -1,0 +1,548 @@
+---
+title: "Transit Gateway 実務Tips"
+label: "実務Tips"
+---
+
+## Transit Gateway 実務Tips
+
+実務で役立つTransit Gatewayの設定方法、ベストプラクティス、トラブルシューティングを解説します。
+
+### AWS Console での Transit Gateway 作成
+
+#### 1. Transit Gateway作成
+
+```
+手順:
+1. VPCダッシュボード → 「Transit Gateway」→ 「Transit Gatewayを作成」
+2. 名前タグ: my-tgw
+3. 説明: Production Transit Gateway
+4. Amazon側ASN: 64512 (デフォルト、または任意)
+5. DNS サポート: 有効
+6. VPN ECMP サポート: 有効
+7. デフォルトルートテーブルの関連付け: 無効 (推奨)
+8. デフォルトルートテーブルの伝播: 無効 (推奨)
+9. マルチキャストサポート: 無効 (必要な場合は有効)
+10. 「Transit Gatewayを作成」クリック
+
+注意点:
+- デフォルトルートテーブルの自動関連付け/伝播を無効にすることで
+  環境ごとに明示的にルートテーブルを作成・管理できる
+- 作成後の変更不可の設定が多いため、慎重に設定
+```
+
+#### 2. VPCアタッチメント作成
+
+```
+手順:
+1. 「Transit Gateway Attachments」→ 「アタッチメントの作成」
+2. Transit Gateway ID: 作成したTransit Gateway選択
+3. アタッチメントタイプ: VPC
+4. アタッチメント名タグ: prod-vpc-1-attachment
+5. VPC ID: 接続するVPC選択
+6. サブネット ID: 各AZから1つずつ選択
+   - ap-northeast-1a: subnet-xxxxx
+   - ap-northeast-1c: subnet-yyyyy
+   - ap-northeast-1d: subnet-zzzzz
+7. 「アタッチメントの作成」クリック
+
+推奨事項:
+- 各AZにサブネットを選択（高可用性）
+- プライベートサブネット推奨
+- /28以上のサブネット推奨
+```
+
+#### 3. ルートテーブル作成と関連付け
+
+```
+手順:
+1. 「Transit Gateway Route Tables」→ 「ルートテーブルの作成」
+2. 名前タグ: production-rt
+3. Transit Gateway ID: 選択
+4. 「ルートテーブルの作成」クリック
+
+5. アタッチメントの関連付け:
+   - ルートテーブル選択
+   - 「アソシエーション」タブ
+   - 「アソシエーションの作成」
+   - アタッチメント選択
+   - 「アソシエーションの作成」クリック
+
+6. ルート伝播の設定:
+   - 「プロパゲーション」タブ
+   - 「プロパゲーションの作成」
+   - 伝播させたいアタッチメント選択
+   - 「プロパゲーションの作成」クリック
+
+7. VPC側ルートテーブル更新:
+   - VPCダッシュボード → ルートテーブル
+   - 対象ルートテーブル選択
+   - 「ルート」タブ → 「ルートを編集」
+   - ルート追加: 宛先CIDR → Transit Gateway
+   - 例: 10.0.0.0/8 → tgw-xxxxx
+```
+
+### AWS CLI での Transit Gateway 作成
+
+#### 1. Transit Gateway作成
+
+```bash
+# Transit Gateway作成
+TGW_ID=$(aws ec2 create-transit-gateway \
+  --description "Production Transit Gateway" \
+  --options \
+    AmazonSideAsn=64512,\
+    AutoAcceptSharedAttachments=disable,\
+    DefaultRouteTableAssociation=disable,\
+    DefaultRouteTablePropagation=disable,\
+    VpnEcmpSupport=enable,\
+    DnsSupport=enable \
+  --tag-specifications 'ResourceType=transit-gateway,Tags=[{Key=Name,Value=my-tgw}]' \
+  --query 'TransitGateway.TransitGatewayId' \
+  --output text)
+
+echo "Transit Gateway ID: $TGW_ID"
+
+# 利用可能になるまで待機
+aws ec2 wait transit-gateway-available --transit-gateway-ids $TGW_ID
+
+# 作成確認
+aws ec2 describe-transit-gateways \
+  --transit-gateway-ids $TGW_ID
+```
+
+#### 2. VPCアタッチメント作成
+
+```bash
+# VPC情報取得
+VPC_ID="vpc-xxxxx"
+
+# 各AZのサブネット取得
+SUBNET_1A=$(aws ec2 describe-subnets \
+  --filters "Name=vpc-id,Values=$VPC_ID" "Name=availability-zone,Values=ap-northeast-1a" \
+  --query 'Subnets[0].SubnetId' \
+  --output text)
+
+SUBNET_1C=$(aws ec2 describe-subnets \
+  --filters "Name=vpc-id,Values=$VPC_ID" "Name=availability-zone,Values=ap-northeast-1c" \
+  --query 'Subnets[0].SubnetId' \
+  --output text)
+
+SUBNET_1D=$(aws ec2 describe-subnets \
+  --filters "Name=vpc-id,Values=$VPC_ID" "Name=availability-zone,Values=ap-northeast-1d" \
+  --query 'Subnets[0].SubnetId' \
+  --output text)
+
+# VPCアタッチメント作成
+ATTACHMENT_ID=$(aws ec2 create-transit-gateway-vpc-attachment \
+  --transit-gateway-id $TGW_ID \
+  --vpc-id $VPC_ID \
+  --subnet-ids $SUBNET_1A $SUBNET_1C $SUBNET_1D \
+  --tag-specifications 'ResourceType=transit-gateway-attachment,Tags=[{Key=Name,Value=prod-vpc-1-attachment}]' \
+  --query 'TransitGatewayVpcAttachment.TransitGatewayAttachmentId' \
+  --output text)
+
+echo "Attachment ID: $ATTACHMENT_ID"
+
+# 利用可能になるまで待機
+aws ec2 wait transit-gateway-attachment-available \
+  --transit-gateway-attachment-ids $ATTACHMENT_ID
+
+# 確認
+aws ec2 describe-transit-gateway-vpc-attachments \
+  --transit-gateway-attachment-ids $ATTACHMENT_ID
+```
+
+#### 3. ルートテーブル作成と設定
+
+```bash
+# Transit Gatewayルートテーブル作成
+TGW_RT_ID=$(aws ec2 create-transit-gateway-route-table \
+  --transit-gateway-id $TGW_ID \
+  --tag-specifications 'ResourceType=transit-gateway-route-table,Tags=[{Key=Name,Value=production-rt}]' \
+  --query 'TransitGatewayRouteTable.TransitGatewayRouteTableId' \
+  --output text)
+
+echo "Transit Gateway Route Table ID: $TGW_RT_ID"
+
+# アタッチメントの関連付け
+aws ec2 associate-transit-gateway-route-table \
+  --transit-gateway-route-table-id $TGW_RT_ID \
+  --transit-gateway-attachment-id $ATTACHMENT_ID
+
+# ルート伝播の有効化
+aws ec2 enable-transit-gateway-route-table-propagation \
+  --transit-gateway-route-table-id $TGW_RT_ID \
+  --transit-gateway-attachment-id $ATTACHMENT_ID
+
+# 静的ルート追加（オンプレミスなど）
+aws ec2 create-transit-gateway-route \
+  --destination-cidr-block 172.16.0.0/16 \
+  --transit-gateway-route-table-id $TGW_RT_ID \
+  --transit-gateway-attachment-id $VPN_ATTACHMENT_ID
+
+# ルートテーブル確認
+aws ec2 describe-transit-gateway-route-tables \
+  --transit-gateway-route-table-ids $TGW_RT_ID
+
+# ルート確認
+aws ec2 search-transit-gateway-routes \
+  --transit-gateway-route-table-id $TGW_RT_ID \
+  --filters "Name=state,Values=active"
+```
+
+#### 4. VPC側ルートテーブル更新
+
+```bash
+# VPCのルートテーブル取得
+VPC_RT_ID=$(aws ec2 describe-route-tables \
+  --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:Name,Values=private-rt" \
+  --query 'RouteTables[0].RouteTableId' \
+  --output text)
+
+# Transit Gatewayへのルート追加
+aws ec2 create-route \
+  --route-table-id $VPC_RT_ID \
+  --destination-cidr-block 10.0.0.0/8 \
+  --transit-gateway-id $TGW_ID
+
+# 確認
+aws ec2 describe-route-tables \
+  --route-table-ids $VPC_RT_ID
+```
+
+#### 5. 複数VPC接続スクリプト
+
+```bash
+#!/bin/bash
+
+TGW_ID="tgw-xxxxx"
+TGW_RT_ID="tgw-rtb-xxxxx"
+
+# VPCリスト
+VPCS=(
+  "vpc-11111:prod-vpc-1"
+  "vpc-22222:prod-vpc-2"
+  "vpc-33333:dev-vpc-1"
+)
+
+for vpc_entry in "${VPCS[@]}"; do
+  IFS=':' read -r vpc_id vpc_name <<< "$vpc_entry"
+  
+  echo "Processing $vpc_name ($vpc_id)..."
+  
+  # サブネット取得
+  SUBNETS=$(aws ec2 describe-subnets \
+    --filters "Name=vpc-id,Values=$vpc_id" \
+    --query 'Subnets[*].SubnetId' \
+    --output text)
+  
+  # アタッチメント作成
+  ATTACHMENT_ID=$(aws ec2 create-transit-gateway-vpc-attachment \
+    --transit-gateway-id $TGW_ID \
+    --vpc-id $vpc_id \
+    --subnet-ids $SUBNETS \
+    --tag-specifications "ResourceType=transit-gateway-attachment,Tags=[{Key=Name,Value=$vpc_name-attachment}]" \
+    --query 'TransitGatewayVpcAttachment.TransitGatewayAttachmentId' \
+    --output text)
+  
+  echo "Created attachment: $ATTACHMENT_ID"
+  
+  # 待機
+  aws ec2 wait transit-gateway-attachment-available \
+    --transit-gateway-attachment-ids $ATTACHMENT_ID
+  
+  # ルートテーブル関連付け
+  aws ec2 associate-transit-gateway-route-table \
+    --transit-gateway-route-table-id $TGW_RT_ID \
+    --transit-gateway-attachment-id $ATTACHMENT_ID
+  
+  # ルート伝播
+  aws ec2 enable-transit-gateway-route-table-propagation \
+    --transit-gateway-route-table-id $TGW_RT_ID \
+    --transit-gateway-attachment-id $ATTACHMENT_ID
+  
+  echo "Completed $vpc_name"
+done
+
+echo "All VPCs attached successfully"
+```
+
+### Terraform での Transit Gateway 作成
+
+```hcl
+# Transit Gateway
+resource "aws_ec2_transit_gateway" "main" {
+  description                     = "Production Transit Gateway"
+  amazon_side_asn                 = 64512
+  default_route_table_association = "disable"
+  default_route_table_propagation = "disable"
+  dns_support                     = "enable"
+  vpn_ecmp_support               = "enable"
+
+  tags = {
+    Name = "my-tgw"
+  }
+}
+
+# ルートテーブル（本番環境）
+resource "aws_ec2_transit_gateway_route_table" "production" {
+  transit_gateway_id = aws_ec2_transit_gateway.main.id
+
+  tags = {
+    Name = "production-rt"
+  }
+}
+
+# ルートテーブル（開発環境）
+resource "aws_ec2_transit_gateway_route_table" "development" {
+  transit_gateway_id = aws_ec2_transit_gateway.main.id
+
+  tags = {
+    Name = "development-rt"
+  }
+}
+
+# VPCアタッチメント
+resource "aws_ec2_transit_gateway_vpc_attachment" "prod_vpc_1" {
+  subnet_ids         = var.prod_vpc_1_subnet_ids
+  transit_gateway_id = aws_ec2_transit_gateway.main.id
+  vpc_id             = var.prod_vpc_1_id
+
+  tags = {
+    Name = "prod-vpc-1-attachment"
+  }
+}
+
+# ルートテーブル関連付け
+resource "aws_ec2_transit_gateway_route_table_association" "prod_vpc_1" {
+  transit_gateway_attachment_id  = aws_ec2_transit_gateway_vpc_attachment.prod_vpc_1.id
+  transit_gateway_route_table_id = aws_ec2_transit_gateway_route_table.production.id
+}
+
+# ルート伝播
+resource "aws_ec2_transit_gateway_route_table_propagation" "prod_vpc_1" {
+  transit_gateway_attachment_id  = aws_ec2_transit_gateway_vpc_attachment.prod_vpc_1.id
+  transit_gateway_route_table_id = aws_ec2_transit_gateway_route_table.production.id
+}
+
+# VPC側ルート
+resource "aws_route" "to_tgw" {
+  route_table_id         = var.vpc_route_table_id
+  destination_cidr_block = "10.0.0.0/8"
+  transit_gateway_id     = aws_ec2_transit_gateway.main.id
+}
+
+# 静的ルート（オンプレミス）
+resource "aws_ec2_transit_gateway_route" "onprem" {
+  destination_cidr_block         = "172.16.0.0/16"
+  transit_gateway_attachment_id  = aws_vpn_connection.main.transit_gateway_attachment_id
+  transit_gateway_route_table_id = aws_ec2_transit_gateway_route_table.production.id
+}
+
+# RAM共有（マルチアカウント）
+resource "aws_ram_resource_share" "tgw" {
+  name                      = "tgw-share"
+  allow_external_principals = false
+}
+
+resource "aws_ram_resource_association" "tgw" {
+  resource_arn       = aws_ec2_transit_gateway.main.arn
+  resource_share_arn = aws_ram_resource_share.tgw.arn
+}
+
+resource "aws_ram_principal_association" "tgw" {
+  principal          = var.organization_arn
+  resource_share_arn = aws_ram_resource_share.tgw.arn
+}
+```
+
+### ベストプラクティス
+
+#### ルートテーブル設計
+
+```yaml
+推奨アプローチ:
+  デフォルトルートテーブル:
+    - 自動関連付け/伝播を無効化
+    - 明示的な管理
+  
+  環境別ルートテーブル:
+    本番環境:
+      - 本番VPCのみ接続
+      - オンプレミスアクセス
+      - 共有サービスアクセス
+    
+    開発環境:
+      - 開発VPCのみ接続
+      - 共有サービスアクセス
+      - 本番環境への制限
+    
+    共有サービス:
+      - 全環境へのアクセス
+
+命名規則:
+  - tgw-rt-production
+  - tgw-rt-development
+  - tgw-rt-shared-services
+  - tgw-rt-security
+```
+
+#### VPCアタッチメント設計
+
+```yaml
+サブネット選択:
+  推奨:
+    - 各AZに1つのサブネット
+    - /28以上のサイズ
+    - プライベートサブネット
+    - 専用サブネット作成も検討
+  
+  例:
+    VPC: 10.0.0.0/16
+    Transit Gateway Subnet 1a: 10.0.250.0/28
+    Transit Gateway Subnet 1c: 10.0.250.16/28
+    Transit Gateway Subnet 1d: 10.0.250.32/28
+
+注意点:
+  - サブネット内にENIが作成される
+  - 各サブネットで1つのIPアドレス使用
+  - ルートテーブルの設定必要
+```
+
+#### セキュリティ
+
+```yaml
+ネットワークレベル:
+  Transit Gateway Network ACL:
+    - アタッチメント間のフィルタリング
+    - ステートレス
+    - 追加の防御層
+  
+  VPC Security Group:
+    - インスタンスレベル制御
+    - ステートフル
+    - 細かい制御
+
+IAMポリシー:
+  - Transit Gateway作成権限
+  - アタッチメント作成権限
+  - ルート変更権限
+  - 最小権限の原則
+
+モニタリング:
+  - VPC Flow Logs
+  - Transit Gateway Network Manager
+  - CloudWatch メトリクス
+  - GuardDuty
+```
+
+#### コスト最適化
+
+```yaml
+アタッチメント削減:
+  - 不要なアタッチメント削除
+  - 開発環境の統合
+  - テスト環境の共有
+
+データ転送最適化:
+  - 同一AZ配置（可能な場合）
+  - VPC Endpoints併用
+  - キャッシング活用
+
+ルート最適化:
+  - 不要なルート伝播停止
+  - 静的ルートの活用
+  - ルートテーブル統合
+
+監視:
+  - データ転送量監視
+  - コストアラート設定
+  - 定期的な見直し
+```
+
+### トラブルシューティング
+
+#### 接続できない
+
+```bash
+# 1. アタッチメント状態確認
+aws ec2 describe-transit-gateway-vpc-attachments \
+  --filters "Name=transit-gateway-id,Values=$TGW_ID"
+
+# 2. ルートテーブル関連付け確認
+aws ec2 get-transit-gateway-attachment-propagations \
+  --transit-gateway-attachment-id $ATTACHMENT_ID
+
+# 3. ルート確認
+aws ec2 search-transit-gateway-routes \
+  --transit-gateway-route-table-id $TGW_RT_ID \
+  --filters "Name=state,Values=active"
+
+# 4. VPC側ルート確認
+aws ec2 describe-route-tables \
+  --filters "Name=vpc-id,Values=$VPC_ID"
+
+# 5. セキュリティグループ確認
+aws ec2 describe-security-groups \
+  --filters "Name=vpc-id,Values=$VPC_ID"
+```
+
+#### パフォーマンス問題
+
+```bash
+# CloudWatch メトリクス取得
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/TransitGateway \
+  --metric-name BytesIn \
+  --dimensions Name=TransitGateway,Value=$TGW_ID \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-01T23:59:59Z \
+  --period 3600 \
+  --statistics Sum
+
+# パケット損失確認
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/TransitGateway \
+  --metric-name PacketDropCountBlackhole \
+  --dimensions Name=TransitGateway,Value=$TGW_ID \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-01T23:59:59Z \
+  --period 300 \
+  --statistics Sum
+```
+
+#### Network Manager活用
+
+```bash
+# グローバルネットワーク作成
+GLOBAL_NETWORK_ID=$(aws networkmanager create-global-network \
+  --description "My Global Network" \
+  --query 'GlobalNetwork.GlobalNetworkId' \
+  --output text)
+
+# Transit Gateway登録
+aws networkmanager register-transit-gateway \
+  --global-network-id $GLOBAL_NETWORK_ID \
+  --transit-gateway-arn arn:aws:ec2:ap-northeast-1:123456789012:transit-gateway/$TGW_ID
+
+# トポロジー取得
+aws networkmanager get-network-routes \
+  --global-network-id $GLOBAL_NETWORK_ID \
+  --route-table-identifier tgw-rtb-xxxxx
+
+# メトリクス確認（Console推奨）
+# Network Manager Console → Global Network → Metrics
+```
+
+### まとめ
+
+**実務で重要なポイント:**
+
+- **設計段階**: ルートテーブル戦略、環境分離計画
+- **セキュリティ**: 多層防御、最小権限の原則
+- **高可用性**: マルチAZ配置、冗長化
+- **コスト最適化**: 不要なアタッチメント削除、データ転送量監視
+- **監視**: Network Manager、CloudWatch、VPC Flow Logs
+- **自動化**: IaC (Terraform, CloudFormation) の活用
+
+適切なTransit Gateway設計と運用により、スケーラブルで管理しやすいネットワークを実現できます。

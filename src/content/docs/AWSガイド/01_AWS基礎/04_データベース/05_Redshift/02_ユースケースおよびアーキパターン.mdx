@@ -1,0 +1,262 @@
+---
+title: "Redshift ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## Redshift ユースケースおよびアーキテクチャパターン
+
+### 1. エンタープライズデータウェアハウス
+
+```yaml
+構成:
+  オンプレミス/RDS → AWS DMS → Redshift
+  ↓
+  BI Tools（QuickSight、Tableau、PowerBI）
+  
+特徴:
+  - 複数データソース統合
+  - 大規模データ分析
+  - 履歴データ保管
+  
+データソース例:
+  - RDS（MySQL、PostgreSQL）
+  - DynamoDB
+  - オンプレミスDB
+  - SaaS（Salesforce、Marketo）
+```
+
+### 2. ログ分析・ビッグデータ分析
+
+```yaml
+構成:
+  アプリケーション → Kinesis Data Firehose → S3
+                                              ↓
+  CloudWatch Logs → Lambda → S3 → Redshift Spectrum
+  
+特徴:
+  - リアルタイムログ収集
+  - S3データレイク統合
+  - Spectrumで直接S3クエリ
+  
+用途:
+  - アクセスログ分析
+  - セキュリティログ監査
+  - アプリケーションメトリクス
+```
+
+### 3. データレイク統合パターン
+
+```yaml
+構成:
+  各種データソース
+    ↓
+  S3（データレイク）
+    ├─ Redshift Spectrum（アドホッククエリ）
+    ├─ Athena（軽量分析）
+    └─ Redshift（ホットデータ）
+    
+設計ポイント:
+  S3:
+    - 生データ（JSON、CSV、Parquet）
+    - 履歴データ（コールドデータ）
+  
+  Redshift:
+    - 集計済みデータ
+    - 頻繁にアクセスするデータ
+    - 最近のデータ（ホットデータ）
+  
+  Spectrum:
+    - S3データ直接クエリ
+    - ETL不要
+    - コスト削減
+```
+
+### 4. リアルタイムBIダッシュボード
+
+```yaml
+構成:
+  トランザクションDB（RDS/Aurora）
+    ↓（CDC: Change Data Capture）
+  AWS DMS
+    ↓（継続的レプリケーション）
+  Redshift
+    ↓
+  QuickSight（自動リフレッシュ）
+  
+特徴:
+  - 低レイテンシ更新
+  - Materialized Views活用
+  - Concurrency Scaling
+  
+メリット:
+  - 本番DB負荷分離
+  - 複雑な分析クエリ実行
+  - ダッシュボード高速化
+```
+
+### 5. マルチテナントSaaS分析
+
+```yaml
+構成:
+  テナントA DB ┐
+  テナントB DB ├→ Redshift（テナント別スキーマ）
+  テナントC DB ┘      ↓
+                QuickSight（行レベルセキュリティ）
+  
+設計ポイント:
+  スキーマ設計:
+    - tenant_id 列追加
+    - 分散キー: tenant_id
+    - ソートキー: tenant_id, date
+  
+  セキュリティ:
+    - 行レベルセキュリティ（RLS）
+    - IAM認証
+    - VPCエンドポイント
+```
+
+### 6. 機械学習データ準備
+
+```yaml
+構成:
+  Redshift（データクレンジング、特徴量生成）
+    ↓
+  Redshift ML / SageMaker
+    ↓
+  モデルトレーニング
+    ↓
+  Redshift（予測クエリ）
+  
+用途:
+  - チャーン予測
+  - レコメンデーション
+  - 異常検知
+  
+Redshift ML:
+  - SQL でモデル作成
+  - SageMaker Autopilot 連携
+  - 予測をSQLで実行
+```
+
+### 7. ETL/ELTパイプライン
+
+```yaml
+構成:
+  各種データソース
+    ↓
+  AWS Glue（ETL）
+    ↓
+  S3（ステージング）
+    ↓
+  Redshift（COPY コマンド）
+    ↓
+  dbt（ELT、変換）
+  
+ELTアプローチ:
+  1. データをそのままロード（E + L）
+  2. Redshift内で変換（T）
+  3. Materialized Views活用
+  
+メリット:
+  - 高速ロード
+  - Redshiftの計算力活用
+  - スキーマ柔軟性
+```
+
+### 8. クロスリージョンDR構成
+
+```yaml
+構成:
+  プライマリリージョン（ap-northeast-1）
+    Redshift クラスター
+      ↓（自動スナップショットコピー）
+  セカンダリリージョン（us-west-2）
+    Redshift クラスター（スナップショットから復元）
+  
+設定:
+  - スナップショットコピー有効化
+  - 保持期間設定
+  - 自動コピースケジュール
+  
+フェイルオーバー:
+  1. セカンダリリージョンでクラスター作成
+  2. 最新スナップショットから復元
+  3. DNS切り替え
+```
+
+### 9. S3データのアドホック分析
+
+```yaml
+構成:
+  S3（Parquet、ORC、JSON）
+    ↓
+  Redshift Spectrum（外部テーブル）
+    ↓
+  Glue Data Catalog
+  
+設定:
+  # 外部スキーマ作成
+  CREATE EXTERNAL SCHEMA spectrum_schema
+  FROM DATA CATALOG
+  DATABASE 'my_database'
+  IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftSpectrumRole';
+  
+  # 外部テーブルクエリ
+  SELECT *
+  FROM spectrum_schema.logs
+  WHERE date >= '2026-01-01';
+  
+メリット:
+  - データロード不要
+  - コスト削減
+  - スケーラブル
+```
+
+### 10. 時系列データ分析
+
+```yaml
+構成:
+  IoT デバイス → IoT Core → Kinesis → Firehose → S3
+                                              ↓
+                                          Redshift
+  
+テーブル設計:
+  分散キー: device_id
+  ソートキー: timestamp
+  圧縮: ZSTD（時系列データ向け）
+  
+クエリ最適化:
+  - Zone Maps活用
+  - 時間範囲フィルタ
+  - Materialized Views
+```
+
+### アーキテクチャ選択ガイド
+
+```yaml
+Redshift単体:
+  - データ量: 数TB〜数PB
+  - クエリ: 複雑な集計、JOIN
+  - レイテンシ: 秒単位
+  
+Redshift + Spectrum:
+  - データ量: 数PB以上
+  - アクセス頻度: 低い履歴データ
+  - コスト最適化重視
+  
+Redshift + RDS/Aurora:
+  - トランザクション: RDS/Aurora
+  - 分析: Redshift
+  - DMS で継続的レプリケーション
+  
+Athena vs Redshift:
+  Athena:
+    - アドホッククエリ
+    - 低頻度アクセス
+    - サーバーレス
+  
+  Redshift:
+    - 定期的な分析
+    - 複雑なクエリ
+    - 高パフォーマンス
+```

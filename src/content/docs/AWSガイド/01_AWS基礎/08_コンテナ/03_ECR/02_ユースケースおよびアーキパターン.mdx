@@ -1,0 +1,451 @@
+---
+title: "ECR ユースケースおよびアーキパターン"
+label: "ユースケースおよびアーキパターン"
+---
+
+## ECR ユースケースおよびアーキテクチャパターン
+
+### 1. CI/CD パイプライン統合
+
+#### パターン1: CodePipeline + ECR + ECS
+
+```yaml
+構成:
+  GitHub → CodePipeline → CodeBuild → ECR → ECS/Fargate
+  
+フロー:
+  1. コードpush（GitHub）
+  2. パイプライン起動（CodePipeline）
+  3. Dockerイメージビルド（CodeBuild）
+  4. ECRへpush
+  5. ECS/Fargateへデプロイ
+
+メリット:
+  - 完全自動化
+  - AWSネイティブ統合
+  - Blue/Greenデプロイ対応
+  - ロールバック容易
+
+buildspec.yml例:
+  version: 0.2
+  phases:
+    pre_build:
+      - aws ecr get-login-password | docker login
+    build:
+      - docker build -t myapp .
+      - docker tag myapp:latest $ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION
+    post_build:
+      - docker push $ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION
+```
+
+#### パターン2: GitHub Actions + ECR
+
+```yaml
+構成:
+  GitHub Actions → ECR → ECS/EKS
+  
+フロー:
+  1. Pull Request マージ
+  2. GitHub Actions ワークフロー実行
+  3. Dockerイメージビルド
+  4. ECR認証・push
+  5. タスク定義更新・デプロイ
+
+メリット:
+  - GitHub統合
+  - マルチクラウド対応
+  - カスタマイズ自由
+
+.github/workflows/deploy.yml例:
+  - name: Configure AWS credentials
+    uses: aws-actions/configure-aws-credentials@v1
+  
+  - name: Login to ECR
+    uses: aws-actions/amazon-ecr-login@v1
+  
+  - name: Build and push
+    run: |
+      docker build -t $ECR_URI:$GITHUB_SHA .
+      docker push $ECR_URI:$GITHUB_SHA
+```
+
+### 2. ECS/Fargate 連携
+
+#### パターン3: マイクロサービス
+
+```yaml
+構成:
+  ECR → ECS/Fargate Service（マルチコンテナ）
+  
+アーキテクチャ:
+  ALB
+   ├─ Users Service（ECR: users:v1.2.0）
+   ├─ Orders Service（ECR: orders:v2.1.0）
+   └─ Products Service（ECR: products:v1.5.0）
+
+設計:
+  - サービス毎に独立リポジトリ
+  - セマンティックバージョニング
+  - ブルーグリーンデプロイ
+
+タスク定義:
+  containerDefinitions:
+    - name: users
+      image: 123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/users:v1.2.0
+      
+    - name: orders
+      image: 123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/orders:v2.1.0
+```
+
+#### パターン4: サイドカーパターン
+
+```yaml
+構成:
+  ECR → メインコンテナ + サイドカーコンテナ
+  
+用途:
+  - ログ収集（Fluentd/Fluent Bit）
+  - メトリクス収集（Prometheus Exporter）
+  - プロキシ（Envoy）
+  - 認証（OAuth2 Proxy）
+
+例（アプリ + ログコレクター）:
+  containerDefinitions:
+    - name: app
+      image: $ECR_URI/myapp:latest
+    
+    - name: log-router
+      image: $ECR_URI/fluent-bit:latest
+      firelensConfiguration:
+        type: fluentbit
+```
+
+### 3. EKS 連携
+
+#### パターン5: Kubernetes Deployment
+
+```yaml
+構成:
+  ECR → EKS Pod
+  
+Deployment例:
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: myapp
+  spec:
+    template:
+      spec:
+        containers:
+        - name: app
+          image: 123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/myapp:v1.0.0
+          imagePullPolicy: Always
+
+認証:
+  - EKSノードIAMロール
+  - IRSA（IAM Roles for Service Accounts）
+  - ImagePullSecrets（クロスアカウント時）
+
+自動更新:
+  - Flux CD / Argo CD
+  - イメージタグ監視
+  - GitOps パターン
+```
+
+#### パターン6: Helm Chart + ECR
+
+```yaml
+構成:
+  Helm Chart → ECR イメージ参照
+  
+values.yaml:
+  image:
+    repository: 123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/myapp
+    tag: v1.0.0
+    pullPolicy: IfNotPresent
+
+デプロイ:
+  helm install myapp ./mychart \
+    --set image.tag=v1.1.0
+
+メリット:
+  - テンプレート化
+  - 環境別設定
+  - バージョン管理
+```
+
+### 4. Lambda コンテナイメージ
+
+#### パターン7: ECR + Lambda
+
+```yaml
+構成:
+  ECR → Lambda（コンテナイメージ）
+  
+特徴:
+  - 最大10GBイメージサイズ
+  - カスタムランタイム
+  - OS依存ライブラリ対応
+
+Dockerfile例:
+  FROM public.ecr.aws/lambda/python:3.11
+  COPY app.py ${LAMBDA_TASK_ROOT}
+  COPY requirements.txt .
+  RUN pip install -r requirements.txt
+  CMD ["app.lambda_handler"]
+
+デプロイ:
+  aws lambda update-function-code \
+    --function-name myfunction \
+    --image-uri $ECR_URI:latest
+
+ユースケース:
+  - 大きな依存関係
+  - ML モデル
+  - カスタムバイナリ
+```
+
+### 5. クロスリージョンレプリケーション
+
+#### パターン8: グローバル展開
+
+```yaml
+構成:
+  us-east-1（プライマリ）
+    ↓ レプリケーション
+  ap-northeast-1（東京）
+  eu-west-1（アイルランド）
+  ap-southeast-1（シンガポール）
+
+設定:
+  replicationConfiguration:
+    rules:
+      - destinations:
+          - region: ap-northeast-1
+          - region: eu-west-1
+          - region: ap-southeast-1
+        repositoryFilters:
+          - filter: prod-*
+            filterType: PREFIX_MATCH
+
+メリット:
+  - 低レイテンシ
+  - リージョン障害対策
+  - コンプライアンス対応
+
+ユースケース:
+  - グローバルサービス
+  - 災害対策
+  - マルチリージョンECS/EKS
+```
+
+#### パターン9: クロスアカウント共有
+
+```yaml
+構成:
+  開発アカウント（ECRプッシュ）
+    ↓ レプリケーション
+  本番アカウント（ECRプル）
+  
+  または
+  
+  共有アカウント（中央ECR）
+    ↓ リポジトリポリシー
+  各環境アカウント（プル）
+
+リポジトリポリシー:
+  {
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Sid": "AllowCrossAccountPull",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::999999999999:root"
+      },
+      "Action": [
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer"
+      ]
+    }]
+  }
+
+メリット:
+  - セキュリティ境界
+  - 承認フロー
+  - コスト配分
+```
+
+### 6. セキュアなイメージ管理
+
+#### パターン10: イメージスキャン + 承認プロセス
+
+```yaml
+構成:
+  1. ECRへpush
+  2. 自動脆弱性スキャン
+  3. EventBridge → Lambda
+  4. 重大な脆弱性検出時:
+     - SNS通知
+     - デプロイブロック
+     - チケット作成（Jira/ServiceNow）
+
+EventBridge ルール:
+  {
+    "source": ["aws.ecr"],
+    "detail-type": ["ECR Image Scan"],
+    "detail": {
+      "scan-status": ["COMPLETE"],
+      "finding-severity-counts": {
+        "CRITICAL": [{"numeric": [">", 0]}]
+      }
+    }
+  }
+
+Lambda処理:
+  - スキャン結果評価
+  - 閾値チェック（Critical > 0 → NG）
+  - タグ付与（approved / rejected）
+  - 通知送信
+
+ECSデプロイ時:
+  - approvedタグのイメージのみ許可
+  - AdmissionController（EKS）
+```
+
+#### パターン11: イミュータブルタグ
+
+```yaml
+概要:
+  - タグの上書き禁止
+  - イメージの改ざん防止
+  - デプロイの一貫性
+
+設定:
+  imageTagMutability: IMMUTABLE
+
+利点:
+  - セキュリティ向上
+  - 監査証跡
+  - 予期しない変更防止
+
+運用:
+  - タグは常に一意
+  - Git SHA、ビルド番号使用
+  - latest タグ使用不可
+```
+
+### 7. ライフサイクルポリシー自動化
+
+#### パターン12: コスト最適化
+
+```yaml
+ポリシー例1: 古いイメージ自動削除
+  {
+    "rules": [
+      {
+        "rulePriority": 1,
+        "description": "Untagged images older than 7 days",
+        "selection": {
+          "tagStatus": "untagged",
+          "countType": "sinceImagePushed",
+          "countUnit": "days",
+          "countNumber": 7
+        },
+        "action": {
+          "type": "expire"
+        }
+      }
+    ]
+  }
+
+ポリシー例2: 最新N個のみ保持
+  {
+    "rules": [
+      {
+        "rulePriority": 1,
+        "description": "Keep last 10 images",
+        "selection": {
+          "tagStatus": "any",
+          "countType": "imageCountMoreThan",
+          "countNumber": 10
+        },
+        "action": {
+          "type": "expire"
+        }
+      }
+    ]
+  }
+
+ポリシー例3: 環境別保持期間
+  {
+    "rules": [
+      {
+        "rulePriority": 1,
+        "description": "Keep prod images forever",
+        "selection": {
+          "tagStatus": "tagged",
+          "tagPrefixList": ["prod"],
+          "countType": "imageCountMoreThan",
+          "countNumber": 9999
+        },
+        "action": {
+          "type": "expire"
+        }
+      },
+      {
+        "rulePriority": 2,
+        "description": "Keep dev images for 30 days",
+        "selection": {
+          "tagStatus": "tagged",
+          "tagPrefixList": ["dev"],
+          "countType": "sinceImagePushed",
+          "countUnit": "days",
+          "countNumber": 30
+        },
+        "action": {
+          "type": "expire"
+        }
+      }
+    ]
+  }
+```
+
+### 8. AWS App Runner 連携
+
+#### パターン13: シンプルWebアプリデプロイ
+
+```yaml
+構成:
+  ECR → App Runner → 自動スケーリング + ロードバランサー
+
+特徴:
+  - インフラ管理不要
+  - 自動スケーリング
+  - HTTPS標準
+  - CI/CD統合
+
+設定:
+  aws apprunner create-service \
+    --service-name myapp \
+    --source-configuration \
+      ImageRepository={
+        ImageIdentifier=$ECR_URI:latest,
+        ImageRepositoryType=ECR,
+        ImageConfiguration={Port=8000}
+      }
+
+ユースケース:
+  - シンプルAPI
+  - ウェブアプリケーション
+  - 小〜中規模サービス
+```
+
+### まとめ
+
+**ECRアーキテクチャパターンのポイント:**
+- CI/CD統合で自動化
+- ECS/EKS/Lambdaとシームレス連携
+- クロスリージョン/アカウントレプリケーションで可用性向上
+- イメージスキャンでセキュリティ確保
+- ライフサイクルポリシーでコスト最適化
+- イミュータブルタグで整合性維持
